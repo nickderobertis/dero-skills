@@ -18,7 +18,19 @@ Checks:
   * .claude/settings.json exists and is valid JSON (the agent allowlist).
   * A justfile is present and defines the core command surface:
     bootstrap, check, test, lint, format, upgrade.
-  * At least one CI workflow exists under .github/workflows/.
+  * Required recipes have real bodies (no leftover `TODO` template
+    placeholders) and `check` actually runs `test`.
+  * An e2e signal exists: a `*e2e*` recipe, an `e2e/` test directory, or an
+    explicit e2e statement in AGENTS.md (so skipping e2e is a deliberate,
+    documented decision rather than a silent omission).
+  * A CI workflow exists under .github/workflows/ AND runs the gate
+    (`just check`) — a workflow that never invokes the gate proves nothing.
+
+These go past mere presence: a do-nothing CI file, a placeholder `test`
+recipe, or a missing e2e tier are the parts most often skipped when the skill
+is applied loosely, so the baseline fails on them rather than passing a repo
+that only looks set up. Stack-specific depth (does e2e exercise real journeys?)
+still belongs in the repo's own `just check`, not here.
 
 Output is itself agent context, so it is minimal: on success it prints a single
 line; on failure it prints only the failing invariants, each with a suggested
@@ -39,12 +51,19 @@ from pathlib import Path
 # Recipes the skill's command surface must define.
 REQUIRED_RECIPES = ("bootstrap", "check", "test", "lint", "format", "upgrade")
 
+# The command that proves the artifact. CI must invoke it, and `check` is where
+# the full gate (including e2e) is composed.
+GATE_COMMAND = "just check"
+
 # A justfile recipe header starts at column 0 with an identifier, may take
 # parameters, and ends in a single ':'. Assignments (`name := value`) are
 # excluded via the negative lookahead so they are not mistaken for recipes.
 RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:=]*:(?!=)")
 
 JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
+
+# Case-insensitive marker that a recipe body is still the unfilled template.
+PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
 
 
 @dataclass
@@ -64,6 +83,43 @@ def parse_just_recipes(text: str) -> set[str]:
         match = RECIPE_RE.match(line)
         if match:
             recipes.add(match.group(1))
+    return recipes
+
+
+@dataclass
+class Recipe:
+    """A parsed justfile recipe: its dependency list and its body lines."""
+
+    name: str
+    deps: list[str] = field(default_factory=list)
+    body: list[str] = field(default_factory=list)
+
+
+def parse_just_recipe_details(text: str) -> dict[str, Recipe]:
+    """Parse ``text`` into recipes keyed by name, with deps and body lines.
+
+    Dependencies are the whitespace-separated tokens after the header ``:``
+    (inline comments stripped). The body is the following indented lines, with
+    blanks and surrounding whitespace removed. This is intentionally a light
+    parser: it captures enough to tell a filled-in recipe from a placeholder
+    and to see whether ``check`` wires in ``test``, not to emulate just.
+    """
+    recipes: dict[str, Recipe] = {}
+    current: Recipe | None = None
+    for line in text.splitlines():
+        if line and line[0] not in (" ", "\t"):
+            if line[0] == "#":
+                current = None
+                continue
+            match = RECIPE_RE.match(line)
+            if match:
+                after = line.split(":", 1)[1].split("#", 1)[0]
+                current = Recipe(name=match.group(1), deps=after.split())
+                recipes[current.name] = current
+            else:
+                current = None  # assignment or other non-recipe line
+        elif current is not None and line.strip():
+            current.body.append(line.strip())
     return recipes
 
 
@@ -153,37 +209,124 @@ def check_justfile(repo: Path) -> list[Finding]:
                 "(see assets/justfile.template)",
             )
         ]
-    findings = [Finding("OK", f"{justfile.name} present")]
-    recipes = parse_just_recipes(justfile.read_text(encoding="utf-8"))
-    missing = [r for r in REQUIRED_RECIPES if r not in recipes]
+    name = justfile.name
+    findings = [Finding("OK", f"{name} present")]
+    details = parse_just_recipe_details(justfile.read_text(encoding="utf-8"))
+
+    missing = [r for r in REQUIRED_RECIPES if r not in details]
     if missing:
         joined = ", ".join(missing)
         findings.append(
             Finding(
                 "ERROR",
-                f"{justfile.name} missing required recipe(s): {joined}",
-                f"add recipe(s) to the {justfile.name}: {joined}",
+                f"{name} missing required recipe(s): {joined}",
+                f"add recipe(s) to the {name}: {joined}",
             )
         )
     else:
         findings.append(Finding("OK", "justfile defines the full command surface"))
+
+    # A required recipe that still carries a TODO placeholder body was copied
+    # from the template but never filled in — the gate would pass while doing
+    # nothing.
+    placeholder = sorted(
+        r
+        for r in REQUIRED_RECIPES
+        if r in details and any(PLACEHOLDER_RE.search(line) for line in details[r].body)
+    )
+    if placeholder:
+        joined = ", ".join(placeholder)
+        findings.append(
+            Finding(
+                "ERROR",
+                f"{name} recipe(s) still hold template placeholders: {joined}",
+                f"replace the TODO bodies with real commands: {joined}",
+            )
+        )
+
+    # `check` is the full gate, so it must actually run the test suite — either
+    # as a dependency (`check: ... test`) or by invoking it in the body.
+    check = details.get("check")
+    if check is not None and "test" in details:
+        runs_test = "test" in check.deps or any(
+            "just test" in line for line in check.body
+        )
+        if not runs_test:
+            findings.append(
+                Finding(
+                    "ERROR",
+                    "`check` does not run `test` (tests are absent from the gate)",
+                    "make `check` depend on `test`, e.g. `check: lint test`",
+                )
+            )
+
     return findings
+
+
+def check_e2e(repo: Path) -> list[Finding]:
+    """Require a deliberate e2e decision: real coverage or a documented opt-out.
+
+    E2E is the part most often dropped silently. This does not (and cannot,
+    stack-agnostically) verify that e2e tests exercise real journeys; it only
+    forces e2e to be a *named* part of the repo — a recipe, an `e2e/` test
+    tree, or an explicit statement in AGENTS.md explaining the coverage or why
+    it does not apply (e.g. a pure library with no user-facing journey).
+    """
+    justfile = find_justfile(repo)
+    if justfile is not None:
+        recipes = parse_just_recipes(justfile.read_text(encoding="utf-8"))
+        if any("e2e" in r.lower() for r in recipes):
+            return [Finding("OK", "e2e recipe present")]
+
+    if (repo / "e2e").is_dir() or (repo / "tests" / "e2e").is_dir():
+        return [Finding("OK", "e2e test directory present")]
+
+    agents = repo / "AGENTS.md"
+    if agents.is_file():
+        text = agents.read_text(encoding="utf-8").lower()
+        if "e2e" in text or "end-to-end" in text:
+            return [Finding("OK", "AGENTS.md documents the e2e decision")]
+
+    return [
+        Finding(
+            "ERROR",
+            "no e2e signal (recipe, e2e/ directory, or AGENTS.md statement)",
+            "add a `test-e2e` recipe wired into `just check`, or state in "
+            "AGENTS.md what e2e covers or why it does not apply",
+        )
+    ]
 
 
 def check_ci(repo: Path) -> list[Finding]:
     workflows = repo / ".github" / "workflows"
-    if workflows.is_dir() and any(
-        p.suffix in (".yml", ".yaml") for p in workflows.iterdir() if p.is_file()
-    ):
-        return [Finding("OK", "CI workflow present under .github/workflows/")]
-    return [
-        Finding(
-            "ERROR",
-            "no CI workflow under .github/workflows/",
-            "add a workflow that runs `just check` on a clean checkout "
-            "(see references/ci.md)",
-        )
-    ]
+    files = (
+        [
+            p
+            for p in workflows.iterdir()
+            if p.is_file() and p.suffix in (".yml", ".yaml")
+        ]
+        if workflows.is_dir()
+        else []
+    )
+    if not files:
+        return [
+            Finding(
+                "ERROR",
+                "no CI workflow under .github/workflows/",
+                "add a workflow that runs `just check` on a clean checkout "
+                "(see assets/ci.yml.template and references/ci.md)",
+            )
+        ]
+    if not any(GATE_COMMAND in p.read_text(encoding="utf-8") for p in files):
+        return [
+            Finding(
+                "ERROR",
+                f"CI workflow(s) never run the gate (`{GATE_COMMAND}`)",
+                f"have a workflow run `{GATE_COMMAND}` on a clean checkout "
+                "(see assets/ci.yml.template)",
+            )
+        ]
+    return [Finding("OK", "CI workflow runs the gate")]
 
 
 def audit(repo: Path) -> list[Finding]:
@@ -192,6 +335,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_claude_symlink(repo)
     findings += check_claude_settings(repo)
     findings += check_justfile(repo)
+    findings += check_e2e(repo)
     findings += check_ci(repo)
     return findings
 

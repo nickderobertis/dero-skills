@@ -20,5 +20,9 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
   the command surface small and predictable.
 - **Distribution.** If users install it, ship packaging + release automation and
   document supported platforms (see `ci.md` and the language reference).
-- **Commands.** `just check` runs fmt/lint/typecheck/tests plus the CLI e2e
-  suite; `just e2e` may run the slower end-to-end journeys on their own.
+- **Commands.** The CLI e2e suite runs in the default `just check` and in CI —
+  it is never opt-in or excluded by default. `just e2e` is only a convenience
+  for running the slow end-to-end journeys *in isolation*; it must not be the
+  one place they run. If a journey is genuinely too expensive for every gate
+  run, that is a deliberate, documented exception that CI still executes (e.g.
+  nightly) — not silent exclusion from the gate.

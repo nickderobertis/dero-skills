@@ -1,0 +1,48 @@
+# Prove the artifact from a clean checkout: bootstrap, then the full gate.
+#
+# CI must reproduce what a future maintainer or user hits on a fresh machine —
+# not a developer's warm local environment. Keep this as the single required
+# gate: `just bootstrap` (clean install) then `just check` (format, lint, type
+# check, unit, and e2e). See references/ci.md.
+#
+# Fill in the TODOs: drop the OS matrix to one runner unless the artifact is
+# genuinely cross-platform (CLIs, plugins, binaries), and install only the
+# toolchain `just bootstrap` needs (e.g. uv / Node / Rust).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # TODO: collapse to `[ubuntu-latest]` unless the artifact ships
+        # cross-platform; test the versions you actually support.
+        os: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      # TODO: install the toolchain `just bootstrap` needs, e.g.
+      #   - uses: astral-sh/setup-uv@v5        # Python (uv)
+      #   - uses: actions/setup-node@v4        # Node/pnpm
+      #   - uses: dtolnay/rust-toolchain@stable  # Rust
+
+      - name: Bootstrap
+        run: just bootstrap
+
+      - name: Check
+        run: just check

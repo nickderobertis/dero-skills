@@ -12,5 +12,12 @@ Next.js specifics. This builds on `shapes/web-app.md` and assumes
 - **UI.** Prefer shadcn/ui components; keep the design consistent and minimal.
 - **Build validation.** Validate the production build (`next build`) in CI, not
   just `next dev`. Treat type errors and lint errors as build blockers.
-- **Testing.** Component/integration tests plus E2E (e.g., Playwright) covering
-  the critical user journeys end to end.
+- **Testing — not optional, and not a smoke test.** Ship all of:
+  - Component/integration tests (e.g., Testing Library) for interactive UI.
+  - A `test-e2e` recipe (e.g., Playwright) wired into `just check` and CI.
+  - E2E covering, at minimum, the primary happy path **and** one meaningful
+    failure/validation/recovery path through the rendered app.
+  - If the app keeps state in the URL, an e2e test that loads a deep link and
+    asserts the restored state, plus unit tests for parser defaults, invalid
+    params, and serialization round-trips.
+  - Drive e2e through accessible roles / user-facing selectors, not brittle CSS.

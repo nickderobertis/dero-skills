@@ -3,7 +3,9 @@
 # Keep this list small and memorable. `just bootstrap` must work from a clean
 # clone; `just check` is the full quality gate (it must fail on any issue, with
 # no warnings-only mode). Replace the placeholder bodies with the real,
-# stack-specific commands — see references/stack-add-ons.md for per-stack tools.
+# stack-specific commands — see references/composing.md for the catalog, then
+# the matching references/languages/<lang>.md and references/shapes/<shape>.md
+# for per-stack tools.
 
 # List available recipes.
 default:
@@ -13,13 +15,21 @@ default:
 bootstrap:
     @echo "TODO: install toolchain + dependencies (e.g. uv sync / pnpm install)"
 
-# Full quality gate: format check, lint, type check, and tests. Fail on any issue.
-check: lint test
+# Full quality gate: format check, lint, type check, and tests (incl. e2e).
+# Fail on any issue. e2e is part of the gate, not an opt-in target.
+check: lint test test-e2e
     @echo "TODO: add format --check and type checking to the gate"
 
-# Run the test suite (unit + integration + e2e).
+# Run the fast test suite (unit + integration).
 test:
-    @echo "TODO: run tests (e.g. pytest / vitest / cargo nextest)"
+    @echo "TODO: run unit/integration tests (e.g. pytest / vitest / cargo nextest)"
+
+# Run end-to-end tests that exercise the built artifact the way users run it.
+# Cover the primary happy path AND at least one meaningful failure/recovery
+# path — not just a smoke test. If e2e genuinely does not apply (e.g. a pure
+# library), delete this recipe and document why in AGENTS.md.
+test-e2e:
+    @echo "TODO: run e2e (e.g. playwright test / the installed CLI / a real request)"
 
 # Lint the codebase; fail on findings.
 lint:

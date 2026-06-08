@@ -30,11 +30,14 @@ default:
 bootstrap:
     @echo hi
 
-check: lint test
+check: lint test test-e2e
     @echo gate
 
 test:
     @echo t
+
+test-e2e:
+    @echo e2e
 
 lint:
     @echo l
@@ -45,6 +48,9 @@ format:
 upgrade:
     @just check
 """
+
+# A workflow that actually invokes the gate, as the CI invariant requires.
+GATE_WORKFLOW = "name: ci\njobs:\n  check:\n    steps:\n      - run: just check\n"
 
 
 def make_repo(
@@ -60,6 +66,8 @@ def make_repo(
 
     ``claude`` is "symlink", "file", or None; ``settings`` is True, False, or a
     raw string written verbatim to .claude/settings.json (to test bad JSON).
+    ``ci`` is True (a gate-running workflow), False (none), or a raw string
+    written verbatim to .github/workflows/ci.yml.
     """
     repo = tmp_path
     if agents:
@@ -76,10 +84,11 @@ def make_repo(
         (repo / ".claude" / "settings.json").write_text(body, encoding="utf-8")
     if justfile is not None:
         (repo / "justfile").write_text(justfile, encoding="utf-8")
-    if ci:
+    if ci is not False:
         wf = repo / ".github" / "workflows"
         wf.mkdir(parents=True)
-        (wf / "ci.yml").write_text("name: ci\n", encoding="utf-8")
+        body = ci if isinstance(ci, str) else GATE_WORKFLOW
+        (wf / "ci.yml").write_text(body, encoding="utf-8")
     return repo
 
 
@@ -170,6 +179,99 @@ def test_missing_ci_is_error(tmp_path):
     findings = crb.audit(make_repo(tmp_path, ci=False))
     assert crb.has_errors(findings)
     assert any("workflow" in m for m in levels(findings, "ERROR"))
+
+
+def test_ci_without_gate_is_error(tmp_path):
+    # A workflow file exists but never runs `just check`: presence is not proof.
+    findings = crb.audit(make_repo(tmp_path, ci="name: ci\njobs:\n  noop: {}\n"))
+    assert crb.has_errors(findings)
+    assert any("gate" in m for m in levels(findings, "ERROR"))
+
+
+def test_placeholder_recipe_body_is_error(tmp_path):
+    # The unfilled justfile template: required recipes still hold TODO bodies.
+    justfile = (
+        "bootstrap:\n    @echo hi\n"
+        "check: lint test\n    @echo gate\n"
+        'test:\n    @echo "TODO: run tests"\n'
+        "test-e2e:\n    @echo e2e\n"
+        "lint:\n    @echo l\n"
+        "format:\n    @echo f\n"
+        "upgrade:\n    @just check\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=justfile))
+    assert crb.has_errors(findings)
+    msgs = levels(findings, "ERROR")
+    assert any("placeholder" in m for m in msgs)
+    assert any("test" in m for m in msgs)
+
+
+def test_check_not_running_test_is_error(tmp_path):
+    # `test` exists but `check` neither depends on nor invokes it.
+    justfile = (
+        "bootstrap:\n    @echo hi\n"
+        "check: lint\n    @echo gate\n"
+        "test:\n    @echo t\n"
+        "test-e2e:\n    @echo e2e\n"
+        "lint:\n    @echo l\n"
+        "format:\n    @echo f\n"
+        "upgrade:\n    @just check\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=justfile))
+    assert crb.has_errors(findings)
+    assert any("does not run `test`" in m for m in levels(findings, "ERROR"))
+
+
+def test_check_running_test_in_body_is_ok(tmp_path):
+    # `check` may invoke the suite in its body instead of as a dependency.
+    justfile = (
+        "bootstrap:\n    @echo hi\n"
+        "check: lint\n    @just test\n"
+        "test:\n    @echo t\n"
+        "test-e2e:\n    @echo e2e\n"
+        "lint:\n    @echo l\n"
+        "format:\n    @echo f\n"
+        "upgrade:\n    @just check\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=justfile))
+    assert not any("does not run `test`" in m for m in levels(findings, "ERROR"))
+
+
+def test_missing_e2e_signal_is_error(tmp_path):
+    # No e2e recipe, no e2e/ dir, and AGENTS.md never mentions e2e.
+    no_e2e = FULL_JUSTFILE.replace("check: lint test test-e2e", "check: lint test")
+    no_e2e = "\n".join(
+        block for block in no_e2e.split("\n\n") if not block.startswith("test-e2e:")
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=no_e2e))
+    assert crb.has_errors(findings)
+    assert any("e2e" in m for m in levels(findings, "ERROR"))
+
+
+def test_e2e_satisfied_by_agents_md_note(tmp_path):
+    # An explicit documented opt-out in AGENTS.md counts as a deliberate decision.
+    no_e2e = FULL_JUSTFILE.replace("check: lint test test-e2e", "check: lint test")
+    no_e2e = "\n".join(
+        block for block in no_e2e.split("\n\n") if not block.startswith("test-e2e:")
+    )
+    repo = make_repo(tmp_path, justfile=no_e2e)
+    (repo / "AGENTS.md").write_text(
+        "# AGENTS\n\nNo end-to-end tests: this library has no user-facing journey.\n",
+        encoding="utf-8",
+    )
+    findings = crb.audit(repo)
+    assert not any("e2e signal" in m for m in levels(findings, "ERROR"))
+
+
+def test_e2e_satisfied_by_directory(tmp_path):
+    no_e2e = FULL_JUSTFILE.replace("check: lint test test-e2e", "check: lint test")
+    no_e2e = "\n".join(
+        block for block in no_e2e.split("\n\n") if not block.startswith("test-e2e:")
+    )
+    repo = make_repo(tmp_path, justfile=no_e2e)
+    (repo / "tests" / "e2e").mkdir(parents=True)
+    findings = crb.audit(repo)
+    assert not any("e2e signal" in m for m in levels(findings, "ERROR"))
 
 
 def test_every_error_carries_a_suggested_fix(tmp_path):

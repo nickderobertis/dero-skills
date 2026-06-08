@@ -4,9 +4,13 @@ Applies on top of whichever product shape and language you chose. CI's job is to
 prove the artifact the way a future maintainer or user would encounter it — not
 to re-run a developer's warm local environment.
 
+- **Required, and it must run the gate.** A CI workflow is non-negotiable, and a
+  workflow that doesn't invoke `just check` proves nothing. Start from
+  [`assets/ci.yml.template`](../assets/ci.yml.template).
 - **Clean checkout -> bootstrap -> full gate.** Every run starts from a clean
-  checkout, runs `just bootstrap`, then `just check`. If bootstrap can't produce
-  a working repo from scratch, that is the bug.
+  checkout, runs `just bootstrap`, then `just check` (which includes e2e). If
+  bootstrap can't produce a working repo from scratch, that is the bug. The
+  baseline checker fails CI that never references `just check`.
 - **Realistic platform matrix.** Use an OS matrix when the artifact is
   cross-platform (CLIs, plugins, binaries). Test the versions you actually
   support.

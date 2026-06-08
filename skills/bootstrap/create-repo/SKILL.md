@@ -25,11 +25,18 @@ clone, run one command, and trust.
    Compose references by mixing and matching — see
    [`references/composing.md`](./references/composing.md): one product shape, the
    language(s) it is built in, and `ci.md`. Write down which guidance you
-   excluded and why.
+   excluded and why. Exclusions are for *optional tooling and layout* that
+   doesn't fit (asdf, direnv, `src` layout, a release pipeline) — never for the
+   non-negotiable invariants: a strict gate, e2e of real user journeys, and CI
+   that proves the artifact. Those are not optional and are not "excluded with a
+   rationale."
 3. **Establish one command surface.** Add a `just` recipe set: `bootstrap`,
    `check`, `test`, `lint`, `format`, `upgrade`, from
    [`assets/justfile.template`](./assets/justfile.template). `just bootstrap`
-   must work from a clean clone; `just check` is the full gate.
+   must work from a clean clone; `just check` is the full gate and must run the
+   tests — including `test-e2e` — not just lint. Replace every `TODO`
+   placeholder body with the real, stack-specific command; a recipe left as an
+   `echo` placeholder is a gate that proves nothing.
 4. **Make the gates strict and deterministic.** Formatting, linting, type
    checking, and tests fail on issues — no warnings-only mode.
 5. **Make every script agent-friendly.** A script's output is context the next
@@ -39,15 +46,39 @@ clone, run one command, and trust.
    features the way a user runs them. Good e2e coverage is how you and future
    agents actually see the system's behavior.
 7. **Add CI that proves the artifact.** A clean checkout must bootstrap from
-   scratch and run the complete gate, on the supported platform matrix.
-8. **Audit the result.** Run the baseline checker against the repo:
+   scratch and run the complete gate (`just bootstrap` then `just check`), on
+   the supported platform matrix. Start from
+   [`assets/ci.yml.template`](./assets/ci.yml.template). CI that doesn't
+   actually invoke the gate proves nothing.
+8. **Run the gate yourself, then audit.** Do not declare the repo done from
+   inspection. Actually run `just check` (which includes `test-e2e`) and iterate
+   until it passes from a clean state; then run the baseline checker:
 
    ```bash
    uv run --script scripts/check_repo_baseline.py /path/to/repo
    ```
 
    It is silent on success and, on failure, names each missing invariant with a
-   suggested fix.
+   suggested fix. The repo is not done until both `just check` and the checker
+   pass — fix failures, don't narrate them as next steps.
+
+## Definition of done
+
+The skill is applied correctly only when all of these hold. This is the compact
+self-audit to run before handing off — it is the floor, not the ceiling.
+
+- `AGENTS.md` exists; `CLAUDE.md` is a symlink to it; `.claude/settings.json`
+  has a narrow allowlist.
+- The `justfile` defines `bootstrap`, `check`, `test`, `lint`, `format`,
+  `upgrade` with real bodies (no `TODO` placeholders left).
+- `just check` runs format check + lint + type check + unit tests + e2e, and
+  fails on any issue (no warnings-only mode).
+- E2E exists and exercises the built artifact the way users run it, covering at
+  least the primary happy path **and** one meaningful failure/recovery path —
+  not a smoke test. It runs inside `just check` and CI (a too-expensive case is
+  a documented exception CI still runs, e.g. nightly — never silently skipped).
+- A CI workflow runs `just bootstrap` then `just check` on a clean checkout.
+- `just check` passed locally, and the baseline checker passed.
 
 ## Principles
 
@@ -56,7 +87,9 @@ clone, run one command, and trust.
      Bash/plugin, skills repo, etc.).
    - Adapt tooling, tests, layout, docs, and CI to that artifact; don't blindly
      apply a generic template.
-   - Explicitly state what guidance was excluded and why.
+   - Explicitly state what guidance was excluded and why — but only optional
+     tooling/layout qualifies. The non-negotiable invariants (strict gate, e2e
+     of real journeys, CI proving the artifact) are never excluded.
 2. **One command-oriented workflow.**
    - Provide a small, memorable command surface (typically via `just`):
      `bootstrap`, `check`, `test`, `lint`, `format`, `upgrade`.
@@ -77,6 +110,10 @@ clone, run one command, and trust.
      unit-level smoke tests).
    - Cover critical success and failure paths; validate behavior at boundaries
      (process / network / filesystem).
+   - E2E runs in the default `just check` and in CI — it is part of the gate,
+     not an opt-in target. A test too expensive for every run is a documented
+     exception that CI still executes (e.g. nightly), never silently excluded
+     (no default `#[ignore]`, deselected marker, or check-skips-e2e wiring).
 5. **`AGENTS.md` is the durable instruction layer.**
    - Root `AGENTS.md` defines repo-wide constraints; add nested `AGENTS.md`
      where subtree rules differ.
@@ -172,8 +209,12 @@ the catalog and worked examples.
 - [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)
   — narrow `.claude/settings.json` allowlist for the `just` command surface.
 - [`assets/justfile.template`](./assets/justfile.template) — starter command
-  surface with the six required recipes.
+  surface with the six required recipes plus `test-e2e` wired into `check`.
+- [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
+  that bootstraps a clean checkout and runs the full gate on a platform matrix.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — audits
   `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the `justfile`
-  command surface, and CI. Silent on success; on failure prints each missing
-  invariant with a suggested fix.
+  command surface, an e2e signal, and CI. Goes past presence: it fails on
+  `TODO` placeholder recipe bodies, a `check` that doesn't run `test`, a missing
+  e2e tier, and CI that never invokes `just check`. Silent on success; on
+  failure prints each missing invariant with a suggested fix.
