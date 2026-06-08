@@ -1,6 +1,6 @@
 # Agent Skills
 
-This repo uses project-scoped Agent Skills from the canonical private skills repo.
+This repo uses project-scoped Agent Skills from the canonical skills repo.
 
 Skills are not pinned by default. Agents update installed skills at the beginning of each session so they use current approved guidance.
 

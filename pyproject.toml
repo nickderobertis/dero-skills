@@ -1,7 +1,7 @@
 [project]
 name = "dero-skills"
 version = "0.0.0"
-description = "Canonical private Agent Skills repository and reusable consumer bootstrap."
+description = "Canonical Agent Skills repository and reusable consumer bootstrap."
 readme = "README.md"
 requires-python = ">=3.12"
 # No runtime dependencies: tools/ are stdlib-only and skill scripts are

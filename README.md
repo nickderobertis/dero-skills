@@ -1,7 +1,7 @@
 # dero-skills
 
-Canonical, private repository for organization **Agent Skills** and the reusable
-setup automation that consuming application repos copy in.
+Canonical repository for organization **Agent Skills** and the reusable setup
+automation that consuming application repos copy in.
 
 This repo owns:
 

@@ -1,6 +1,6 @@
 ## Agent Skills
 
-This repo uses project-scoped organization Agent Skills installed from the private skills repo.
+This repo uses project-scoped organization Agent Skills installed from the canonical skills repo.
 
 At the beginning of each new agent session, before substantive work:
 

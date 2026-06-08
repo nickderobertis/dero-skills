@@ -1,7 +1,7 @@
 # Authoring skills
 
-This repo is the canonical, private source of organization Agent Skills. This
-guide is for maintainers adding or editing a skill here. For how application
+This repo is the canonical source of organization Agent Skills. This guide is
+for maintainers adding or editing a skill here. For how application
 repos consume skills, see [`consuming-repos.md`](./consuming-repos.md).
 
 ## Repository layout
