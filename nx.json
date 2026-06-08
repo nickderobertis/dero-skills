@@ -1,0 +1,24 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "namedInputs": {
+    "default": ["{projectRoot}/**/*"],
+    "tooling": [
+      "{workspaceRoot}/tools/validate_skill.py",
+      "{workspaceRoot}/tools/smoke_skill_scripts.py"
+    ]
+  },
+  "targetDefaults": {
+    "validate": {
+      "cache": true,
+      "inputs": ["default", "tooling"]
+    },
+    "smoke": {
+      "cache": true,
+      "inputs": ["default", "tooling"]
+    },
+    "test": {
+      "cache": true,
+      "inputs": ["default"]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+[project]
+name = "dero-skills"
+version = "0.0.0"
+description = "Canonical private Agent Skills repository and reusable consumer bootstrap."
+readme = "README.md"
+requires-python = ">=3.12"
+# No runtime dependencies: tools/ are stdlib-only and skill scripts are
+# self-contained (PEP 723). This manifest exists for the authoring/CI workflow.
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.uv]
+# This is a workspace of skills, not an installable package.
+package = false
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["skills", "tools"]

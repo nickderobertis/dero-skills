@@ -1,0 +1,17 @@
+# Node / pnpm
+node_modules/
+.pnpm-store/
+
+# Nx
+.nx/cache/
+.nx/workspace-data/
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store

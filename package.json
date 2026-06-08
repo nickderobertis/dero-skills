@@ -1,0 +1,19 @@
+{
+  "name": "dero-skills",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Canonical private Agent Skills repository (Nx authoring + CI).",
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "validate": "nx run-many -t validate",
+    "smoke": "nx run-many -t smoke",
+    "test": "nx run-many -t test",
+    "check": "nx run-many -t validate smoke test"
+  },
+  "devDependencies": {
+    "nx": "20.3.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["nx"]
+  }
+}
