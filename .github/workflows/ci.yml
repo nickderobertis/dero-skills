@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node (for the Nx authoring toolchain)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      # Prove the artifact from a clean checkout: bootstrap, then the full gate
+      # (format check, lint, skill validation, tests, and the baseline self-check).
+      - name: Bootstrap
+        run: just bootstrap
+
+      - name: Check
+        run: just check

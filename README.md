@@ -25,20 +25,21 @@ docs/                          # authoring, consuming, and platform docs
 
 ## For skill maintainers
 
+This repo uses a `just` command surface and dogfoods its own
+`bootstrap/create-repo` skill (`just check` audits the repo against the skill's
+baseline invariants). Prerequisites: [uv](https://astral.sh/uv) and Node (for
+the Nx authoring tools).
+
 ```bash
-# one-time
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# validate + smoke + test every skill
-./scripts/validate-skills.sh
-uv run pytest
-
-# Nx (dev/CI), via pnpm
-pnpm install --frozen-lockfile
-pnpm nx run-many -t validate smoke test
+just bootstrap   # one-time: uv sync + pnpm install
+just check       # full gate: format, lint, skill validation, tests, baseline
+just validate    # validate + smoke every skill
+just test        # pytest
+just nx          # cached Nx authoring targets (validate/smoke/test)
 ```
 
-See [`docs/authoring-skills.md`](./docs/authoring-skills.md).
+See [`docs/authoring-skills.md`](./docs/authoring-skills.md) and
+[`AGENTS.md`](./AGENTS.md).
 
 ## For consuming repos
 

@@ -122,7 +122,8 @@ Two stdlib-only tools enforce the rules above:
 - `tools/smoke_skill_scripts.py <skill-dir>` — byte-compiles / syntax-checks the
   bundled scripts without executing side effects.
 
-Run everything at once:
+Run the whole quality gate (format, lint, skill validation, tests, and the
+repo's own baseline self-check) with `just check`. To run just the skill checks:
 
 ```bash
 ./scripts/validate-skills.sh            # validate + smoke every skill

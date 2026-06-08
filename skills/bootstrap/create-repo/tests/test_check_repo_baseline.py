@@ -4,6 +4,7 @@ Loads the PEP 723 script as a module so its functions can be exercised
 directly. The module is registered in sys.modules before exec so the
 ``@dataclass`` in it can resolve ``__module__`` under all Python versions.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -69,7 +70,9 @@ def make_repo(
         (repo / "CLAUDE.md").write_text("# not a symlink\n", encoding="utf-8")
     if settings is not False:
         (repo / ".claude").mkdir(exist_ok=True)
-        body = settings if isinstance(settings, str) else '{"permissions": {"allow": []}}'
+        body = (
+            settings if isinstance(settings, str) else '{"permissions": {"allow": []}}'
+        )
         (repo / ".claude" / "settings.json").write_text(body, encoding="utf-8")
     if justfile is not None:
         (repo / "justfile").write_text(justfile, encoding="utf-8")
@@ -86,13 +89,24 @@ def levels(findings, level):
 
 # --- parse_just_recipes ----------------------------------------------------
 
+
 def test_parse_recipes_extracts_names_and_ignores_assignments_and_bodies():
     recipes = crb.parse_just_recipes(FULL_JUSTFILE)
-    assert {"bootstrap", "check", "test", "lint", "format", "upgrade", "default"} <= recipes
+    assert {
+        "bootstrap",
+        "check",
+        "test",
+        "lint",
+        "format",
+        "upgrade",
+        "default",
+    } <= recipes
 
 
 def test_parse_recipes_excludes_variable_assignments():
-    text = "version := '1.0'\nexport FOO := 'bar'\nbuild target:\n    @echo {{target}}\n"
+    text = (
+        "version := '1.0'\nexport FOO := 'bar'\nbuild target:\n    @echo {{target}}\n"
+    )
     recipes = crb.parse_just_recipes(text)
     assert recipes == {"build"}
     assert "version" not in recipes
@@ -100,6 +114,7 @@ def test_parse_recipes_excludes_variable_assignments():
 
 
 # --- audit -----------------------------------------------------------------
+
 
 def test_conformant_repo_has_no_errors(tmp_path):
     findings = crb.audit(make_repo(tmp_path))
@@ -159,13 +174,16 @@ def test_missing_ci_is_error(tmp_path):
 
 def test_every_error_carries_a_suggested_fix(tmp_path):
     # A repo that fails every invariant: each ERROR must include an actionable fix.
-    repo = make_repo(tmp_path, agents=False, claude=None, settings=False, justfile=None, ci=False)
+    repo = make_repo(
+        tmp_path, agents=False, claude=None, settings=False, justfile=None, ci=False
+    )
     errors = [f for f in crb.audit(repo) if f.level == "ERROR"]
     assert errors
     assert all(f.fix for f in errors)
 
 
 # --- main / output discipline ----------------------------------------------
+
 
 def test_main_returns_zero_and_is_quiet_on_success(tmp_path, capsys):
     assert crb.main([str(make_repo(tmp_path))]) == 0

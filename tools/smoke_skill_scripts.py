@@ -16,6 +16,7 @@ consuming repo installs it:
 A skill with no scripts/ directory passes trivially. Exit code is non-zero if
 any script fails to parse.
 """
+
 from __future__ import annotations
 
 import py_compile
@@ -56,7 +57,8 @@ def smoke(skill_dir: Path) -> int:
         return 0
 
     scripts = [
-        p for p in sorted(scripts_dir.rglob("*"))
+        p
+        for p in sorted(scripts_dir.rglob("*"))
         if p.is_file() and p.suffix in ALL_SUFFIXES
     ]
     if not scripts:

@@ -11,11 +11,20 @@ dependencies = []
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "ruff>=0.8",
 ]
 
 [tool.uv]
 # This is a workspace of skills, not an installable package.
 package = false
+
+[tool.ruff]
+# ruff is the authoring formatter + linter for this repo's own Python (tools/,
+# scripts, skill scripts, tests). Skill scripts stay self-contained: ruff only
+# formats/lints them, it is never a runtime dependency of an installed skill.
+# Type checking (ty) is intentionally excluded — the authoring code is small and
+# stdlib-only; the strict gate is ruff + pytest + skill validation.
+target-version = "py312"
 
 [tool.pytest.ini_options]
 addopts = "-q"

@@ -11,6 +11,7 @@ docs/authoring-skills.md.
 
 Exit code is non-zero when any ERROR is found. WARNINGs never fail the run.
 """
+
 from __future__ import annotations
 
 import re
@@ -31,16 +32,24 @@ FORBIDDEN_RUNTIME = [
     (re.compile(r"\bnx\b", re.IGNORECASE), "references Nx (authoring/CI only)"),
     (re.compile(r"\basdf\b", re.IGNORECASE), "references asdf"),
     (re.compile(r"\bdirenv\b", re.IGNORECASE), "references direnv"),
-    (re.compile(r"\.\./.*\b(pyproject\.toml|uv\.lock|package\.json|pnpm-lock\.yaml)\b"),
-     "reaches outside the skill for a repo-root manifest/lockfile"),
-    (re.compile(r"^\s*(?:from|import)\s+(?:skills|tools)\b", re.MULTILINE),
-     "imports from the skills repo source tree (skills/ or tools/)"),
+    (
+        re.compile(
+            r"\.\./.*\b(pyproject\.toml|uv\.lock|package\.json|pnpm-lock\.yaml)\b"
+        ),
+        "reaches outside the skill for a repo-root manifest/lockfile",
+    ),
+    (
+        re.compile(r"^\s*(?:from|import)\s+(?:skills|tools)\b", re.MULTILINE),
+        "imports from the skills repo source tree (skills/ or tools/)",
+    ),
 ]
 
 # Heuristic secret / sensitive-data markers. Kept conservative to avoid noise.
 SECRET_PATTERNS = [
-    (re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"),
-     "embedded private key"),
+    (
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----"),
+        "embedded private key",
+    ),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AWS access key id"),
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"), "GitHub token"),
     (re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), "API secret key (sk-...)"),

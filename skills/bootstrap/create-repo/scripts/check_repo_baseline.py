@@ -26,6 +26,7 @@ fix. Exit code is non-zero when any required invariant fails (ERROR); advisory
 notes (WARN) never fail the run. Self-contained via PEP 723 so it runs in any
 consuming repo with `uv run --script`.
 """
+
 from __future__ import annotations
 
 import argparse

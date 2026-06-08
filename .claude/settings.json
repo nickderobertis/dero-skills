@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(just bootstrap)",
+      "Bash(just check)",
+      "Bash(just format)",
+      "Bash(just format-check)",
+      "Bash(just lint)",
+      "Bash(just validate)",
+      "Bash(just test)",
+      "Bash(just baseline)",
+      "Bash(just nx)",
+      "Bash(just upgrade)",
+      "Bash(./scripts/validate-skills.sh:*)",
+      "Bash(uv run:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm nx:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": []
+  }
+}
