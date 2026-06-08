@@ -1,0 +1,19 @@
+{
+  "name": "bootstrap-create-repo",
+  "root": "skills/bootstrap/create-repo",
+  "projectType": "library",
+  "targets": {
+    "validate": {
+      "command": "uv run python tools/validate_skill.py skills/bootstrap/create-repo",
+      "cache": true
+    },
+    "smoke": {
+      "command": "uv run python tools/smoke_skill_scripts.py skills/bootstrap/create-repo",
+      "cache": true
+    },
+    "test": {
+      "command": "uv run pytest skills/bootstrap/create-repo/tests",
+      "cache": true
+    }
+  }
+}

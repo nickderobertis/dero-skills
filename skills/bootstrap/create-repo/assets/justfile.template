@@ -1,0 +1,35 @@
+# Canonical command surface for this repo.
+#
+# Keep this list small and memorable. `just bootstrap` must work from a clean
+# clone; `just check` is the full quality gate (it must fail on any issue, with
+# no warnings-only mode). Replace the placeholder bodies with the real,
+# stack-specific commands — see references/stack-add-ons.md for per-stack tools.
+
+# List available recipes.
+default:
+    @just --list
+
+# Set up the project from a clean clone: install the toolchain and dependencies.
+bootstrap:
+    @echo "TODO: install toolchain + dependencies (e.g. uv sync / pnpm install)"
+
+# Full quality gate: format check, lint, type check, and tests. Fail on any issue.
+check: lint test
+    @echo "TODO: add format --check and type checking to the gate"
+
+# Run the test suite (unit + integration + e2e).
+test:
+    @echo "TODO: run tests (e.g. pytest / vitest / cargo nextest)"
+
+# Lint the codebase; fail on findings.
+lint:
+    @echo "TODO: run linter (e.g. ruff / biome / clippy / shellcheck)"
+
+# Format the codebase in place.
+format:
+    @echo "TODO: run formatter (e.g. ruff format / biome / rustfmt / shfmt)"
+
+# Upgrade dependencies, then re-run the full gate.
+upgrade:
+    @echo "TODO: upgrade dependencies (e.g. uv lock --upgrade)"
+    @just check

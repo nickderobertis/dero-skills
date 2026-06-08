@@ -42,7 +42,7 @@ Edit **only** `scripts/install-agent-skills.sh`:
 
 - Replace `<org>/<skills-repo>` with `nickderobertis/dero-skills`.
 - Replace the `SKILLS=(...)` list with the project's required skills, using
-  exact paths, e.g. `skills/engineering/code-review`.
+  exact paths, e.g. `skills/bootstrap/create-repo`.
 - Keep `AGENTS=(cursor claude-code github-copilot)`.
 - Keep `--scope project`.
 - Do **not** add `--pin`.

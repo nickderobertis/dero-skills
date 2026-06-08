@@ -14,8 +14,8 @@ consumer-bootstrap/            # files application repos copy in
 docs/                          # this documentation
 ```
 
-`<scope>` groups related skills. Today: `shared` (cross-cutting) and
-`engineering`. Add new scopes sparingly.
+`<scope>` groups related skills. Today: `bootstrap` (repo setup and
+scaffolding). Add new scopes sparingly.
 
 ## Skill folder structure
 
@@ -132,8 +132,8 @@ Run everything at once:
 Or via Nx per skill (Nx is a dev/CI tool here, run through pnpm):
 
 ```bash
-pnpm nx run engineering-code-review:validate
-pnpm nx run engineering-code-review:test
+pnpm nx run bootstrap-create-repo:validate
+pnpm nx run bootstrap-create-repo:test
 pnpm nx run-many -t validate smoke test
 ```
 
@@ -143,5 +143,6 @@ pnpm nx run-many -t validate smoke test
 2. Add `references/`, `scripts/`, `assets/`, `tests/` as needed.
 3. Make scripts self-contained (PEP 723 for Python, built-ins for Node).
 4. Add `project.json` with `validate`, `smoke`, and `test` targets.
-5. Run `./scripts/validate-skills.sh` and `uv run pytest skills/<scope>/<skill-name>/tests`.
+5. Run `./scripts/validate-skills.sh` and `uv run pytest skills/<scope>/<skill-name>/tests`
+   (omit the `pytest` step for a docs-only skill with no `tests/`).
 6. Open a PR. CI runs the same validation.

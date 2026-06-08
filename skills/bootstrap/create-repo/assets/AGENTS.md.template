@@ -1,0 +1,44 @@
+# AGENTS.md
+
+Durable instructions for humans and agents working in this repo. Write for a
+future maintainer, not as a session log. Put deterministic steps in scripts and
+keep this file for constraints, tradeoffs, and judgment.
+
+> If you use Claude, symlink `CLAUDE.md` to this file so the two never drift:
+> `ln -s AGENTS.md CLAUDE.md`.
+
+## What this repo is
+
+<One or two sentences: the artifact this repo produces — Python package /
+service / CLI, TS/Next.js app, Rust CLI, Bash/asdf plugin, skills repo, etc. —
+and who consumes it.>
+
+## Command surface
+
+Use the `just` recipes; do not hand-roll equivalent commands.
+
+- `just bootstrap` — set up from a clean clone.
+- `just check` — full quality gate (format, lint, type check, tests). Must pass
+  before any commit or PR.
+- `just test` / `just lint` / `just format` — individual gate steps.
+- `just upgrade` — upgrade dependencies, then re-run `just check`.
+
+## Invariants (non-negotiable)
+
+- The quality gate is strict: no warnings-only mode. A diagnostic is either an
+  error or suppressed with a documented, tracked rationale.
+- Validate all external / IO inputs at trust boundaries.
+- Keep the artifact portable across the supported platform matrix.
+- Do not commit secrets, credentials, PII, or customer data.
+
+## Conventions
+
+<Project-specific layout, naming, and testing conventions. Add a nested
+`AGENTS.md` (for example, `tests/AGENTS.md`) where a subtree's rules differ.>
+
+## Agent permissions and safety
+
+- Operate from a narrow command allowlist; avoid broad shell access.
+- Allow only the predictable commands needed to build, test, and release.
+- Prefer allowlists over deny lists; keep dangerous operations out unless
+  explicitly required.

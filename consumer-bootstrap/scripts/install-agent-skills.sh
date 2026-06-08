@@ -5,9 +5,7 @@ SKILLS_REPO="${SKILLS_REPO:-<org>/<skills-repo>}"
 
 # Edit this list in the consuming repo. Keep it hard-coded and project-specific.
 SKILLS=(
-  "skills/shared/writing-style"
-  "skills/engineering/code-review"
-  "skills/engineering/release-notes"
+  "skills/bootstrap/create-repo"
 )
 
 # Supported project-local agent targets.
