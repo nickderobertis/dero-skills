@@ -13,30 +13,41 @@ clone, run one command, and trust.
 
 ## How to apply
 
-1. **Identify the product shape first.** Name the artifact (Python
-   package/service/CLI, TypeScript/Next.js app, Rust CLI, Bash/asdf plugin,
-   skills repo, ...). Pick the matching section in
-   [`references/stack-add-ons.md`](./references/stack-add-ons.md) and adapt — do
-   not paste a generic template. Write down which guidance you excluded and why.
-2. **Establish one command surface.** Add a `just` recipe set: `bootstrap`,
-   `check`, `test`, `lint`, `format`, `upgrade`. Start from
+1. **Lay down the agent layer first.** Before anything else, create `AGENTS.md`
+   (start from [`assets/AGENTS.md.template`](./assets/AGENTS.md.template)),
+   symlink `CLAUDE.md` to it (`ln -s AGENTS.md CLAUDE.md`), and add
+   `.claude/settings.json` with a narrow command allowlist (start from
+   [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)).
+   Doing this first means the rest of the setup runs with far fewer approval
+   prompts.
+2. **Identify the product shape.** Name the artifact (CLI, web app, library /
+   service, asdf plugin, skills repo, ...) and the implementation language(s).
+   Compose references by mixing and matching — see
+   [`references/composing.md`](./references/composing.md): one product shape, the
+   language(s) it is built in, and `ci.md`. Write down which guidance you
+   excluded and why.
+3. **Establish one command surface.** Add a `just` recipe set: `bootstrap`,
+   `check`, `test`, `lint`, `format`, `upgrade`, from
    [`assets/justfile.template`](./assets/justfile.template). `just bootstrap`
    must work from a clean clone; `just check` is the full gate.
-3. **Make the gates strict and deterministic.** Formatting, linting, type
+4. **Make the gates strict and deterministic.** Formatting, linting, type
    checking, and tests fail on issues — no warnings-only mode.
-4. **Write `AGENTS.md`.** Use [`assets/AGENTS.md.template`](./assets/AGENTS.md.template)
-   for repo-wide invariants; add nested `AGENTS.md` where a subtree differs. If
-   the repo uses Claude, make `CLAUDE.md` a symlink to `AGENTS.md`.
-5. **Add CI that proves the artifact.** A clean checkout must bootstrap from
+5. **Make every script agent-friendly.** A script's output is context the next
+   agent reads. Emit almost nothing on success; on failure, print the exact
+   error and a concrete suggested action.
+6. **Automate realistic tests.** Prefer full end-to-end tests that exercise
+   features the way a user runs them. Good e2e coverage is how you and future
+   agents actually see the system's behavior.
+7. **Add CI that proves the artifact.** A clean checkout must bootstrap from
    scratch and run the complete gate, on the supported platform matrix.
-6. **Audit the result.** Run the baseline checker against the repo:
+8. **Audit the result.** Run the baseline checker against the repo:
 
    ```bash
    uv run --script scripts/check_repo_baseline.py /path/to/repo
    ```
 
-   It flags missing `AGENTS.md`, a `CLAUDE.md` that is not symlinked to it, a
-   missing or incomplete `justfile` command surface, and missing CI workflows.
+   It is silent on success and, on failure, names each missing invariant with a
+   suggested fix.
 
 ## Principles
 
@@ -70,15 +81,19 @@ clone, run one command, and trust.
    - Root `AGENTS.md` defines repo-wide constraints; add nested `AGENTS.md`
      where subtree rules differ.
    - Include `tests/AGENTS.md` when test conventions matter.
-   - If using Claude, make `CLAUDE.md` a symlink to `AGENTS.md` to avoid drift.
+   - Always make `CLAUDE.md` a symlink to `AGENTS.md` so the two never drift.
+   - Set up `.claude/settings.json` with a narrow allowlist among the first
+     files, to require fewer approvals while the rest of the repo is built.
    - Docs and comments should be written for future readers, not as a session
      log.
-6. **Narrow agent permissions and safe automation.**
-   - Configure a narrow allowlist early where agent tooling is used.
-   - Avoid broad shell access; allow only predictable commands needed to build,
-     test, and release.
+6. **Narrow agent permissions, kept current.**
+   - Configure a narrow allowlist early in `.claude/settings.json`; allow only
+     the predictable commands needed to build, test, and release.
    - Prefer allowlists over deny lists; keep dangerous operations out unless
      required.
+   - Enforcement is the config's job, so `AGENTS.md` guidance is about keeping
+     the allowlist *current*: when a new routine command joins the workflow, add
+     it to the allowlist rather than re-approving it every time.
 7. **Deterministic work goes into scripts; judgment stays in instructions.**
    - Script repeatable steps (setup, checks, generation, fixtures, releases).
    - Use `AGENTS.md` for judgment points, tradeoffs, and handoffs — don't force
@@ -118,24 +133,47 @@ clone, run one command, and trust.
       validation).
     - Leave implementation flexibility inside those invariants; encode
       invariants in tests and docs.
+15. **Scripts and gates are agent context.**
+    - Emit minimal output on success — ideally a single line, or nothing.
+    - On failure, print the exact error and a concrete suggested action.
+    - Every script's output is context the next agent must read; don't bury the
+      signal in noise.
+16. **Tests are context engineering too.**
+    - Actively automate realistic tests — especially full end-to-end use of a
+      feature from the user's perspective.
+    - Good e2e coverage improves your own (and future agents') visibility into
+      real behavior; seek it out instead of settling for unit-level smoke tests.
+17. **`AGENTS.md` should compound over time.**
+    - After finishing the user's main task, propose materially-helpful
+      follow-ups: refinements to scripts, `AGENTS.md`, skills, or other context.
+    - Judge each suggestion's impact on future work and surface only the ones
+      that genuinely help; skip busywork.
 
-## Stack-specific add-ons
+## Composable references
 
-The principles above are stack-agnostic. Apply exactly one product add-on plus
-the CI add-on from [`references/stack-add-ons.md`](./references/stack-add-ons.md):
+References mix and match instead of forming one monolithic template per stack.
+Pick **one product shape**, pull in the **language(s)** it is built in, and
+always pull in `ci.md`. Where a focused intersection exists (for example
+`python-cli`), prefer it; where you hit an intersection that has no reference
+yet, create one. See [`references/composing.md`](./references/composing.md) for
+the catalog and worked examples.
 
-- Python repo (package / service / CLI)
-- TypeScript / Next.js app
-- Rust CLI repo
-- Bash / asdf plugin-style repo
-- Skills repo / multi-skill tooling repo
-- GitHub Actions / CI patterns (applies to all of the above)
+- **Product shapes** — `cli`, `web-app`, `nextjs`, `library`, `skills-repo`,
+  `asdf-plugin` (language-agnostic where possible).
+- **Languages** — `python`, `typescript`, `rust`, `bash`.
+- **Cross-cutting** — `ci` (GitHub Actions), applied on top of every shape.
+- **Intersections** — e.g. `python-cli`, added when guidance is needed where a
+  shape and a language meet.
 
 ## Templates and checker
 
-- [`assets/justfile.template`](./assets/justfile.template) — starter command
-  surface with the six required recipes.
 - [`assets/AGENTS.md.template`](./assets/AGENTS.md.template) — starter durable
   instruction layer.
-- [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) —
-  deterministic audit of the stack-agnostic invariants.
+- [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)
+  — narrow `.claude/settings.json` allowlist for the `just` command surface.
+- [`assets/justfile.template`](./assets/justfile.template) — starter command
+  surface with the six required recipes.
+- [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — audits
+  `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the `justfile`
+  command surface, and CI. Silent on success; on failure prints each missing
+  invariant with a suggested fix.

@@ -4,8 +4,8 @@ Durable instructions for humans and agents working in this repo. Write for a
 future maintainer, not as a session log. Put deterministic steps in scripts and
 keep this file for constraints, tradeoffs, and judgment.
 
-> If you use Claude, symlink `CLAUDE.md` to this file so the two never drift:
-> `ln -s AGENTS.md CLAUDE.md`.
+> `CLAUDE.md` is a symlink to this file (`ln -s AGENTS.md CLAUDE.md`) so the two
+> never drift. Edit `AGENTS.md` only.
 
 ## What this repo is
 
@@ -31,14 +31,45 @@ Use the `just` recipes; do not hand-roll equivalent commands.
 - Keep the artifact portable across the supported platform matrix.
 - Do not commit secrets, credentials, PII, or customer data.
 
+## Scripts and output are context
+
+- Every script you add should be quiet on success — a single line or nothing.
+- On failure, print the exact error and a concrete suggested next action.
+- Treat all command output as context the next agent has to read: maximize
+  signal, minimize noise.
+
+## Tests are context engineering
+
+- Tests are how you and future agents actually see this system behave, so invest
+  in them deliberately.
+- Actively seek out and automate realistic end-to-end tests that exercise
+  features the way a user runs them — not just unit-level smoke tests.
+- When you touch a feature, prefer adding (or extending) an e2e test that proves
+  the real user journey over adding another narrow unit test.
+
+## Keeping the allowlist current
+
+- The agent command allowlist lives in `.claude/settings.json`; the tool
+  enforces it, so this file does not restate "follow the allowlist."
+- Your job is to keep it current: when a new routine command becomes part of the
+  normal build/test/release workflow, add it to the allowlist instead of
+  re-approving it every session. Keep it narrow — prefer allowlists over deny
+  lists, and leave dangerous operations out unless they are genuinely required.
+
 ## Conventions
 
 <Project-specific layout, naming, and testing conventions. Add a nested
 `AGENTS.md` (for example, `tests/AGENTS.md`) where a subtree's rules differ.>
 
-## Agent permissions and safety
+## After the main task: refine and hand off
 
-- Operate from a narrow command allowlist; avoid broad shell access.
-- Allow only the predictable commands needed to build, test, and release.
-- Prefer allowlists over deny lists; keep dangerous operations out unless
-  explicitly required.
+After completing the user's requested task, look for ways to make future work
+easier and propose follow-ups — but only ones that are materially helpful, and
+note each one's likely impact:
+
+- **Scripts** — a repeatable step you did by hand that should be automated.
+- **`AGENTS.md`** — a constraint, gotcha, or decision worth recording here.
+- **Skills** — guidance general enough to belong in a shared skill.
+- **Other context** — tests, fixtures, or docs that would improve visibility.
+
+Skip busywork. If nothing is materially helpful, say so and stop.

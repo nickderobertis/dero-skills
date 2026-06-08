@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(just bootstrap)",
+      "Bash(just check)",
+      "Bash(just test)",
+      "Bash(just lint)",
+      "Bash(just format)",
+      "Bash(just upgrade)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": []
+  }
+}

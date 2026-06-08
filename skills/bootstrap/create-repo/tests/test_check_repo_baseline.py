@@ -46,8 +46,20 @@ upgrade:
 """
 
 
-def make_repo(tmp_path: Path, *, agents=True, claude=None, justfile=FULL_JUSTFILE, ci=True) -> Path:
-    """Build a repo fixture. ``claude`` is None, "symlink", or "file"."""
+def make_repo(
+    tmp_path: Path,
+    *,
+    agents=True,
+    claude="symlink",
+    settings=True,
+    justfile=FULL_JUSTFILE,
+    ci=True,
+) -> Path:
+    """Build a repo fixture. With no overrides it is fully conformant.
+
+    ``claude`` is "symlink", "file", or None; ``settings`` is True, False, or a
+    raw string written verbatim to .claude/settings.json (to test bad JSON).
+    """
     repo = tmp_path
     if agents:
         (repo / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
@@ -55,6 +67,10 @@ def make_repo(tmp_path: Path, *, agents=True, claude=None, justfile=FULL_JUSTFIL
         (repo / "CLAUDE.md").symlink_to("AGENTS.md")
     elif claude == "file":
         (repo / "CLAUDE.md").write_text("# not a symlink\n", encoding="utf-8")
+    if settings is not False:
+        (repo / ".claude").mkdir(exist_ok=True)
+        body = settings if isinstance(settings, str) else '{"permissions": {"allow": []}}'
+        (repo / ".claude" / "settings.json").write_text(body, encoding="utf-8")
     if justfile is not None:
         (repo / "justfile").write_text(justfile, encoding="utf-8")
     if ci:
@@ -86,36 +102,43 @@ def test_parse_recipes_excludes_variable_assignments():
 # --- audit -----------------------------------------------------------------
 
 def test_conformant_repo_has_no_errors(tmp_path):
-    repo = make_repo(tmp_path, claude="symlink")
-    findings = crb.audit(repo)
+    findings = crb.audit(make_repo(tmp_path))
     assert not crb.has_errors(findings), levels(findings, "ERROR")
 
 
 def test_missing_agents_md_is_error(tmp_path):
-    repo = make_repo(tmp_path, agents=False, claude=None)
-    findings = crb.audit(repo)
+    findings = crb.audit(make_repo(tmp_path, agents=False))
     assert crb.has_errors(findings)
     assert any("AGENTS.md" in m for m in levels(findings, "ERROR"))
 
 
+def test_missing_claude_symlink_is_error(tmp_path):
+    findings = crb.audit(make_repo(tmp_path, claude=None))
+    assert crb.has_errors(findings)
+    assert any("CLAUDE.md" in m for m in levels(findings, "ERROR"))
+
+
 def test_claude_regular_file_is_error(tmp_path):
-    repo = make_repo(tmp_path, claude="file")
-    findings = crb.audit(repo)
+    findings = crb.audit(make_repo(tmp_path, claude="file"))
     assert crb.has_errors(findings)
     assert any("symlink" in m for m in levels(findings, "ERROR"))
 
 
-def test_missing_claude_is_only_a_warning(tmp_path):
-    repo = make_repo(tmp_path, claude=None)
-    findings = crb.audit(repo)
-    assert not crb.has_errors(findings)
-    assert any("CLAUDE.md" in m for m in levels(findings, "WARN"))
+def test_missing_claude_settings_is_error(tmp_path):
+    findings = crb.audit(make_repo(tmp_path, settings=False))
+    assert crb.has_errors(findings)
+    assert any("settings.json" in m for m in levels(findings, "ERROR"))
+
+
+def test_invalid_claude_settings_is_error(tmp_path):
+    findings = crb.audit(make_repo(tmp_path, settings="{ not json"))
+    assert crb.has_errors(findings)
+    assert any("not valid JSON" in m for m in levels(findings, "ERROR"))
 
 
 def test_missing_recipe_is_error(tmp_path):
     partial = "bootstrap:\n    @echo hi\ncheck:\n    @echo gate\n"
-    repo = make_repo(tmp_path, claude="symlink", justfile=partial)
-    findings = crb.audit(repo)
+    findings = crb.audit(make_repo(tmp_path, justfile=partial))
     assert crb.has_errors(findings)
     msgs = levels(findings, "ERROR")
     assert any("missing required recipe" in m for m in msgs)
@@ -123,29 +146,40 @@ def test_missing_recipe_is_error(tmp_path):
 
 
 def test_missing_justfile_is_error(tmp_path):
-    repo = make_repo(tmp_path, claude="symlink", justfile=None)
-    findings = crb.audit(repo)
+    findings = crb.audit(make_repo(tmp_path, justfile=None))
     assert crb.has_errors(findings)
     assert any("justfile" in m for m in levels(findings, "ERROR"))
 
 
 def test_missing_ci_is_error(tmp_path):
-    repo = make_repo(tmp_path, claude="symlink", ci=False)
-    findings = crb.audit(repo)
+    findings = crb.audit(make_repo(tmp_path, ci=False))
     assert crb.has_errors(findings)
     assert any("workflow" in m for m in levels(findings, "ERROR"))
 
 
-# --- main / exit codes -----------------------------------------------------
+def test_every_error_carries_a_suggested_fix(tmp_path):
+    # A repo that fails every invariant: each ERROR must include an actionable fix.
+    repo = make_repo(tmp_path, agents=False, claude=None, settings=False, justfile=None, ci=False)
+    errors = [f for f in crb.audit(repo) if f.level == "ERROR"]
+    assert errors
+    assert all(f.fix for f in errors)
 
-def test_main_returns_zero_on_conformant_repo(tmp_path):
-    repo = make_repo(tmp_path, claude="symlink")
-    assert crb.main([str(repo)]) == 0
+
+# --- main / output discipline ----------------------------------------------
+
+def test_main_returns_zero_and_is_quiet_on_success(tmp_path, capsys):
+    assert crb.main([str(make_repo(tmp_path))]) == 0
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    # Minimal on success: a single OK line, nothing more.
+    assert len([line for line in captured.out.splitlines() if line.strip()]) == 1
 
 
-def test_main_returns_one_on_failing_repo(tmp_path):
-    repo = make_repo(tmp_path, agents=False)
-    assert crb.main([str(repo)]) == 1
+def test_main_returns_one_and_reports_fixes_on_failure(tmp_path, capsys):
+    assert crb.main([str(make_repo(tmp_path, agents=False))]) == 1
+    captured = capsys.readouterr()
+    assert "fix:" in captured.err
+    assert "FAIL" in captured.err
 
 
 def test_main_returns_two_on_missing_directory(tmp_path):
