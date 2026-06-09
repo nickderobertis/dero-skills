@@ -5,7 +5,9 @@
 # no warnings-only mode). Replace the placeholder bodies with the real,
 # stack-specific commands — see references/composing.md for the catalog, then
 # the matching references/languages/<lang>.md and references/shapes/<shape>.md
-# for per-stack tools.
+# for per-stack tools. In a monorepo, each recipe delegates to the orchestrator
+# (e.g. `nx affected` / `nx run-many`) instead of looping over packages by hand
+# — see references/monorepo.md.
 
 # List available recipes.
 default:

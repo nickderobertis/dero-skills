@@ -24,7 +24,11 @@ clone, run one command, and trust.
    service, asdf plugin, skills repo, ...) and the implementation language(s).
    Compose references by mixing and matching — see
    [`references/composing.md`](./references/composing.md): one product shape, the
-   language(s) it is built in, and `ci.md`. Write down which guidance you
+   language(s) it is built in, and `ci.md`. If the repo breaks down into more
+   than one deliverable — multiple apps, packages, or languages — also pull in
+   [`references/monorepo.md`](./references/monorepo.md): each project keeps its
+   own shape + language, the root command surface delegates to an orchestrator
+   (Nx), and CI runs only affected projects. Write down which guidance you
    excluded and why. Exclusions are for *optional tooling and layout* that
    doesn't fit (asdf, direnv, `src` layout, a release pipeline) — never for the
    non-negotiable invariants: a strict gate, e2e of real user journeys, and CI
@@ -198,7 +202,9 @@ the catalog and worked examples.
 - **Product shapes** — `cli`, `web-app`, `nextjs`, `library`, `skills-repo`,
   `asdf-plugin` (language-agnostic where possible).
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
-- **Cross-cutting** — `ci` (GitHub Actions), applied on top of every shape.
+- **Cross-cutting** — `ci` (GitHub Actions), applied on top of every shape;
+  `monorepo` (Nx orchestration, affected-only jobs, output caching), pulled in
+  when the repo holds more than one app, package, or language.
 - **Intersections** — e.g. `python-cli`, added when guidance is needed where a
   shape and a language meet.
 

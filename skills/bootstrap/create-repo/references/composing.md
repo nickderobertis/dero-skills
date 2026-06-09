@@ -16,7 +16,12 @@ them for the repo in front of you.
    language reference carries the toolchain (formatter, linter, type checker,
    test runner) and boundary-validation conventions.
 3. **Always pull in `ci.md`** — it applies on top of every shape.
-4. **Prefer an intersection reference when one exists.** Where a shape and a
+4. **Pull in `monorepo.md` when the repo holds more than one deliverable** —
+   multiple apps, multiple publishable packages, or more than one language. It
+   is cross-cutting and *conditional*: it layers on top of the per-project
+   shapes and languages (each project inside still picks its own). Skip it for a
+   single-artifact repo.
+5. **Prefer an intersection reference when one exists.** Where a shape and a
    language meet often enough to need their own guidance, that lives in
    `intersections/` (for example `intersections/python-cli.md`). If you hit an
    intersection that has no reference yet and you need guidance there, **create
@@ -36,6 +41,11 @@ them for the repo in front of you.
   intersection reference exists yet; if the overlap (snapshot-testing a compiled
   binary, cross-platform release artifacts) grows, add `intersections/rust-cli.md`.
 - **An asdf plugin.** `shapes/asdf-plugin.md` + `languages/bash.md` + `ci.md`.
+- **A multi-app / polyglot monorepo.** Compose each deliverable from its own
+  shape + language as usual (e.g. a Next.js app via `shapes/nextjs.md` +
+  `languages/typescript.md`, alongside a Python service via `languages/python.md`),
+  then add `monorepo.md` + `ci.md` once on top. The root command surface
+  delegates to the orchestrator (Nx) and CI runs only affected projects.
 
 ## Catalog
 
@@ -43,7 +53,7 @@ them for the repo in front of you.
 | --- | --- |
 | Product shape | `shapes/cli.md`, `shapes/web-app.md`, `shapes/nextjs.md`, `shapes/library.md`, `shapes/skills-repo.md`, `shapes/asdf-plugin.md` |
 | Language | `languages/python.md`, `languages/typescript.md`, `languages/rust.md`, `languages/bash.md` |
-| Cross-cutting | `ci.md` |
+| Cross-cutting | `ci.md` (always), `monorepo.md` (when >1 app/package/language) |
 | Intersection | `intersections/python-cli.md` |
 
 The core principles in `SKILL.md` always apply; references specialize them and
