@@ -19,7 +19,8 @@ consumer bootstrap package (`consumer-bootstrap/`), and the platform docs
 
 Use the `just` recipes; do not hand-roll equivalents.
 
-- `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain).
+- `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain;
+  also activates the husky `commit-msg` hook).
 - `just check` — full quality gate: `ruff format --check`, `ruff check`, skill
   validation + smoke, the `.tool-versions`/CI version-consistency check,
   `pytest`, and the create-repo baseline self-check. Must pass before any commit
@@ -36,6 +37,23 @@ provision `just`/`uv`/`node` with asdf (or a compatible manager such as mise)
 via `asdf install`, then run `just bootstrap`. The `python` pin records the
 targeted version (uv supplies Python per `requires-python`); `just
 check-versions` keeps every pin in lockstep with CI.
+
+## Commits, releases, and merging
+
+- **Conventional Commits are required.** The type drives releases: `feat:` →
+  minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types
+  (`chore`, `ci`, `docs`, `refactor`, `test`, `build`, `perf`) ship no release.
+  Enforced locally by the husky `commit-msg` hook (activated by `just bootstrap`)
+  and in CI by the `commitlint` job.
+- **Squash-merge only, via PR.** `main` is protected: changes land through a
+  squash PR with the `check` and `commitlint` status checks green (admins may
+  bypass). The **PR title** becomes the squash commit subject, so it must be a
+  valid Conventional Commit — that is what `commitlint` lints and what
+  semantic-release reads. Merged branches auto-delete.
+- **Releases are automated.** On push to `main`, semantic-release analyses the
+  commits since the last tag and, when warranted, publishes a GitHub Release +
+  tag with generated notes (`.releaserc.json`). It does not commit back to
+  `main`, so it needs no bypass token — the changelog lives in the Release.
 
 ## Invariants (non-negotiable)
 

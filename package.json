@@ -5,15 +5,25 @@
   "description": "Canonical Agent Skills repository (Nx authoring + CI).",
   "packageManager": "pnpm@10.0.0",
   "scripts": {
+    "prepare": "husky",
     "validate": "nx run-many -t validate",
     "smoke": "nx run-many -t smoke",
     "test": "nx run-many -t test",
     "check": "nx run-many -t validate smoke test"
   },
   "devDependencies": {
-    "nx": "20.3.0"
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/github": "^12.0.8",
+    "@semantic-release/release-notes-generator": "^14.1.1",
+    "husky": "^9.1.7",
+    "nx": "20.3.0",
+    "semantic-release": "^25.0.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["nx"]
+    "onlyBuiltDependencies": [
+      "nx"
+    ]
   }
 }

@@ -4,9 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `edited` re-runs commitlint when a PR title is fixed; the heavy `check`
+    # job skips that action (the title edit doesn't change the head SHA).
+    types: [opened, edited, reopened, synchronize]
+
+# husky's `prepare` script must not configure local git hooks inside CI.
+env:
+  HUSKY: "0"
 
 jobs:
   check:
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,9 +36,66 @@ jobs:
         uses: extractions/setup-just@v2
 
       # Prove the artifact from a clean checkout: bootstrap, then the full gate
-      # (format check, lint, skill validation, tests, and the baseline self-check).
+      # (format check, lint, skill validation, version consistency, tests, and
+      # the baseline self-check).
       - name: Bootstrap
         run: just bootstrap
 
       - name: Check
         run: just check
+
+  commitlint:
+    # Conventional-Commits gate for PRs. With squash-merge the PR title becomes
+    # the commit subject semantic-release reads, so we lint the title.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: echo "$PR_TITLE" | pnpm exec commitlint
+
+  release:
+    # Automated release on main: derive the version from Conventional Commits
+    # and publish a GitHub Release + tag. Runs only after the gate passes.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Enable Corepack (pnpm)
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec semantic-release
