@@ -29,7 +29,9 @@ Use the `just` recipes; do not hand-roll equivalents.
 
 The gate runs on uv alone, so it needs no Node. Nx/pnpm is an optional
 accelerator; `uv` and `node` (with Corepack for pnpm) are the clean-clone
-prerequisites for `just bootstrap`.
+prerequisites for `just bootstrap`. The toolchain (`just`, `uv`, `node`) is
+pinned in `.tool-versions`; provision it with asdf (or a compatible manager such
+as mise) via `asdf install`, then run `just bootstrap`.
 
 ## Invariants (non-negotiable)
 
@@ -38,7 +40,10 @@ prerequisites for `just bootstrap`.
   Nx, the repo-root `pyproject.toml`/`uv.lock`/`package.json`/`pnpm-lock.yaml`,
   asdf, direnv, or imports from `skills/`/`tools/`. Python skill scripts are
   self-contained via PEP 723 (`uv run --script`); JS skill scripts use Node
-  built-ins; only a skill with its own `package.json` may use pnpm.
+  built-ins; only a skill with its own `package.json` may use pnpm. (This repo
+  provisions its *own* dev toolchain via asdf/`.tool-versions` — separate from
+  this rule, which is that portable skill scripts must not *assume* such a
+  manager, since consuming repos may not have one.)
 - **SKILL.md frontmatter.** `name`, `description`, `compatibility` are required;
   `name` equals the directory basename and matches `^[a-z0-9]+(?:-[a-z0-9]+)*$`;
   `description` is trigger-oriented ("Use when ...").
@@ -74,8 +79,9 @@ prerequisites for `just bootstrap`.
 
 - `ty` (type checking) and coverage are not in the gate: the authoring code is
   small and stdlib-only, so ruff + pytest + skill validation is the right bar.
-- No asdf/direnv/`src` layout/pre-commit and no install profiles or version
-  pins by default — consistent with the skill's own anti-baggage guidance.
+- No direnv/`src` layout/pre-commit and no install profiles by default —
+  consistent with the skill's own anti-baggage guidance. The dev toolchain is
+  pinned in `.tool-versions` (provisioned via asdf or a compatible manager).
 
 ## After the main task: refine and hand off
 
