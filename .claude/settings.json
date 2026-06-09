@@ -41,6 +41,8 @@
       "Bash(uv lock:*)",
       "Bash(pnpm install:*)",
       "Bash(pnpm nx:*)",
+      "Bash(asdf install:*)",
+      "Bash(asdf plugin add:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
