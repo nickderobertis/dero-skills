@@ -14,7 +14,7 @@ bootstrap:
     pnpm install --frozen-lockfile
 
 # Full quality gate. Must pass before every commit and in CI.
-check: format-check lint validate test baseline
+check: format-check lint validate check-versions test baseline
 
 # Format this repo's Python in place.
 format:
@@ -31,6 +31,10 @@ lint:
 # Validate and smoke-check every skill.
 validate:
     ./scripts/validate-skills.sh
+
+# Verify .tool-versions and the CI workflows pin consistent tool versions.
+check-versions:
+    uv run python tools/check_tool_versions.py .
 
 # Run the test suite.
 test:

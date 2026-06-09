@@ -21,9 +21,11 @@ Use the `just` recipes; do not hand-roll equivalents.
 
 - `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain).
 - `just check` — full quality gate: `ruff format --check`, `ruff check`, skill
-  validation + smoke, `pytest`, and the create-repo baseline self-check. Must
-  pass before any commit or PR.
-- `just format` / `just lint` / `just validate` / `just test` — individual steps.
+  validation + smoke, the `.tool-versions`/CI version-consistency check,
+  `pytest`, and the create-repo baseline self-check. Must pass before any commit
+  or PR.
+- `just format` / `just lint` / `just validate` / `just check-versions` /
+  `just test` — individual steps.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
