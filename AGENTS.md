@@ -31,9 +31,11 @@ Use the `just` recipes; do not hand-roll equivalents.
 
 The gate runs on uv alone, so it needs no Node. Nx/pnpm is an optional
 accelerator; `uv` and `node` (with Corepack for pnpm) are the clean-clone
-prerequisites for `just bootstrap`. The toolchain (`just`, `uv`, `node`) is
-pinned in `.tool-versions`; provision it with asdf (or a compatible manager such
-as mise) via `asdf install`, then run `just bootstrap`.
+prerequisites for `just bootstrap`. The toolchain is pinned in `.tool-versions`:
+provision `just`/`uv`/`node` with asdf (or a compatible manager such as mise)
+via `asdf install`, then run `just bootstrap`. The `python` pin records the
+targeted version (uv supplies Python per `requires-python`); `just
+check-versions` keeps every pin in lockstep with CI.
 
 ## Invariants (non-negotiable)
 

@@ -99,6 +99,20 @@ def test_conflicting_node_version_is_error(tmp_path):
     assert any("node" in m for m in errors(findings))
 
 
+def test_python_pin_matches_ci(tmp_path):
+    repo = make_repo(
+        tmp_path, tool_versions="python 3.12\nnodejs 22.12.0\n", ci=CI_NODE_22
+    )
+    assert not ctv.has_errors(ctv.audit(repo))
+
+
+def test_conflicting_python_version_is_error(tmp_path):
+    repo = make_repo(tmp_path, tool_versions="python 3.13\n", ci=CI_NODE_22)
+    findings = ctv.audit(repo)
+    assert ctv.has_errors(findings)
+    assert any("python" in m for m in errors(findings))
+
+
 def test_tool_pinned_only_locally_is_ok(tmp_path):
     # uv/just are in .tool-versions but CI installs them unpinned -> no conflict.
     repo = make_repo(
