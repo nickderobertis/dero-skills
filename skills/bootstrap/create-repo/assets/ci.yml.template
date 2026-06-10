@@ -46,3 +46,29 @@ jobs:
 
       - name: Check
         run: just check
+
+  # Prove the end-user install path on the real platform matrix. Enable this
+  # when the repo ships something users install (CLI, binary, package, plugin).
+  # It is deliberately separate from `check`: `just bootstrap` sets up the *dev*
+  # toolchain, this installs the artifact the way a user actually would. See
+  # references/ci.md.
+  #
+  # install:
+  #   needs: check
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       os: [ubuntu-latest, macos-latest, windows-latest]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     # TODO: build (or download) the artifact the release will ship — wheel,
+  #     # binary, tarball — then install it with the SAME command your README
+  #     # tells users to run, so docs and CI never drift. Prefer one
+  #     # cross-platform command:
+  #     #   uvx --from ./dist/<pkg>.whl <tool>   | pipx install ./dist/<pkg>.whl
+  #     #   npm i -g ./<pkg>.tgz                 | cargo install --path .
+  #     - name: Install (recommended end-user method)
+  #       run: echo "TODO: run the documented install command"
+  #     - name: Smoke-test the installed entry point
+  #       run: <tool> --version

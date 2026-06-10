@@ -13,7 +13,9 @@ or long-running service. Pair with the implementation language
   boundaries; don't assume callers pass well-formed data.
 - **Packaging and release.** If the repo produces installable artifacts, include
   packaging + release automation. Publish checksums and sign artifacts where
-  appropriate (see `ci.md` and the language reference for the mechanics).
+  appropriate (see `ci.md` and the language reference for the mechanics). Have CI
+  install the package via the recommended end-user method and smoke-test it, so
+  the documented install path is continuously proven, not just the dev bootstrap.
 - **Testing.** Cover the public API's success and failure paths. For a service,
   add e2e tests that drive it over its real interface (HTTP, queue, etc.), not
   just in-process unit tests.

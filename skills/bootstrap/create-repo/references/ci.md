@@ -14,6 +14,19 @@ to re-run a developer's warm local environment.
 - **Realistic platform matrix.** Use an OS matrix when the artifact is
   cross-platform (CLIs, plugins, binaries). Test the versions you actually
   support.
+- **Prove the end-user install path, on the real platforms.** Bootstrapping the
+  *dev* toolchain (`just bootstrap`) is not the same as installing the shipped
+  artifact. When the repo produces something users install — a CLI, a binary, a
+  published package, a plugin — add a CI job, separate from the dev gate, that
+  installs it via the **recommended end-user method** (the README install
+  one-liner, `uvx`/`pipx`, `npm i -g`, `cargo install`, `brew install`, asdf
+  `plugin add`, ...) on the supported OS matrix, then runs the installed entry
+  point (e.g. `tool --version`) as a smoke test. Run it against the artifact the
+  release will ship — the built wheel / binary / tarball — so the path is proven
+  on every PR, not only after a release. Prefer a single cross-platform install
+  script or command so the docs, CI, and what users actually run never drift; if
+  CI installs differently than the docs tell users to, CI is proving the wrong
+  thing. This drift is invisible until a user hits it.
 - **Validate generated files.** Fail if committed generated files (lockfiles,
   schemas, formatted code) are out of date.
 - **Cache for speed, never for correctness.** Cache dependencies, but never let

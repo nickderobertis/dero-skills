@@ -53,7 +53,12 @@ clone, run one command, and trust.
    scratch and run the complete gate (`just bootstrap` then `just check`), on
    the supported platform matrix. Start from
    [`assets/ci.yml.template`](./assets/ci.yml.template). CI that doesn't
-   actually invoke the gate proves nothing.
+   actually invoke the gate proves nothing. If the repo ships something users
+   install, CI must *also* prove the **end-user install path**: a separate job
+   that installs the artifact via the recommended end-user method (ideally one
+   cross-platform script or command) on the real platform matrix and smoke-tests
+   the installed entry point — `just bootstrap` sets up the *dev* environment,
+   not the user's. See [`references/ci.md`](./references/ci.md).
 8. **Run the gate yourself, then audit.** Do not declare the repo done from
    inspection. Actually run `just check` (which includes `test-e2e`) and iterate
    until it passes from a clean state; then run the baseline checker:
@@ -82,6 +87,10 @@ self-audit to run before handing off — it is the floor, not the ceiling.
   not a smoke test. It runs inside `just check` and CI (a too-expensive case is
   a documented exception CI still runs, e.g. nightly — never silently skipped).
 - A CI workflow runs `just bootstrap` then `just check` on a clean checkout.
+- If the repo ships an installable artifact, a CI job installs it via the
+  recommended end-user method (ideally a cross-platform script/command) on the
+  supported platform matrix and smoke-tests the installed entry point — proving
+  the path users actually take, not just the dev `just bootstrap`.
 - `just check` passed locally, and the baseline checker passed.
 
 ## Principles
@@ -154,11 +163,17 @@ self-audit to run before handing off — it is the floor, not the ceiling.
       are up to date.
     - CI should simulate a future maintainer or user, not just a developer's
       local environment.
+    - When users install the artifact, CI must also exercise the end-user
+      install path — the recommended install method (ideally one cross-platform
+      script/command) on the real platform matrix — then smoke-test the
+      installed entry point. The dev `just bootstrap` is not that path.
 11. **Releases and distribution should be first-class when applicable.**
     - If the repo produces installable artifacts, include packaging and release
       automation.
     - Include checksums and signing if appropriate; document versioning and
       compatibility expectations.
+    - Document one recommended end-user install method and keep CI installing it
+      verbatim, so the path users take is continuously proven on real platforms.
 12. **Avoid unnecessary template baggage.**
     - Exclude tools and layouts that don't fit (asdf, direnv, `src` layout,
       pre-commit, etc.) unless clearly justified.
