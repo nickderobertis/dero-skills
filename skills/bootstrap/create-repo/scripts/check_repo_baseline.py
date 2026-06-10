@@ -16,6 +16,10 @@ Checks:
   * AGENTS.md exists at the repo root (the durable instruction layer).
   * CLAUDE.md is a symlink that resolves to AGENTS.md (no drift).
   * .claude/settings.json exists and is valid JSON (the agent allowlist).
+  * AGENTS.md records how the repo was composed from the skill's reference
+    pieces (a `stack`/`composition` section, filled in — not the template
+    placeholder), so "build up from the component pieces" is a written,
+    auditable decision rather than a step quietly skipped.
   * A justfile is present and defines the core command surface:
     bootstrap, check, test, lint, format, upgrade.
   * Required recipes have real bodies (no leftover `TODO` template
@@ -64,6 +68,15 @@ JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 
 # Case-insensitive marker that a recipe body is still the unfilled template.
 PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
+
+# An AGENTS.md heading that records how the repo was built up from the skill's
+# reference axes (product shape + language(s) + cross-cutting/intersection
+# references, plus what was excluded and why).
+COMPOSITION_HEADING_RE = re.compile(r"\b(composition|composed|stack)\b", re.IGNORECASE)
+
+# An unfilled `<...>` angle-bracket placeholder left over from a template
+# section (the AGENTS.md template marks fill-in spots with `<like this>`).
+ANGLE_PLACEHOLDER_RE = re.compile(r"<[^>\n]+>")
 
 
 @dataclass
@@ -297,6 +310,88 @@ def check_e2e(repo: Path) -> list[Finding]:
     ]
 
 
+def find_heading_section(text: str, heading_re: re.Pattern[str]) -> list[str] | None:
+    """Return the body lines under the first markdown heading matching ``heading_re``.
+
+    The body runs from just after the heading to the next heading of the same or
+    higher level (a shallower or equal ``#`` count), exclusive. Returns ``None``
+    if no matching heading is found. Light on purpose: enough to tell a filled-in
+    section from a missing or placeholder one, not a full markdown parser.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("#") and heading_re.search(line):
+            level = len(line) - len(line.lstrip("#"))
+            body: list[str] = []
+            for nxt in lines[i + 1 :]:
+                if nxt.startswith("#"):
+                    nxt_level = len(nxt) - len(nxt.lstrip("#"))
+                    if nxt_level <= level:
+                        break
+                body.append(nxt)
+            return body
+    return None
+
+
+def check_composition(repo: Path) -> list[Finding]:
+    """Require AGENTS.md to record how the repo was composed from the references.
+
+    The create-repo skill builds a repo by *composing* component references — one
+    product shape, the language(s), `ci.md` always, and `monorepo.md` /
+    intersection references when they apply — and writing down what was excluded
+    and why. That deliberate "build up from the pieces" step is the one most
+    often skipped: an agent jumps straight to a justfile and misses the
+    stack-specific gates the references prescribe. This makes the composition an
+    auditable artifact — a filled-in `stack`/`composition` section in AGENTS.md —
+    so the decision is recorded rather than silently omitted. It checks that the
+    section exists and is real (non-empty, no leftover template placeholders); it
+    cannot, stack-agnostically, judge whether the *right* pieces were chosen.
+    """
+    agents = repo / "AGENTS.md"
+    if not agents.is_file():
+        # Absence of AGENTS.md is already reported by check_agents_md; don't
+        # pile on a second, more confusing error for the same root cause.
+        return []
+    body = find_heading_section(
+        agents.read_text(encoding="utf-8"), COMPOSITION_HEADING_RE
+    )
+    if body is None:
+        return [
+            Finding(
+                "ERROR",
+                "AGENTS.md does not record how the repo was composed from the "
+                "skill's reference pieces",
+                "add a '## Stack and composition' section to AGENTS.md naming the "
+                "product shape, the language(s), the references you pulled in "
+                "(ci.md always; monorepo/intersection when they apply), and what "
+                "you excluded and why",
+            )
+        ]
+    content = [line for line in body if line.strip()]
+    if not content:
+        return [
+            Finding(
+                "ERROR",
+                "the AGENTS.md composition section is empty",
+                "fill it with the product shape, language(s), composed references, "
+                "and what you excluded and why",
+            )
+        ]
+    if any(
+        ANGLE_PLACEHOLDER_RE.search(line) or PLACEHOLDER_RE.search(line)
+        for line in content
+    ):
+        return [
+            Finding(
+                "ERROR",
+                "the AGENTS.md composition section still holds template placeholders",
+                "replace the <...>/TODO placeholders with the real shape, "
+                "language(s), composed references, and exclusions + rationale",
+            )
+        ]
+    return [Finding("OK", "AGENTS.md records the reference composition")]
+
+
 def check_ci(repo: Path) -> list[Finding]:
     workflows = repo / ".github" / "workflows"
     files = (
@@ -334,6 +429,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_agents_md(repo)
     findings += check_claude_symlink(repo)
     findings += check_claude_settings(repo)
+    findings += check_composition(repo)
     findings += check_justfile(repo)
     findings += check_e2e(repo)
     findings += check_ci(repo)

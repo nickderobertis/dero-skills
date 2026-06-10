@@ -28,8 +28,12 @@ clone, run one command, and trust.
    than one deliverable — multiple apps, packages, or languages — also pull in
    [`references/monorepo.md`](./references/monorepo.md): each project keeps its
    own shape + language, the root command surface delegates to an orchestrator
-   (Nx), and CI runs only affected projects. Write down which guidance you
-   excluded and why. Exclusions are for *optional tooling and layout* that
+   (Nx), and CI runs only affected projects. **Record the composition** in the
+   "Stack and composition" section of `AGENTS.md`: the shape, the language(s),
+   the references you pulled in, and which guidance you excluded and why.
+   Writing it down keeps "build up from the component pieces" from collapsing
+   into copying one generic template — and the baseline checker verifies the
+   section is filled in. Exclusions are for *optional tooling and layout* that
    doesn't fit (asdf, direnv, `src` layout, a release pipeline) — never for the
    non-negotiable invariants: a strict gate, e2e of real user journeys, and CI
    that proves the artifact. Those are not optional and are not "excluded with a
@@ -71,27 +75,47 @@ clone, run one command, and trust.
    suggested fix. The repo is not done until both `just check` and the checker
    pass — fix failures, don't narrate them as next steps.
 
-## Definition of done
+## Verification (run before handing off)
 
-The skill is applied correctly only when all of these hold. This is the compact
-self-audit to run before handing off — it is the floor, not the ceiling.
+Do not declare the repo done from inspection. Walk this list in order and
+confirm each component piece is actually present and real — most "skipped
+steps" are an item here that was assumed rather than checked. This is the floor,
+not the ceiling; the two automated gates at the end are necessary but not
+sufficient.
 
-- `AGENTS.md` exists; `CLAUDE.md` is a symlink to it; `.claude/settings.json`
-  has a narrow allowlist.
-- The `justfile` defines `bootstrap`, `check`, `test`, `lint`, `format`,
-  `upgrade` with real bodies (no `TODO` placeholders left).
-- `just check` runs format check + lint + type check + unit tests + e2e, and
-  fails on any issue (no warnings-only mode).
-- E2E exists and exercises the built artifact the way users run it, covering at
-  least the primary happy path **and** one meaningful failure/recovery path —
-  not a smoke test. It runs inside `just check` and CI (a too-expensive case is
-  a documented exception CI still runs, e.g. nightly — never silently skipped).
-- A CI workflow runs `just bootstrap` then `just check` on a clean checkout.
-- If the repo ships an installable artifact, a CI job installs it via the
-  recommended end-user method (ideally a cross-platform script/command) on the
-  supported platform matrix and smoke-tests the installed entry point — proving
-  the path users actually take, not just the dev `just bootstrap`.
-- `just check` passed locally, and the baseline checker passed.
+1. **Agent layer.** `AGENTS.md` exists; `CLAUDE.md` is a symlink to it (not a
+   copy); `.claude/settings.json` has a narrow allowlist.
+2. **Composition recorded.** `AGENTS.md` has a filled-in "Stack and composition"
+   section naming the product shape, the language(s), the references you
+   composed (`ci.md` always; `monorepo.md`/intersection when they apply), and
+   what you excluded and why — no `<...>` placeholders left. This is the proof
+   you built up from the component pieces instead of pasting one generic
+   template; the checker fails if it is missing or unfilled.
+3. **Command surface.** The `justfile` defines `bootstrap`, `check`, `test`,
+   `lint`, `format`, `upgrade`, each with a real body — no `TODO`/placeholder
+   recipe survives. `just bootstrap` works from a clean clone.
+4. **Strict gate.** `just check` runs format check + lint + type check + unit
+   tests + e2e and fails on any issue (no warnings-only mode). `check` actually
+   invokes `test` — confirm the wiring, don't assume it.
+5. **Real e2e.** E2E exercises the built artifact the way users run it, covering
+   at least the primary happy path **and** one meaningful failure/recovery path
+   — not a smoke test. It runs inside `just check` and CI (a too-expensive case
+   is a documented exception CI still runs, e.g. nightly — never silently
+   skipped).
+6. **CI proves the artifact.** A workflow runs `just bootstrap` then
+   `just check` on a clean checkout, on the supported platform matrix.
+7. **End-user install path.** If the repo ships an installable artifact, a CI
+   job installs it via the recommended end-user method (ideally a cross-platform
+   script/command) on the platform matrix and smoke-tests the installed entry
+   point — the path users actually take, not just the dev `just bootstrap`.
+8. **Automated gates pass.** `just check` passed locally from a clean state,
+   **and** the baseline checker passed:
+
+   ```bash
+   uv run --script scripts/check_repo_baseline.py /path/to/repo
+   ```
+
+   Fix failures until both are green — do not narrate them as next steps.
 
 ## Principles
 
@@ -234,8 +258,9 @@ the catalog and worked examples.
 - [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
   that bootstraps a clean checkout and runs the full gate on a platform matrix.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — audits
-  `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the `justfile`
-  command surface, an e2e signal, and CI. Goes past presence: it fails on
-  `TODO` placeholder recipe bodies, a `check` that doesn't run `test`, a missing
-  e2e tier, and CI that never invokes `just check`. Silent on success; on
-  failure prints each missing invariant with a suggested fix.
+  `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the recorded
+  reference composition, the `justfile` command surface, an e2e signal, and CI.
+  Goes past presence: it fails on `TODO` placeholder recipe bodies, a `check`
+  that doesn't run `test`, a missing e2e tier, an unfilled "Stack and
+  composition" section, and CI that never invokes `just check`. Silent on
+  success; on failure prints each missing invariant with a suggested fix.
