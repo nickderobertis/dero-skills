@@ -15,6 +15,24 @@ folders (`skills/`), stdlib validation tooling (`tools/`, `scripts/`), the
 consumer bootstrap package (`consumer-bootstrap/`), and the platform docs
 (`docs/`). Authoring details live in [`docs/authoring-skills.md`](docs/authoring-skills.md).
 
+## Stack and composition
+
+How this repo composes the create-repo reference pieces (it dogfoods the skill,
+so the baseline checker runs against this very section):
+
+- **Product shape:** `skills-repo` — it authors and validates Agent Skills.
+- **Language(s):** Python for the stdlib authoring tooling (`tools/`, `scripts/`,
+  the create-repo checker); skill scripts are portable per-language (PEP 723
+  Python, Node built-ins, Bash) and must not depend on this repo's toolchain.
+- **References composed:** `shapes/skills-repo.md` + `languages/python.md` +
+  `ci.md`, with Nx from `monorepo.md` as an *optional authoring accelerator*
+  (the gate runs on uv alone; consumers never run Nx).
+- **Excluded, and why:** see "Excluded on purpose" below — `ty` and coverage
+  (the tooling is small and stdlib-only), and direnv / `src` layout / pre-commit
+  (anti-baggage, consistent with the skill's own guidance). The non-negotiable
+  invariants (strict gate, e2e of real journeys, CI proving the artifact) are
+  kept.
+
 ## Command surface
 
 Use the `just` recipes; do not hand-roll equivalents.

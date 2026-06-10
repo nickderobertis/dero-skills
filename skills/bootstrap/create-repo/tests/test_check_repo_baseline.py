@@ -52,11 +52,25 @@ upgrade:
 # A workflow that actually invokes the gate, as the CI invariant requires.
 GATE_WORKFLOW = "name: ci\njobs:\n  check:\n    steps:\n      - run: just check\n"
 
+# A conformant AGENTS.md: it records the reference composition (a filled-in
+# "Stack and composition" section), which the composition invariant requires.
+CONFORMANT_AGENTS = """\
+# AGENTS
+
+## Stack and composition
+
+- Product shape: cli
+- Language(s): python
+- References composed: shapes/cli.md + languages/python.md + ci.md
+- Excluded: none worth noting.
+"""
+
 
 def make_repo(
     tmp_path: Path,
     *,
     agents=True,
+    composition=True,
     claude="symlink",
     settings=True,
     justfile=FULL_JUSTFILE,
@@ -67,11 +81,20 @@ def make_repo(
     ``claude`` is "symlink", "file", or None; ``settings`` is True, False, or a
     raw string written verbatim to .claude/settings.json (to test bad JSON).
     ``ci`` is True (a gate-running workflow), False (none), or a raw string
-    written verbatim to .github/workflows/ci.yml.
+    written verbatim to .github/workflows/ci.yml. ``composition`` is True (the
+    conformant AGENTS.md with a filled composition section), False (a bare
+    AGENTS.md with no such section), or a raw string written verbatim as
+    AGENTS.md.
     """
     repo = tmp_path
     if agents:
-        (repo / "AGENTS.md").write_text("# AGENTS\n", encoding="utf-8")
+        if composition is True:
+            agents_body = CONFORMANT_AGENTS
+        elif composition is False:
+            agents_body = "# AGENTS\n"
+        else:
+            agents_body = composition
+        (repo / "AGENTS.md").write_text(agents_body, encoding="utf-8")
     if claude == "symlink":
         (repo / "CLAUDE.md").symlink_to("AGENTS.md")
     elif claude == "file":
@@ -272,6 +295,44 @@ def test_e2e_satisfied_by_directory(tmp_path):
     (repo / "tests" / "e2e").mkdir(parents=True)
     findings = crb.audit(repo)
     assert not any("e2e signal" in m for m in levels(findings, "ERROR"))
+
+
+# --- composition -----------------------------------------------------------
+
+
+def test_missing_composition_section_is_error(tmp_path):
+    # AGENTS.md exists but never records how the repo was composed.
+    findings = crb.audit(make_repo(tmp_path, composition=False))
+    assert crb.has_errors(findings)
+    assert any("composed" in m for m in levels(findings, "ERROR"))
+
+
+def test_placeholder_composition_section_is_error(tmp_path):
+    # The section was copied from the template but never filled in.
+    agents = (
+        "# AGENTS\n\n## Stack and composition\n\n"
+        "- Product shape: <cli / web-app / library>\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, composition=agents))
+    assert crb.has_errors(findings)
+    assert any("placeholder" in m for m in levels(findings, "ERROR"))
+
+
+def test_empty_composition_section_is_error(tmp_path):
+    # A heading with no body beneath it does not record anything.
+    agents = "# AGENTS\n\n## Stack and composition\n\n## Next thing\n\nbody\n"
+    findings = crb.audit(make_repo(tmp_path, composition=agents))
+    assert crb.has_errors(findings)
+    assert any("empty" in m for m in levels(findings, "ERROR"))
+
+
+def test_composition_satisfied_by_stack_heading(tmp_path):
+    # Any filled heading naming the stack/composition counts; "## Tech stack" too.
+    agents = "# AGENTS\n\n## Tech stack\n\nA Rust CLI: shapes/cli.md + languages/rust.md + ci.md.\n"
+    findings = crb.audit(make_repo(tmp_path, composition=agents))
+    assert not any(
+        "composed" in m or "composition" in m for m in levels(findings, "ERROR")
+    )
 
 
 def test_every_error_carries_a_suggested_fix(tmp_path):

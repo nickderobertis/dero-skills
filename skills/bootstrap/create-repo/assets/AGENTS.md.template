@@ -13,6 +13,24 @@ keep this file for constraints, tradeoffs, and judgment.
 service / CLI, TS/Next.js app, Rust CLI, Bash/asdf plugin, skills repo, etc. —
 and who consumes it.>
 
+## Stack and composition
+
+How this repo was built up from the create-repo reference pieces. Record the
+decision so the next maintainer can see why the tooling is what it is — and so
+the choice was made deliberately rather than skipped.
+
+- **Product shape:** <cli / web-app / nextjs / library / skills-repo /
+  asdf-plugin / ...>
+- **Language(s):** <python / typescript / rust / bash / ...>
+- **References composed:** <e.g. shapes/cli.md + languages/python.md +
+  intersections/python-cli.md + ci.md>. `ci.md` always applies; pull in
+  `monorepo.md` only when the repo holds more than one app, package, or
+  language.
+- **Excluded, and why:** <optional tooling/layout that did not fit — asdf,
+  direnv, `src` layout, a release pipeline — each with a one-line rationale.
+  The non-negotiable invariants (strict gate, e2e of real journeys, CI that
+  proves the artifact) are never excluded.>
+
 ## Command surface
 
 Use the `just` recipes; do not hand-roll equivalent commands.
