@@ -18,7 +18,10 @@ shared guidance.
 - **Run-without-install.** Document `uvx <tool>` / `uv run` usage so users can
   try it without a global install.
 - **Distribution.** Build a wheel and sdist; publish with checksums. Keep
-  startup fast (lazy imports) since CLI users feel cold-start latency.
+  startup fast (lazy imports) since CLI users feel cold-start latency. Have CI
+  install the built wheel the recommended end-user way (`uvx`/`pipx install`) on
+  the real OS matrix and run `<tool> --version` as a smoke test, so the install
+  path users take is proven — not just the dev `uv sync` (see `ci.md`).
 - **Commands.** The subprocess-level CLI e2e suite runs in the default `just
   check` and in CI — never opt-in. `just e2e` only isolates the slower
   install-and-run journeys for a focused run; it is not where they exclusively

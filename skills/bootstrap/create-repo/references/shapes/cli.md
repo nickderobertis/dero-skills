@@ -18,8 +18,10 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
 - **Exit codes.** Use distinct, documented exit codes; `0` only on success.
 - **Help and discoverability.** `--help` should be accurate and complete; keep
   the command surface small and predictable.
-- **Distribution.** If users install it, ship packaging + release automation and
-  document supported platforms (see `ci.md` and the language reference).
+- **Distribution.** If users install it, ship packaging + release automation,
+  document supported platforms, and have CI exercise the recommended end-user
+  install method on the real platform matrix (see `ci.md` and the language
+  reference) — proving the install path users take, not just the dev bootstrap.
 - **Commands.** The CLI e2e suite runs in the default `just check` and in CI —
   it is never opt-in or excluded by default. `just e2e` is only a convenience
   for running the slow end-to-end journeys *in isolation*; it must not be the
