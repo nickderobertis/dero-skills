@@ -1,7 +1,7 @@
 ---
 name: create-repo
 description: Use when creating a new repository or bootstrapping an existing project's tooling, tests, AGENTS.md, and CI so the setup fits the actual product and enforces strict, deterministic quality gates.
-compatibility: Requires uv and Python 3.12+ only if the bundled repo-baseline checker script is used.
+compatibility: Bundled scripts need uv and Python 3.12+ (the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo.
 ---
 
 # Create repo
@@ -64,7 +64,13 @@ clone, run one command, and trust.
    that installs the artifact via the recommended end-user method (ideally one
    cross-platform script or command) on the real platform matrix and smoke-tests
    the installed entry point — `just bootstrap` sets up the *dev* environment,
-   not the user's. See [`references/ci.md`](./references/ci.md).
+   not the user's. See [`references/ci.md`](./references/ci.md). CI only gates if
+   the platform blocks a merge until it is green, so also configure the repo's
+   merge model and branch protection — squash-merge only, auto-merge on, all
+   gating checks (including the full-e2e gate job) required, head branches
+   deleted on merge, admins able to override — per the "Repository settings"
+   section of [`references/ci.md`](./references/ci.md). Record the model in the
+   "Commits, releases, and merging" section of `AGENTS.md`.
 8. **Run the gate yourself, then audit.** Do not declare the repo done from
    inspection. Actually run `just check` (which includes `test-e2e`) and iterate
    until it passes from a clean state; then run the baseline checker:
@@ -112,7 +118,13 @@ sufficient.
    job installs it via the recommended end-user method (ideally a cross-platform
    script/command) on the platform matrix and smoke-tests the installed entry
    point — the path users actually take, not just the dev `just bootstrap`.
-8. **Automated gates pass.** `just check` passed locally from a clean state,
+8. **Repo governance configured.** The default branch is protected with
+   squash-merge only, auto-merge on, head branches deleted on merge, and *every*
+   gating CI check (including the full-e2e gate job) required before merge, with
+   admins able to override. The model is recorded in the "Commits, releases, and
+   merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
+   settings, so this is verified by hand against `references/ci.md`).
+9. **Automated gates pass.** `just check` passed locally from a clean state,
    **and** the baseline checker passed:
 
    ```bash
@@ -273,3 +285,10 @@ the catalog and worked examples.
   decision), an unfilled "Stack and composition" section, and CI that never
   invokes `just check`. Silent on success; on failure prints each missing
   invariant with a suggested fix.
+- [`scripts/setup_github_governance.py`](./scripts/setup_github_governance.py) —
+  applies the merge model + branch protection from the "Repository settings"
+  section of [`references/ci.md`](./references/ci.md) to a GitHub repo via the
+  `gh` CLI. Idempotent; takes the required check contexts as arguments and
+  supports `--dry-run`. Configures squash-only merging, auto-merge,
+  delete-on-merge, and branch protection requiring every gating check (admins
+  can override by default).

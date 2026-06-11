@@ -43,3 +43,72 @@ to re-run a developer's warm local environment.
   Publish checksums for binaries; sign where appropriate.
 - **Logs are context.** Keep logs minimal on success; emit detailed diagnostics
   only on failure, so a failed run points straight at the cause.
+
+## Repository settings: merge model & branch protection
+
+CI only proves the artifact if the platform actually *blocks* a merge until the
+gate is green. Configure the GitHub repo so the protected default branch can only
+take changes that passed the same checks CI runs. These settings are
+deterministic, so script them with `gh` rather than clicking through the UI; the
+exact commands below are the ones this skill's own repo uses.
+
+- **Squash-merge only.** Disable merge commits and rebase-merging so history on
+  the default branch stays linear and one PR is one commit. Set the squash
+  commit subject to the **PR title** and the body to the **PR description**, so
+  the PR title is what lands (and what a Conventional-Commits / release pipeline
+  reads).
+- **Auto-merge enabled.** Turn on auto-merge at the repo level so a PR can be
+  queued with `gh pr merge --auto --squash` and merges itself the moment every
+  required check goes green — no babysitting, and nothing merges early.
+- **Delete head branches after merge.** Keep the branch list to live work only.
+- **Branch protection on the default branch, requiring *all* CI checks.** Every
+  status check that gates correctness must be required — including the
+  **full-e2e gate job** (the one that runs `just check`), not just a fast lint
+  job. List every required context by name; a check that is not *required* is
+  advisory and a red one can still be merged past. Add the standard protections:
+  require a PR before merging, linear history, no force-pushes, no branch
+  deletion, and conversation resolution.
+- **Admins can still override.** Leave admin enforcement off
+  (`enforce_admins: false`) so a maintainer can break the glass in an emergency;
+  the protection is the default path, not a cage. (Bump the required approval
+  count above zero for a team; zero is reasonable for a solo maintainer who
+  still wants every check enforced.)
+
+Apply it (replace the contexts with *your* required job names):
+
+```bash
+# Merge model: squash only, auto-merge on, delete head branches.
+gh repo edit --enable-squash-merge --enable-auto-merge \
+  --enable-merge-commit=false --enable-rebase-merge=false \
+  --delete-branch-on-merge
+# PR title -> squash subject, PR body -> squash body (no gh flag; use the API).
+gh api -X PATCH repos/{owner}/{repo} \
+  -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY
+
+# Branch protection: require every gating check (the e2e-inclusive gate + any
+# others), standard protections, admins can override.
+gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input - <<'JSON'
+{
+  "required_status_checks": { "strict": true, "contexts": ["check", "commitlint"] },
+  "enforce_admins": false,
+  "required_pull_request_reviews": { "required_approving_review_count": 0 },
+  "required_linear_history": true,
+  "required_conversation_resolution": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "restrictions": null
+}
+JSON
+```
+
+The skill bundles this as a runnable, idempotent script — pass the required
+check contexts and preview with `--dry-run` first:
+
+```bash
+uv run --script scripts/setup_github_governance.py check commitlint --dry-run
+uv run --script scripts/setup_github_governance.py check commitlint
+```
+
+These are repo-side settings, so the filesystem baseline checker cannot verify
+them — record the intended model in `AGENTS.md` ("Commits, releases, and
+merging") so the decision is auditable and the next maintainer can re-apply it.

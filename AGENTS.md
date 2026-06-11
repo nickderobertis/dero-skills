@@ -63,10 +63,14 @@ check-versions` keeps every pin in lockstep with CI.
   (`chore`, `ci`, `docs`, `refactor`, `test`, `build`, `perf`) ship no release.
   Enforced locally by the husky `commit-msg` hook (activated by `just bootstrap`)
   and in CI by the `commitlint` job.
-- **Squash-merge only, via PR.** `main` is protected: changes land through a
-  squash PR with the `check` and `commitlint` status checks green (admins may
-  bypass). The **PR title** becomes the squash commit subject, so it must be a
-  valid Conventional Commit — that is what `commitlint` lints and what
+- **Squash-merge only, via PR, with auto-merge.** `main` is protected: merge
+  commits and rebase-merging are disabled, and a PR can only land once the
+  required `check` and `commitlint` status checks are green (admins may bypass).
+  `check` runs the full gate — including the e2e tests — so requiring it gates
+  every merge on the same gate you run locally. Queue a PR with
+  `gh pr merge --auto --squash` and it merges itself when the checks pass. The
+  **PR title** becomes the squash commit subject, so it must be a valid
+  Conventional Commit — that is what `commitlint` lints and what
   semantic-release reads. Merged branches auto-delete.
 - **Releases are automated.** On push to `main`, semantic-release analyses the
   commits since the last tag and, when warranted, publishes a GitHub Release +
