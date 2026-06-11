@@ -34,7 +34,7 @@ check: lint test test-e2e
     @echo gate
 
 test:
-    @echo t
+    @echo "pytest --cov --cov-fail-under=95"
 
 test-e2e:
     @echo e2e
@@ -295,6 +295,52 @@ def test_e2e_satisfied_by_directory(tmp_path):
     (repo / "tests" / "e2e").mkdir(parents=True)
     findings = crb.audit(repo)
     assert not any("e2e signal" in m for m in levels(findings, "ERROR"))
+
+
+# --- coverage --------------------------------------------------------------
+
+
+def test_missing_coverage_signal_is_error(tmp_path):
+    # A justfile with no coverage flag, no coverage config, and an AGENTS.md
+    # that never mentions coverage: dropping the default gate must be deliberate.
+    no_cov = FULL_JUSTFILE.replace(
+        '@echo "pytest --cov --cov-fail-under=95"', "@echo t"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=no_cov))
+    assert crb.has_errors(findings)
+    assert any("coverage signal" in m for m in levels(findings, "ERROR"))
+
+
+def test_coverage_satisfied_by_justfile_flag(tmp_path):
+    # The conformant fixture enforces coverage in its `test` recipe.
+    findings = crb.audit(make_repo(tmp_path))
+    assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
+
+
+def test_coverage_satisfied_by_config_file(tmp_path):
+    # A threshold declared in a config file counts even without a justfile flag.
+    no_cov = FULL_JUSTFILE.replace(
+        '@echo "pytest --cov --cov-fail-under=95"', "@echo t"
+    )
+    repo = make_repo(tmp_path, justfile=no_cov)
+    (repo / "pyproject.toml").write_text(
+        "[tool.coverage.report]\nfail_under = 95\n", encoding="utf-8"
+    )
+    findings = crb.audit(repo)
+    assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
+
+
+def test_coverage_satisfied_by_agents_md_note(tmp_path):
+    # An explicit documented decision in AGENTS.md counts as deliberate.
+    no_cov = FULL_JUSTFILE.replace(
+        '@echo "pytest --cov --cov-fail-under=95"', "@echo t"
+    )
+    agents = (
+        CONFORMANT_AGENTS
+        + "\n## Excluded\n\nNo coverage gate: this is a tiny stdlib-only repo.\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=no_cov, composition=agents))
+    assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
 
 
 # --- composition -----------------------------------------------------------

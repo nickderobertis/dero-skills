@@ -13,6 +13,10 @@ Language-level conventions for any Rust repo. Combine with a product shape
   is for the rare test that must be invoked explicitly (e.g. needs live
   credentials), not a way to speed up the gate. Split genuinely slow journeys
   into a separate target that CI still runs, never out of the gate entirely.
+- **Coverage in the gate.** Measure coverage in the gate and fail below the
+  threshold — `cargo llvm-cov --fail-under-lines 95` (or `cargo tarpaulin
+  --fail-under 95`). 95% line coverage is the default bar; lower it only with a
+  documented reason in `AGENTS.md`. Coverage is a default gate, not opt-in.
 - **Security and licensing.** Run `cargo deny` (advisories + licenses) when you
   distribute binaries or libraries.
 - **Boundary validation.** Validate external input at the edges; model invalid
@@ -24,4 +28,5 @@ Language-level conventions for any Rust repo. Combine with a product shape
 - **Command mapping.**
   - `just bootstrap` -> fetch toolchain + `cargo fetch`
   - `just check` -> `cargo fmt --check` + `cargo clippy -- -D warnings` + tests
+    with coverage enforced (e.g. `cargo llvm-cov --fail-under-lines 95`)
   - `just upgrade` -> `cargo update`, then re-run `just check`

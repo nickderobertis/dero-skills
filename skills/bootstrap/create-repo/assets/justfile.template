@@ -22,9 +22,11 @@ bootstrap:
 check: lint test test-e2e
     @echo "TODO: add format --check and type checking to the gate"
 
-# Run the fast test suite (unit + integration).
+# Run the fast test suite (unit + integration) with coverage enforced. 95% line
+# coverage is the default gate; fail below it. Lower the bar only with a
+# documented reason in AGENTS.md — don't leave coverage unmeasured.
 test:
-    @echo "TODO: run unit/integration tests (e.g. pytest / vitest / cargo nextest)"
+    @echo "TODO: run unit/integration tests with coverage enforced (e.g. pytest --cov --cov-fail-under=95 / vitest --coverage / cargo llvm-cov --fail-under-lines 95)"
 
 # Run end-to-end tests that exercise the built artifact the way users run it.
 # Cover the primary happy path AND at least one meaningful failure/recovery

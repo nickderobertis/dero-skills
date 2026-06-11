@@ -13,8 +13,14 @@ Language-level conventions for any TypeScript repo. Combine with a product shape
   `unknown` from the network, env, or storage.
 - **Package management.** Use pnpm; commit the lockfile. Keep dependencies
   current with a scripted upgrade path.
+- **Coverage in the gate.** Run the test suite with coverage and fail below the
+  threshold (e.g. Vitest `coverage.thresholds` of 95, or `c8`/`nyc
+  --check-coverage --lines 95`). 95% line coverage is the default bar; lower it
+  only with a documented reason in `AGENTS.md`. Coverage is a default gate, not
+  opt-in.
 - **Command mapping.**
   - `just bootstrap` -> `pnpm install`
   - `just check` -> format check + lint + `tsc --noEmit` (typecheck) + tests
+    with coverage enforced (≥95%)
   - `just upgrade` -> upgrade dependencies, then re-run `just check`
 - **Output.** `just check` should be quiet on success and specific on failure.
