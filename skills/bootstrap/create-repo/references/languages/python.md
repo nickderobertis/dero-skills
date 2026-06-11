@@ -15,11 +15,18 @@ Language-level conventions for any Python repo. Combine with a product shape
   explicit and tested.
 - **Clients.** Prefer official, async, well-typed libraries at boundaries;
   otherwise write a small async typed client yourself.
+- **Coverage in the gate.** Measure coverage on every `pytest` run and fail the
+  gate below the threshold — `pytest --cov --cov-fail-under=95` (configure
+  `pytest-cov`). 95% line coverage is the default bar; lower it only with a
+  documented reason in `AGENTS.md`. Coverage is a default gate, not opt-in: a
+  repo that ships behavior its tests never execute has a hole, and the number
+  makes the hole visible.
 - **Command mapping.**
   - `just bootstrap` -> `uv sync`
-  - `just check` -> `ruff format --check` + `ruff check` + `ty` + `pytest`
+  - `just check` -> `ruff format --check` + `ruff check` + `ty` +
+    `pytest --cov --cov-fail-under=95`
   - `just upgrade` -> `uv lock --upgrade` then `uv sync`
-- **CI.** Run `just check` on a clean checkout. Add coverage only if it
-  materially helps; don't make it a vanity gate.
+- **CI.** Run `just check` on a clean checkout; the gate's coverage threshold
+  travels with it.
 - **Avoid baggage.** No `src` layout, asdf, direnv, or pre-commit unless clearly
   justified for this repo.

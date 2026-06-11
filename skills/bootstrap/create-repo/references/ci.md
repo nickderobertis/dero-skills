@@ -27,6 +27,14 @@ to re-run a developer's warm local environment.
   script or command so the docs, CI, and what users actually run never drift; if
   CI installs differently than the docs tell users to, CI is proving the wrong
   thing. This drift is invisible until a user hits it.
+- **Coverage is a default gate.** The gate measures test coverage and fails
+  below the threshold; 95% line coverage is the default bar. Because CI runs the
+  same `just check`, the threshold is proven on every PR, not tracked as a
+  vanity badge. Measure it with the language's tool (`pytest --cov-fail-under`,
+  Vitest `coverage.thresholds`, `cargo llvm-cov --fail-under-lines`, ...). Lower
+  the bar — or drop it for a stack where coverage tooling genuinely doesn't fit
+  — only with a documented reason in `AGENTS.md`, never by silently leaving
+  coverage unmeasured.
 - **Validate generated files.** Fail if committed generated files (lockfiles,
   schemas, formatted code) are out of date.
 - **Cache for speed, never for correctness.** Cache dependencies, but never let

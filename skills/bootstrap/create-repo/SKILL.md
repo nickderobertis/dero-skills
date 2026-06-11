@@ -46,7 +46,9 @@ clone, run one command, and trust.
    placeholder body with the real, stack-specific command; a recipe left as an
    `echo` placeholder is a gate that proves nothing.
 4. **Make the gates strict and deterministic.** Formatting, linting, type
-   checking, and tests fail on issues — no warnings-only mode.
+   checking, and tests fail on issues — no warnings-only mode. Tests run with
+   coverage measured and the gate fails below the threshold; 95% line coverage
+   is the default bar (lower it only with a documented reason in `AGENTS.md`).
 5. **Make every script agent-friendly.** A script's output is context the next
    agent reads. Emit almost nothing on success; on failure, print the exact
    error and a concrete suggested action.
@@ -95,8 +97,10 @@ sufficient.
    `lint`, `format`, `upgrade`, each with a real body — no `TODO`/placeholder
    recipe survives. `just bootstrap` works from a clean clone.
 4. **Strict gate.** `just check` runs format check + lint + type check + unit
-   tests + e2e and fails on any issue (no warnings-only mode). `check` actually
-   invokes `test` — confirm the wiring, don't assume it.
+   tests + e2e and fails on any issue (no warnings-only mode). Coverage is
+   measured and the gate fails below the threshold (95% line coverage by
+   default, or a documented lower bar in `AGENTS.md`). `check` actually invokes
+   `test` — confirm the wiring, don't assume it.
 5. **Real e2e.** E2E exercises the built artifact the way users run it, covering
    at least the primary happy path **and** one meaningful failure/recovery path
    — not a smoke test. It runs inside `just check` and CI (a too-expensive case
@@ -139,6 +143,9 @@ sufficient.
 3. **Quality gates must be strict and deterministic.**
    - Formatting, linting, type checking, and tests must be enforced and fail on
      issues.
+   - Coverage is a default gate, not opt-in: measure it on the test run and fail
+     below the threshold (95% line coverage by default). Lower the bar only with
+     a documented reason in `AGENTS.md`.
    - Prefer deterministic, reproducible checks; avoid environment-dependent
      behavior.
    - Any suppressed diagnostics must have a clear rationale and tracking.
@@ -259,8 +266,10 @@ the catalog and worked examples.
   that bootstraps a clean checkout and runs the full gate on a platform matrix.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — audits
   `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the recorded
-  reference composition, the `justfile` command surface, an e2e signal, and CI.
-  Goes past presence: it fails on `TODO` placeholder recipe bodies, a `check`
-  that doesn't run `test`, a missing e2e tier, an unfilled "Stack and
-  composition" section, and CI that never invokes `just check`. Silent on
-  success; on failure prints each missing invariant with a suggested fix.
+  reference composition, the `justfile` command surface, an e2e signal, a
+  coverage signal, and CI. Goes past presence: it fails on `TODO` placeholder
+  recipe bodies, a `check` that doesn't run `test`, a missing e2e tier, no
+  coverage signal (a coverage recipe/config or a documented `AGENTS.md`
+  decision), an unfilled "Stack and composition" section, and CI that never
+  invokes `just check`. Silent on success; on failure prints each missing
+  invariant with a suggested fix.

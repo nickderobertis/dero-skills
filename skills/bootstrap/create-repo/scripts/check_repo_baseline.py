@@ -27,6 +27,9 @@ Checks:
   * An e2e signal exists: a `*e2e*` recipe, an `e2e/` test directory, or an
     explicit e2e statement in AGENTS.md (so skipping e2e is a deliberate,
     documented decision rather than a silent omission).
+  * A coverage signal exists: a coverage tool/flag in the justfile, a coverage
+    threshold in a config file, or an explicit coverage statement in AGENTS.md
+    (coverage is a default gate, so dropping it must be a documented decision).
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
 
@@ -68,6 +71,33 @@ JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 
 # Case-insensitive marker that a recipe body is still the unfilled template.
 PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
+
+# A coverage signal: a coverage tool or threshold flag in the justfile / a
+# config file, or the word "coverage" documenting the decision in AGENTS.md.
+# Stack-agnostic on purpose — it spans pytest-cov, Vitest/c8/nyc, cargo-llvm-cov,
+# tarpaulin, kcov/bashcov — so it forces coverage to be a *named* decision, not
+# the specific 95% number (that is prescribed in the references and SKILL.md).
+COVERAGE_RE = re.compile(
+    r"--cov|cov-fail-under|coverage|fail[_-]under|llvm-cov|tarpaulin|"
+    r"\bnyc\b|\bc8\b|kcov|bashcov",
+    re.IGNORECASE,
+)
+
+# Config files that commonly declare a coverage threshold.
+COVERAGE_CONFIG_NAMES = (
+    "pyproject.toml",
+    "setup.cfg",
+    "tox.ini",
+    ".coveragerc",
+    "package.json",
+    "vitest.config.ts",
+    "vitest.config.js",
+    "vite.config.ts",
+    "vite.config.js",
+    "jest.config.js",
+    "jest.config.ts",
+    "Cargo.toml",
+)
 
 # An AGENTS.md heading that records how the repo was built up from the skill's
 # reference axes (product shape + language(s) + cross-cutting/intersection
@@ -310,6 +340,44 @@ def check_e2e(repo: Path) -> list[Finding]:
     ]
 
 
+def check_coverage(repo: Path) -> list[Finding]:
+    """Require a deliberate coverage decision: enforced in the gate, or opted out.
+
+    The create-repo skill makes coverage a *default* gate (95% line coverage,
+    enforced in `just check`) rather than an opt-in vanity metric — a repo that
+    ships behavior its tests never execute has a hole, and the number makes it
+    visible. Like the e2e check, this is stack-agnostic, so it cannot verify the
+    threshold value; it only forces coverage to be a *named* part of the repo: a
+    coverage tool/flag in the justfile, a coverage config, or an explicit
+    statement in AGENTS.md (the documented lower bar or why coverage tooling
+    doesn't fit this stack). Silent omission is what it catches.
+    """
+    justfile = find_justfile(repo)
+    if justfile is not None and COVERAGE_RE.search(
+        justfile.read_text(encoding="utf-8")
+    ):
+        return [Finding("OK", "coverage enforced in the command surface")]
+
+    for name in COVERAGE_CONFIG_NAMES:
+        cfg = repo / name
+        if cfg.is_file() and COVERAGE_RE.search(cfg.read_text(encoding="utf-8")):
+            return [Finding("OK", f"coverage configured in {name}")]
+
+    agents = repo / "AGENTS.md"
+    if agents.is_file() and "coverage" in agents.read_text(encoding="utf-8").lower():
+        return [Finding("OK", "AGENTS.md documents the coverage decision")]
+
+    return [
+        Finding(
+            "ERROR",
+            "no coverage signal (recipe/flag, config threshold, or AGENTS.md statement)",
+            "enforce coverage in `just check` (e.g. pytest --cov-fail-under=95, "
+            "Vitest coverage.thresholds, cargo llvm-cov --fail-under-lines 95), or "
+            "state in AGENTS.md the coverage bar or why it does not apply",
+        )
+    ]
+
+
 def find_heading_section(text: str, heading_re: re.Pattern[str]) -> list[str] | None:
     """Return the body lines under the first markdown heading matching ``heading_re``.
 
@@ -432,6 +500,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_composition(repo)
     findings += check_justfile(repo)
     findings += check_e2e(repo)
+    findings += check_coverage(repo)
     findings += check_ci(repo)
     return findings
 

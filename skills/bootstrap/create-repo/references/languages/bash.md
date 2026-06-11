@@ -9,6 +9,11 @@ Language-level conventions for shell-script repos. Combine with a product shape
   warnings backlog.
 - **Tests.** Use `bats` (or similar) for unit-level behavior, plus real
   integration tests against the host tool when one exists.
+- **Coverage in the gate.** 95% line coverage is the default bar, enforced in
+  `just check` — measure with `kcov` (wrap the `bats` run) or `bashcov` and fail
+  below the threshold. Shell is the case most likely to justify lowering or
+  dropping the bar (coverage tooling is coarser here); when you do, record the
+  reason in `AGENTS.md` rather than silently skipping it.
 - **Robustness.** `set -euo pipefail`; quote expansions; handle network and
   filesystem failures gracefully rather than assuming success.
 - **Command mapping.**
