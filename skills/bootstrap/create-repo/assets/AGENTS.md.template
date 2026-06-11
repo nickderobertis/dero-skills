@@ -41,6 +41,26 @@ Use the `just` recipes; do not hand-roll equivalent commands.
 - `just test` / `just lint` / `just format` — individual gate steps.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
+## Commits, releases, and merging
+
+How changes land on the protected default branch. Set these on the GitHub repo
+with `gh` (see the create-repo skill's `references/ci.md`); record the model here
+so it is auditable and re-appliable.
+
+- **Squash-merge only, via PR, with auto-merge.** The default branch is
+  protected: merge commits and rebase-merging are disabled, so one PR is one
+  squash commit whose subject is the PR title. Open a PR and queue it with
+  `gh pr merge --auto --squash`; it merges itself once every required check is
+  green. Merged head branches auto-delete. Admins may bypass in a break-glass.
+- **All gating checks are required.** Branch protection requires every CI status
+  check that gates correctness — including the full-e2e gate job (`just check`),
+  not just a fast lint — plus linear history, conversation resolution, and no
+  force-push / branch-deletion.
+- **Releases (when applicable).** <Describe the release model, or remove this
+  bullet. If the repo publishes, say what drives a release — e.g. Conventional
+  Commits + semantic-release on push to the default branch — and where the
+  changelog lives.>
+
 ## Invariants (non-negotiable)
 
 - The quality gate is strict: no warnings-only mode. A diagnostic is either an

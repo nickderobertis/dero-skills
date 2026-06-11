@@ -48,7 +48,12 @@
       "Bash(git diff:*)",
       "Bash(git log:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr status)",
+      "Bash(gh pr checks:*)"
     ],
     "deny": [
       "Bash(rm -rf /)",
