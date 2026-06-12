@@ -391,6 +391,25 @@ def test_every_error_carries_a_suggested_fix(tmp_path):
     assert all(f.fix for f in errors)
 
 
+# --- AGENTS.md length (advisory) -------------------------------------------
+
+
+def test_terse_agents_md_emits_no_length_warning(tmp_path):
+    # The conformant fixture is short, so the advisory cap stays silent.
+    findings = crb.audit(make_repo(tmp_path))
+    assert not any("keep it terse" in m for m in levels(findings, "WARN"))
+
+
+def test_overlong_agents_md_warns_but_does_not_error(tmp_path):
+    # A bloated-but-valid AGENTS.md: it still records the composition, so the
+    # length check is an advisory WARN, never an ERROR.
+    padding = "\n".join(f"- durable note {i}" for i in range(crb.AGENTS_MD_MAX_LINES))
+    agents = CONFORMANT_AGENTS + "\n## Notes\n\n" + padding + "\n"
+    findings = crb.audit(make_repo(tmp_path, composition=agents))
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert any("keep it terse" in m for m in levels(findings, "WARN"))
+
+
 # --- main / output discipline ----------------------------------------------
 
 

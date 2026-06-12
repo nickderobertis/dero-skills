@@ -4,6 +4,12 @@ Durable instructions for humans and agents working in this repo. Write for a
 future maintainer, not as a session log. Put deterministic steps in scripts and
 keep this file for constraints, tradeoffs, and judgment.
 
+> Keep this file terse — it is always-loaded context, so its length is a
+> standing tax on every session's budget. Rules cleanly scoped to a folder go in
+> a nested `AGENTS.md` (e.g. `tests/AGENTS.md`); content that is neither always
+> relevant nor cleanly scoped to one folder goes in a reference doc (e.g. under
+> `docs/`) linked from here, not inlined.
+
 > `CLAUDE.md` is a symlink to this file (`ln -s AGENTS.md CLAUDE.md`) so the two
 > never drift. Edit `AGENTS.md` only.
 

@@ -19,7 +19,10 @@ clone, run one command, and trust.
    `.claude/settings.json` with a narrow command allowlist (start from
    [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)).
    Doing this first means the rest of the setup runs with far fewer approval
-   prompts.
+   prompts. Keep `AGENTS.md` terse — it is always-loaded context. Folder-scoped
+   rules belong in a nested `AGENTS.md`; content that is neither always relevant
+   nor cleanly scoped to one folder belongs in a reference doc linked from
+   `AGENTS.md`, not inlined (see Principle 5).
 2. **Identify the product shape.** Name the artifact (CLI, web app, library /
    service, asdf plugin, skills repo, ...) and the implementation language(s).
    Compose references by mixing and matching — see
@@ -170,10 +173,16 @@ sufficient.
      not an opt-in target. A test too expensive for every run is a documented
      exception that CI still executes (e.g. nightly), never silently excluded
      (no default `#[ignore]`, deselected marker, or check-skips-e2e wiring).
-5. **`AGENTS.md` is the durable instruction layer.**
-   - Root `AGENTS.md` defines repo-wide constraints; add nested `AGENTS.md`
-     where subtree rules differ.
-   - Include `tests/AGENTS.md` when test conventions matter.
+5. **`AGENTS.md` is the durable instruction layer — keep it terse.**
+   - Root `AGENTS.md` is always-loaded context: every agent session reads it, so
+     its length is a standing tax on the context budget. Use terse, pithy
+     language and resist letting it accrete.
+   - Place content by relevance and scope. Always-relevant, repo-wide
+     constraints stay in the root `AGENTS.md` (short). Rules cleanly scoped to a
+     subtree go in a nested `AGENTS.md` in that folder (e.g. `tests/AGENTS.md`),
+     loaded only when working there. Content that is **neither always relevant
+     nor cleanly scoped to one folder** moves out into a reference doc (e.g.
+     under `docs/`) linked from `AGENTS.md` and pulled in on demand — not inlined.
    - Always make `CLAUDE.md` a symlink to `AGENTS.md` so the two never drift.
    - Set up `.claude/settings.json` with a narrow allowlist among the first
      files, to require fewer approvals while the rest of the repo is built.
@@ -283,7 +292,9 @@ the catalog and worked examples.
   recipe bodies, a `check` that doesn't run `test`, a missing e2e tier, no
   coverage signal (a coverage recipe/config or a documented `AGENTS.md`
   decision), an unfilled "Stack and composition" section, and CI that never
-  invokes `just check`. Silent on success; on failure prints each missing
+  invokes `just check`. It also raises an advisory (non-failing) warning when the
+  root `AGENTS.md` grows past a soft line cap — a nudge to keep the always-loaded
+  instruction layer terse. Silent on success; on failure prints each missing
   invariant with a suggested fix.
 - [`scripts/setup_github_governance.py`](./scripts/setup_github_governance.py) —
   applies the merge model + branch protection from the "Repository settings"
