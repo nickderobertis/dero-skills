@@ -14,6 +14,10 @@ not here.
 
 Checks:
   * AGENTS.md exists at the repo root (the durable instruction layer).
+  * AGENTS.md is reasonably terse (advisory WARN only): it is always-loaded
+    context, so a file well past the soft line cap is a nudge to tighten the
+    prose and push folder-scoped or rarely-relevant content into a nested
+    AGENTS.md or a linked reference doc.
   * CLAUDE.md is a symlink that resolves to AGENTS.md (no drift).
   * .claude/settings.json exists and is valid JSON (the agent allowlist).
   * AGENTS.md records how the repo was composed from the skill's reference
@@ -57,6 +61,13 @@ from pathlib import Path
 
 # Recipes the skill's command surface must define.
 REQUIRED_RECIPES = ("bootstrap", "check", "test", "lint", "format", "upgrade")
+
+# Advisory soft cap on the root AGENTS.md. It is always-loaded context — every
+# session reads it — so its length is a standing tax on the context budget. This
+# is a nudge (WARN, never fails), set well above a terse, complete instruction
+# layer so it only flags a file that has accreted folder-scoped or
+# rarely-relevant prose better off in a nested AGENTS.md or a linked reference.
+AGENTS_MD_MAX_LINES = 250
 
 # The command that proves the artifact. CI must invoke it, and `check` is where
 # the full gate (including e2e) is composed.
@@ -185,6 +196,35 @@ def check_agents_md(repo: Path) -> list[Finding]:
             "assets/AGENTS.md.template)",
         )
     ]
+
+
+def check_agents_length(repo: Path) -> list[Finding]:
+    """Advise (never fail) when the root AGENTS.md has grown too long.
+
+    AGENTS.md is read every session, so length is a standing context-budget tax.
+    The skill prescribes terse, pithy language, with folder-scoped rules pushed
+    into nested AGENTS.md files and content that is neither always relevant nor
+    cleanly scoped to one folder moved into a reference doc linked from
+    AGENTS.md. This is a WARN, not an ERROR — the right bar is judgment, not a
+    line count — but a file well past the cap is a reliable signal to tighten.
+    """
+    agents = repo / "AGENTS.md"
+    if not agents.is_file():
+        # Absence is already an ERROR from check_agents_md; don't pile on.
+        return []
+    lines = len(agents.read_text(encoding="utf-8").splitlines())
+    if lines > AGENTS_MD_MAX_LINES:
+        return [
+            Finding(
+                "WARN",
+                f"AGENTS.md is {lines} lines — it is always-loaded context, so "
+                "keep it terse",
+                "tighten the prose; move folder-scoped rules into a nested "
+                "AGENTS.md and content that is not always relevant into a "
+                "reference doc linked from AGENTS.md",
+            )
+        ]
+    return [Finding("OK", "AGENTS.md is reasonably terse")]
 
 
 def check_claude_symlink(repo: Path) -> list[Finding]:
@@ -495,6 +535,7 @@ def check_ci(repo: Path) -> list[Finding]:
 def audit(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     findings += check_agents_md(repo)
+    findings += check_agents_length(repo)
     findings += check_claude_symlink(repo)
     findings += check_claude_settings(repo)
     findings += check_composition(repo)
