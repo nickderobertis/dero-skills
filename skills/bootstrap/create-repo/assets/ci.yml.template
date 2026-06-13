@@ -72,3 +72,19 @@ jobs:
   #       run: echo "TODO: run the documented install command"
   #     - name: Smoke-test the installed entry point
   #       run: <tool> --version
+
+  # Lint the PR title as a required check. Under squash-merge the PR title
+  # becomes the one commit that lands and that the release pipeline reads, so a
+  # malformed title must not merge. Enable this when you adopt the
+  # Conventional-Commits release flow (see references/releasing.md), and add the
+  # job name to the required checks in branch protection.
+  #
+  # pr-title:
+  #   if: github.event_name == 'pull_request'
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     pull-requests: read
+  #   steps:
+  #     - uses: amannn/action-semantic-pull-request@v5
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

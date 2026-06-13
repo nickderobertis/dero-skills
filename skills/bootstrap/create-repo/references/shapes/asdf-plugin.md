@@ -4,7 +4,11 @@ Principles for an asdf (or similar host-tool) plugin — a repo whose deliverabl
 is a set of shell scripts the host tool invokes to list, download, and install
 versions of some managed tool. Almost always pair with `languages/bash.md` and
 `ci.md`. [`asdf-allowlister`](https://github.com/nickderobertis/asdf-allowlister)
-is a worked reference implementation of this shape.
+is a worked reference for the clean case (a tool that ships consistent,
+checksummed release assets);
+[`asdf-prusaslicer`](https://github.com/nickderobertis/asdf-prusaslicer) is the
+worked reference for the messy upstream — inconsistent asset names, no published
+checksums, uneven platform coverage, and runtime-library dependencies.
 
 ## Script contract
 
@@ -47,8 +51,17 @@ relying on memory — script names and contracts drift).
   `ASDF_INSTALL_VERSION`, `ASDF_INSTALL_PATH`, …). Pin exact version URLs over
   HTTPS — never a mutable `latest` URL for a specific install. Use robust `curl`
   flags (fail on HTTP error, follow redirects, quiet on success). Verify upstream
-  checksums when published; a mismatch aborts. Work in a safe temp dir, clean up
-  on failure, and never leave a partial artifact that looks installed.
+  checksums when published; a mismatch aborts. When upstream publishes **no**
+  checksums, say so in `AGENTS.md` and lean on HTTPS plus atomic download (fetch
+  to a `.part` sidecar and rename only on success) so a partial download never
+  looks installed. Work in a safe temp dir and clean up on failure.
+- **Match assets by pattern when names are inconsistent.** A well-behaved
+  upstream lets you build the asset name from `<name>-<version>-<triple>`; a messy
+  one varies names across releases (build timestamps, `macOS` vs `MacOS`, GTK
+  variants, distro qualifiers). For those, select the asset with an **ordered list
+  of regex patterns** per `(os, arch)` — most-specific first, falling back to
+  looser matches — rather than string templating, and cover the selection logic
+  with `bats` fixtures drawn from real release data.
 
 ## Install and platform support
 
@@ -65,6 +78,14 @@ relying on memory — script names and contracts drift).
   SHA-256 utility, `jq`). For source builds, document build deps in
   `bin/help.deps` and the README, keep build commands deterministic, and fail —
   never silently install system packages.
+- **Turn missing runtime libraries into actionable advice.** When the installed
+  binary needs system libraries the host may lack (GUI tools especially —
+  WebKitGTK, OpenGL), don't let the smoke test fail with a raw loader error.
+  Parse the missing-`.so` name, map it to the package that provides it on the
+  common distros, and fail with the exact `apt`/`dnf`/`pacman` install command.
+  Keep the mapping a pure function and test it offline. Document uneven platform
+  coverage (an arch/version upstream simply doesn't ship) explicitly rather than
+  failing opaquely.
 
 ## Testing, gate, and CI
 
