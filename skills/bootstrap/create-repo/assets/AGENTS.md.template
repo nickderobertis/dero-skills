@@ -64,8 +64,8 @@ so it is auditable and re-appliable.
   force-push / branch-deletion.
 - **Releases (when applicable).** <Describe the release model, or remove this
   bullet. If the repo publishes, say what drives a release — e.g. Conventional
-  Commits + semantic-release on push to the default branch — and where the
-  changelog lives.>
+  Commits + semantic-release / release-plz on push to the default branch — and
+  where the changelog lives. See the create-repo skill's `references/releasing.md`.>
 
 ## Invariants (non-negotiable)
 

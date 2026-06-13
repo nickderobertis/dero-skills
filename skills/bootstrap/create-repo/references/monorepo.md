@@ -55,3 +55,21 @@ feedback. A full `nx run-many` on the main branch (and/or nightly) catches
 anything affected-detection or a stale cache could miss. Bundled skill *scripts*
 still stay orchestrator-independent (PEP 723 / Node built-ins): Nx orchestrates
 targets, it is never a runtime dependency of the scripts themselves.
+
+**Versioning & generated contracts.** Two monorepo-specific concerns layer on top
+of `releasing.md`:
+
+- **Lockstep versioning through one script.** When a single logical version spans
+  many manifests (a Cargo workspace + `pyproject.toml` + `package.json` +
+  per-platform carrier packages + every lockfile), never hand-edit one of N. Make
+  a single `scripts/set-version.sh` the source of truth — it writes every
+  manifest, lockfile, and cross-package pin — and have the release tool call it
+  (`semantic-release`'s `exec`, or `release-plz`). Publish each registry in
+  dependency order and keep it **idempotent** (skip a version already live).
+- **Cross-language contracts are generated, never hand-written, and drift-checked.**
+  When one language's types are the source of truth for a contract other packages
+  consume (e.g. `schemars` Rust types → JSON Schema → Python/TS model codegen),
+  generate the downstream models and add a `--check` mode to the generator that
+  fails the gate if regenerating would change a committed file. This is the
+  concrete form of `ci.md`'s "validate generated files," run at the workspace
+  level inside `just check`.

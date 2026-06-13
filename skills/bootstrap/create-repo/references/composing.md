@@ -15,7 +15,10 @@ them for the repo in front of you.
    `languages/typescript.md`, `languages/rust.md`, `languages/bash.md`. The
    language reference carries the toolchain (formatter, linter, type checker,
    test runner) and boundary-validation conventions.
-3. **Always pull in `ci.md`** — it applies on top of every shape.
+3. **Always pull in `ci.md`** — it applies on top of every shape. When the repo
+   ships a *versioned artifact* (binary, package, plugin, image), also pull in
+   `releasing.md` — the Conventional-Commits → automated-release pipeline that
+   pairs with `ci.md`'s squash-merge governance.
 4. **Pull in `monorepo.md` when the repo holds more than one deliverable** —
    multiple apps, multiple publishable packages, or more than one language. It
    is cross-cutting and *conditional*: it layers on top of the per-project
@@ -37,9 +40,11 @@ them for the repo in front of you.
   `languages/python.md` gives the toolchain. Their overlap — packaging a console
   entry point, e2e-testing the installed command — is concrete enough to have
   its own reference: `intersections/python-cli.md`. Use all three.
-- **A Rust CLI.** `shapes/cli.md` + `languages/rust.md` + `ci.md`. No
-  intersection reference exists yet; if the overlap (snapshot-testing a compiled
-  binary, cross-platform release artifacts) grows, add `intersections/rust-cli.md`.
+- **A Rust CLI.** `shapes/cli.md` + `languages/rust.md` +
+  `intersections/rust-cli.md` + `ci.md` (+ `releasing.md` when you cut versions).
+  The intersection captures the overlap: driving the compiled binary in e2e,
+  MSRV + toolchain pinning, the supply-chain gate job, and per-platform release
+  archives on one asset-naming contract.
 - **An asdf plugin.** `shapes/asdf-plugin.md` + `languages/bash.md` + `ci.md`.
 - **A multi-app / polyglot monorepo.** Compose each deliverable from its own
   shape + language as usual (e.g. a Next.js app via `shapes/nextjs.md` +
@@ -53,8 +58,8 @@ them for the repo in front of you.
 | --- | --- |
 | Product shape | `shapes/cli.md`, `shapes/web-app.md`, `shapes/nextjs.md`, `shapes/library.md`, `shapes/skills-repo.md`, `shapes/asdf-plugin.md` |
 | Language | `languages/python.md`, `languages/typescript.md`, `languages/rust.md`, `languages/bash.md` |
-| Cross-cutting | `ci.md` (always), `monorepo.md` (when >1 app/package/language) |
-| Intersection | `intersections/python-cli.md` |
+| Cross-cutting | `ci.md` (always), `releasing.md` (when shipping a versioned artifact), `monorepo.md` (when >1 app/package/language) |
+| Intersection | `intersections/python-cli.md`, `intersections/rust-cli.md` |
 
 The core principles in `SKILL.md` always apply; references specialize them and
 never override the non-negotiable invariants (strict gates, boundary validation,

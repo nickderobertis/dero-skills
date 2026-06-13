@@ -20,8 +20,20 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
   the command surface small and predictable.
 - **Distribution.** If users install it, ship packaging + release automation,
   document supported platforms, and have CI exercise the recommended end-user
-  install method on the real platform matrix (see `ci.md` and the language
-  reference) — proving the install path users take, not just the dev bootstrap.
+  install method on the real platform matrix (see `ci.md`, `releasing.md`, and
+  the language reference) — proving the install path users take, not just the dev
+  bootstrap.
+- **One asset-naming contract across every install surface.** A CLI is often
+  installed several ways — GitHub Releases, an `install.sh` one-liner, a
+  composite GitHub Action (`action.yml`), a container image, a registry. Every
+  surface that *downloads* a release asset must construct the **same**
+  archive/`.sha256` name the release workflow produced; the moment they drift, an
+  install path 404s in a way local testing never catches. Pin the naming once and
+  have CI test each surface (e.g. one job that installs the action via `source`
+  and another via `download`). When a published package *carries* the binary,
+  smoke-test the publish-shape package with the dev escape-hatch unset so CI
+  proves the shipped artifact, not `target/` (see the live/install tier in
+  `ci.md`).
 - **Commands.** The CLI e2e suite runs in the default `just check` and in CI —
   it is never opt-in or excluded by default. `just e2e` is only a convenience
   for running the slow end-to-end journeys *in isolation*; it must not be the

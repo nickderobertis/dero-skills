@@ -13,7 +13,10 @@ to re-run a developer's warm local environment.
   baseline checker fails CI that never references `just check`.
 - **Realistic platform matrix.** Use an OS matrix when the artifact is
   cross-platform (CLIs, plugins, binaries). Test the versions you actually
-  support.
+  support. When the matrix includes Windows, commit a `.gitattributes` with
+  `* text=auto eol=lf` (and an `.editorconfig`) so line endings don't flip to
+  CRLF on checkout and break tests or formatters — a failure mode that only ever
+  shows up on the Windows runner.
 - **Prove the end-user install path, on the real platforms.** Bootstrapping the
   *dev* toolchain (`just bootstrap`) is not the same as installing the shipped
   artifact. When the repo produces something users install — a CLI, a binary, a
@@ -44,6 +47,45 @@ to re-run a developer's warm local environment.
 - **Logs are context.** Keep logs minimal on success; emit detailed diagnostics
   only on failure, so a failed run points straight at the cause.
 
+## The live / integration test tier
+
+The deterministic e2e in `just check` must stay offline and reproducible — but
+some behavior can only be proven against a *real* external service (a real API,
+a real harness, a real credential store). That is a tier **above** the gate, not
+a relaxation of it. Structure it the way these repos do:
+
+- **Out of `just check`, in its own workflow.** Live tests never run in the
+  default gate (they would make it non-deterministic and credential-dependent).
+  They run in dedicated CI workflows — often **one workflow per integration** so
+  a flaky provider fails in isolation and its secrets stay scoped.
+- **Compile-but-skip — never `#[cfg]` it out.** The live test must still
+  *compile and type-check* in the normal gate even when its secret/env is unset;
+  gate it at *runtime* (skip when the credential is absent) rather than excluding
+  the code. This is the one sanctioned use of `#[ignore]` / an env guard: it
+  keeps the live code from rotting while keeping execution opt-in. (Contrast with
+  deterministic e2e, which must never be `#[ignore]`-d out of the gate.)
+- **Fork-safe.** Forked PRs don't get your secrets, so gate live jobs to the
+  canonical repo:
+  `if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository`.
+  Use a read-only token on forks, and make a job with no secret **no-op cleanly**
+  (skip with a log line) rather than fail. A required check that forks can't pass
+  blocks every external contributor.
+- **Prove the published shape, not the dev build.** When the live/install test
+  exercises a packaged artifact, install the *publish-shape* package in a fresh
+  project and unset whatever dev escape-hatch points at your local binary (e.g.
+  a `*_BIN` env var) so the test is forced through the artifact users get — not
+  the one sitting in `target/`.
+
+## Informational performance tier
+
+Performance-sensitive artifacts (CLIs, hot libraries) benefit from a benchmark
+workflow — but keep it **informational, never a gate**. The pattern these repos
+share: a `bench.yml` running Criterion micro-benchmarks plus `hyperfine` CLI
+timings, comparing against the PR base with `critcmp`, `continue-on-error: true`,
+posting a single sticky PR comment (and degrading to an artifact + summary on
+forks, which can't comment). It lives outside `just check` so a noisy or slow
+benchmark can never block a correct change; the strict gate stays strict.
+
 ## Repository settings: merge model & branch protection
 
 CI only proves the artifact if the platform actually *blocks* a merge until the
@@ -57,6 +99,12 @@ exact commands below are the ones this skill's own repo uses.
   commit subject to the **PR title** and the body to the **PR description**, so
   the PR title is what lands (and what a Conventional-Commits / release pipeline
   reads).
+- **Lint the PR title as a required check.** Because the PR title *becomes* the
+  release-driving commit, add a CI check that validates it against Conventional
+  Commits (`amannn/action-semantic-pull-request`, or `commitlint` over the
+  title) and put it in the required set below. Without it, a malformed title
+  merges and the release tool computes a wrong (or no) version. See
+  `releasing.md` for the release pipeline this feeds.
 - **Auto-merge enabled.** Turn on auto-merge at the repo level so a PR can be
   queued with `gh pr merge --auto --squash` and merges itself the moment every
   required check goes green — no babysitting, and nothing merges early.

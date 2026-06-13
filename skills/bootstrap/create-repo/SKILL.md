@@ -22,7 +22,11 @@ clone, run one command, and trust.
    prompts. Keep `AGENTS.md` terse — it is always-loaded context. Folder-scoped
    rules belong in a nested `AGENTS.md`; content that is neither always relevant
    nor cleanly scoped to one folder belongs in a reference doc linked from
-   `AGENTS.md`, not inlined (see Principle 5).
+   `AGENTS.md`, not inlined (see Principle 5). Optionally add a `SessionStart`
+   hook in `.claude/settings.json` pointing at an idempotent, non-blocking
+   `scripts/session-setup.sh` that provisions the dev toolchain (and skips in
+   CI), plus a `PreToolUse` hook if you enforce the allowlist with a tool — both
+   stay quiet on success.
 2. **Identify the product shape.** Name the artifact (CLI, web app, library /
    service, asdf plugin, skills repo, ...) and the implementation language(s).
    Compose references by mixing and matching — see
@@ -221,14 +225,23 @@ sufficient.
       installed entry point. The dev `just bootstrap` is not that path.
 11. **Releases and distribution should be first-class when applicable.**
     - If the repo produces installable artifacts, include packaging and release
-      automation.
+      automation. Conventional Commits drive it: a bot computes the version,
+      writes the changelog and manifests, and tags; the tag triggers build and
+      publish. Decouple versioning from building, and lint the PR title (the
+      squash commit the release reads) as a required check. See
+      `references/releasing.md`.
     - Include checksums and signing if appropriate; document versioning and
       compatibility expectations.
     - Document one recommended end-user install method and keep CI installing it
       verbatim, so the path users take is continuously proven on real platforms.
+      When a CLI ships through several install surfaces, keep them all on one
+      asset-naming contract (see `references/shapes/cli.md`).
 12. **Avoid unnecessary template baggage.**
     - Exclude tools and layouts that don't fit (asdf, direnv, `src` layout,
-      pre-commit, etc.) unless clearly justified.
+      heavyweight pre-commit frameworks, etc.) unless clearly justified. A *fast*
+      pre-commit/pre-push hook that just calls the gate (lefthook, or husky where
+      JS exists) is fine; the baggage to avoid is a framework that re-specifies
+      the tools the gate already runs.
     - Avoid previews, multiple install profiles, and noisy defaults; minimize
       ongoing maintenance burden.
 13. **Updates should be regular and validated.**
@@ -270,10 +283,12 @@ the catalog and worked examples.
   `asdf-plugin` (language-agnostic where possible).
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
 - **Cross-cutting** — `ci` (GitHub Actions), applied on top of every shape;
-  `monorepo` (Nx orchestration, affected-only jobs, output caching), pulled in
-  when the repo holds more than one app, package, or language.
-- **Intersections** — e.g. `python-cli`, added when guidance is needed where a
-  shape and a language meet.
+  `releasing` (Conventional Commits → automated release), pulled in when the repo
+  ships a versioned artifact; `monorepo` (Nx orchestration, affected-only jobs,
+  output caching), pulled in when the repo holds more than one app, package, or
+  language.
+- **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
+  needed where a shape and a language meet.
 
 ## Templates and checker
 

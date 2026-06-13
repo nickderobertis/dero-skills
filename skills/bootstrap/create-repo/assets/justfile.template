@@ -47,3 +47,11 @@ format:
 upgrade:
     @echo "TODO: upgrade dependencies (e.g. uv lock --upgrade)"
     @just check
+
+# Optional, but a common addition: a diagnostics recipe so `check` can stay
+# quiet on success. Push environment/version reporting here (toolchain versions,
+# tool presence, outdated deps) instead of letting it leak into the gate's
+# output. Add `setup`/`setup-check` recipes too if first-run machine setup is
+# more than `bootstrap`.
+# doctor:
+#     @echo "TODO: report toolchain + tool versions and flag anything missing"
