@@ -14,7 +14,11 @@ shared guidance.
 - **E2E the installed command.** Install into a clean environment with `uv` and
   invoke the actual console script as a subprocess; assert on exit code, stdout,
   and stderr. Don't settle for calling `main()` in-process — that misses
-  packaging, entry-point, and argument-parsing bugs.
+  packaging, entry-point, and argument-parsing bugs. Don't reach for
+  `monkeypatch`/`unittest.mock` to stub out the filesystem, subprocess, or
+  network the command really uses, either: a mocked "e2e" proves the mock, not
+  the tool. Use real files in `tmp_path` and a real local server; mock only a
+  genuinely external third party you cannot run, and gate that to the live tier.
 - **Run-without-install.** Document `uvx <tool>` / `uv run` usage so users can
   try it without a global install.
 - **Distribution.** Build a wheel and sdist; publish with checksums. Keep

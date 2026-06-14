@@ -50,9 +50,14 @@ to re-run a developer's warm local environment.
 ## The live / integration test tier
 
 The deterministic e2e in `just check` must stay offline and reproducible — but
-some behavior can only be proven against a *real* external service (a real API,
-a real harness, a real credential store). That is a tier **above** the gate, not
-a relaxation of it. Structure it the way these repos do:
+"offline and deterministic" does **not** mean "mock everything." Drive the real
+artifact against real *local* resources (real files in a temp dir, a real local
+server or DB, the real binary as a subprocess); mocking the layer under test
+just to keep the gate fast proves the mock, not the product. Some behavior can
+only be proven against a *real* external service (a real API, a real harness, a
+real credential store). That is a tier **above** the gate, not a relaxation of
+it — and the place where mocking a third party is replaced by the genuine call.
+Structure it the way these repos do:
 
 - **Out of `just check`, in its own workflow.** Live tests never run in the
   default gate (they would make it non-deterministic and credential-dependent).

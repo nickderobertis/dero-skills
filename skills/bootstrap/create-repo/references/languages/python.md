@@ -20,7 +20,10 @@ Language-level conventions for any Python repo. Combine with a product shape
   `pytest-cov`). 95% line coverage is the default bar; lower it only with a
   documented reason in `AGENTS.md`. Coverage is a default gate, not opt-in: a
   repo that ships behavior its tests never execute has a hole, and the number
-  makes the hole visible.
+  makes the hole visible. But coverage is a *floor, not the target*: line
+  coverage is satisfiable with mocks that touch lines without proving behavior,
+  so chase real end-to-end journeys first and let the number follow — don't mock
+  the layer under test just to clear the bar.
 - **Command mapping.**
   - `just bootstrap` -> `uv sync`
   - `just check` -> `ruff format --check` + `ruff check` + `ty` +

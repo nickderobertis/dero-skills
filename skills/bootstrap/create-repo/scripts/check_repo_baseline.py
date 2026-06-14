@@ -31,6 +31,10 @@ Checks:
   * An e2e signal exists: a `*e2e*` recipe, an `e2e/` test directory, or an
     explicit e2e statement in AGENTS.md (so skipping e2e is a deliberate,
     documented decision rather than a silent omission).
+  * E2E realism (advisory WARN only): e2e-tier test files that import a mocking
+    library are flagged, since a mocked "e2e" proves the mock, not the product.
+    Realism can't be fully verified stack-agnostically, so this is a nudge, not
+    a gate — mock only a genuinely external third party, gated to the live tier.
   * A coverage signal exists: a coverage tool/flag in the justfile, a coverage
     threshold in a config file, or an explicit coverage statement in AGENTS.md
     (coverage is a default gate, so dropping it must be a documented decision).
@@ -82,6 +86,39 @@ JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 
 # Case-insensitive marker that a recipe body is still the unfilled template.
 PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
+
+# Mocking-library signals. An e2e test that imports one of these may be mocking
+# the very boundary it should exercise for real — the fast-and-mocked failure
+# mode. Stack-agnostic: spans Python (unittest.mock, monkeypatch, pytest-mock,
+# @patch), JS/TS (vi.mock, jest.mock, sinon, nock), and others (mockito). Used
+# only for an advisory WARN, so a stub of a genuinely external third party (the
+# one sanctioned use) costing a nudge is an acceptable trade.
+MOCK_RE = re.compile(
+    r"unittest\.mock|from\s+mock\b|import\s+mock\b|\bMagicMock\b|\bmonkeypatch\b|"
+    r"pytest[_-]mock|\bmocker\b|@patch\b|\bvi\.mock\b|\bjest\.mock\b|\bsinon\b|"
+    r"\bnock\b|\bmockito\b",
+    re.IGNORECASE,
+)
+
+# Source suffixes worth scanning for e2e realism, and vendor/build directories
+# never worth descending into.
+E2E_SOURCE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".mjs", ".rs", ".go", ".rb", ".sh")
+SKIP_DIRS = frozenset(
+    {
+        ".git",
+        "node_modules",
+        "target",
+        "dist",
+        "build",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".tox",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
+    }
+)
 
 # A coverage signal: a coverage tool or threshold flag in the justfile / a
 # config file, or the word "coverage" documenting the decision in AGENTS.md.
@@ -380,6 +417,59 @@ def check_e2e(repo: Path) -> list[Finding]:
     ]
 
 
+def _iter_e2e_test_files(repo: Path):
+    """Yield source files in the e2e tier: under an ``e2e/`` dir or e2e-named.
+
+    Bounded on purpose — skips vendor/build trees and non-source suffixes — so it
+    stays fast in a large repo and only ever looks at hand-written test code.
+    """
+    for path in repo.rglob("*"):
+        rel_parts = path.relative_to(repo).parts
+        if any(part in SKIP_DIRS for part in rel_parts):
+            continue
+        if not path.is_file() or path.suffix not in E2E_SOURCE_SUFFIXES:
+            continue
+        in_e2e_dir = any(part.lower() == "e2e" for part in rel_parts[:-1])
+        if in_e2e_dir or "e2e" in path.name.lower():
+            yield path
+
+
+def check_e2e_realism(repo: Path) -> list[Finding]:
+    """Advisory WARN when e2e-tier tests import a mocking library.
+
+    A mocked "e2e" proves the mock, not the product — the fast-and-mocked failure
+    mode the skill warns against. Whether a given mock is legitimate (a genuinely
+    external third party, which belongs in the live tier) cannot be judged
+    stack-agnostically, so this never fails the gate; it is a nudge to confirm the
+    e2e suite drives the *real* boundary the way a user does. Files outside the
+    e2e tier are not scanned — unit tests may mock freely.
+    """
+    mock_files: list[str] = []
+    for path in _iter_e2e_test_files(repo):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if MOCK_RE.search(text):
+            mock_files.append(path.relative_to(repo).as_posix())
+    if not mock_files:
+        return []
+    mock_files.sort()
+    shown = ", ".join(mock_files[:5])
+    if len(mock_files) > 5:
+        shown += f" (+{len(mock_files) - 5} more)"
+    return [
+        Finding(
+            "WARN",
+            f"e2e-tier test(s) import a mocking library: {shown}",
+            "confirm these e2e tests drive the real artifact across the real "
+            "boundary (subprocess, real local server/DB, real temp files), not a "
+            "mock of the layer under test; mock only a genuinely external third "
+            "party and gate that to the live tier",
+        )
+    ]
+
+
 def check_coverage(repo: Path) -> list[Finding]:
     """Require a deliberate coverage decision: enforced in the gate, or opted out.
 
@@ -541,6 +631,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_composition(repo)
     findings += check_justfile(repo)
     findings += check_e2e(repo)
+    findings += check_e2e_realism(repo)
     findings += check_coverage(repo)
     findings += check_ci(repo)
     return findings
