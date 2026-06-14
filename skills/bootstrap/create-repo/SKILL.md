@@ -238,8 +238,10 @@ sufficient.
     - If the repo produces installable artifacts, include packaging and release
       automation. Conventional Commits drive it: a bot computes the version,
       writes the changelog and manifests, and tags; the tag triggers build and
-      publish. Decouple versioning from building, and lint the PR title (the
-      squash commit the release reads) as a required check. See
+      publish. **Releasing is fully automated with no manual deploy step** — the
+      only human action is merging a PR; nobody hand-edits a version, hand-tags,
+      or hand-dispatches a publish. Decouple versioning from building, and lint
+      the PR title (the squash commit the release reads) as a required check. See
       `references/releasing.md`.
     - Include checksums and signing if appropriate; document versioning and
       compatibility expectations.

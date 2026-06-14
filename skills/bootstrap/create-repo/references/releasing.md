@@ -13,6 +13,26 @@ computes the next version, writes the changelog and every manifest, and tags;
 the tag triggers build and publish.** Nobody hand-edits a version number, and
 versioning is decoupled from building.
 
+**Releasing is fully automated — there is no manual deploy step (non-negotiable).**
+Once the release decision is recorded, *every* downstream action runs itself: no
+human hand-edits a version, hand-creates a tag, or hand-dispatches a publish
+workflow. The only human action in any release is merging a PR. Two shapes
+satisfy this and both are fine:
+
+- **Push-to-main (`semantic-release`, `release-please` in non-PR mode):** the
+  release fires the moment a normal PR squash-merges to the default branch — zero
+  further steps. Prefer this when you want releases to be a non-event.
+- **Release-PR gate (`release-plz`, `release-please`):** the bot opens a release
+  PR accumulating unreleased commits; merging it cuts the release. This is an
+  *approval gate*, not a manual deploy — merging it is the same one-click PR
+  merge, and the version → changelog → tag → build → publish chain runs itself
+  from there. Choose it when you want a human checkpoint on the changelog/version
+  before it ships, and record that intent in `AGENTS.md`.
+
+If cutting a release ever requires running a command by hand, clicking
+"Run workflow," or editing a version number in a file, the pipeline is **not
+done** — that is the failure mode this section exists to prevent.
+
 ## Conventional Commits drive everything
 
 - **Lint the release input.** Under squash-merge the PR title becomes the sole
