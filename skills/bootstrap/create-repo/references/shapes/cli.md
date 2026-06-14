@@ -8,10 +8,10 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
 - **E2E from the user's side.** Test the built/installed CLI the way a user runs
   it — invoke the real entry point as a subprocess and assert on exit codes,
   stdout, and stderr. Snapshot/golden-file tests are ideal for stable output.
-  In-process calls to `main()` are not enough — and neither is mocking the
-  process/network/filesystem the command actually touches: that proves the mock,
-  not the CLI. Cover every command and flag a user reaches, the happy path and
-  the failure/recovery paths, not one smoke test.
+  In-process `main()` calls are not enough — nor is mocking the
+  process/network/filesystem the command touches: that proves the mock, not the
+  CLI. Cover every command and flag a user reaches, happy path and
+  failure/recovery, not one smoke test.
 - **Boundaries.** Validate and bound arguments and stdin at the edge. Handle
   process, network, and filesystem failures explicitly; fail with a non-zero
   exit code and a clear message.

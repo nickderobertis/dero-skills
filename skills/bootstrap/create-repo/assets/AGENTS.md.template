@@ -76,9 +76,8 @@ so it is auditable and re-appliable.
 - The quality gate is strict: no warnings-only mode. A diagnostic is either an
   error or suppressed with a documented, tracked rationale.
 - **Tests are realistic, not mocked, and complete, not minimal.** E2E drives the
-  real built artifact across real boundaries; a feature is not done until a real
-  journey covers it. (See "Tests are context engineering" — this is a rule, not a
-  preference.)
+  real artifact across real boundaries; a feature isn't done until a real journey
+  covers it (see "Tests are context engineering").
 - Validate all external / IO inputs at trust boundaries.
 - Keep the artifact portable across the supported platform matrix.
 - Do not commit secrets, credentials, PII, or customer data.
@@ -93,35 +92,27 @@ so it is auditable and re-appliable.
 ## Tests are context engineering
 
 This is an agent-driven repo: the test suite is the *only* QA loop — no human
-clicks through the features. So tests are not a chore that trails the work; they
-are how you and the next agent see whether the system actually works. Optimize
-for realism and coverage, never for speed or a green checkmark. Realism here is a
-rule, not a preference (see Invariants).
+clicks through features — so it is how you and the next agent see whether things
+work. Realism and coverage are a rule, not a preference (see Invariants).
 
-- **Never mock the thing you are trying to prove.** An "e2e" test that mocks the
-  network, filesystem, subprocess, or the artifact's own entry point proves the
-  mock, not the product — that is the fast-and-mocked failure mode, not the goal.
-  Drive the *real* built artifact across the *real* boundary the way a user does:
-  invoke the installed CLI as a subprocess and assert on exit code/stdout/stderr;
-  hit a real local server or DB; read and write real files in a temp dir. Mock
-  only a genuinely external third party you cannot run locally, and say which.
-- **A green mocked suite is worse than no suite.** It manufactures false
-  confidence the next agent builds on, and the breakage surfaces in production
-  where no human is watching.
-- **"Done" means complete, not minimal.** Cover *every* user-facing journey — the
-  happy path **and** the meaningful failure/recovery paths — not one smoke test.
-  A feature is not finished until a real e2e journey exercises it end to end.
-- **Coverage is a floor, not the target.** The line-coverage gate is satisfiable
-  with mocks that touch lines without proving behavior; clearing it is not the
-  same as realistic coverage. Pursue real journeys and let the number follow.
-- **Keep the journey list below current.** When you add or change a feature, add
-  or update its journey here and in the e2e suite, so coverage is auditable and
-  grows with the repo.
+- **Never mock the layer under test.** An "e2e" that mocks the network, files,
+  subprocess, or the entry point proves the mock, not the product. Drive the real
+  artifact across real boundaries the way a user does (CLI as a subprocess
+  asserting exit code/stdout/stderr; a real local server/DB; real temp files).
+  Mock only a genuinely external third party you can't run, and say which.
+- **A green mocked suite is worse than none** — false confidence the next agent
+  builds on, breaking in production where no human watches.
+- **Done means complete, not minimal:** every user-facing journey, happy path
+  *and* failure/recovery — not one smoke test.
+- **Coverage is a floor, not the target:** line coverage is satisfiable with
+  mocks that prove nothing. Chase real journeys; let the number follow.
+- **Keep the list below current:** a feature isn't done until its real e2e
+  journey lands here and in the suite.
 
 Covered e2e journeys:
 
 - <journey 1: a user runs ... and gets ...>
-- <journey 2: on bad input / failure X, the tool ... and recovers/exits ...>
+- <journey 2: on failure X, the tool ... and exits ...>
 
 ## Keeping the allowlist current
 

@@ -59,19 +59,17 @@ clone, run one command, and trust.
 5. **Make every script agent-friendly.** A script's output is context the next
    agent reads. Emit almost nothing on success; on failure, print the exact
    error and a concrete suggested action.
-6. **Automate realistic tests — this is an invariant, not a preference.** In an
+6. **Automate realistic tests — an invariant, not a preference.** In an
    agent-driven repo the test suite is the *only* QA loop, so realism and
-   completeness are non-negotiable (treat this with the same force as the strict
-   gate). Write full end-to-end tests that drive the **real built artifact across
-   real boundaries** the way a user runs it. **Never mock the thing you are
-   trying to prove** — an "e2e" test that mocks the network, filesystem,
-   subprocess, or the artifact's own entry point proves the mock, not the
-   product, and a green mocked suite is worse than none because the next agent
-   builds on its false confidence. "Done" means **complete, not minimal**: every
-   user-facing journey, the happy path *and* the failure/recovery paths — not one
-   smoke test. Coverage is a floor (it is satisfiable with mocks that touch lines
-   without proving behavior), not the target. Enumerate the covered journeys in
-   `AGENTS.md` so coverage is auditable and grows as features are added.
+   completeness carry the same force as the strict gate. **Never mock the layer
+   under test** — an "e2e" that mocks the network, files, subprocess, or the
+   entry point proves the mock, not the product, and a green mocked suite is
+   worse than none (the next agent builds on its false confidence). Drive the
+   real artifact across real boundaries the way a user does. "Done" means
+   **complete, not minimal**: every user-facing journey, happy path *and*
+   failure/recovery — not one smoke test. Coverage is a floor (satisfiable with
+   mocks that prove nothing), not the target. Enumerate the journeys in
+   `AGENTS.md` so coverage is auditable and grows with the repo.
 7. **Add CI that proves the artifact.** A clean checkout must bootstrap from
    scratch and run the complete gate (`just bootstrap` then `just check`), on
    the supported platform matrix. Start from
@@ -131,14 +129,12 @@ sufficient.
    measured and the gate fails below the threshold (95% line coverage by
    default, or a documented lower bar in `AGENTS.md`). `check` actually invokes
    `test` — confirm the wiring, don't assume it.
-5. **Real e2e.** E2E exercises the built artifact the way users run it — driving
-   the real artifact across real boundaries (a CLI invoked as a subprocess, a
-   real local server/DB, real files), **not mocking the layer under test**.
-   "Mocked but green" is a fail, not a pass. It covers *every* user-facing
-   journey — happy path **and** the meaningful failure/recovery paths — not one
-   smoke test, with the journeys enumerated in `AGENTS.md`. It runs inside `just
-   check` and CI (a too-expensive case is a documented exception CI still runs,
-   e.g. nightly — never silently skipped).
+5. **Real e2e.** E2E drives the real artifact across real boundaries (a CLI as a
+   subprocess, a real local server/DB, real files), **not mocking the layer under
+   test** — "mocked but green" is a fail. It covers *every* user-facing journey,
+   happy path **and** failure/recovery — not one smoke test — enumerated in
+   `AGENTS.md`. It runs inside `just check` and CI (a too-expensive case is a
+   documented exception CI still runs, e.g. nightly — never silently skipped).
 6. **CI proves the artifact.** A workflow runs `just bootstrap` then
    `just check` on a clean checkout, on the supported platform matrix.
 7. **End-user install path.** If the repo ships an installable artifact, a CI
@@ -193,28 +189,22 @@ sufficient.
    - Prefer deterministic, reproducible checks; avoid environment-dependent
      behavior.
    - Any suppressed diagnostics must have a clear rationale and tracking.
-4. **E2E tests must cover real user journeys — realism is non-negotiable.**
-   - In an agent-driven repo the test suite is the *only* QA loop (no human
-     clicks through features), so this carries the same force as the strict gate,
-     not the weight of a preference.
-   - E2E must exercise the built artifact the way users run it (not just
-     unit-level smoke tests), driving the **real artifact across real
-     boundaries** — a CLI invoked as a subprocess, a real local server/DB, real
-     files in a temp dir.
-   - **Never mock the thing you are trying to prove.** Mocking the network,
-     filesystem, subprocess, or the entry point under test yields an "e2e" that
-     proves the mock, not the product. A green mocked suite is worse than none —
-     it manufactures false confidence the next agent builds on, and the breakage
-     surfaces in production where no human is watching. Mock only a genuinely
-     external third party you cannot run locally, and document which.
-   - "Done" means **complete, not minimal**: cover *every* user-facing journey —
-     critical success **and** failure/recovery paths — and validate behavior at
-     boundaries (process / network / filesystem). Enumerate the journeys in
-     `AGENTS.md` so coverage is auditable and grows as features land.
-   - E2E runs in the default `just check` and in CI — it is part of the gate,
-     not an opt-in target. A test too expensive for every run is a documented
-     exception that CI still executes (e.g. nightly), never silently excluded
-     (no default `#[ignore]`, deselected marker, or check-skips-e2e wiring).
+4. **E2E covers real user journeys — realism is non-negotiable.**
+   - In an agent-driven repo the test suite is the *only* QA loop, so this carries
+     the same force as the strict gate, not the weight of a preference.
+   - **Never mock the layer under test.** Mocking the network, filesystem,
+     subprocess, or the entry point yields an "e2e" that proves the mock, not the
+     product; a green mocked suite is worse than none (false confidence the next
+     agent builds on). Drive the real artifact across real boundaries the way a
+     user does. Mock only a genuinely external third party you can't run, and say
+     which.
+   - "Done" means **complete, not minimal**: every user-facing journey, success
+     **and** failure/recovery, validated at boundaries — enumerated in `AGENTS.md`
+     so coverage is auditable and grows as features land.
+   - E2E runs in the default `just check` and CI — part of the gate, not opt-in. A
+     test too expensive for every run is a documented exception CI still executes
+     (e.g. nightly), never silently excluded (no default `#[ignore]`, deselected
+     marker, or check-skips-e2e wiring).
 5. **`AGENTS.md` is the durable instruction layer — keep it terse.**
    - Root `AGENTS.md` is always-loaded context: every agent session reads it, so
      its length is a standing tax on the context budget. Use terse, pithy
@@ -302,16 +292,15 @@ sufficient.
     - Every script's output is context the next agent must read; don't bury the
       signal in noise.
 16. **Tests are context engineering — and the only QA loop.**
-    - These repos are driven by AI agents with little human testing, so the test
-      suite is how you and the next agent *see* whether the system works. Realism
-      and complete coverage are the only way it stays reliable without a human in
-      the loop — invest accordingly; this is a rule, not a "nice to have."
-    - Automate realistic, full end-to-end use of each feature from the user's
-      perspective, driving the real artifact across real boundaries. Do not mock
-      the layer under test, and do not settle for a happy-path smoke test — a
-      green mocked suite is a liability, not coverage.
-    - Make the covered journeys an explicit, growing contract (enumerated in
-      `AGENTS.md`): when a feature lands, its real e2e journey lands with it.
+    - These repos run on AI agents with little human testing, so the suite is how
+      you and the next agent *see* whether the system works. Realism and complete
+      coverage are the only way it stays reliable without a human in the loop — a
+      rule, not a "nice to have."
+    - Drive the real artifact across real boundaries from the user's side. Don't
+      mock the layer under test or settle for a happy-path smoke test — a green
+      mocked suite is a liability, not coverage.
+    - Make the journeys a growing contract enumerated in `AGENTS.md`: when a
+      feature lands, its real e2e journey lands with it.
 17. **`AGENTS.md` should compound over time.**
     - After finishing the user's main task, propose materially-helpful
       follow-ups: refinements to scripts, `AGENTS.md`, skills, or other context.

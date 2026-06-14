@@ -31,10 +31,9 @@ Checks:
   * An e2e signal exists: a `*e2e*` recipe, an `e2e/` test directory, or an
     explicit e2e statement in AGENTS.md (so skipping e2e is a deliberate,
     documented decision rather than a silent omission).
-  * E2E realism (advisory WARN only): e2e-tier test files that import a mocking
+  * E2E realism (advisory WARN only): e2e-tier tests that import a mocking
     library are flagged, since a mocked "e2e" proves the mock, not the product.
-    Realism can't be fully verified stack-agnostically, so this is a nudge, not
-    a gate — mock only a genuinely external third party, gated to the live tier.
+    Realism can't be verified stack-agnostically, so this is a nudge, not a gate.
   * A coverage signal exists: a coverage tool/flag in the justfile, a coverage
     threshold in a config file, or an explicit coverage statement in AGENTS.md
     (coverage is a default gate, so dropping it must be a documented decision).
@@ -462,10 +461,9 @@ def check_e2e_realism(repo: Path) -> list[Finding]:
         Finding(
             "WARN",
             f"e2e-tier test(s) import a mocking library: {shown}",
-            "confirm these e2e tests drive the real artifact across the real "
-            "boundary (subprocess, real local server/DB, real temp files), not a "
-            "mock of the layer under test; mock only a genuinely external third "
-            "party and gate that to the live tier",
+            "confirm these drive the real boundary (subprocess, real local "
+            "server/DB, real temp files), not a mock of the layer under test; "
+            "mock only a genuinely external third party, gated to the live tier",
         )
     ]
 

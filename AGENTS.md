@@ -105,15 +105,15 @@ check-versions` keeps every pin in lockstep with CI.
 
 ## Tests are context engineering
 
-This repo is driven by AI agents with little human testing, so the test suite is
-the *only* QA loop — realism and complete coverage are how you and the next agent
-see whether things actually work. This is a rule, not a preference.
+AI agents drive this repo with little human testing, so the suite is the *only*
+QA loop — realism and complete coverage are how you and the next agent see
+whether things work. A rule, not a preference.
 
 - **Never mock the layer under test.** Run skill scripts the way a consuming repo
-  would — `uv run --script` against real temp files and real subprocesses — not a
+  would — `uv run --script` against real temp files and subprocesses — not a
   mocked stand-in. A mocked "e2e" proves the mock; a green mocked suite is worse
-  than none because the next agent builds on its false confidence.
-- **Complete, not minimal.** Cover every real journey — happy path *and*
+  than none (the next agent builds on its false confidence).
+- **Complete, not minimal.** Cover every journey — happy path *and*
   failure/recovery — not one smoke test. A feature isn't done until a real e2e
   journey exercises it. Coverage is a floor, not the target.
 - The baseline checker is dogfooded: `just check` runs it against this repo, so
