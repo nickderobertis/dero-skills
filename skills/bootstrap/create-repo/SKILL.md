@@ -78,17 +78,24 @@ clone, run one command, and trust.
    deleted on merge, admins able to override — per the "Repository settings"
    section of [`references/ci.md`](./references/ci.md). Record the model in the
    "Commits, releases, and merging" section of `AGENTS.md`.
-8. **Run the gate yourself, then audit.** Do not declare the repo done from
-   inspection. Actually run `just check` (which includes `test-e2e`) and iterate
-   until it passes from a clean state; then run the baseline checker:
+8. **Run the gate yourself and iterate to green.** Do not declare the repo done
+   from inspection. Actually run `just check` (which includes `test-e2e`) and
+   iterate until it passes from a clean state.
+9. **Upgrade to the latest dependencies, then audit.** As one of the last steps,
+   run `just upgrade` so the repo lands on *current* dependency versions instead
+   of whatever you happened to scaffold with — a freshly-created repo should
+   start life on the latest deps, not stale ones. Because `upgrade` re-runs the
+   full gate, this both refreshes the lockfiles and proves the repo still passes
+   on the upgraded versions; commit the refreshed lockfiles. Then run the
+   baseline checker:
 
    ```bash
    uv run --script scripts/check_repo_baseline.py /path/to/repo
    ```
 
    It is silent on success and, on failure, names each missing invariant with a
-   suggested fix. The repo is not done until both `just check` and the checker
-   pass — fix failures, don't narrate them as next steps.
+   suggested fix. The repo is not done until `just upgrade` (gate included) and
+   the checker both pass — fix failures, don't narrate them as next steps.
 
 ## Verification (run before handing off)
 
@@ -131,14 +138,18 @@ sufficient.
    admins able to override. The model is recorded in the "Commits, releases, and
    merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
    settings, so this is verified by hand against `references/ci.md`).
-9. **Automated gates pass.** `just check` passed locally from a clean state,
-   **and** the baseline checker passed:
+9. **Upgraded to latest, then gated.** `just upgrade` was run as one of the last
+   steps so the repo sits on current dependency versions (not whatever was
+   scaffolded), the refreshed lockfiles are committed, and the gate `upgrade`
+   re-runs passed.
+10. **Automated gates pass.** `just check` passed locally from a clean state,
+    **and** the baseline checker passed:
 
-   ```bash
-   uv run --script scripts/check_repo_baseline.py /path/to/repo
-   ```
+    ```bash
+    uv run --script scripts/check_repo_baseline.py /path/to/repo
+    ```
 
-   Fix failures until both are green — do not narrate them as next steps.
+    Fix failures until both are green — do not narrate them as next steps.
 
 ## Principles
 
@@ -247,6 +258,8 @@ sufficient.
 13. **Updates should be regular and validated.**
     - Provide `just upgrade` (or equivalent), document the update procedure, and
       run the full gate after upgrades.
+    - Run `just upgrade` as one of the last setup steps too, so a freshly-created
+      repo starts on the latest dependencies rather than whatever was scaffolded.
     - Avoid pinning unless necessary; treat upgrades as routine, scripted
       maintenance.
 14. **Architecture guidance should be explicit but not over-prescriptive.**
