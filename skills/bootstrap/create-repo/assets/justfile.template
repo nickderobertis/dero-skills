@@ -15,7 +15,7 @@ default:
 
 # Set up the project from a clean clone: install the toolchain and dependencies.
 bootstrap:
-    @echo "TODO: install toolchain + dependencies (e.g. uv sync / pnpm install)"
+    @echo "TODO: install toolchain + dependencies (e.g. uv sync / bun install)"
 
 # Full quality gate: format check, lint, type check, and tests (incl. e2e).
 # Fail on any issue. e2e is part of the gate, not an opt-in target.

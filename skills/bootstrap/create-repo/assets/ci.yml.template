@@ -38,7 +38,7 @@ jobs:
 
       # TODO: install the toolchain `just bootstrap` needs, e.g.
       #   - uses: astral-sh/setup-uv@v5        # Python (uv)
-      #   - uses: actions/setup-node@v4        # Node/pnpm
+      #   - uses: oven-sh/setup-bun@v2         # JavaScript/TypeScript (bun)
       #   - uses: dtolnay/rust-toolchain@stable  # Rust
 
       - name: Bootstrap

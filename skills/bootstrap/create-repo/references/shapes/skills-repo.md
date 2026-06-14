@@ -31,7 +31,7 @@ worked reference implementation (and is where this skill itself lives).
   than pinning skill versions by default.
 - **Multi-tool compatibility.** Make setup work across Cursor, Claude Code, and
   VS Code / Copilot.
-- **Tooling boundaries.** pnpm for JavaScript, uv for Python; keep the two
+- **Tooling boundaries.** bun for JavaScript, uv for Python; keep the two
   toolchains cleanly separated. An orchestrator (Nx) is acceptable as an
   *optional authoring accelerator* for caching validate/test across many skills —
   but it must never become a runtime dependency of the bundled scripts (see the
