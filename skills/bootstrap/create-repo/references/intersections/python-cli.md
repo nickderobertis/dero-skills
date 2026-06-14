@@ -13,8 +13,11 @@ shared guidance.
   message and a non-zero exit code.
 - **E2E the installed command.** Install into a clean environment with `uv` and
   invoke the actual console script as a subprocess; assert on exit code, stdout,
-  and stderr. Don't settle for calling `main()` in-process — that misses
-  packaging, entry-point, and argument-parsing bugs.
+  and stderr. In-process `main()` calls miss packaging, entry-point, and
+  argument-parsing bugs; `monkeypatch`/`unittest.mock` stubbing the filesystem,
+  subprocess, or network the command uses proves the mock, not the tool. Use real
+  files in `tmp_path` and a real local server; mock only a genuinely external
+  third party you can't run, gated to the live tier.
 - **Run-without-install.** Document `uvx <tool>` / `uv run` usage so users can
   try it without a global install.
 - **Distribution.** Build a wheel and sdist; publish with checksums. Keep

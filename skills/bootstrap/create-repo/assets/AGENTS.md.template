@@ -75,6 +75,9 @@ so it is auditable and re-appliable.
 
 - The quality gate is strict: no warnings-only mode. A diagnostic is either an
   error or suppressed with a documented, tracked rationale.
+- **Tests are realistic, not mocked, and complete, not minimal.** E2E drives the
+  real artifact across real boundaries; a feature isn't done until a real journey
+  covers it (see "Tests are context engineering").
 - Validate all external / IO inputs at trust boundaries.
 - Keep the artifact portable across the supported platform matrix.
 - Do not commit secrets, credentials, PII, or customer data.
@@ -88,12 +91,28 @@ so it is auditable and re-appliable.
 
 ## Tests are context engineering
 
-- Tests are how you and future agents actually see this system behave, so invest
-  in them deliberately.
-- Actively seek out and automate realistic end-to-end tests that exercise
-  features the way a user runs them — not just unit-level smoke tests.
-- When you touch a feature, prefer adding (or extending) an e2e test that proves
-  the real user journey over adding another narrow unit test.
+This is an agent-driven repo: the test suite is the *only* QA loop — no human
+clicks through features — so it is how you and the next agent see whether things
+work. Realism and coverage are a rule, not a preference (see Invariants).
+
+- **Never mock the layer under test.** An "e2e" that mocks the network, files,
+  subprocess, or the entry point proves the mock, not the product. Drive the real
+  artifact across real boundaries the way a user does (CLI as a subprocess
+  asserting exit code/stdout/stderr; a real local server/DB; real temp files).
+  Mock only a genuinely external third party you can't run, and say which.
+- **A green mocked suite is worse than none** — false confidence the next agent
+  builds on, breaking in production where no human watches.
+- **Done means complete, not minimal:** every user-facing journey, happy path
+  *and* failure/recovery — not one smoke test.
+- **Coverage is a floor, not the target:** line coverage is satisfiable with
+  mocks that prove nothing. Chase real journeys; let the number follow.
+- **Keep the list below current:** a feature isn't done until its real e2e
+  journey lands here and in the suite.
+
+Covered e2e journeys:
+
+- <journey 1: a user runs ... and gets ...>
+- <journey 2: on failure X, the tool ... and exits ...>
 
 ## Keeping the allowlist current
 

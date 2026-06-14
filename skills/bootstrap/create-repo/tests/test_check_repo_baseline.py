@@ -297,6 +297,64 @@ def test_e2e_satisfied_by_directory(tmp_path):
     assert not any("e2e signal" in m for m in levels(findings, "ERROR"))
 
 
+# --- e2e realism (advisory) ------------------------------------------------
+
+
+def test_mock_heavy_e2e_warns_but_does_not_error(tmp_path):
+    # An e2e-tier test that mocks the boundary it should exercise: advisory WARN.
+    repo = make_repo(tmp_path)
+    e2e = repo / "tests" / "e2e"
+    e2e.mkdir(parents=True)
+    (e2e / "test_journey.py").write_text(
+        "from unittest.mock import MagicMock\n\ndef test_runs():\n    pass\n",
+        encoding="utf-8",
+    )
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert any("mocking library" in m for m in levels(findings, "WARN"))
+
+
+def test_e2e_named_file_outside_dir_is_scanned(tmp_path):
+    # A file merely named *e2e* counts as the e2e tier even without an e2e/ dir.
+    repo = make_repo(tmp_path)
+    tests = repo / "tests"
+    tests.mkdir()
+    (tests / "cli_e2e.test.ts").write_text(
+        "import { vi } from 'vitest'\nvi.mock('node:fs')\n", encoding="utf-8"
+    )
+    findings = crb.audit(repo)
+    assert any("mocking library" in m for m in levels(findings, "WARN"))
+
+
+def test_real_e2e_emits_no_mock_warning(tmp_path):
+    # An e2e test that drives the real boundary (subprocess + temp files) is clean.
+    repo = make_repo(tmp_path)
+    e2e = repo / "tests" / "e2e"
+    e2e.mkdir(parents=True)
+    (e2e / "test_journey.py").write_text(
+        "import subprocess\n\n"
+        "def test_runs(tmp_path):\n"
+        "    out = subprocess.run(['mytool', '--version'], capture_output=True)\n"
+        "    assert out.returncode == 0\n",
+        encoding="utf-8",
+    )
+    findings = crb.audit(repo)
+    assert not any("mocking library" in m for m in levels(findings, "WARN"))
+
+
+def test_mock_in_unit_test_is_not_flagged(tmp_path):
+    # Mocking outside the e2e tier (a plain unit test) is fine — not scanned.
+    repo = make_repo(tmp_path)
+    tests = repo / "tests"
+    tests.mkdir()
+    (tests / "test_unit.py").write_text(
+        "from unittest.mock import patch\n\ndef test_x():\n    pass\n",
+        encoding="utf-8",
+    )
+    findings = crb.audit(repo)
+    assert not any("mocking library" in m for m in levels(findings, "WARN"))
+
+
 # --- coverage --------------------------------------------------------------
 
 
