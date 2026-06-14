@@ -39,6 +39,10 @@ Checks:
     (coverage is a default gate, so dropping it must be a documented decision).
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
+  * A GitHub pull-request template exists (`.github/pull_request_template.md`,
+    or the root/docs variants GitHub also renders) AND names both a What and a
+    Why section — so every PR states the behavior change and its driver, not a
+    walkthrough of the diff. An empty or unrelated file fails.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -154,6 +158,20 @@ COMPOSITION_HEADING_RE = re.compile(r"\b(composition|composed|stack)\b", re.IGNO
 # An unfilled `<...>` angle-bracket placeholder left over from a template
 # section (the AGENTS.md template marks fill-in spots with `<like this>`).
 ANGLE_PLACEHOLDER_RE = re.compile(r"<[^>\n]+>")
+
+# GitHub renders a default pull-request template from a file named
+# pull_request_template.* (case-insensitive, .md/.txt/extensionless) in the repo
+# root, .github/, or docs/ — or from any file inside a PULL_REQUEST_TEMPLATE/
+# directory in one of those locations (the multi-template form).
+PR_TEMPLATE_DIRS = ("", ".github", "docs")
+PR_TEMPLATE_STEM = "pull_request_template"
+
+# The two required sections of the skill's PR template. Word-boundary and
+# case-insensitive so "## What changed" / "Why" both count without prescribing
+# the exact heading text; the third section ("Additional info") is optional and
+# is deliberately not required.
+PR_WHAT_RE = re.compile(r"\bwhat\b", re.IGNORECASE)
+PR_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
 
 
 @dataclass
@@ -620,6 +638,76 @@ def check_ci(repo: Path) -> list[Finding]:
     return [Finding("OK", "CI workflow runs the gate")]
 
 
+def find_pr_template(repo: Path) -> Path | None:
+    """Return the repo's GitHub pull-request template file, or None.
+
+    Accepts a single default template named ``pull_request_template.*`` (any
+    case; ``.md``/``.txt``/extensionless) in the repo root, ``.github/``, or
+    ``docs/``, or — for the multi-template form — the first file inside a
+    ``PULL_REQUEST_TEMPLATE/`` directory in one of those locations.
+    """
+    for sub in PR_TEMPLATE_DIRS:
+        base = repo / sub if sub else repo
+        if not base.is_dir():
+            continue
+        for entry in sorted(base.iterdir()):
+            name = entry.name.lower()
+            is_named = name == PR_TEMPLATE_STEM or name.startswith(
+                PR_TEMPLATE_STEM + "."
+            )
+            if entry.is_file() and is_named:
+                return entry
+            if entry.is_dir() and name == PR_TEMPLATE_STEM:
+                files = sorted(p for p in entry.iterdir() if p.is_file())
+                if files:
+                    return files[0]
+    return None
+
+
+def check_pr_template(repo: Path) -> list[Finding]:
+    """Require a GitHub pull-request template naming What and Why sections.
+
+    The create-repo skill makes a PR template a required deliverable: GitHub
+    auto-populates a new PR from it, so the template is what makes the
+    every-PR-states-its-intent discipline the default path. A PR should describe
+    the behavior change (What) and its driver and impact (Why) in terse, pithy
+    prose — not walk through the diff, which already shows the code. Going past
+    mere presence (like the other invariants), an empty or unrelated file fails:
+    the template must name both the What and Why sections. The third section,
+    "Additional info", is optional and is not required here.
+    """
+    template = find_pr_template(repo)
+    if template is None:
+        return [
+            Finding(
+                "ERROR",
+                "no GitHub pull-request template",
+                "add .github/pull_request_template.md with What and Why sections "
+                "(Additional info optional) — see the create-repo skill's "
+                "assets/pull_request_template.md.template",
+            )
+        ]
+    text = template.read_text(encoding="utf-8")
+    missing = [
+        label
+        for label, pattern in (("What", PR_WHAT_RE), ("Why", PR_WHY_RE))
+        if not pattern.search(text)
+    ]
+    if missing:
+        rel = template.relative_to(repo).as_posix()
+        joined = " and ".join(missing)
+        return [
+            Finding(
+                "ERROR",
+                f"{rel} is missing the {joined} section(s)",
+                "structure the PR template as What (the behavior change) and Why "
+                "(the driver and impact), terse and pithy — not a description of "
+                "the code changes; Additional info is optional",
+            )
+        ]
+    return [Finding("OK", "GitHub PR template present with What/Why")]
+
+
 def audit(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     findings += check_agents_md(repo)
@@ -632,6 +720,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_e2e_realism(repo)
     findings += check_coverage(repo)
     findings += check_ci(repo)
+    findings += check_pr_template(repo)
     return findings
 
 

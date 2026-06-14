@@ -62,6 +62,10 @@ so it is auditable and re-appliable.
   check that gates correctness — including the full-e2e gate job (`just check`),
   not just a fast lint — plus linear history, conversation resolution, and no
   force-push / branch-deletion.
+- **PRs follow the template.** `.github/pull_request_template.md` asks for a
+  terse **What** (the behavior change) and **Why** (its driver and impact), with
+  an optional **Additional info** section — describe the change and its driver,
+  not a walkthrough of the diff. It also becomes the squash commit body.
 - **Releases (when applicable).** <Describe the release model, or remove this
   bullet. If the repo publishes, say what drives a release — e.g. Conventional
   Commits + semantic-release / release-plz on push to the default branch — and
