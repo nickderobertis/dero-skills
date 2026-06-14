@@ -65,7 +65,11 @@ so it is auditable and re-appliable.
 - **Releases (when applicable).** <Describe the release model, or remove this
   bullet. If the repo publishes, say what drives a release — e.g. Conventional
   Commits + semantic-release / release-plz on push to the default branch — and
-  where the changelog lives. See the create-repo skill's `references/releasing.md`.>
+  where the changelog lives. Releasing is fully automated with no manual deploy
+  step: the only human action is merging a PR; nobody hand-edits a version,
+  hand-tags, or hand-dispatches a publish. Note which shape you chose —
+  push-to-main or a bot release-PR gate. See the create-repo skill's
+  `references/releasing.md`.>
 
 ## Invariants (non-negotiable)
 
