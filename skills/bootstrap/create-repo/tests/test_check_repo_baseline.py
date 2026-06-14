@@ -52,6 +52,18 @@ upgrade:
 # A workflow that actually invokes the gate, as the CI invariant requires.
 GATE_WORKFLOW = "name: ci\njobs:\n  check:\n    steps:\n      - run: just check\n"
 
+# A conformant PR template: names both the What and Why sections the PR-template
+# invariant requires (Additional info is optional).
+CONFORMANT_PR_TEMPLATE = """\
+## What
+
+High-level behavior change.
+
+## Why
+
+The driver and impact.
+"""
+
 # A conformant AGENTS.md: it records the reference composition (a filled-in
 # "Stack and composition" section), which the composition invariant requires.
 CONFORMANT_AGENTS = """\
@@ -75,6 +87,7 @@ def make_repo(
     settings=True,
     justfile=FULL_JUSTFILE,
     ci=True,
+    pr_template=True,
 ) -> Path:
     """Build a repo fixture. With no overrides it is fully conformant.
 
@@ -84,7 +97,8 @@ def make_repo(
     written verbatim to .github/workflows/ci.yml. ``composition`` is True (the
     conformant AGENTS.md with a filled composition section), False (a bare
     AGENTS.md with no such section), or a raw string written verbatim as
-    AGENTS.md.
+    AGENTS.md. ``pr_template`` is True (the conformant .github template), False
+    (none), or a raw string written verbatim to .github/pull_request_template.md.
     """
     repo = tmp_path
     if agents:
@@ -112,6 +126,11 @@ def make_repo(
         wf.mkdir(parents=True)
         body = ci if isinstance(ci, str) else GATE_WORKFLOW
         (wf / "ci.yml").write_text(body, encoding="utf-8")
+    if pr_template is not False:
+        gh = repo / ".github"
+        gh.mkdir(exist_ok=True)
+        body = pr_template if isinstance(pr_template, str) else CONFORMANT_PR_TEMPLATE
+        (gh / "pull_request_template.md").write_text(body, encoding="utf-8")
     return repo
 
 
@@ -209,6 +228,61 @@ def test_ci_without_gate_is_error(tmp_path):
     findings = crb.audit(make_repo(tmp_path, ci="name: ci\njobs:\n  noop: {}\n"))
     assert crb.has_errors(findings)
     assert any("gate" in m for m in levels(findings, "ERROR"))
+
+
+# --- pull-request template -------------------------------------------------
+
+
+def test_missing_pr_template_is_error(tmp_path):
+    findings = crb.audit(make_repo(tmp_path, pr_template=False))
+    assert crb.has_errors(findings)
+    assert any("pull-request template" in m for m in levels(findings, "ERROR"))
+
+
+def test_pr_template_without_what_why_is_error(tmp_path):
+    # A present-but-empty template proves nothing: it must name What and Why.
+    findings = crb.audit(make_repo(tmp_path, pr_template="# Thanks for the PR!\n"))
+    assert crb.has_errors(findings)
+    msgs = levels(findings, "ERROR")
+    assert any("What" in m and "Why" in m for m in msgs)
+
+
+def test_pr_template_missing_only_why_is_error(tmp_path):
+    # Naming What but not Why still fails — both required sections must be present.
+    findings = crb.audit(make_repo(tmp_path, pr_template="## What\n\nThe change.\n"))
+    assert crb.has_errors(findings)
+    assert any("Why" in m for m in levels(findings, "ERROR"))
+
+
+def test_pr_template_in_repo_root_is_accepted(tmp_path):
+    # GitHub also renders a template from the repo root, not only .github/.
+    repo = make_repo(tmp_path, pr_template=False)
+    (repo / "pull_request_template.md").write_text(
+        CONFORMANT_PR_TEMPLATE, encoding="utf-8"
+    )
+    findings = crb.audit(repo)
+    assert not any("pull-request template" in m for m in levels(findings, "ERROR"))
+
+
+def test_pr_template_in_docs_is_accepted(tmp_path):
+    # docs/ is the third location GitHub recognizes.
+    repo = make_repo(tmp_path, pr_template=False)
+    (repo / "docs").mkdir(exist_ok=True)
+    (repo / "docs" / "PULL_REQUEST_TEMPLATE.md").write_text(
+        CONFORMANT_PR_TEMPLATE, encoding="utf-8"
+    )
+    findings = crb.audit(repo)
+    assert not any("pull-request template" in m for m in levels(findings, "ERROR"))
+
+
+def test_pr_template_directory_form_is_accepted(tmp_path):
+    # A PULL_REQUEST_TEMPLATE/ directory (multi-template form) counts too.
+    repo = make_repo(tmp_path, pr_template=False)
+    tdir = repo / ".github" / "PULL_REQUEST_TEMPLATE"
+    tdir.mkdir(parents=True)
+    (tdir / "default.md").write_text(CONFORMANT_PR_TEMPLATE, encoding="utf-8")
+    findings = crb.audit(repo)
+    assert not any("pull-request template" in m for m in levels(findings, "ERROR"))
 
 
 def test_placeholder_recipe_body_is_error(tmp_path):
@@ -442,7 +516,13 @@ def test_composition_satisfied_by_stack_heading(tmp_path):
 def test_every_error_carries_a_suggested_fix(tmp_path):
     # A repo that fails every invariant: each ERROR must include an actionable fix.
     repo = make_repo(
-        tmp_path, agents=False, claude=None, settings=False, justfile=None, ci=False
+        tmp_path,
+        agents=False,
+        claude=None,
+        settings=False,
+        justfile=None,
+        ci=False,
+        pr_template=False,
     )
     errors = [f for f in crb.audit(repo) if f.level == "ERROR"]
     assert errors

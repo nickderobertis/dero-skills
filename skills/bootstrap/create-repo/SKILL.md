@@ -85,7 +85,14 @@ clone, run one command, and trust.
    gating checks (including the full-e2e gate job) required, head branches
    deleted on merge, admins able to override — per the "Repository settings"
    section of [`references/ci.md`](./references/ci.md). Record the model in the
-   "Commits, releases, and merging" section of `AGENTS.md`.
+   "Commits, releases, and merging" section of `AGENTS.md`. Add a required
+   GitHub pull-request template
+   ([`assets/pull_request_template.md.template`](./assets/pull_request_template.md.template)
+   → `.github/pull_request_template.md`) so every PR states the behavior change
+   (**What**) and its driver and impact (**Why**) in terse, pithy prose — not a
+   walkthrough of the diff; a third **Additional info** section is optional and
+   usually omitted. Because the squash body is taken from the PR description,
+   this is also what lands in history.
 8. **Run the gate yourself and iterate to green.** Do not declare the repo done
    from inspection. Actually run `just check` (which includes `test-e2e`) and
    iterate until it passes from a clean state.
@@ -146,7 +153,10 @@ sufficient.
    gating CI check (including the full-e2e gate job) required before merge, with
    admins able to override. The model is recorded in the "Commits, releases, and
    merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
-   settings, so this is verified by hand against `references/ci.md`).
+   settings, so this is verified by hand against `references/ci.md`). A GitHub
+   pull-request template exists (`.github/pull_request_template.md`) with
+   **What** and **Why** sections (**Additional info** optional) — the checker
+   requires this one, since it is a committed file.
 9. **Upgraded to latest, then gated.** `just upgrade` was run as one of the last
    steps so the repo sits on current dependency versions (not whatever was
    scaffolded), the refreshed lockfiles are committed, and the gate `upgrade`
@@ -337,14 +347,19 @@ the catalog and worked examples.
   surface with the six required recipes plus `test-e2e` wired into `check`.
 - [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
   that bootstraps a clean checkout and runs the full gate on a platform matrix.
+- [`assets/pull_request_template.md.template`](./assets/pull_request_template.md.template)
+  — required GitHub PR template: terse **What** (the behavior change) and **Why**
+  (its driver and impact), with an optional **Additional info** section. Drop it
+  at `.github/pull_request_template.md`.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — audits
   `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the recorded
   reference composition, the `justfile` command surface, an e2e signal, a
-  coverage signal, and CI. Goes past presence: it fails on `TODO` placeholder
-  recipe bodies, a `check` that doesn't run `test`, a missing e2e tier, no
-  coverage signal (a coverage recipe/config or a documented `AGENTS.md`
-  decision), an unfilled "Stack and composition" section, and CI that never
-  invokes `just check`. It also raises an advisory (non-failing) warning when the
+  coverage signal, CI, and the GitHub PR template. Goes past presence: it fails
+  on `TODO` placeholder recipe bodies, a `check` that doesn't run `test`, a
+  missing e2e tier, no coverage signal (a coverage recipe/config or a documented
+  `AGENTS.md` decision), an unfilled "Stack and composition" section, CI that
+  never invokes `just check`, and a PR template that is missing or lacks its
+  **What**/**Why** sections. It also raises an advisory (non-failing) warning when the
   root `AGENTS.md` grows past a soft line cap — a nudge to keep the always-loaded
   instruction layer terse. Silent on success; on failure prints each missing
   invariant with a suggested fix.

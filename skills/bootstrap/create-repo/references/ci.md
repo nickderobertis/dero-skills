@@ -125,6 +125,18 @@ exact commands below are the ones this skill's own repo uses.
   the protection is the default path, not a cage. (Bump the required approval
   count above zero for a team; zero is reasonable for a solo maintainer who
   still wants every check enforced.)
+- **Commit a required PR template.** Add `.github/pull_request_template.md`
+  (start from
+  [`assets/pull_request_template.md.template`](../assets/pull_request_template.md.template))
+  so GitHub auto-populates every new PR with the structure the repo expects:
+  **What** — a terse, high-level description of the *behavior* change; **Why** —
+  the driver, i.e. the impact and what motivated it; and an optional **Additional
+  info** third section, usually omitted, for the rare thing that fits neither
+  above. Keep it pithy and resist describing the code changes line by line — the
+  diff already shows the *how*; the template captures the *what* and *why*. This
+  is also what lands in history, since the squash body is taken from the PR
+  description. Unlike the merge-model settings, this is a committed file, so the
+  baseline checker enforces its presence and that it names both What and Why.
 
 Apply it (replace the contexts with *your* required job names):
 

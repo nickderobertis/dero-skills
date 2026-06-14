@@ -72,6 +72,10 @@ check-versions` keeps every pin in lockstep with CI.
   **PR title** becomes the squash commit subject, so it must be a valid
   Conventional Commit — that is what `commitlint` lints and what
   semantic-release reads. Merged branches auto-delete.
+- **PRs follow the template.** `.github/pull_request_template.md` asks for a
+  terse **What** (the behavior change) and **Why** (its driver and impact), with
+  an optional **Additional info** section — describe the change and its driver,
+  not a walkthrough of the diff. It becomes the squash commit body.
 - **Releases are automated.** On push to `main`, semantic-release analyses the
   commits since the last tag and, when warranted, publishes a GitHub Release +
   tag with generated notes (`.releaserc.json`). It does not commit back to
