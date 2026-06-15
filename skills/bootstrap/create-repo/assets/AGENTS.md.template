@@ -5,10 +5,14 @@ future maintainer, not as a session log. Put deterministic steps in scripts and
 keep this file for constraints, tradeoffs, and judgment.
 
 > Keep this file terse — it is always-loaded context, so its length is a
-> standing tax on every session's budget. Rules cleanly scoped to a folder go in
-> a nested `AGENTS.md` (e.g. `tests/AGENTS.md`); content that is neither always
-> relevant nor cleanly scoped to one folder goes in a reference doc (e.g. under
-> `docs/`) linked from here, not inlined.
+> standing tax on every session's budget. Add a line only if it is relevant to a
+> future task **and** the task wouldn't surface it anyway (a failing gate,
+> `just --list`, the code, or a linked doc); state the rule or intent, and leave
+> mechanisms, tool/rule-IDs, and inventories of what a tool already shows to
+> their source of truth — link it, don't restate it. Rules cleanly scoped to a
+> folder go in a nested `AGENTS.md` (e.g. `tests/AGENTS.md`); content that is
+> neither always relevant nor cleanly scoped to one folder goes in a reference
+> doc (e.g. under `docs/`) linked from here, not inlined.
 
 > `CLAUDE.md` is a symlink to this file (`ln -s AGENTS.md CLAUDE.md`) so the two
 > never drift. Edit `AGENTS.md` only.
@@ -28,10 +32,6 @@ the choice was made deliberately rather than skipped.
 - **Product shape:** <cli / web-app / nextjs / library / skills-repo /
   asdf-plugin / ...>
 - **Language(s):** <python / typescript / rust / bash / ...>
-- **References composed:** <e.g. shapes/cli.md + languages/python.md +
-  intersections/python-cli.md + ci.md>. `ci.md` always applies; pull in
-  `monorepo.md` only when the repo holds more than one app, package, or
-  language.
 - **Excluded, and why:** <optional tooling/layout that did not fit — asdf,
   direnv, `src` layout, a release pipeline — each with a one-line rationale.
   The non-negotiable invariants (strict gate, e2e of real journeys, CI that
@@ -110,13 +110,10 @@ work. Realism and coverage are a rule, not a preference (see Invariants).
   *and* failure/recovery — not one smoke test.
 - **Coverage is a floor, not the target:** line coverage is satisfiable with
   mocks that prove nothing. Chase real journeys; let the number follow.
-- **Keep the list below current:** a feature isn't done until its real e2e
-  journey lands here and in the suite.
-
-Covered e2e journeys:
-
-- <journey 1: a user runs ... and gets ...>
-- <journey 2: on failure X, the tool ... and exits ...>
+- **The suite is the source of truth for what's covered:** a feature isn't done
+  until its real e2e journey lands in the suite. Name a journey here only when it
+  is a non-obvious contract the suite alone wouldn't make clear — don't mirror
+  the test list.
 
 ## Keeping the allowlist current
 
