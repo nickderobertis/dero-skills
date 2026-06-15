@@ -123,11 +123,11 @@ sufficient.
 1. **Agent layer.** `AGENTS.md` exists; `CLAUDE.md` is a symlink to it (not a
    copy); `.claude/settings.json` has a narrow allowlist.
 2. **Composition recorded.** `AGENTS.md` has a filled-in "Stack and composition"
-   section naming the product shape, the language(s), the references you
-   composed (`ci.md` always; `monorepo.md`/intersection when they apply), and
-   what you excluded and why — no `<...>` placeholders left. This is the proof
-   you built up from the component pieces instead of pasting one generic
-   template; the checker fails if it is missing or unfilled.
+   section naming the product shape, the language(s), and what you excluded and
+   why — no `<...>` placeholders left. This records the deliberate decisions (why
+   the tooling is what it is, what was left out) rather than a bibliography of
+   which reference files were composed; the checker fails if it is missing or
+   unfilled.
 3. **Command surface.** The `justfile` defines `bootstrap`, `check`, `test`,
    `lint`, `format`, `upgrade`, each with a real body — no `TODO`/placeholder
    recipe survives. `just bootstrap` works from a clean clone.
@@ -139,9 +139,10 @@ sufficient.
 5. **Real e2e.** E2E drives the real artifact across real boundaries (a CLI as a
    subprocess, a real local server/DB, real files), **not mocking the layer under
    test** — "mocked but green" is a fail. It covers *every* user-facing journey,
-   happy path **and** failure/recovery — not one smoke test — enumerated in
-   `AGENTS.md`. It runs inside `just check` and CI (a too-expensive case is a
-   documented exception CI still runs, e.g. nightly — never silently skipped).
+   happy path **and** failure/recovery — not one smoke test — with the suite as
+   the source of truth for what's covered. It runs inside `just check` and CI (a
+   too-expensive case is a documented exception CI still runs, e.g. nightly —
+   never silently skipped).
 6. **CI proves the artifact.** A workflow runs `just bootstrap` then
    `just check` on a clean checkout, on the supported platform matrix.
 7. **End-user install path.** If the repo ships an installable artifact, a CI
@@ -209,8 +210,8 @@ sufficient.
      user does. Mock only a genuinely external third party you can't run, and say
      which.
    - "Done" means **complete, not minimal**: every user-facing journey, success
-     **and** failure/recovery, validated at boundaries — enumerated in `AGENTS.md`
-     so coverage is auditable and grows as features land.
+     **and** failure/recovery, validated at boundaries — landing in the suite,
+     the source of truth for what's covered, as features land.
    - E2E runs in the default `just check` and CI — part of the gate, not opt-in. A
      test too expensive for every run is a documented exception CI still executes
      (e.g. nightly), never silently excluded (no default `#[ignore]`, deselected
@@ -219,6 +220,13 @@ sufficient.
    - Root `AGENTS.md` is always-loaded context: every agent session reads it, so
      its length is a standing tax on the context budget. Use terse, pithy
      language and resist letting it accrete.
+   - Apply an inclusion test before adding a line: keep it only if it is relevant
+     to a future task **and** the task wouldn't surface it anyway (a failing
+     gate, `just --list`, the code, or a linked doc). State the rule or intent;
+     leave the mechanism, tool/rule-IDs, and inventories of what a tool already
+     shows to their source of truth — link it, don't restate it. A deliberate
+     *decision* (why the tooling is what it is, what was excluded and why) passes:
+     it is future-relevant and not otherwise recoverable.
    - Place content by relevance and scope. Always-relevant, repo-wide
      constraints stay in the root `AGENTS.md` (short). Rules cleanly scoped to a
      subtree go in a nested `AGENTS.md` in that folder (e.g. `tests/AGENTS.md`),
@@ -309,8 +317,8 @@ sufficient.
     - Drive the real artifact across real boundaries from the user's side. Don't
       mock the layer under test or settle for a happy-path smoke test — a green
       mocked suite is a liability, not coverage.
-    - Make the journeys a growing contract enumerated in `AGENTS.md`: when a
-      feature lands, its real e2e journey lands with it.
+    - Make the journeys a growing contract in the suite — the source of truth for
+      what's covered: when a feature lands, its real e2e journey lands with it.
 17. **`AGENTS.md` should compound over time.**
     - After finishing the user's main task, propose materially-helpful
       follow-ups: refinements to scripts, `AGENTS.md`, skills, or other context.
