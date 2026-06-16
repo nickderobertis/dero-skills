@@ -319,11 +319,20 @@ sufficient.
       mocked suite is a liability, not coverage.
     - Make the journeys a growing contract in the suite — the source of truth for
       what's covered: when a feature lands, its real e2e journey lands with it.
-17. **`AGENTS.md` should compound over time.**
-    - After finishing the user's main task, propose materially-helpful
-      follow-ups: refinements to scripts, `AGENTS.md`, skills, or other context.
-    - Judge each suggestion's impact on future work and surface only the ones
-      that genuinely help; skip busywork.
+17. **Every task carries two standing goals beyond the user's ask.**
+    - The user drives product features; their request is the priority. But carry
+      two goals into *every* task: (1) engineer the context for next time —
+      realistic e2e tests that exercise what the user sees (especially for bugs
+      existing tests missed), scripts/skills that automate repetitive steps and
+      shrink their output to signal, and terse `AGENTS.md` notes capturing what
+      the code doesn't make obvious; (2) engineer the codebase and environment —
+      prioritize the technical initiatives that keep it clean, maintainable, and
+      repeatable, with automated, consistent setup.
+    - When either goal is the lowest-error path to what the user asked, fold it
+      into the same task without asking first. Otherwise propose it as a
+      materially-helpful follow-up after the main task, judging each one's impact
+      and skipping busywork. The default `AGENTS.md` encodes both goals so they
+      compound over time.
 
 ## Composable references
 

@@ -15,6 +15,29 @@ folders (`skills/`), stdlib validation tooling (`tools/`, `scripts/`), the
 consumer bootstrap package (`consumer-bootstrap/`), and the platform docs
 (`docs/`). Authoring details live in [`docs/authoring-skills.md`](docs/authoring-skills.md).
 
+## Two standing goals on every task
+
+The user drives product features and their request is the priority — but carry
+two goals into *every* task. When either is the lowest-error path to what the
+user asked, fold it into the same task without asking first; surface the rest as
+follow-ups (see "After the main task").
+
+1. **Engineer the context for next time.** Make the next agent (and you) see
+   more for less: realistic end-to-end tests that exercise what the user
+   actually sees — especially when they report a bug existing tests missed (this
+   repo's suite is its only QA loop, see "Tests are context engineering") —
+   scripts and skills that automate repetitive steps and shrink their output to
+   signal, and terse `AGENTS.md` notes capturing what the code doesn't make
+   obvious.
+2. **Engineer the codebase and environment.** Be the engineer the user isn't:
+   prioritize the technical initiatives that keep the codebase clean,
+   maintainable, and repeatable, and keep setup automated and consistent
+   (`just bootstrap` from a clean clone). Strict quality gates plus local/CI
+   parity make results repeatable (here, `just check` on the `.tool-versions`
+   pins, kept in lockstep by `just check-versions`). A clean base and a
+   reproducible environment are usually how the user's feature ships with a low
+   error rate.
+
 ## Stack and composition
 
 How this repo composes the create-repo reference pieces (it dogfoods the skill,
@@ -141,7 +164,7 @@ whether things work. A rule, not a preference.
 
 ## After the main task: refine and hand off
 
-After completing the requested work, propose materially-helpful follow-ups —
-refinements to scripts, this `AGENTS.md`, skills, tests, or docs — and note each
-one's likely impact on future work. Skip busywork; if nothing is materially
-helpful, say so.
+After completing the requested work, act on the two standing goals above:
+propose materially-helpful follow-ups — refinements to scripts, this `AGENTS.md`,
+skills, tests, or docs — and note each one's likely impact on future work. Skip
+busywork; if nothing is materially helpful, say so.
