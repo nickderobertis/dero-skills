@@ -32,10 +32,12 @@ follow-ups (see "After the main task").
 2. **Engineer the codebase and environment.** Be the engineer the user isn't:
    prioritize the technical initiatives that keep the codebase clean,
    maintainable, and repeatable, and keep setup automated and consistent
-   (`just bootstrap` from a clean clone). The same `just check` runs locally and
-   in CI on the `.tool-versions` pins (kept in lockstep by `just check-versions`),
-   so there is no dev/CI drift. A clean base and a reproducible environment are
-   usually how the user's feature ships with a low error rate.
+   (`just bootstrap` from a clean clone). Quality gates are the backbone: keep
+   them strict, and keep local and CI in parity — the same checks on the same
+   pinned toolchain (here, `just check` on the `.tool-versions` pins, kept in
+   lockstep by `just check-versions`) — so results are consistent and repeatable.
+   A clean base and a reproducible environment are usually how the user's feature
+   ships with a low error rate.
 
 ## Stack and composition
 
