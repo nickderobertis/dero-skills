@@ -23,6 +23,26 @@ keep this file for constraints, tradeoffs, and judgment.
 service / CLI, TS/Next.js app, Rust CLI, Bash/asdf plugin, skills repo, etc. —
 and who consumes it.>
 
+## Two standing goals on every task
+
+The user drives product features and their request is the priority — but carry
+two goals into *every* task. When either is the lowest-error path to what the
+user asked, fold it into the same task without asking first; surface the rest as
+follow-ups (see "After the main task").
+
+1. **Engineer the context for next time.** Make the next agent (and you) see
+   more for less: realistic end-to-end tests that exercise what the user
+   actually sees — especially when they report a bug existing tests missed —
+   scripts and skills that automate repetitive steps and shrink their output to
+   signal, and terse `AGENTS.md` notes capturing what the code doesn't make
+   obvious.
+2. **Engineer the codebase and environment.** Be the engineer the user isn't:
+   prioritize the technical initiatives that keep the codebase clean,
+   maintainable, and repeatable, and keep environment setup automated and
+   consistent (`just bootstrap` from a clean clone). A clean base and a
+   reproducible environment are usually how the user's feature ships with a low
+   error rate.
+
 ## Stack and composition
 
 How this repo was built up from the create-repo reference pieces. Record the
@@ -131,9 +151,9 @@ work. Realism and coverage are a rule, not a preference (see Invariants).
 
 ## After the main task: refine and hand off
 
-After completing the user's requested task, look for ways to make future work
-easier and propose follow-ups — but only ones that are materially helpful, and
-note each one's likely impact:
+After completing the user's requested task, act on the two standing goals above:
+look for ways to make future work easier and propose follow-ups — but only ones
+that are materially helpful, and note each one's likely impact:
 
 - **Scripts** — a repeatable step you did by hand that should be automated.
 - **`AGENTS.md`** — a constraint, gotcha, or decision worth recording here.
