@@ -21,3 +21,18 @@ Next.js specifics. This builds on `shapes/web-app.md` and assumes
     asserts the restored state, plus unit tests for parser defaults, invalid
     params, and serialization round-trips.
   - Drive e2e through accessible roles / user-facing selectors, not brittle CSS.
+
+## Verification
+
+- [ ] **Server/client boundary deliberate.** Secrets and data access stay on the
+  server; only what the client needs is passed across.
+- [ ] **Input validated with a runtime schema.** Route handlers and server
+  actions validate input with a runtime schema (e.g. Zod) before using it.
+- [ ] **Component + e2e tests ship.** Component/integration tests for interactive
+  UI, plus a Playwright `test-e2e` recipe wired into `just check` and CI covering
+  the primary happy path **and** one meaningful failure/validation/recovery path.
+- [ ] **URL-state coverage (if applicable).** If the app keeps state in the URL,
+  an e2e test loads a deep link and asserts the restored state, with unit tests
+  for parser defaults, invalid params, and serialization round-trips.
+- [ ] **Production build validated.** `next build` is validated in CI; type and
+  lint errors are build blockers.

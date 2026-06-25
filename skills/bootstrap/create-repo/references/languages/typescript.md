@@ -29,3 +29,21 @@ Language-level conventions for any TypeScript repo. Combine with a product shape
   - `just upgrade` -> `bun update` (refresh dependencies), then re-run
     `just check`
 - **Output.** `just check` should be quiet on success and specific on failure.
+
+## Verification
+
+- [ ] **Strictness.** `strict` mode is on and type errors are build blockers, not
+  warnings.
+- [ ] **One toolchain.** A single tool handles lint and format (e.g. Biome); no
+  stacked overlapping linters.
+- [ ] **Boundary validation.** All external / IO input is parsed and validated at
+  the boundary with a runtime schema (e.g. Zod); raw `unknown` from the network,
+  env, or storage is never trusted.
+- [ ] **Package management.** bun is used with `bun.lock` committed (a documented
+  pnpm/npm fallback only when a constraint rules bun out).
+- [ ] **Coverage enforced.** The suite runs with coverage and fails below the
+  threshold (95% default; `bun test --coverage` with `coverageThreshold`, or
+  Vitest `coverage.thresholds`).
+- [ ] **Command mapping wired.** `just bootstrap` → `bun install`; `just check` →
+  format check + lint + `tsc --noEmit` + tests with coverage; `just upgrade` →
+  `bun update` then re-run `just check`.

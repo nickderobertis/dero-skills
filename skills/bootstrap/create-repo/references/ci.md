@@ -183,3 +183,25 @@ uv run --script scripts/setup_github_governance.py check commitlint
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
 merging") so the decision is auditable and the next maintainer can re-apply it.
+
+## Verification
+
+- [ ] **CI proves the artifact.** A workflow runs `just bootstrap` then
+  `just check` on a clean checkout, on the supported platform matrix.
+- [ ] **End-user install path.** If the repo ships an installable artifact, a CI
+  job (separate from the dev gate) installs it via the recommended end-user
+  method on the platform matrix and smoke-tests the installed entry point — the
+  path users actually take, not just `just bootstrap`.
+- [ ] **Generated files validated.** CI fails if committed generated files
+  (lockfiles, schemas, formatted code) are out of date, and logs stay minimal on
+  success.
+- [ ] **Repo governance configured.** The default branch is protected with
+  squash-merge only, auto-merge on, head branches deleted on merge, and *every*
+  gating CI check (including the full-e2e gate job) required before merge, with
+  admins able to override. The model is recorded in the "Commits, releases, and
+  merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
+  settings, so this is verified by hand against the "Repository settings" section
+  above).
+- [ ] **PR template.** A GitHub pull-request template exists
+  (`.github/pull_request_template.md`) with **What** and **Why** sections
+  (**Additional info** optional).

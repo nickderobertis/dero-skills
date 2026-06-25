@@ -73,3 +73,25 @@ of `releasing.md`:
   fails the gate if regenerating would change a committed file. This is the
   concrete form of `ci.md`'s "validate generated files," run at the workspace
   level inside `just check`.
+
+## Verification
+
+- [ ] **Each deliverable is its own project.** Every app/package has a project
+  definition with locally-declared targets (`build`, `lint`, `test`,
+  `typecheck`, ...) calling its own language-native tool.
+- [ ] **Root commands delegate.** The `just bootstrap/check/test/lint/format/
+  upgrade` recipes shell out to the orchestrator (`nx affected` / `nx run-many`),
+  not a bespoke for-each-package loop.
+- [ ] **Affected-only in CI.** PRs run `nx affected` keyed off an explicitly
+  derived merge base; a full `run-many` runs on the main branch and/or nightly.
+- [ ] **Caching never hides a broken clean build.** Computation caching is on for
+  speed, but a cache never masks a broken clean build (mirrors `ci.md`).
+- [ ] **Project boundaries enforced.** Projects are tagged and allowed
+  dependencies enforced (e.g. the module-boundary lint rule); target names are
+  uniform across projects.
+- [ ] **Instruction layer localized.** Each project has a nested `AGENTS.md` for
+  subtree rules, with `CODEOWNERS` routing reviews; the root `AGENTS.md` keeps
+  only repo-wide constraints.
+- [ ] **Scripts stay orchestrator-independent.** Bundled skill scripts remain
+  self-contained (PEP 723 / Node built-ins) — Nx orchestrates targets, it is
+  never a runtime dependency of the scripts.
