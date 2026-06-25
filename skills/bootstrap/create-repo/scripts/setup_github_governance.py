@@ -18,10 +18,14 @@ What it sets (the model the create-repo skill prescribes — see references/ci.m
   * Merge model: squash-merge only (merge commits and rebase-merging disabled),
     auto-merge enabled, head branches deleted on merge, and the squash subject
     taken from the PR title / body from the PR description.
-  * Branch protection on the default branch: the required checks above (strict =
-    branch must be up to date), linear history, conversation resolution, no
-    force-pushes, no branch deletion. Admins can override by default
-    (``enforce_admins: false``); pass --enforce-admins to bind them too.
+  * Branch protection on the default branch: the required checks above, linear
+    history, conversation resolution, no force-pushes, no branch deletion.
+    Admins can override by default (``enforce_admins: false``); pass
+    --enforce-admins to bind them too. Checks are non-strict by default — a PR
+    need not be rebased onto the latest default branch before merging, which
+    avoids the re-update-and-re-run-CI churn every time the base moves. Pass
+    --strict to require branches be up to date (catches semantic conflicts
+    between independently-green PRs, at the cost of that friction).
 
 This sets the *full desired state* idempotently: re-running applies the same
 config, and the branch-protection PUT replaces any existing protection on the
@@ -138,11 +142,20 @@ def repo_settings_payload() -> dict:
 
 
 def protection_payload(
-    contexts: Sequence[str], approvals: int, enforce_admins: bool
+    contexts: Sequence[str],
+    approvals: int,
+    enforce_admins: bool,
+    strict: bool = False,
 ) -> dict:
-    """The branch-protection PUT body for the default branch."""
+    """The branch-protection PUT body for the default branch.
+
+    ``strict`` maps to GitHub's "require branches be up to date before merging".
+    It defaults to off: forcing every PR to re-sync onto the latest default
+    branch and re-run CI before it can land is real friction, and worth it only
+    when independently-green PRs routinely conflict semantically.
+    """
     return {
-        "required_status_checks": {"strict": True, "contexts": list(contexts)},
+        "required_status_checks": {"strict": strict, "contexts": list(contexts)},
         "enforce_admins": enforce_admins,
         "required_pull_request_reviews": {"required_approving_review_count": approvals},
         "required_linear_history": True,
@@ -159,6 +172,7 @@ def plan(
     contexts: Sequence[str],
     approvals: int,
     enforce_admins: bool,
+    strict: bool = False,
 ) -> list[GhCall]:
     """Build the ordered list of mutating calls (merge model, then protection)."""
     return [
@@ -171,7 +185,7 @@ def plan(
         GhCall(
             "PUT",
             f"repos/{repo}/branches/{branch}/protection",
-            protection_payload(contexts, approvals, enforce_admins),
+            protection_payload(contexts, approvals, enforce_admins, strict),
             f"branch protection on {branch}",
         ),
     ]
@@ -237,13 +251,18 @@ def _render_dry_run(repo: str, branch: str, calls: Sequence[GhCall]) -> str:
 
 
 def _success_line(
-    repo: str, branch: str, contexts: Sequence[str], enforce_admins: bool
+    repo: str,
+    branch: str,
+    contexts: Sequence[str],
+    enforce_admins: bool,
+    strict: bool,
 ) -> str:
     admins = "admins enforced" if enforce_admins else "admins can override"
+    strictness = "strict" if strict else "non-strict"
     checks = ", ".join(contexts)
     return (
         f"OK    {repo}@{branch}: squash-only + auto-merge + delete-on-merge; "
-        f"{len(contexts)} required check(s) [{checks}]; {admins}"
+        f"{len(contexts)} required check(s) [{checks}], {strictness}; {admins}"
     )
 
 
@@ -267,6 +286,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--enforce-admins",
         action="store_true",
         help="also bind admins to the protection (default: admins can override)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="require branches be up to date before merging (default: off, to "
+        "avoid the re-sync/re-run-CI churn each time the base branch moves)",
     )
     parser.add_argument(
         "--dry-run",
@@ -297,7 +322,9 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         contexts = normalize_contexts(args.checks)
         repo = resolve_repo(run, args.repo)
         branch = resolve_branch(run, repo, args.branch)
-        calls = plan(repo, branch, contexts, args.approvals, args.enforce_admins)
+        calls = plan(
+            repo, branch, contexts, args.approvals, args.enforce_admins, args.strict
+        )
         if args.dry_run:
             print(_render_dry_run(repo, branch, calls))
             return 0
@@ -306,7 +333,7 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         print(f"ERROR {exc.message}\n      fix: {exc.fix}", file=sys.stderr)
         return 1
 
-    print(_success_line(repo, branch, contexts, args.enforce_admins))
+    print(_success_line(repo, branch, contexts, args.enforce_admins, args.strict))
     return 0
 
 

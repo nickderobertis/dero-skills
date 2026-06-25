@@ -120,6 +120,13 @@ exact commands below are the ones this skill's own repo uses.
   advisory and a red one can still be merged past. Add the standard protections:
   require a PR before merging, linear history, no force-pushes, no branch
   deletion, and conversation resolution.
+- **Leave "up to date before merging" off (non-strict checks).** Don't require a
+  PR to be rebased onto the latest default branch before it can merge (GitHub's
+  `strict` flag) — it forces a re-sync and a full CI re-run every time the base
+  moves, which is real friction for little gain on a fast-moving or
+  solo-maintained repo. Turn it on (`--strict`) only if independently-green PRs
+  routinely break when combined (semantic conflicts) and that risk outweighs the
+  churn.
 - **Admins can still override.** Leave admin enforcement off
   (`enforce_admins: false`) so a maintainer can break the glass in an emergency;
   the protection is the default path, not a cage. (Bump the required approval
@@ -153,7 +160,7 @@ gh api -X PATCH repos/{owner}/{repo} \
 # others), standard protections, admins can override.
 gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input - <<'JSON'
 {
-  "required_status_checks": { "strict": true, "contexts": ["check", "commitlint"] },
+  "required_status_checks": { "strict": false, "contexts": ["check", "commitlint"] },
   "enforce_admins": false,
   "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "required_linear_history": true,
