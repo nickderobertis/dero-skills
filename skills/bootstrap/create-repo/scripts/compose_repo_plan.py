@@ -27,8 +27,11 @@ Convenience derivations, each announced on stderr so the composition stays
 auditable:
   * ``--shape nextjs`` also pulls in ``shapes/web-app.md`` (Next.js builds on it)
     and assumes ``languages/typescript.md`` (auto-added if you didn't pass it).
-  * a shape+language with an intersection reference (e.g. ``cli`` + ``python``
-    -> ``intersections/python-cli.md``) auto-includes it.
+  * an intersection reference is auto-included whenever one exists for a
+    shape+language pair, by the ``<language>-<shape>`` naming convention (e.g.
+    ``cli`` + ``python`` -> ``intersections/python-cli.md``). Adding a new
+    ``intersections/<lang>-<shape>.md`` wires it in with no code change; pass
+    ``--intersection`` only to force one that breaks the convention.
 
 The document goes to stdout (or ``-o FILE``); notes and errors go to stderr, so
 the two never mix. Self-contained via PEP 723 so it runs in any consuming repo
@@ -50,18 +53,14 @@ VERIFICATION_HEADING_RE = re.compile(r"^##\s+Verification\s*$", re.IGNORECASE)
 HEADING_RE = re.compile(r"^#{1,2}\s")
 CHECKLIST_ITEM_RE = re.compile(r"^- \[ \]")
 
-# Cross-cutting references that are not a shape/language/intersection: included
-# unconditionally (base, ci) or behind a flag (releasing, monorepo). composing.md
-# is meta-guidance about *how* to compose and is never itself composed into a repo.
-ALWAYS = ("base.md", "ci.md")
 
-# Shape+language pairs that have a dedicated intersection reference. Keyed so the
-# composer can auto-include the intersection when both axes are present. The file
-# must exist on disk (checked before adding) — this map only records the pairing.
-AUTO_INTERSECTIONS = {
-    ("cli", "python"): "python-cli",
-    ("cli", "rust"): "rust-cli",
-}
+# Intersection references follow a `<language>-<shape>` naming convention
+# (e.g. `python-cli.md` = python + cli, `rust-cli.md` = rust + cli). The composer
+# derives the candidate name from each shape+language pair and auto-includes the
+# intersection whenever that file exists — so adding `intersections/<lang>-<shape>.md`
+# wires it in with no code change, no hardcoded pair list to keep in sync.
+def intersection_name(shape: str, language: str) -> str:
+    return f"{language}-{shape}"
 
 
 @dataclass(frozen=True)
@@ -172,10 +171,9 @@ def select_relpaths(
 
     resolved_intersections = list(intersections)
     for lang in langs:
-        auto = AUTO_INTERSECTIONS.get((shape, lang))
+        auto = intersection_name(shape, lang)
         if (
-            auto
-            and auto not in resolved_intersections
+            auto not in resolved_intersections
             and (refs_dir / "intersections" / f"{auto}.md").is_file()
         ):
             resolved_intersections.append(auto)

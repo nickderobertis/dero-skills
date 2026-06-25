@@ -227,6 +227,46 @@ def test_composing_doc_is_not_composed():
     assert "composing.md" not in doc
 
 
+def _decompose_intersection(stem: str) -> tuple[str, str] | None:
+    """Split an intersection stem into (shape, language) by the naming convention.
+
+    Shapes may contain hyphens (web-app), so match against the real catalog
+    rather than splitting on the first hyphen.
+    """
+    shapes = crp.discover(REFS, "shapes")
+    languages = crp.discover(REFS, "languages")
+    for lang in languages:
+        for shape in shapes:
+            if crp.intersection_name(shape, lang) == stem:
+                return shape, lang
+    return None
+
+
+def test_every_intersection_follows_the_naming_convention():
+    # The composer derives intersections from `<language>-<shape>`; every file in
+    # intersections/ must decompose into a known shape + language, or it would be
+    # invisible to auto-derivation.
+    bad = [
+        p.stem
+        for p in sorted((REFS / "intersections").glob("*.md"))
+        if _decompose_intersection(p.stem) is None
+    ]
+    assert not bad, f"intersection files not matching <language>-<shape>: {bad}"
+
+
+def test_every_intersection_is_auto_included_for_its_pair():
+    # Drive the real CLI: composing a shape+language whose intersection exists
+    # must pull that intersection in automatically, without --intersection.
+    for path in sorted((REFS / "intersections").glob("*.md")):
+        decomposed = _decompose_intersection(path.stem)
+        assert decomposed is not None
+        shape, lang = decomposed
+        result = run("--shape", shape, "--language", lang)
+        assert result.returncode == 0
+        assert f"intersections/{path.stem}.md" in result.stdout
+        assert f"auto-included intersection {path.stem}" in result.stderr
+
+
 # --- unit: the parsing/selection helpers ----------------------------------
 
 
