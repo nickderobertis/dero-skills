@@ -91,12 +91,21 @@ def test_repo_settings_is_squash_only_with_auto_merge_and_pr_title():
     assert s["squash_merge_commit_message"] == "PR_BODY"
 
 
-def test_protection_requires_given_checks_strictly():
+def test_protection_requires_given_checks_non_strictly_by_default():
     p = gov.protection_payload(
         ["check", "commitlint"], approvals=0, enforce_admins=False
     )
-    assert p["required_status_checks"]["strict"] is True
+    # Non-strict by default: a PR need not be up to date with the base branch
+    # before merging, so the base moving does not force a re-sync + re-run of CI.
+    assert p["required_status_checks"]["strict"] is False
     assert p["required_status_checks"]["contexts"] == ["check", "commitlint"]
+
+
+def test_protection_can_opt_into_strict_up_to_date_checks():
+    p = gov.protection_payload(
+        ["check"], approvals=0, enforce_admins=False, strict=True
+    )
+    assert p["required_status_checks"]["strict"] is True
 
 
 def test_protection_admins_override_by_default_and_bind_when_requested():
@@ -280,6 +289,16 @@ def test_main_enforce_admins_flag_binds_admins():
     )
     assert code == 0
     assert fake.body_for("PUT")["enforce_admins"] is True
+
+
+def test_main_defaults_to_non_strict_and_strict_flag_opts_in():
+    fake = FakeGh()
+    gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake)
+    assert fake.body_for("PUT")["required_status_checks"]["strict"] is False
+
+    fake = FakeGh()
+    gov.main(["check", "--repo", "acme/w", "--branch", "main", "--strict"], run=fake)
+    assert fake.body_for("PUT")["required_status_checks"]["strict"] is True
 
 
 def test_main_approvals_flag_sets_review_count():
