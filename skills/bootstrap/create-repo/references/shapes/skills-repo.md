@@ -43,3 +43,22 @@ worked reference implementation (and is where this skill itself lives).
   conventions matter; `CLAUDE.md` is a symlink to `AGENTS.md`.
 - **Safety.** Narrow agent allowlist in `.claude/settings.json`; avoid relying on
   deny lists.
+
+## Verification
+
+- [ ] **Determinism vs judgment.** Anything deterministic in a skill is a script;
+  prose instructions are reserved for genuine judgment.
+- [ ] **Runtime independence enforced.** Bundled scripts are self-contained
+  (PEP 723 for Python, Node built-ins for JS) with no dependency on the
+  orchestrator, repo-root manifests, asdf, direnv, or imports from the repo's own
+  source tree — and a validation script enforces it, not just convention.
+- [ ] **Validate + smoke every skill in the gate.** Tooling checks each
+  `SKILL.md` frontmatter and forbidden runtime deps, and *runs* every bundled
+  script once; both are wired into `just check`.
+- [ ] **Own checks dogfooded.** Any repo-baseline/lint script the repo ships is
+  run against this repo in the gate so the canonical example stays passing.
+- [ ] **Consumer install model.** A consumer-bootstrap path pulls skills from the
+  canonical source (no hand-copying, no multiple install profiles), with
+  multi-tool compatibility (Cursor, Claude Code, VS Code / Copilot).
+- [ ] **Docs + safety.** Root and nested `AGENTS.md` (with `tests/AGENTS.md` where
+  test conventions matter), `CLAUDE.md` a symlink, and a narrow allowlist.

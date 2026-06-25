@@ -22,3 +22,16 @@ framework with its own reference (e.g. `shapes/nextjs.md`), pull that in too.
 - **CI.** Bootstrap a clean checkout, then run the full gate (build + e2e) on
   every PR; validate the production build, not just the dev server. Start from
   `assets/ci.yml.template`.
+
+## Verification
+
+- [ ] **E2E covers critical journeys.** A `test-e2e` recipe (run by `just check`
+  and CI) drives sign-in, the core happy path, and at least one
+  failure/recovery path — not just smoke tests.
+- [ ] **Boundaries enforced.** A clear server/client split holds, and all
+  external input (requests, params, third-party responses) is validated at the
+  trust boundary.
+- [ ] **URL state validated.** Shareable/navigable state kept in the URL is
+  parsed and validated rather than trusted raw.
+- [ ] **Production build validated in CI.** CI validates the production build,
+  not just the dev server.

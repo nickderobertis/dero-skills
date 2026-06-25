@@ -107,3 +107,24 @@ Capture the chosen driver, the bump policy, and the tag → release/publish spli
 the "Commits, releases, and merging" section of `AGENTS.md` so it is auditable and
 re-appliable, and make sure the PR-title-lint check is in the required-checks set
 when you apply branch protection (`ci.md`).
+
+## Verification
+
+- [ ] **Fully automated, no manual deploy step.** The only human action in a
+  release is merging a PR — nobody hand-edits a version, hand-creates a tag, or
+  hand-dispatches a publish workflow.
+- [ ] **PR-title lint is a required check.** Under squash-merge the PR title
+  becomes the release-driving commit, so it is linted against Conventional
+  Commits in CI and is in the required set alongside `just check`.
+- [ ] **Bump policy pinned in `AGENTS.md`.** How commit types map to version
+  bumps is written down, and the regime (pre-1.0 vs post-1.0) is stated.
+- [ ] **Versioning decoupled from building.** The version bumper only computes
+  the version, writes the changelog/manifests/lockfiles, commits, and pushes the
+  tag; pushing the tag `vX.Y.Z` triggers the separate build and publish
+  workflows.
+- [ ] **Release job uses a PAT/App token.** The release/version job is
+  authenticated with a PAT or GitHub App token (not the default `GITHUB_TOKEN`),
+  so the tag it pushes actually fires the downstream `release`/`publish`
+  workflows.
+- [ ] **Publish is idempotent.** Re-running after a partial failure skips a
+  version already live, and registry tokens live in secrets, never in the tree.

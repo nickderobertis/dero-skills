@@ -53,3 +53,21 @@ the points below concrete.
   - `just check` -> `cargo fmt --check` + `cargo clippy -- -D warnings` + tests
     with coverage enforced (e.g. `cargo llvm-cov --fail-under-lines 95`)
   - `just upgrade` -> `cargo update`, then re-run `just check`
+
+## Verification
+
+- [ ] **Toolchain.** Stable Rust with `rustfmt` and `clippy -D warnings` as
+  strict gates; the toolchain is pinned in `rust-toolchain.toml` (channel,
+  components, release targets) and CI installs from it.
+- [ ] **MSRV (if promised).** `rust-version` in `Cargo.toml`, `msrv` in
+  `clippy.toml`, and a `just msrv` recipe — run in CI when the minimum is a real
+  commitment.
+- [ ] **Tests incl. e2e in the gate.** `cargo test` / `cargo nextest run` and the
+  `tests/` integration/e2e run in `just check` and CI; e2e is not `#[ignore]`-d
+  out of the default run.
+- [ ] **Coverage enforced.** `cargo llvm-cov --fail-under-lines 95` (or
+  tarpaulin) in the gate.
+- [ ] **Supply-chain gate.** A committed `deny.toml` plus `cargo deny check` and
+  `cargo machete` run as their own Linux-only step/job.
+- [ ] **Release archives.** Per-platform archives are built in CI on native
+  runners (see `releasing.md` / `intersections/rust-cli.md`).

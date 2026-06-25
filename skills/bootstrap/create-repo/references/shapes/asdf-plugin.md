@@ -106,3 +106,22 @@ relying on memory — script names and contracts drift).
   current recommended `asdf-vm/actions/plugin-test`, validating the installed
   tool (`<tool> --version`). Support `GITHUB_API_TOKEN` for release-API calls but
   never require it for forks.
+
+## Verification
+
+- [ ] **Script contract implemented.** Required scripts (`bin/list-all`,
+  `bin/install`) and recommended ones (`bin/download`, `bin/latest-stable`) follow
+  the current asdf plugin-script contract; each is executable and prints only
+  what asdf expects.
+- [ ] **Never calls asdf.** Plugin scripts never shell back out to `asdf` (e.g.
+  no `asdf reshim` from `install`).
+- [ ] **Version/stable/download policy.** Versions come from an authoritative
+  upstream with a portable version sort (no `sort -V`); prerelease policy is
+  documented; downloads use pinned HTTPS URLs with robust `curl`, checksum verify
+  when published or atomic `.part` download otherwise, and temp-dir cleanup.
+- [ ] **Install + platform support.** Install writes only into
+  `ASDF_INSTALL_PATH`, verifies `<tool> --version`, maps platforms explicitly
+  (Linux/macOS, arm64/amd64) with a tested map, and fails clearly on unsupported
+  combinations; missing runtime libraries become an actionable install command.
+- [ ] **Real host-tool integration in CI.** `asdf plugin test` plus `bats` unit
+  tests run in the gate, on an `ubuntu-latest` + `macos-latest` matrix.

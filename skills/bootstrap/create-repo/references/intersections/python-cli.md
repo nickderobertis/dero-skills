@@ -29,3 +29,19 @@ shared guidance.
   check` and in CI — never opt-in. `just e2e` only isolates the slower
   install-and-run journeys for a focused run; it is not where they exclusively
   live. Don't gate e2e behind a pytest marker that the default run deselects.
+
+## Verification
+
+- [ ] **Console entry point.** The CLI is a `project.scripts` entry point in
+  `pyproject.toml` (a real installed command, not a `python -m` afterthought).
+- [ ] **Argument boundary.** Arguments are parsed and validated at the boundary;
+  bad input is rejected with a clear message and a non-zero exit code.
+- [ ] **E2E the installed command.** E2E installs into a clean environment with
+  `uv` and invokes the actual console script as a subprocess, asserting on exit
+  code, stdout, and stderr — real files in `tmp_path`, no `monkeypatch`/
+  `unittest.mock` stubbing the filesystem, subprocess, or network.
+- [ ] **Run-without-install documented.** `uvx <tool>` / `uv run` usage is
+  documented.
+- [ ] **Distribution proven.** A wheel and sdist are built with checksums, and CI
+  installs the built wheel the recommended end-user way (`uvx`/`pipx install`) on
+  the OS matrix and runs `<tool> --version` as a smoke test.

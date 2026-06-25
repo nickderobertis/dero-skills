@@ -43,3 +43,22 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
   one place they run. If a journey is genuinely too expensive for every gate
   run, that is a deliberate, documented exception that CI still executes (e.g.
   nightly) — not silent exclusion from the gate.
+
+## Verification
+
+- [ ] **E2E drives the real entry point.** E2E invokes the built/installed CLI as
+  a subprocess and asserts on exit code, stdout, and stderr — not in-process
+  `main()` calls, and not mocking the process/network/filesystem the command
+  touches. It covers every command and flag a user reaches, happy path and
+  failure/recovery.
+- [ ] **Boundaries validated.** Arguments and stdin are validated at the edge;
+  process/network/filesystem failures fail with a non-zero exit code and a clear
+  message.
+- [ ] **Output is a contract.** Minimal on success; on error the exact problem
+  plus a suggested next action go to stderr; machine-readable output (e.g.
+  `--json`) is stable and separate from human prose. Exit codes are distinct and
+  documented (`0` only on success), and `--help` is accurate and complete.
+- [ ] **One asset-naming contract across install surfaces.** Every surface that
+  downloads a release asset constructs the same archive/`.sha256` name the
+  release workflow produced, and CI exercises each surface (so an install path
+  can't 404 unnoticed).

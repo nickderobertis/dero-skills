@@ -72,3 +72,21 @@ and never gates. Keep it out of `just check`. See the bench-tier note in `ci.md`
 - `just test-e2e` → the binary journeys in isolation (also run by `check`).
 - `just msrv` → build under the declared MSRV.
 - `just upgrade` → `cargo update`, then re-run `just check`.
+
+## Verification
+
+- [ ] **Drive the compiled binary.** E2E uses `assert_cmd` to spawn the compiled
+  binary as a subprocess and asserts on exit code, stdout, and stderr — not
+  in-process `run()` calls.
+- [ ] **E2E a separate target, still gated.** The slow binary suite is its own
+  target (`just test-e2e`) that `just check` still runs; e2e is not `#[ignore]`-d
+  out of the default run.
+- [ ] **Deterministic e2e isolated; live tier gated.** Deterministic e2e is
+  offline and tempdir-isolated; a live tier needing real services/credentials is
+  env-gated but still compiles, running in dedicated fork-safe CI workflows.
+- [ ] **Toolchain + supply chain.** Toolchain pinned in `rust-toolchain.toml`,
+  MSRV declared and checked, and a Linux-only supply-chain job runs `cargo deny`
+  + `cargo machete`.
+- [ ] **Distribution contract.** Per-platform archives are built on native
+  runners with `taiki-e/upload-rust-binary-action` (`checksum: sha256`), every
+  install surface shares one asset-naming contract, and CI exercises each.

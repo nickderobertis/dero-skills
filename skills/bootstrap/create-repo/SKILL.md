@@ -1,7 +1,7 @@
 ---
 name: create-repo
 description: Use when creating a new repository or bootstrapping an existing project's tooling, tests, AGENTS.md, and CI so the setup fits the actual product and enforces strict, deterministic quality gates.
-compatibility: Bundled scripts need uv and Python 3.12+ (the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo.
+compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo.
 ---
 
 # Create repo
@@ -27,24 +27,34 @@ clone, run one command, and trust.
    `scripts/session-setup.sh` that provisions the dev toolchain (and skips in
    CI), plus a `PreToolUse` hook if you enforce the allowlist with a tool — both
    stay quiet on success.
-2. **Identify the product shape.** Name the artifact (CLI, web app, library /
-   service, asdf plugin, skills repo, ...) and the implementation language(s).
-   Compose references by mixing and matching — see
-   [`references/composing.md`](./references/composing.md): one product shape, the
-   language(s) it is built in, and `ci.md`. If the repo breaks down into more
-   than one deliverable — multiple apps, packages, or languages — also pull in
-   [`references/monorepo.md`](./references/monorepo.md): each project keeps its
+2. **Compose the plan for your stack.** Name the artifact (CLI, web app, library
+   / service, asdf plugin, skills repo, ...) and the implementation language(s),
+   then run the composer — it mixes and matches the references for *your* stack
+   and emits one document: the composed guidance followed by a single
+   verification checklist assembled from the `## Verification` items that live
+   with each reference.
+
+   ```bash
+   uv run --script scripts/compose_repo_plan.py --shape cli --language python \
+     [--releasing] [--monorepo] [--intersection <name>] -o REPO_PLAN.md
+   ```
+
+   It always pulls in `base.md` (the always-applied invariants) and `ci.md`, adds
+   the product shape and language(s), pulls in `releasing.md`/`monorepo.md` when
+   you pass `--releasing`/`--monorepo`, and auto-includes the right intersection
+   (e.g. `cli` + `python` → `python-cli`). Run `--list` to see the available
+   flags, or [`references/composing.md`](./references/composing.md) for the model
+   and worked examples. Pass `--monorepo` when the repo breaks into more than one
+   deliverable (multiple apps, packages, or languages): each project keeps its
    own shape + language, the root command surface delegates to an orchestrator
-   (Nx), and CI runs only affected projects. **Record the composition** in the
-   "Stack and composition" section of `AGENTS.md`: the shape, the language(s),
-   the references you pulled in, and which guidance you excluded and why.
-   Writing it down keeps "build up from the component pieces" from collapsing
-   into copying one generic template — and the baseline checker verifies the
-   section is filled in. Exclusions are for *optional tooling and layout* that
-   doesn't fit (asdf, direnv, `src` layout, a release pipeline) — never for the
-   non-negotiable invariants: a strict gate, realistic un-mocked e2e of every
-   real user journey, and CI that proves the artifact. Those are not optional and
-   are not "excluded with a rationale."
+   (Nx), and CI runs only affected projects. **Record the composition** the plan
+   prints — the shape, the language(s), the references composed, and which
+   guidance you excluded and why — in the "Stack and composition" section of
+   `AGENTS.md`; the baseline checker verifies it is filled in. Exclusions are for
+   *optional tooling and layout* that doesn't fit (asdf, direnv, `src` layout, a
+   release pipeline) — never for the non-negotiable invariants: a strict gate,
+   realistic un-mocked e2e of every real user journey, and CI that proves the
+   artifact. Those are not optional and are not "excluded with a rationale."
 3. **Establish one command surface.** Add a `just` recipe set: `bootstrap`,
    `check`, `test`, `lint`, `format`, `upgrade`, from
    [`assets/justfile.template`](./assets/justfile.template). `just bootstrap`
@@ -114,62 +124,30 @@ clone, run one command, and trust.
 
 ## Verification (run before handing off)
 
-Do not declare the repo done from inspection. Walk this list in order and
-confirm each component piece is actually present and real — most "skipped
-steps" are an item here that was assumed rather than checked. This is the floor,
-not the ceiling; the two automated gates at the end are necessary but not
-sufficient.
+Do not declare the repo done from inspection. The checklist is **not a static
+list here** — it is assembled per-stack by the composer (step 2) from the
+`## Verification` items that live with each reference, so it carries exactly the
+checks your shape, language(s), and cross-cutting choices imply and grows when a
+reference does. Walk the checklist the plan emitted, in order, confirming each
+component piece is actually present and real — most "skipped steps" are an item
+there that was assumed rather than checked. This is the floor, not the ceiling;
+the two automated gates the checklist ends on are necessary but not sufficient.
 
-1. **Agent layer.** `AGENTS.md` exists; `CLAUDE.md` is a symlink to it (not a
-   copy); `.claude/settings.json` has a narrow allowlist.
-2. **Composition recorded.** `AGENTS.md` has a filled-in "Stack and composition"
-   section naming the product shape, the language(s), and what you excluded and
-   why — no `<...>` placeholders left. This records the deliberate decisions (why
-   the tooling is what it is, what was left out) rather than a bibliography of
-   which reference files were composed; the checker fails if it is missing or
-   unfilled.
-3. **Command surface.** The `justfile` defines `bootstrap`, `check`, `test`,
-   `lint`, `format`, `upgrade`, each with a real body — no `TODO`/placeholder
-   recipe survives. `just bootstrap` works from a clean clone.
-4. **Strict gate.** `just check` runs format check + lint + type check + unit
-   tests + e2e and fails on any issue (no warnings-only mode). Coverage is
-   measured and the gate fails below the threshold (95% line coverage by
-   default, or a documented lower bar in `AGENTS.md`). `check` actually invokes
-   `test` — confirm the wiring, don't assume it.
-5. **Real e2e.** E2E drives the real artifact across real boundaries (a CLI as a
-   subprocess, a real local server/DB, real files), **not mocking the layer under
-   test** — "mocked but green" is a fail. It covers *every* user-facing journey,
-   happy path **and** failure/recovery — not one smoke test — with the suite as
-   the source of truth for what's covered. It runs inside `just check` and CI (a
-   too-expensive case is a documented exception CI still runs, e.g. nightly —
-   never silently skipped).
-6. **CI proves the artifact.** A workflow runs `just bootstrap` then
-   `just check` on a clean checkout, on the supported platform matrix.
-7. **End-user install path.** If the repo ships an installable artifact, a CI
-   job installs it via the recommended end-user method (ideally a cross-platform
-   script/command) on the platform matrix and smoke-tests the installed entry
-   point — the path users actually take, not just the dev `just bootstrap`.
-8. **Repo governance configured.** The default branch is protected with
-   squash-merge only, auto-merge on, head branches deleted on merge, and *every*
-   gating CI check (including the full-e2e gate job) required before merge, with
-   admins able to override. The model is recorded in the "Commits, releases, and
-   merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
-   settings, so this is verified by hand against `references/ci.md`). A GitHub
-   pull-request template exists (`.github/pull_request_template.md`) with
-   **What** and **Why** sections (**Additional info** optional) — the checker
-   requires this one, since it is a committed file.
-9. **Upgraded to latest, then gated.** `just upgrade` was run as one of the last
-   steps so the repo sits on current dependency versions (not whatever was
-   scaffolded), the refreshed lockfiles are committed, and the gate `upgrade`
-   re-runs passed.
-10. **Automated gates pass.** `just check` passed locally from a clean state,
-    **and** the baseline checker passed:
+If you no longer have the plan, regenerate it (`compose_repo_plan.py --shape ...
+-o REPO_PLAN.md`) and walk its checklist. It always opens with `base.md`'s
+universal items (agent layer, recorded composition, command surface, strict
+gate, coverage, real e2e, upgrade) and closes with the two automated gates:
 
-    ```bash
-    uv run --script scripts/check_repo_baseline.py /path/to/repo
-    ```
+1. `just check` passes locally from a clean state, **and**
+2. the baseline checker passes:
 
-    Fix failures until both are green — do not narrate them as next steps.
+   ```bash
+   uv run --script scripts/check_repo_baseline.py /path/to/repo
+   ```
+
+Fix failures until both are green — do not narrate them as next steps. The
+checker is silent on success and, on failure, names each missing invariant with
+a suggested fix.
 
 ## Principles
 
@@ -337,25 +315,41 @@ sufficient.
 ## Composable references
 
 References mix and match instead of forming one monolithic template per stack.
-Pick **one product shape**, pull in the **language(s)** it is built in, and
-always pull in `ci.md`. Where a focused intersection exists (for example
-`python-cli`), prefer it; where you hit an intersection that has no reference
-yet, create one. See [`references/composing.md`](./references/composing.md) for
-the catalog and worked examples.
+The composer (step 2) assembles them — pick **one product shape**, pass the
+**language(s)** it is built in, and it always pulls in `base.md` and `ci.md` and
+prefers a focused intersection (for example `python-cli`) where one exists. Where
+you hit an intersection that has no reference yet, create one — adding the file
+extends the composer's `--intersection` choices automatically. See
+[`references/composing.md`](./references/composing.md) for the catalog and worked
+examples.
 
+Each reference carries its own `## Verification` section, and the composer lifts
+those items into the plan's single checklist — so a check lives next to the
+guidance that motivates it, and editing one reference updates both.
+
+- **Always applied** — `base.md` (the shape/language-agnostic invariants, first
+  in every plan) and `ci` (GitHub Actions, on top of every shape).
 - **Product shapes** — `cli`, `web-app`, `nextjs`, `library`, `skills-repo`,
   `asdf-plugin` (language-agnostic where possible).
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
-- **Cross-cutting** — `ci` (GitHub Actions), applied on top of every shape;
-  `releasing` (Conventional Commits → automated release), pulled in when the repo
-  ships a versioned artifact; `monorepo` (Nx orchestration, affected-only jobs,
-  output caching), pulled in when the repo holds more than one app, package, or
-  language.
+- **Cross-cutting (flagged)** — `releasing` (Conventional Commits → automated
+  release), via `--releasing` when the repo ships a versioned artifact;
+  `monorepo` (Nx orchestration, affected-only jobs, output caching), via
+  `--monorepo` when the repo holds more than one app, package, or language.
 - **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
   needed where a shape and a language meet.
 
-## Templates and checker
+## Templates, composer, and checker
 
+- [`scripts/compose_repo_plan.py`](./scripts/compose_repo_plan.py) — the
+  composer (step 2). Takes `--shape`, `--language` (repeatable), `--releasing`,
+  `--monorepo`, and `--intersection`, and emits one document for that stack: the
+  composed guidance plus a single verification checklist assembled from each
+  reference's `## Verification` items. Discovers the available flags by scanning
+  `references/`, auto-derives intersections (`cli` + `python` → `python-cli`) and
+  the Next.js → web-app + TypeScript implications, and writes the plan to stdout
+  or `-o FILE` with notes on stderr. Self-contained via PEP 723. Run `--list` to
+  see the catalog.
 - [`assets/AGENTS.md.template`](./assets/AGENTS.md.template) — starter durable
   instruction layer.
 - [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)

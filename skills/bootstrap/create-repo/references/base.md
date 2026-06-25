@@ -1,0 +1,50 @@
+# Base: always-applied invariants
+
+The shape- and language-agnostic core that applies to *every* repo this skill
+stands up, regardless of what it produces. The composer always includes this
+reference first; its guidance restates the SKILL.md principles only enough to
+anchor the verification items below, which are the universal checks every
+composed plan carries before any shape/language/cross-cutting items are added.
+
+- **Agent layer first.** `AGENTS.md` (terse, always-loaded context), `CLAUDE.md`
+  symlinked to it, and a narrow `.claude/settings.json` allowlist — laid down
+  before the rest so the build runs with fewer approval prompts.
+- **One command surface.** A `just` recipe set (`bootstrap`, `check`, `test`,
+  `lint`, `format`, `upgrade`) with real bodies; `just bootstrap` works from a
+  clean clone and `just check` is the full gate.
+- **Strict, deterministic gate.** Format, lint, type check, and tests fail on
+  issues — no warnings-only mode — with coverage measured and enforced.
+- **Realistic e2e is an invariant, not a preference.** The suite is the only QA
+  loop, so it drives the real artifact across real boundaries and covers every
+  user journey; mocking the layer under test is a fail.
+- **Compose deliberately and record it.** Build the repo up from the reference
+  pieces and write the decision into the AGENTS.md "Stack and composition"
+  section so it is auditable, not silently skipped.
+- **Land on current dependencies.** Run `just upgrade` as one of the last steps
+  so the repo starts life on the latest deps, with the gate re-run and lockfiles
+  committed.
+
+## Verification
+
+- [ ] **Agent layer.** `AGENTS.md` exists; `CLAUDE.md` is a symlink to it (not a
+  copy); `.claude/settings.json` has a narrow allowlist.
+- [ ] **Composition recorded.** `AGENTS.md` has a filled-in "Stack and
+  composition" section naming the product shape, the language(s), the references
+  composed, and what was excluded and why — no `<...>`/`TODO` placeholders left.
+- [ ] **Command surface.** The `justfile` defines `bootstrap`, `check`, `test`,
+  `lint`, `format`, `upgrade`, each with a real body (no placeholder recipe
+  survives), and `just bootstrap` works from a clean clone.
+- [ ] **Strict gate.** `just check` runs format check + lint + type check + unit
+  tests + e2e and fails on any issue (no warnings-only mode); `check` actually
+  invokes `test` — confirm the wiring, don't assume it.
+- [ ] **Coverage enforced.** Coverage is measured and the gate fails below the
+  threshold (95% line coverage by default, or a documented lower bar in
+  `AGENTS.md`).
+- [ ] **Real e2e of every journey.** E2E drives the real artifact across real
+  boundaries — not mocking the layer under test — and covers every user-facing
+  journey, happy path **and** failure/recovery, running inside `just check`
+  (a too-expensive case is a documented exception CI still runs, never silently
+  skipped).
+- [ ] **Upgraded to latest, then gated.** `just upgrade` was run as one of the
+  last steps, the refreshed lockfiles are committed, and the gate it re-runs
+  passed.

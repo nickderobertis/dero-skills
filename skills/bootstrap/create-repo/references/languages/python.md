@@ -33,3 +33,20 @@ Language-level conventions for any Python repo. Combine with a product shape
   travels with it.
 - **Avoid baggage.** No `src` layout, asdf, direnv, or pre-commit unless clearly
   justified for this repo.
+
+## Verification
+
+- [ ] **Version + environment.** Python 3.14 (unless something makes it
+  impossible); `uv` manages the environment and dependencies; all project config
+  lives in `pyproject.toml`.
+- [ ] **Quality toolchain in the gate.** `ruff` (lint + format), `ty` (type
+  check), and `pytest` all run under `just check` and fail on issues, with no
+  warnings-only mode.
+- [ ] **Boundary validation.** External / IO boundaries (request bodies, config,
+  env, third-party responses) are validated with Pydantic; boundary code is
+  explicit and tested.
+- [ ] **Coverage enforced.** `pytest --cov --cov-fail-under=95` runs in the gate
+  (95% default bar, lower only with a documented reason in `AGENTS.md`).
+- [ ] **Command mapping wired.** `just bootstrap` → `uv sync`; `just check` →
+  `ruff format --check` + `ruff check` + `ty` + `pytest --cov`; `just upgrade` →
+  `uv lock --upgrade` then `uv sync`.

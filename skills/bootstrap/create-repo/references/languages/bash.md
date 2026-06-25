@@ -21,3 +21,19 @@ Language-level conventions for shell-script repos. Combine with a product shape
   - `just e2e` -> integration tests that drive the real host tool
 - **CI.** Matrix across the supported OSes; prove the scripts end-to-end, not
   just that they parse.
+
+## Verification
+
+- [ ] **Target shell decided.** The target shell is chosen explicitly (POSIX `sh`
+  without bashisms, or `bash` tested on macOS and Linux).
+- [ ] **Quality gates.** `shellcheck` and `shfmt` are enforced and fail on
+  issues — no warnings backlog.
+- [ ] **Tests.** `bats` (or similar) covers unit-level behavior, plus real
+  integration tests against the host tool when one exists.
+- [ ] **Coverage decision.** 95% line coverage enforced in `just check` via
+  `kcov`/`bashcov`, or a documented lower bar in `AGENTS.md` (shell is the most
+  likely case to justify lowering it).
+- [ ] **Robustness.** `set -euo pipefail`, quoted expansions, and explicit
+  handling of network/filesystem failures.
+- [ ] **CI matrix.** CI runs across the supported OSes and proves the scripts
+  end-to-end, not just that they parse.
