@@ -25,11 +25,11 @@ no scripts needs nothing beyond the agent itself.
 | `gh` (authenticated) | Always, to install and update skills | `gh skill install` / `gh skill update --all` |
 | `uv` + Python 3.12+ | Skills with bundled Python scripts | `uv run --script scripts/<script>.py` |
 | Node.js 18+ | Skills with bundled JavaScript scripts | `node scripts/<script>.mjs` |
-| pnpm (via Corepack) | Only skills shipping their own `package.json` | `pnpm install --frozen-lockfile` then `pnpm run <script>` |
+| bun | Only skills shipping their own `package.json` | `bun install --frozen-lockfile` then `bun run <script>` |
 
 `consumer-bootstrap/scripts/setup-agent-skills-runtime.sh` installs/verifies
 these once; `check-agent-skills-runtime.sh` verifies them at session start.
-Missing Node or pnpm is only a warning — they are needed solely by skills that
+Missing Node or bun is only a warning — they are needed solely by skills that
 bundle the corresponding scripts.
 
 ## Portability rules that keep skills cross-platform

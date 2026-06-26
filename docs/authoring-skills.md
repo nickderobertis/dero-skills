@@ -55,7 +55,7 @@ Rules:
 - `description` must be trigger-oriented and specific — start with "Use when …"
   and name the concrete situation that should activate the skill.
 - `compatibility` states runtime needs and when they apply (Python via uv, Node,
-  pnpm). Tailor it to what the skill actually bundles.
+  bun). Tailor it to what the skill actually bundles.
 - Never include secrets, credentials, PHI, PII, or customer data.
 - Keep platform-specific install instructions out of skill content unless
   unavoidable; platform setup lives in `consumer-bootstrap/` and `docs/`.
@@ -67,7 +67,7 @@ authoring infrastructure exists. A skill's runtime scripts **must not** depend
 on:
 
 - Nx
-- the repo-root `pyproject.toml`, `uv.lock`, `package.json`, or `pnpm-lock.yaml`
+- the repo-root `pyproject.toml`, `uv.lock`, `package.json`, or `bun.lock`
 - asdf or direnv
 - imports from this repo's source tree (`skills/`, `tools/`)
 
@@ -95,12 +95,12 @@ How to satisfy this:
   node scripts/<script>.mjs [args...]
   ```
 
-- **Only** a skill with its own skill-local `package.json` (and `pnpm-lock.yaml`)
+- **Only** a skill with its own skill-local `package.json` (and `bun.lock`)
   may require:
 
   ```bash
-  pnpm install --frozen-lockfile
-  pnpm run <script>
+  bun install --frozen-lockfile
+  bun run <script>
   ```
 
 ## Nx is for authoring and CI only
@@ -130,12 +130,12 @@ repo's own baseline self-check) with `just check`. To run just the skill checks:
 ./scripts/validate-skills.sh --no-smoke # validate only
 ```
 
-Or via Nx per skill (Nx is a dev/CI tool here, run through pnpm):
+Or via Nx per skill (Nx is a dev/CI tool here, run through bun):
 
 ```bash
-pnpm nx run bootstrap-create-repo:validate
-pnpm nx run bootstrap-create-repo:test
-pnpm nx run-many -t validate smoke test
+bunx nx run bootstrap-create-repo:validate
+bunx nx run bootstrap-create-repo:test
+bunx nx run-many -t validate smoke test
 ```
 
 ## Checklist for a new skill

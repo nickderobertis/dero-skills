@@ -1,6 +1,6 @@
-# Node / pnpm
+# Node / bun
 node_modules/
-.pnpm-store/
+.bun/
 
 # Nx
 .nx/cache/
