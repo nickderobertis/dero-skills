@@ -48,11 +48,19 @@ baseline:
 nx:
     pnpm nx run-many -t validate smoke test
 
+# Install/refresh the optional llmlint toolchain (oneharness + llmlint). Runs
+# automatically via the Claude Code SessionStart hook; this is the manual entry
+# point for a plain terminal. Idempotent.
+setup-llmlint:
+    ./scripts/setup-llmlint.sh
+
 # Optional LLM-as-judge lint (cross-language launch conventions). NOT part of
 # `just check`: needs the `oneharness`+`llmlint` binaries and a Claude token, so
-# it is not assumed by the uv-only gate. Install once with the curl scripts in
-# llmlint.yml's header docs; auth via CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.
-# Pass paths to narrow, e.g. `just lint-llm scripts/validate-skills.sh`.
+# it is not assumed by the uv-only gate. In a Claude Code session the SessionStart
+# hook installs the binaries and selects the claude-code harness; in a terminal
+# run `just setup-llmlint` once (uses the committed codex + gpt-5.5 default; auth
+# via your own harness). Pass paths to narrow, e.g.
+# `just lint-llm scripts/validate-skills.sh`.
 lint-llm *paths:
     llmlint {{paths}}
 

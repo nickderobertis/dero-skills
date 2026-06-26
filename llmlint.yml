@@ -48,8 +48,11 @@ plugins:
 
 agents:
   default:
-    harness: claude-code
-    model: sonnet
+    # Harness and model are intentionally NOT pinned here so oneharness resolves
+    # them from oneharness.toml (codex + gpt-5.5 by default) — which lets a Claude
+    # Code session's ONEHARNESS_HARNESSES / ONEHARNESS_MODEL env overrides flip the
+    # whole run to claude-code + Opus without editing this file. Pinning them here
+    # would emit `--harness`/`--model` flags that beat those env overrides.
     prompt_template: |
       You are reviewing how a polyglot repository launches code and manages
       dependencies. The repository's standard is:

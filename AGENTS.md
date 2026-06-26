@@ -89,19 +89,31 @@ repo's cross-language launch conventions: **Python and Python packages run
 through `uv`** (`uv run`/`uv run --script`/`uvx`/`uv add`), **TypeScript and npm
 packages run through `bun`** (`bun run`/`bunx`/`bun add`), and the **anti-pattern
 of a Bash script that only wraps a single-language program** instead of calling
-uv/bun directly. It drives Claude Code via the `oneharness` driver and is
-configured in `oneharness.toml` (a default harness must be set there or the
-bundled `config_lint` plugin errors with "no harness selected").
+uv/bun directly. It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
+driver (>= 0.2.531, for `ONEHARNESS_<FIELD>` env overrides).
+
+**Harness split — committed default vs. Claude Code.** The committed
+`oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
+running `llmlint` from a terminal gets). Inside a Claude Code session the
+`SessionStart` hook runs `scripts/setup-llmlint.sh`, which installs the binaries
+and exports `ONEHARNESS_HARNESSES=claude-code` + `ONEHARNESS_MODEL=claude-opus-4-8`
+into the session — env overrides that beat the committed file, so the run uses
+the only harness authenticated there (Claude Code + Opus). The flip works only
+because the agents in `llmlint.yml` deliberately do **not** pin a harness/model
+(pinning would emit `--harness`/`--model` flags that beat the env). `IS_SANDBOX`
+is injected into just the claude-code harness via `oneharness.toml` so it runs
+under root without `--dangerously-skip-permissions` refusing; `oneharness.toml`
+also supplies the default harness the bundled `config_lint` plugin needs.
 
 This is **deliberately not in `just check`**: the gate runs on uv alone and must
 stay reproducible from a clean clone, whereas `llmlint` needs the separately
-installed `oneharness`/`llmlint` binaries (curl installers documented in
-`llmlint.yml`'s header) plus a Claude token (`CLAUDE_CODE_OAUTH_TOKEN` or
-`ANTHROPIC_API_KEY`; the Claude Code harness also picks up an inherited
-session token). Run it on demand with `just lint-llm`. Note it will flag the
-repo's own pnpm/Nx authoring toolchain against the bun rule — that toolchain is
-an intentional, documented carve-out (see "Stack and composition"), not a defect
-to silence.
+installed binaries and a harness token (in Claude Code the inherited session
+token; elsewhere `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or your own
+codex auth). Run it on demand with `just lint-llm`; `just setup-llmlint` is the
+manual install path for a terminal (the hook covers Claude Code sessions). Note
+it will flag the repo's own pnpm/Nx authoring toolchain against the bun rule —
+that toolchain is an intentional, documented carve-out (see "Stack and
+composition"), not a defect to silence.
 
 ## Commits, releases, and merging
 
