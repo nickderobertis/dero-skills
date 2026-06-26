@@ -107,15 +107,23 @@ is injected into just the claude-code harness via `oneharness.toml` so it runs
 under root without `--dangerously-skip-permissions` refusing; `oneharness.toml`
 also supplies the default harness the bundled `config_lint` plugin needs.
 
-This is **deliberately not in `just check`**: the gate runs on uv alone and must
-stay reproducible from a clean clone, whereas `llmlint` needs the separately
-installed binaries and a harness token (in Claude Code the inherited session
-token; elsewhere `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or your own
-codex auth). Run it on demand with `just lint-llm`; `just setup-llmlint` is the
-manual install path for a terminal (the hook covers Claude Code sessions). Note
-it will flag the repo's own pnpm/Nx authoring toolchain against the bun rule —
-that toolchain is an intentional, documented carve-out (see "Stack and
-composition"), not a defect to silence.
+This is **deliberately not in `just check`**: the uv-only gate must stay
+reproducible from a clean clone, whereas `llmlint` needs the separately installed
+binaries and a harness token (in Claude Code the inherited session token;
+elsewhere `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or — for the codex
+default — `OPENAI_API_KEY`). Run it on demand with `just lint-llm`;
+`just setup-llmlint` is the manual install path for a terminal (the hook covers
+Claude Code sessions). Since the repo now runs all JS through bun (`bun install`,
+`bunx nx`), the bun rule no longer fires on the authoring toolchain.
+
+**Blocking CI check.** The `llmlint` job in `.github/workflows/ci.yml` runs
+`just lint-llm-diff` on every PR — `scripts/lint-llm-diff.sh` lints only the
+files the branch changed since its **merge-base with main** (the fork point, not
+main's current tip, so unrelated later commits on main are never linted). CI
+installs the committed Codex harness via bun and authenticates it with the
+`OPENAI_API_KEY` repo secret; without that secret the job fails. It is a separate
+job (not folded into `check`) to keep the clean-clone gate uv-only — add it to
+the required status checks in branch protection to make it block merges.
 
 ## Commits, releases, and merging
 

@@ -72,6 +72,59 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
         run: echo "$PR_TITLE" | bunx commitlint
 
+  llmlint:
+    # Blocking LLM-as-judge lint of the cross-language launch conventions, scoped
+    # to the files this PR changed (the merge-base diff with main). Uses the
+    # committed harness — Codex + gpt-5.5 — so it needs an OpenAI key in repo
+    # secrets (OPENAI_API_KEY). Mark this job a required status check in branch
+    # protection to make it truly block merges (alongside `check`/`commitlint`).
+    name: llmlint (changed files)
+    if: github.event_name == 'pull_request' && github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the PR head (not the synthetic merge ref) with full history so
+      # the merge-base with main resolves.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch main (diff base)
+        run: git fetch --no-tags --depth=2147483647 origin main
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install Codex CLI (the committed harness)
+        run: |
+          bun add -g @openai/codex
+          bun pm bin -g >> "$GITHUB_PATH"
+
+      - name: Install llmlint toolchain (oneharness + llmlint)
+        run: |
+          ./scripts/setup-llmlint.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Lint changed files
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: just lint-llm-diff origin/main
+
   release:
     # Automated release on main: derive the version from Conventional Commits
     # and publish a GitHub Release + tag. Runs only after the gate passes.

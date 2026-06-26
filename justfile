@@ -64,6 +64,14 @@ setup-llmlint:
 lint-llm *paths:
     llmlint {{paths}}
 
+# llmlint, scoped to the files this branch changed since it forked from main
+# (the merge-base diff, not a diff against main's current tip). This is the
+# blocking `llmlint` CI check; run it locally before pushing. BASE defaults to
+# origin/main. Uses the committed codex + gpt-5.5 harness unless ONEHARNESS_*
+# env overrides are set (the Claude Code SessionStart hook sets them).
+lint-llm-diff base="origin/main":
+    ./scripts/lint-llm-diff.sh {{base}}
+
 # Upgrade dependencies, then re-run the full gate.
 upgrade:
     uv lock --upgrade

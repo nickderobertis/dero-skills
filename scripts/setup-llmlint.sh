@@ -13,7 +13,9 @@
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
 #      comes from oneharness.toml, not here.
-#   3. Trusts this workspace so the claude-code harness honors permissions.
+#
+# (Workspace trust is intentionally not touched: under the harness's bypass mode
+# the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
 set -uo pipefail
 
 # Minimum oneharness with `ONEHARNESS_<FIELD>` env config overrides.
@@ -21,9 +23,6 @@ readonly ONEHARNESS_MIN="0.2.531"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
-
-# Resolve the repo root (works whether invoked by path or via the hook).
-repo_root() { cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd; }
 
 # True when $1 (installed) is older than $2 (minimum).
 older_than() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" != "$2" ]; }
@@ -59,32 +58,9 @@ persist_session_env() {
   log "exported PATH + ONEHARNESS_HARNESSES=claude-code + ONEHARNESS_MODEL=claude-opus-4-8"
 }
 
-# Mark this repo trusted so the claude-code harness applies its permission rules
-# instead of refusing under bypass mode. Touches only this repo's entry.
-trust_workspace() {
-  local cfg="$HOME/.claude.json" root
-  root="$(repo_root)"
-  [ -f "$cfg" ] || return 0
-  command -v python3 >/dev/null 2>&1 || return 0
-  python3 - "$cfg" "$root" <<'PY' >&2 || log "trust step skipped"
-import json, sys
-cfg, root = sys.argv[1], sys.argv[2]
-try:
-    d = json.load(open(cfg))
-except Exception:
-    sys.exit(0)
-proj = d.setdefault("projects", {}).setdefault(root, {})
-if not proj.get("hasTrustDialogAccepted"):
-    proj["hasTrustDialogAccepted"] = True
-    json.dump(d, open(cfg, "w"), indent=2)
-    print(f"setup-llmlint: trusted workspace {root}")
-PY
-}
-
 export PATH="${BIN_DIR}:${PATH}"
 ensure_oneharness
 ensure_llmlint
 persist_session_env
-trust_workspace
 log "ready (oneharness: $(oneharness --version 2>/dev/null || echo missing); llmlint: $(llmlint --version 2>/dev/null || echo missing))"
 exit 0
