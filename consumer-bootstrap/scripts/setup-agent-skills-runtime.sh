@@ -32,14 +32,15 @@ python3 --version 2>/dev/null || echo "WARNING: python3 not found. uv may still 
 echo "Checking Node.js..."
 node --version 2>/dev/null || echo "WARNING: node not found. Node is required only for Node-based skill scripts."
 
-echo "Checking pnpm..."
-if ! command -v pnpm >/dev/null 2>&1; then
-  if command -v corepack >/dev/null 2>&1; then
-    corepack enable
-    corepack prepare pnpm@10 --activate
-  else
-    echo "WARNING: pnpm not found and corepack is unavailable. pnpm is required only for skills with package.json."
-  fi
+echo "Checking bun..."
+if ! command -v bun >/dev/null 2>&1; then
+  echo "bun not found. Installing bun..."
+  curl -fsSL https://bun.sh/install | bash
+  export PATH="$HOME/.bun/bin:$PATH"
+fi
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "WARNING: bun was not found after install. bun is required only for skills with package.json."
 fi
 
 echo
@@ -48,4 +49,4 @@ gh --version | head -n 1
 uv --version
 python3 --version 2>/dev/null || true
 node --version 2>/dev/null || true
-pnpm --version 2>/dev/null || true
+bun --version 2>/dev/null || true

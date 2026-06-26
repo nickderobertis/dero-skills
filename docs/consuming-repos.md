@@ -52,7 +52,7 @@ Then paste the contents of `AGENTS.agent-skills.md` into the repo's `AGENTS.md`.
 ## Install and run
 
 ```bash
-./scripts/setup-agent-skills-runtime.sh   # one-time: gh, uv, python, node, pnpm
+./scripts/setup-agent-skills-runtime.sh   # one-time: gh, uv, python, node, bun
 ./scripts/install-agent-skills.sh         # install the hard-coded skill set
 ```
 
@@ -78,8 +78,8 @@ node scripts/<script>.mjs [args...]             # JavaScript skill scripts
 Skills that ship their own `package.json` may instead require:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm run <script-name> -- [args...]
+bun install --frozen-lockfile
+bun run <script-name> [args...]
 ```
 
 Do **not** run installed skill scripts through Nx — Nx belongs to this repo's

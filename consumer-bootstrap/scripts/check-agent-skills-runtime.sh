@@ -24,10 +24,10 @@ else
   node --version
 fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "WARNING: pnpm not found. Required only for skills with package.json."
+if ! command -v bun >/dev/null 2>&1; then
+  echo "WARNING: bun not found. Required only for skills with package.json."
 else
-  pnpm --version
+  bun --version
 fi
 
 if [[ "${missing}" -ne 0 ]]; then

@@ -73,11 +73,13 @@ Use the `just` recipes; do not hand-roll equivalents.
   gate (see "Optional LLM lint" below).
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
-The gate runs on uv alone, so it needs no Node. Nx/pnpm is an optional
-accelerator; `uv` and `node` (with Corepack for pnpm) are the clean-clone
-prerequisites for `just bootstrap`. The toolchain is pinned in `.tool-versions`:
-provision `just`/`uv`/`node` with asdf (or a compatible manager such as mise)
-via `asdf install`, then run `just bootstrap`. The `python` pin records the
+The gate runs on uv alone, so it needs no Node. Nx/bun is an optional
+accelerator; `uv`, `node`, and `bun` are the clean-clone prerequisites for
+`just bootstrap` (bun is the package manager and script runner; node is the
+underlying runtime for the Nx/semantic-release tooling). The toolchain is
+pinned in `.tool-versions`: provision `just`/`uv`/`node`/`bun` with asdf (or a
+compatible manager such as mise) via `asdf install`, then run `just bootstrap`.
+The `python` pin records the
 targeted version (uv supplies Python per `requires-python`); `just
 check-versions` keeps every pin in lockstep with CI.
 
@@ -144,10 +146,10 @@ composition"), not a defect to silence.
 
 - **Runtime independence.** A skill's bundled scripts run in *consuming* repos,
   where none of this repo's authoring tooling exists. They must not depend on
-  Nx, the repo-root `pyproject.toml`/`uv.lock`/`package.json`/`pnpm-lock.yaml`,
+  Nx, the repo-root `pyproject.toml`/`uv.lock`/`package.json`/`bun.lock`,
   asdf, direnv, or imports from `skills/`/`tools/`. Python skill scripts are
   self-contained via PEP 723 (`uv run --script`); JS skill scripts use Node
-  built-ins; only a skill with its own `package.json` may use pnpm. (This repo
+  built-ins; only a skill with its own `package.json` may use bun. (This repo
   provisions its *own* dev toolchain via asdf/`.tool-versions` — separate from
   this rule, which is that portable skill scripts must not *assume* such a
   manager, since consuming repos may not have one.)

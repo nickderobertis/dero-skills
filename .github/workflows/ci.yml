@@ -29,8 +29,10 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Enable Corepack (pnpm)
-        run: corepack enable
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
 
       - name: Install just
         uses: extractions/setup-just@v2
@@ -57,16 +59,18 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Enable Corepack (pnpm)
-        run: corepack enable
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Lint PR title
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
-        run: echo "$PR_TITLE" | pnpm exec commitlint
+        run: echo "$PR_TITLE" | bunx commitlint
 
   release:
     # Automated release on main: derive the version from Conventional Commits
@@ -89,13 +93,15 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Enable Corepack (pnpm)
-        run: corepack enable
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: pnpm exec semantic-release
+        run: bunx semantic-release

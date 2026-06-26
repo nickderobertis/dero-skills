@@ -33,9 +33,7 @@ FORBIDDEN_RUNTIME = [
     (re.compile(r"\basdf\b", re.IGNORECASE), "references asdf"),
     (re.compile(r"\bdirenv\b", re.IGNORECASE), "references direnv"),
     (
-        re.compile(
-            r"\.\./.*\b(pyproject\.toml|uv\.lock|package\.json|pnpm-lock\.yaml)\b"
-        ),
+        re.compile(r"\.\./.*\b(pyproject\.toml|uv\.lock|package\.json|bun\.lock)\b"),
         "reaches outside the skill for a repo-root manifest/lockfile",
     ),
     (
@@ -174,10 +172,10 @@ def scan_runtime_scripts(skill_dir: Path, report: Report) -> None:
             )
 
     if has_local_package_json:
-        # Allowed, but call it out so the project.json/pnpm story is intentional.
+        # Allowed, but call it out so the project.json/bun story is intentional.
         report.warn(
-            "skill ships a local package.json; ensure a pnpm-lock.yaml and "
-            "scripts are documented (pnpm is allowed only for such skills)"
+            "skill ships a local package.json; ensure a bun.lock and "
+            "scripts are documented (bun is allowed only for such skills)"
         )
 
 

@@ -27,11 +27,11 @@ docs/                          # authoring, consuming, and platform docs
 
 This repo uses a `just` command surface and dogfoods its own
 `bootstrap/create-repo` skill (`just check` audits the repo against the skill's
-baseline invariants). Prerequisites: [uv](https://astral.sh/uv) and Node (for
-the Nx authoring tools).
+baseline invariants). Prerequisites: [uv](https://astral.sh/uv), Node, and
+[bun](https://bun.sh) (for the Nx authoring tools).
 
 ```bash
-just bootstrap   # one-time: uv sync + pnpm install
+just bootstrap   # one-time: uv sync + bun install
 just check       # full gate: format, lint, skill validation, tests, baseline
 just validate    # validate + smoke every skill
 just test        # pytest
