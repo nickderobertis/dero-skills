@@ -45,6 +45,6 @@ node scripts/<script>.mjs [args...]
 Skills with local JavaScript dependencies may require:
 
 ```bash
-pnpm install --frozen-lockfile
-pnpm run <script-name> -- [args...]
+bun install --frozen-lockfile
+bun run <script-name> [args...]
 ```

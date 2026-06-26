@@ -43,6 +43,7 @@ TV_TO_CI = {
     "node": "node",
     "uv": "uv",
     "just": "just",
+    "bun": "bun",
     "python": "python",
 }
 
@@ -51,6 +52,7 @@ DIRECT_CI_KEYS = {
     "node-version": "node",
     "python-version": "python",
     "just-version": "just",
+    "bun-version": "bun",
 }
 
 ACTION_RE = re.compile(r"uses:\s*(\S+)")

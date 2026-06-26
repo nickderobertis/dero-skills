@@ -24,6 +24,23 @@ jobs:
       - uses: extractions/setup-just@v2
 """
 
+# A workflow that also pins bun via setup-bun's `bun-version` input.
+CI_NODE_22_BUN = """\
+name: ci
+on: [push]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+"""
+
 
 def make_repo(tmp_path: Path, *, tool_versions: str | None, ci: str | None) -> Path:
     if tool_versions is not None:
@@ -76,6 +93,11 @@ jobs:
     assert pins["just"] == "1.51.0"
 
 
+def test_parse_ci_pins_maps_bun_version():
+    pins = {p.tool: p.version for p in ctv.parse_ci_pins(CI_NODE_22_BUN, "ci.yml")}
+    assert pins["bun"] == "1.3.11"
+
+
 def test_versions_consistent_prefix_semantics():
     assert ctv.versions_consistent("22", "22.12.0")
     assert ctv.versions_consistent("22.12.0", "22")
@@ -111,6 +133,20 @@ def test_conflicting_python_version_is_error(tmp_path):
     findings = ctv.audit(repo)
     assert ctv.has_errors(findings)
     assert any("python" in m for m in errors(findings))
+
+
+def test_bun_pin_matches_ci(tmp_path):
+    repo = make_repo(
+        tmp_path, tool_versions="bun 1.3.11\nnodejs 22.12.0\n", ci=CI_NODE_22_BUN
+    )
+    assert not ctv.has_errors(ctv.audit(repo))
+
+
+def test_conflicting_bun_version_is_error(tmp_path):
+    repo = make_repo(tmp_path, tool_versions="bun 1.2.0\n", ci=CI_NODE_22_BUN)
+    findings = ctv.audit(repo)
+    assert ctv.has_errors(findings)
+    assert any("bun" in m for m in errors(findings))
 
 
 def test_tool_pinned_only_locally_is_ok(tmp_path):
