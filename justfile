@@ -48,6 +48,14 @@ baseline:
 nx:
     pnpm nx run-many -t validate smoke test
 
+# Optional LLM-as-judge lint (cross-language launch conventions). NOT part of
+# `just check`: needs the `oneharness`+`llmlint` binaries and a Claude token, so
+# it is not assumed by the uv-only gate. Install once with the curl scripts in
+# llmlint.yml's header docs; auth via CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY.
+# Pass paths to narrow, e.g. `just lint-llm scripts/validate-skills.sh`.
+lint-llm *paths:
+    llmlint {{paths}}
+
 # Upgrade dependencies, then re-run the full gate.
 upgrade:
     uv lock --upgrade

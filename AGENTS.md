@@ -69,6 +69,8 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just format` / `just lint` / `just validate` / `just check-versions` /
   `just test` — individual steps.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
+- `just lint-llm [paths]` — optional LLM-as-judge lint (`llmlint`). NOT in the
+  gate (see "Optional LLM lint" below).
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
 The gate runs on uv alone, so it needs no Node. Nx/pnpm is an optional
@@ -78,6 +80,28 @@ provision `just`/`uv`/`node` with asdf (or a compatible manager such as mise)
 via `asdf install`, then run `just bootstrap`. The `python` pin records the
 targeted version (uv supplies Python per `requires-python`); `just
 check-versions` keeps every pin in lockstep with CI.
+
+### Optional LLM lint (`llmlint`)
+
+`llmlint.yml` configures [`llmlint`](https://github.com/nickderobertis/llmlint),
+an LLM-as-judge linter for invariants ruff/pytest can't express — here, the
+repo's cross-language launch conventions: **Python and Python packages run
+through `uv`** (`uv run`/`uv run --script`/`uvx`/`uv add`), **TypeScript and npm
+packages run through `bun`** (`bun run`/`bunx`/`bun add`), and the **anti-pattern
+of a Bash script that only wraps a single-language program** instead of calling
+uv/bun directly. It drives Claude Code via the `oneharness` driver and is
+configured in `oneharness.toml` (a default harness must be set there or the
+bundled `config_lint` plugin errors with "no harness selected").
+
+This is **deliberately not in `just check`**: the gate runs on uv alone and must
+stay reproducible from a clean clone, whereas `llmlint` needs the separately
+installed `oneharness`/`llmlint` binaries (curl installers documented in
+`llmlint.yml`'s header) plus a Claude token (`CLAUDE_CODE_OAUTH_TOKEN` or
+`ANTHROPIC_API_KEY`; the Claude Code harness also picks up an inherited
+session token). Run it on demand with `just lint-llm`. Note it will flag the
+repo's own pnpm/Nx authoring toolchain against the bun rule — that toolchain is
+an intentional, documented carve-out (see "Stack and composition"), not a defect
+to silence.
 
 ## Commits, releases, and merging
 

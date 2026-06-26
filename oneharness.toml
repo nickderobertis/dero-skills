@@ -1,0 +1,9 @@
+# oneharness defaults for this repo. Docs: https://github.com/nickderobertis/oneharness
+#
+# llmlint drives oneharness; agents that don't pin their own `harness` (e.g. the
+# bundled config_lint plugin) need a default selected here, otherwise oneharness
+# exits with "no harness selected".
+harnesses = ["claude-code"]
+
+[harness.claude-code]
+model = "sonnet"
