@@ -96,14 +96,14 @@ tiers (see the header in `llmlint.yml`):
   fragment edit takes effect here immediately. We pull the fragments applicable
   to this repo's stack (`base` + `shapes/skills-repo` + `languages/python` +
   `languages/bash` + `ci`); the one-time `buildout/` fragments are excluded
-  because they don't persist. These run on the neutral `default` agent.
+  because they don't persist.
 - **The repo's bespoke cross-language launch conventions**, defined inline:
   **Python and Python packages run through `uv`** (`uv run`/`uv run --script`/
   `uvx`/`uv add`), **TypeScript and npm packages run through `bun`** (`bun run`/
   `bunx`/`bun add`), and the **anti-pattern of a Bash script that only wraps a
-  single-language program** instead of calling uv/bun directly. These run on a
-  separate `launch` agent so their uv/bun prompt context never primes the
-  create-repo rules.
+  single-language program** instead of calling uv/bun directly. Each rule's
+  description carries its full uv/bun criteria, so all rules share the one
+  `default` agent — no domain-specific prompt is needed.
 
 It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
 driver (>= 0.2.531, for `ONEHARNESS_<FIELD>` env overrides).

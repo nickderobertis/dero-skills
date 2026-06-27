@@ -6,16 +6,16 @@
 # is a violation. Keep ruff/pytest/skill-validation for everything they already
 # cover.
 #
-# Two tiers combine here:
+# Two tiers combine here, all on one `default` agent:
 #   * The create-repo skill's ONGOING rule fragments (base + the
 #     skills-repo/python/bash/ci references applicable to this repo's stack),
 #     wired in as `plugins` below. We dogfood our own create-repo asset, so they
 #     are LOCAL in-tree paths — edits to a fragment take effect immediately — not
 #     the `@version`-pinned hosted URLs a consuming repo gets from the composer.
-#     These run on the neutral `default` agent.
 #   * This repo's BESPOKE cross-language launch conventions (uv for Python, bun
-#     for npm, no thin Bash wrappers), defined inline in `rules` and run on the
-#     `launch` agent so their domain context never primes the create-repo rules.
+#     for npm, no thin Bash wrappers), defined inline in `rules`. Each rule's
+#     description carries its full uv/bun criteria, so no agent-specific prompt
+#     context is needed.
 #
 # This is an OPTIONAL author-time check, not part of `just check`: it needs the
 # `oneharness` + `llmlint` binaries and a Claude token, neither of which the
@@ -74,34 +74,20 @@ plugins:
   - "skills/bootstrap/create-repo/assets/llmlint/languages/bash.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
 
-# Neither agent pins harness/model, so oneharness resolves them from
+# One default agent for every rule (bespoke and plugin alike). The
+# launch-convention rules below carry their full uv/bun criteria in their own
+# descriptions, so no domain-specific prompt context is needed — a single
+# generic judging-hygiene prompt serves all rules without biasing any.
+#
+# Harness/model are intentionally NOT pinned, so oneharness resolves them from
 # oneharness.toml (codex + gpt-5.5 by default) — which lets a Claude Code
 # session's ONEHARNESS_HARNESSES / ONEHARNESS_MODEL env overrides flip the whole
 # run to claude-code + Opus without editing this file. Pinning here would emit
 # `--harness`/`--model` flags that beat those env overrides.
 agents:
-  # The create-repo plugin rules run here, with only generic judging hygiene —
-  # no domain priming, so each rule is judged on its own description.
   default:
     prompt_template: |
       Judge only what the file actually shows. Cite the exact line, command, or
-      shebang that drives each verdict; do not speculate about files you cannot
-      see.
-  # The bespoke launch-convention rules below run here. The uv/bun standard lives
-  # on this agent (not `default`) so it never biases the create-repo rules.
-  launch:
-    prompt_template: |
-      You are reviewing how a polyglot repository launches code and manages
-      dependencies. The repository's standard is:
-
-      - Python code and Python packages are always invoked through `uv`:
-        `uv run ...`, `uv run --script` (PEP 723 self-contained scripts),
-        `uvx` / `uv tool run`, and `uv add` / `uv pip` for dependencies.
-      - TypeScript / JavaScript code and npm packages are always invoked through
-        `bun`: `bun run ...`, `bun <file>`, `bunx` / `bun x`, `bun add`,
-        `bun install`.
-
-      Judge only what the file actually shows. Cite the exact command, line, or
       shebang that drives each verdict; do not speculate about files you cannot
       see.
 
@@ -115,7 +101,6 @@ rules:
       `python3` invocation, a `#!/usr/bin/env python3` shebang used as the
       primary entry point, `pip` / `pip3` / `pipx`, `poetry run`, or activating
       a virtualenv by hand instead of going through uv.
-    agent: launch
     relevance: the file runs Python code or installs a Python package
 
   - name: typescript_and_npm_launched_via_bun
@@ -125,7 +110,6 @@ rules:
       `bun x`, `bun add`, or `bun install`.
       FALSE when it runs code or manages packages directly with `node`, `npm` /
       `npx`, `pnpm`, or `yarn` instead of bun.
-    agent: launch
     relevance: the file runs TypeScript/JavaScript or manages an npm package
 
   - name: single_language_work_runs_directly_not_via_bash_wrapper
@@ -142,6 +126,5 @@ rules:
       into the program and run it directly with uv or bun.
       A shell script that performs real multi-step orchestration is NOT a
       violation, even if some steps call uv or bun.
-    agent: launch
     relevance: the file is a shell script
     judges: 3
