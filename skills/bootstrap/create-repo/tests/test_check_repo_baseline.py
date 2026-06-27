@@ -47,10 +47,25 @@ format:
 
 upgrade:
     @just check
+
+llmlint:
+    @echo llmlint
 """
 
-# A workflow that actually invokes the gate, as the CI invariant requires.
-GATE_WORKFLOW = "name: ci\njobs:\n  check:\n    steps:\n      - run: just check\n"
+# A workflow that invokes the gate AND the llmlint tier (separate jobs), as the
+# CI and llmlint invariants require.
+GATE_WORKFLOW = (
+    "name: ci\njobs:\n"
+    "  check:\n    steps:\n      - run: just check\n"
+    "  llmlint:\n    steps:\n      - run: just llmlint\n"
+)
+
+# A composed llmlint.yml: declares plugins (the rule fragments), as the llmlint
+# invariant requires.
+LLMLINT_CONFIG = (
+    "version: 1\nplugins:\n"
+    '  - "https://example.com/assets/llmlint/base.llmlint.yml@1"\n'
+)
 
 # A conformant PR template: names both the What and Why sections the PR-template
 # invariant requires (Additional info is optional).
@@ -88,6 +103,7 @@ def make_repo(
     justfile=FULL_JUSTFILE,
     ci=True,
     pr_template=True,
+    llmlint=True,
 ) -> Path:
     """Build a repo fixture. With no overrides it is fully conformant.
 
@@ -99,6 +115,8 @@ def make_repo(
     AGENTS.md with no such section), or a raw string written verbatim as
     AGENTS.md. ``pr_template`` is True (the conformant .github template), False
     (none), or a raw string written verbatim to .github/pull_request_template.md.
+    ``llmlint`` is True (a composed llmlint.yml with plugins), False (none), or a
+    raw string written verbatim to llmlint.yml.
     """
     repo = tmp_path
     if agents:
@@ -131,6 +149,9 @@ def make_repo(
         gh.mkdir(exist_ok=True)
         body = pr_template if isinstance(pr_template, str) else CONFORMANT_PR_TEMPLATE
         (gh / "pull_request_template.md").write_text(body, encoding="utf-8")
+    if llmlint is not False:
+        body = llmlint if isinstance(llmlint, str) else LLMLINT_CONFIG
+        (repo / "llmlint.yml").write_text(body, encoding="utf-8")
     return repo
 
 
@@ -523,10 +544,57 @@ def test_every_error_carries_a_suggested_fix(tmp_path):
         justfile=None,
         ci=False,
         pr_template=False,
+        llmlint=False,
     )
     errors = [f for f in crb.audit(repo) if f.level == "ERROR"]
     assert errors
     assert all(f.fix for f in errors)
+
+
+# --- llmlint (LLM-judge tier) ----------------------------------------------
+
+
+def test_conformant_repo_has_llmlint_ok(tmp_path):
+    findings = crb.audit(make_repo(tmp_path))
+    assert any("llmlint tier configured" in m for m in levels(findings, "OK")), levels(
+        findings, "ERROR"
+    )
+
+
+def test_missing_llmlint_config_is_error(tmp_path):
+    findings = crb.audit(make_repo(tmp_path, llmlint=False))
+    assert crb.has_errors(findings)
+    assert any("llmlint.yml" in m for m in levels(findings, "ERROR"))
+
+
+def test_llmlint_config_without_plugins_is_error(tmp_path):
+    # A present config that declares no plugins is not the composed tier.
+    findings = crb.audit(make_repo(tmp_path, llmlint="version: 1\nrules: []\n"))
+    assert crb.has_errors(findings)
+    assert any("no plugins" in m for m in levels(findings, "ERROR"))
+
+
+def test_llmlint_inline_empty_plugins_is_error(tmp_path):
+    findings = crb.audit(make_repo(tmp_path, llmlint="version: 1\nplugins: []\n"))
+    assert crb.has_errors(findings)
+    assert any("no plugins" in m for m in levels(findings, "ERROR"))
+
+
+def test_missing_llmlint_recipe_is_error(tmp_path):
+    no_recipe = FULL_JUSTFILE.replace("\nllmlint:\n    @echo llmlint\n", "\n")
+    findings = crb.audit(make_repo(tmp_path, justfile=no_recipe))
+    assert crb.has_errors(findings)
+    assert any("`llmlint` recipe" in m for m in levels(findings, "ERROR"))
+
+
+def test_ci_without_llmlint_reference_is_error(tmp_path):
+    # CI runs the gate but never the llmlint tier — the blocking PR check is absent.
+    gate_only = "name: ci\njobs:\n  check:\n    steps:\n      - run: just check\n"
+    findings = crb.audit(make_repo(tmp_path, ci=gate_only))
+    assert crb.has_errors(findings)
+    assert any("llmlint" in m and "CI" in m for m in levels(findings, "ERROR")), levels(
+        findings, "ERROR"
+    )
 
 
 # --- AGENTS.md length (advisory) -------------------------------------------

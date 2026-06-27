@@ -1,0 +1,24 @@
+# Rust judge-level rules (plugin). Pairs with languages/rust.md. Boundary input
+# validation is general (base.llmlint.yml); this fragment is Rust-specific.
+version: 1
+
+rules:
+  - name: invalid_states_unrepresentable
+    description: |
+      true when the domain and boundary types in the target files use newtypes and
+      enums so that invalid states cannot be represented. false when any domain or
+      boundary value is modelled with a bare bool or a stringly-typed value where a
+      newtype or enum is the natural choice.
+    files:
+      include: ["**/*.rs"]
+      exclude: ["**/tests/**", "**/*_test.rs", "**/benches/**"]
+    relevance: the target files define domain types or model boundary data
+
+  - name: no_panics_on_recoverable_errors
+    description: |
+      true when every fallible operation in the target files returns or propagates
+      an error (`Result`, `?`). false when any fallible operation uses `unwrap()`,
+      `expect()`, or `panic!` for an error that is recoverable.
+    files:
+      include: ["**/*.rs"]
+      exclude: ["**/tests/**", "**/*_test.rs", "**/benches/**"]

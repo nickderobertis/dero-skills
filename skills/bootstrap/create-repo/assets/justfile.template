@@ -48,6 +48,14 @@ upgrade:
     @echo "TODO: upgrade dependencies (e.g. uv lock --upgrade)"
     @just check
 
+# LLM-judge lint (llmlint) — the non-deterministic, harness-backed tier. Kept OUT
+# of `check` on purpose: the gate stays deterministic and offline. Run it on
+# demand locally; in CI it is a SEPARATE, blocking PR check. Config is the
+# composed `llmlint.yml`. See references/llmlint.md.
+llmlint:
+    @command -v llmlint >/dev/null 2>&1 || { echo "llmlint not installed — install oneharness + llmlint (https://github.com/nickderobertis/llmlint), then run 'llmlint doctor'"; exit 1; }
+    llmlint
+
 # Optional, but a common addition: a diagnostics recipe so `check` can stay
 # quiet on success. Push environment/version reporting here (toolchain versions,
 # tool presence, outdated deps) instead of letting it leak into the gate's

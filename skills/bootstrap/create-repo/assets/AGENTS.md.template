@@ -67,6 +67,9 @@ Use the `just` recipes; do not hand-roll equivalent commands.
   before any commit or PR.
 - `just test` / `just lint` / `just format` — individual gate steps.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
+- `just llmlint` — the LLM-judge tier (llmlint), separate from `check` and
+  non-deterministic; config in `llmlint.yml`. A blocking PR check, run on demand
+  locally.
 
 ## Commits, releases, and merging
 
@@ -81,8 +84,8 @@ so it is auditable and re-appliable.
   green. Merged head branches auto-delete. Admins may bypass in a break-glass.
 - **All gating checks are required.** Branch protection requires every CI status
   check that gates correctness — including the full-e2e gate job (`just check`),
-  not just a fast lint — plus linear history, conversation resolution, and no
-  force-push / branch-deletion.
+  the `llmlint` LLM-judge job (separate from `check`), and any others — plus
+  linear history, conversation resolution, and no force-push / branch-deletion.
 - **PRs follow the template.** `.github/pull_request_template.md` asks for a
   terse **What** (the behavior change) and **Why** (its driver and impact), with
   an optional **Additional info** section — describe the change and its driver,

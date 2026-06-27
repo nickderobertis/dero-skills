@@ -160,7 +160,7 @@ gh api -X PATCH repos/{owner}/{repo} \
 # others), standard protections, admins can override.
 gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input - <<'JSON'
 {
-  "required_status_checks": { "strict": false, "contexts": ["check", "commitlint"] },
+  "required_status_checks": { "strict": false, "contexts": ["check", "commitlint", "llmlint"] },
   "enforce_admins": false,
   "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "required_linear_history": true,
@@ -176,9 +176,14 @@ The skill bundles this as a runnable, idempotent script — pass the required
 check contexts and preview with `--dry-run` first:
 
 ```bash
-uv run --script scripts/setup_github_governance.py check commitlint --dry-run
-uv run --script scripts/setup_github_governance.py check commitlint
+uv run --script scripts/setup_github_governance.py check commitlint llmlint --dry-run
+uv run --script scripts/setup_github_governance.py check commitlint llmlint
 ```
+
+The `llmlint` context is the **LLM-judge tier** (see
+[`references/llmlint.md`](llmlint.md)) — a required, fork-safe PR check that runs
+*outside* the deterministic `just check` gate. List it among the required
+contexts so a red llmlint run blocks merge, the same as the `check` gate.
 
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
