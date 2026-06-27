@@ -7,7 +7,8 @@
 Usage:
     uv run --script scripts/compose_repo_plan.py --shape SHAPE --language LANG \
         [--language LANG ...] [--releasing] [--monorepo] \
-        [--intersection NAME ...] [-o OUT.md]
+        [--intersection NAME ...] [-o OUT.md] \
+        [--llmlint-config FILE] [--llmlint-buildout-config FILE]
     uv run --script scripts/compose_repo_plan.py --list
 
 You describe the repo with flags — its product shape, the language(s) it is
@@ -33,6 +34,13 @@ auditable:
     ``intersections/<lang>-<shape>.md`` wires it in with no code change; pass
     ``--intersection`` only to force one that breaks the convention.
 
+Optionally it also emits the repo's **llmlint** config — the LLM-as-judge tier
+that runs *outside* ``just check``. ``--llmlint-config FILE`` writes the ongoing
+``llmlint.yml`` (committed; the blocking PR check); ``--llmlint-buildout-config
+FILE`` writes a temporary buildout config (run once at creation, then deleted).
+Both wire the selected references' rule fragments in as ``@version``-pinned
+llmlint plugins; see ``references/llmlint.md``.
+
 The document goes to stdout (or ``-o FILE``); notes and errors go to stderr, so
 the two never mix. Self-contained via PEP 723 so it runs in any consuming repo
 with ``uv run --script`` — no dependency on this repo's authoring toolchain.
@@ -52,6 +60,38 @@ from pathlib import Path
 VERIFICATION_HEADING_RE = re.compile(r"^##\s+Verification\s*$", re.IGNORECASE)
 HEADING_RE = re.compile(r"^#{1,2}\s")
 CHECKLIST_ITEM_RE = re.compile(r"^- \[ \]")
+
+# --- llmlint integration ----------------------------------------------------
+# llmlint (https://github.com/nickderobertis/llmlint) is the LLM-as-judge tier:
+# a non-deterministic linter that runs OUTSIDE the deterministic `just check`
+# gate (via `just lint-llm` + a diff-scoped blocking PR check). The composer
+# builds its config by wiring per-reference rule fragments in as llmlint
+# *plugins*, pinned by URL.
+#
+# Two configs come out of the same selection:
+#   * ongoing (`--llmlint-config`)  -> assets/llmlint/<ref>.llmlint.yml — the
+#     permanent llmlint.yml committed to the repo and run on every PR.
+#   * buildout (`--llmlint-buildout-config`) -> assets/llmlint/buildout/<ref>...
+#     — a temporary config run once at creation to check the repo was set up
+#     right, then deleted (never committed).
+# Fragments are referenced by `@version`-pinned URL; the composer reads each
+# fragment's `version:` locally only to build the pin.
+LLMLINT_SCHEMA_URL = (
+    "https://raw.githubusercontent.com/nickderobertis/llmlint/main/"
+    "assets/llmlint.schema.json"
+)
+# The bundled config-lint plugin: lints this config's own rules for clear,
+# mutually-exclusive true/false and descriptive names. Resolves offline.
+LLMLINT_CONFIG_LINT_URL = (
+    "https://raw.githubusercontent.com/nickderobertis/llmlint/main/"
+    "assets/config_lint.yml@1"
+)
+# Where the hosted fragments live (this repo, raw on the default branch).
+LLMLINT_BASE_URL = (
+    "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/"
+    "skills/bootstrap/create-repo/assets/llmlint"
+)
+LLMLINT_VERSION_RE = re.compile(r"^version:\s*(\S+)", re.MULTILINE)
 
 
 # Intersection references follow a `<language>-<shape>` naming convention
@@ -181,6 +221,8 @@ def select_relpaths(
     ordered.extend(f"intersections/{name}.md" for name in resolved_intersections)
 
     ordered.append("ci.md")
+    # llmlint applies on top of every shape (the LLM-judge tier), like ci.md.
+    ordered.append("llmlint.md")
     if releasing:
         ordered.append("releasing.md")
     if monorepo:
@@ -268,19 +310,115 @@ def render_plan(
         "- [ ] The baseline checker passes: "
         "`uv run --script scripts/check_repo_baseline.py /path/to/repo`."
     )
+    out.append(
+        "- [ ] llmlint (ongoing) passes once: run `just lint-llm` and resolve any "
+        "findings."
+    )
+    out.append(
+        "- [ ] llmlint (buildout) passes once: compose `llmlint.buildout.yml` "
+        "(`--llmlint-buildout-config`), run `llmlint -c llmlint.buildout.yml`, "
+        "resolve findings, then delete it — do not commit."
+    )
     out.append("")
 
     return "\n".join(out).rstrip("\n") + "\n"
 
 
 def count_items(refs: list[Reference]) -> int:
-    """Count checklist items across references, plus the two closing automated gates."""
-    total = 2
+    """Count checklist items across references, plus the four closing automated gates."""
+    total = 4
     for ref in refs:
         total += sum(
             1 for line in ref.verification.splitlines() if CHECKLIST_ITEM_RE.match(line)
         )
     return total
+
+
+def fragment_relpath(reference_relpath: str) -> str:
+    """Map a reference relpath to its llmlint fragment relpath.
+
+    ``languages/python.md`` -> ``languages/python.llmlint.yml``. The naming mirrors
+    the reference tree so selection is by convention, with no hand-maintained table.
+    """
+    stem = (
+        reference_relpath[:-3]
+        if reference_relpath.endswith(".md")
+        else reference_relpath
+    )
+    return f"{stem}.llmlint.yml"
+
+
+def read_fragment_version(path: Path) -> str:
+    """Return a fragment's published ``version`` (for the ``@`` URL pin); default 1."""
+    match = LLMLINT_VERSION_RE.search(path.read_text(encoding="utf-8"))
+    return match.group(1).strip() if match else "1"
+
+
+def collect_llmlint_plugins(
+    skill_dir: Path, relpaths: list[str], *, buildout: bool
+) -> tuple[list[str], list[str]]:
+    """Return (pinned plugin URLs, included fragment relpaths) for the selection.
+
+    For each selected reference that has a fragment under ``assets/llmlint/``
+    (ongoing) or ``assets/llmlint/buildout/``, emit its ``@version``-pinned hosted
+    URL. References with no fragment (e.g. ``llmlint.md`` itself) are skipped.
+    """
+    frag_dir = skill_dir / "assets" / "llmlint"
+    url_prefix = LLMLINT_BASE_URL
+    if buildout:
+        frag_dir = frag_dir / "buildout"
+        url_prefix = f"{LLMLINT_BASE_URL}/buildout"
+
+    urls: list[str] = []
+    included: list[str] = []
+    for rel in relpaths:
+        frag_rel = fragment_relpath(rel)
+        path = frag_dir / frag_rel
+        if path.is_file():
+            version = read_fragment_version(path)
+            urls.append(f"{url_prefix}/{frag_rel}@{version}")
+            included.append(frag_rel)
+    return urls, included
+
+
+def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
+    """Render a top-level llmlint.yml that wires the selected fragments in as plugins.
+
+    A thin wrapper: the rules live in the pinned-URL plugins. The bundled
+    config-lint plugin is always first (it lints this config's own rules).
+    """
+    out: list[str] = [f"# yaml-language-server: $schema={LLMLINT_SCHEMA_URL}"]
+    if buildout:
+        out += [
+            "#",
+            "# TEMPORARY buildout config — run ONCE during repo creation, then DELETE.",
+            "# Do NOT commit it. It checks the repo was *set up* right (CI/release/",
+            "# monorepo wiring); the ongoing rules live in the committed llmlint.yml.",
+            "#   llmlint -c llmlint.buildout.yml",
+        ]
+    else:
+        out += [
+            "#",
+            "# The LLM-judge tier — separate from the deterministic `just check` gate.",
+            "# Run with `just lint-llm` (or `just lint-llm-diff` for the merge-base",
+            "# diff); the diff-scoped run is the blocking PR check, not part of `check`.",
+            "# Rules come from the pinned plugins below; tune one in place with",
+            "# `override: true`. Bump a plugin's `@version` pin to pull new rules.",
+        ]
+    out += [
+        "version: 1",
+        "files:",
+        "  include:",
+        '    - "src/**"   # TODO: set to this repo\'s source globs (e.g. skills/**, app/**)',
+        "rationales: true",
+        "agents:",
+        "  default:",
+        "    harness: claude-code   # any id from `oneharness list`",
+        "plugins:",
+        f'  - "{LLMLINT_CONFIG_LINT_URL}"',
+    ]
+    out += [f'  - "{url}"' for url in plugin_urls]
+    return "\n".join(out) + "\n"
 
 
 def build_parser(
@@ -321,6 +459,18 @@ def build_parser(
         "--output",
         metavar="FILE",
         help="write the plan to FILE instead of stdout",
+    )
+    parser.add_argument(
+        "--llmlint-config",
+        metavar="FILE",
+        help="also write the ongoing llmlint.yml (the committed, PR-checked config) "
+        "for this stack, wiring the per-reference rule fragments in as pinned plugins",
+    )
+    parser.add_argument(
+        "--llmlint-buildout-config",
+        metavar="FILE",
+        help="also write the temporary llmlint buildout config (run once at "
+        "creation, then delete) of the buildout-only structural rules for this stack",
     )
     parser.add_argument(
         "--list",
@@ -401,6 +551,29 @@ def main(argv: list[str]) -> int:
         )
     else:
         sys.stdout.write(document)
+
+    skill_dir = refs_dir.parent
+    if args.llmlint_config:
+        urls, included = collect_llmlint_plugins(skill_dir, relpaths, buildout=False)
+        Path(args.llmlint_config).write_text(
+            render_llmlint_config(urls, buildout=False), encoding="utf-8"
+        )
+        print(
+            f"wrote {args.llmlint_config} (ongoing llmlint config; "
+            f"{len(included)} rule fragment(s): {', '.join(included) or 'none'})",
+            file=sys.stderr,
+        )
+    if args.llmlint_buildout_config:
+        urls, included = collect_llmlint_plugins(skill_dir, relpaths, buildout=True)
+        Path(args.llmlint_buildout_config).write_text(
+            render_llmlint_config(urls, buildout=True), encoding="utf-8"
+        )
+        print(
+            f"wrote {args.llmlint_buildout_config} (TEMPORARY buildout config — run "
+            f"once, then delete; {len(included)} rule fragment(s): "
+            f"{', '.join(included) or 'none'})",
+            file=sys.stderr,
+        )
     return 0
 
 

@@ -30,10 +30,11 @@ if [[ "${#skill_files[@]}" -eq 0 ]]; then
   exit 1
 fi
 
+# Quiet on success: validate_skill.py / smoke_skill_scripts.py each name the skill
+# they check, so no per-skill header here; a clean run prints one final line.
 failures=0
 for skill_md in "${skill_files[@]}"; do
   skill_dir="$(dirname "$skill_md")"
-  echo "==> $skill_dir"
   if ! "${PY[@]}" tools/validate_skill.py "$skill_dir"; then
     failures=$((failures + 1))
   fi
@@ -44,7 +45,6 @@ for skill_md in "${skill_files[@]}"; do
   fi
 done
 
-echo
 if [[ "$failures" -ne 0 ]]; then
   echo "Skill validation FAILED ($failures check(s) failed)." >&2
   exit 1

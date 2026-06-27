@@ -86,12 +86,26 @@ check-versions` keeps every pin in lockstep with CI.
 ### Optional LLM lint (`llmlint`)
 
 `llmlint.yml` configures [`llmlint`](https://github.com/nickderobertis/llmlint),
-an LLM-as-judge linter for invariants ruff/pytest can't express — here, the
-repo's cross-language launch conventions: **Python and Python packages run
-through `uv`** (`uv run`/`uv run --script`/`uvx`/`uv add`), **TypeScript and npm
-packages run through `bun`** (`bun run`/`bunx`/`bun add`), and the **anti-pattern
-of a Bash script that only wraps a single-language program** instead of calling
-uv/bun directly. It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
+an LLM-as-judge linter for invariants ruff/pytest can't express. It combines two
+tiers (see the header in `llmlint.yml`):
+
+- **The create-repo skill's ongoing rule fragments**, wired in as `plugins`.
+  Because this repo *hosts* the fragments, it dogfoods them via **local in-tree
+  paths** (`skills/bootstrap/create-repo/assets/llmlint/...`) rather than the
+  `@version`-pinned hosted URLs the composer emits for a consuming repo — so a
+  fragment edit takes effect here immediately. We pull the fragments applicable
+  to this repo's stack (`base` + `shapes/skills-repo` + `languages/python` +
+  `languages/bash` + `ci`); the one-time `buildout/` fragments are excluded
+  because they don't persist.
+- **The repo's bespoke cross-language launch conventions**, defined inline:
+  **Python and Python packages run through `uv`** (`uv run`/`uv run --script`/
+  `uvx`/`uv add`), **TypeScript and npm packages run through `bun`** (`bun run`/
+  `bunx`/`bun add`), and the **anti-pattern of a Bash script that only wraps a
+  single-language program** instead of calling uv/bun directly. Each rule's
+  description carries its full uv/bun criteria, so all rules share the one
+  `default` agent — no domain-specific prompt is needed.
+
+It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
 driver (>= 0.2.531, for `ONEHARNESS_<FIELD>` env overrides).
 
 **Harness split — committed default vs. Claude Code.** The committed

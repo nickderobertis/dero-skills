@@ -18,6 +18,7 @@ assemble the checklist from items that live with each reference.
 from __future__ import annotations
 
 import importlib.util
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 REFS = SKILL_DIR / "references"
+LLMLINT_ASSETS = SKILL_DIR / "assets" / "llmlint"
 
 spec = importlib.util.spec_from_file_location("compose_repo_plan", SCRIPT)
 assert spec is not None and spec.loader is not None
@@ -90,10 +92,11 @@ def test_cli_python_composes_guidance_and_checklist():
     assert "just check` passes locally" in doc
     assert "check_repo_baseline.py" in doc
 
-    # The composition block records exactly what was composed.
+    # The composition block records exactly what was composed (llmlint.md is
+    # always pulled in on top of ci.md, like ci.md itself).
     assert (
         "**References composed:** base.md, shapes/cli.md, languages/python.md, "
-        "intersections/python-cli.md, ci.md" in doc
+        "intersections/python-cli.md, ci.md, llmlint.md" in doc
     )
 
 
@@ -204,6 +207,158 @@ def test_missing_language_is_required():
     assert "--language" in result.stderr
 
 
+# --- e2e: llmlint config emission ------------------------------------------
+
+
+def test_llmlint_config_wires_selected_fragments_as_pinned_plugins(tmp_path):
+    out = tmp_path / "llmlint.yml"
+    result = run("--shape", "cli", "--language", "python", "--llmlint-config", str(out))
+    assert result.returncode == 0
+    cfg = out.read_text(encoding="utf-8")
+    # config_lint plugin is always first; base + selected fragments follow, pinned.
+    assert "assets/config_lint.yml@1" in cfg
+    assert "/assets/llmlint/base.llmlint.yml@1" in cfg
+    assert "/assets/llmlint/shapes/cli.llmlint.yml@1" in cfg
+    assert "/assets/llmlint/languages/python.llmlint.yml@1" in cfg
+    assert "/assets/llmlint/ci.llmlint.yml@1" in cfg
+    # the default agent + schema modeline ship in the wrapper
+    assert "harness: claude-code" in cfg
+    assert "llmlint.schema.json" in cfg
+    # an unselected language's fragment is NOT pulled in
+    assert "languages/typescript.llmlint.yml" not in cfg
+    # the ongoing config carries no buildout-only fragments
+    assert "/buildout/" not in cfg
+    # stderr records the composition; the plan stays on stdout
+    assert "ongoing llmlint config" in result.stderr
+
+
+def test_llmlint_buildout_config_carries_only_buildout_fragments(tmp_path):
+    out = tmp_path / "llmlint.buildout.yml"
+    result = run(
+        "--shape",
+        "cli",
+        "--language",
+        "python",
+        "--llmlint-buildout-config",
+        str(out),
+    )
+    assert result.returncode == 0
+    cfg = out.read_text(encoding="utf-8")
+    assert "TEMPORARY" in cfg  # the do-not-commit header
+    assert "/buildout/ci.llmlint.yml@1" in cfg
+    assert "/buildout/intersections/python-cli.llmlint.yml@1" in cfg
+    # ongoing-only fragments (e.g. base) never land in the buildout config
+    assert "/assets/llmlint/base.llmlint.yml@1" not in cfg
+
+
+def test_llmlint_buildout_releasing_and_monorepo_gated_by_flags(tmp_path):
+    out = tmp_path / "b.yml"
+    run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--llmlint-buildout-config",
+        str(out),
+    )
+    bare = out.read_text(encoding="utf-8")
+    assert "/buildout/releasing.llmlint.yml" not in bare
+    assert "/buildout/monorepo.llmlint.yml" not in bare
+
+    run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--releasing",
+        "--monorepo",
+        "--llmlint-buildout-config",
+        str(out),
+    )
+    flagged = out.read_text(encoding="utf-8")
+    assert "/buildout/releasing.llmlint.yml@1" in flagged
+    assert "/buildout/monorepo.llmlint.yml@1" in flagged
+
+
+def test_llmlint_config_to_file_keeps_plan_stdout_clean(tmp_path):
+    # With -o for the plan, stdout stays empty; the llmlint config is its own file.
+    out_plan = tmp_path / "PLAN.md"
+    out_cfg = tmp_path / "llmlint.yml"
+    result = run(
+        "--shape",
+        "cli",
+        "--language",
+        "rust",
+        "-o",
+        str(out_plan),
+        "--llmlint-config",
+        str(out_cfg),
+    )
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert "plugins:" in out_cfg.read_text(encoding="utf-8")
+    assert out_plan.read_text(encoding="utf-8").startswith("# Repo creation plan")
+
+
+def test_plan_closes_with_both_llmlint_gates():
+    doc = run("--shape", "cli", "--language", "python").stdout
+    assert "llmlint (ongoing) passes once" in doc
+    assert "llmlint (buildout) passes once" in doc
+
+
+# --- structural: llmlint rule fragments ------------------------------------
+
+
+def _llmlint_fragments() -> list[Path]:
+    return sorted(LLMLINT_ASSETS.rglob("*.llmlint.yml"))
+
+
+def test_base_llmlint_fragment_exists():
+    assert (LLMLINT_ASSETS / "base.llmlint.yml").is_file()
+
+
+def test_every_llmlint_fragment_maps_to_a_reference():
+    # A fragment's path mirrors a reference relpath (buildout/ stripped), so every
+    # fragment must correspond to a real references/<...>.md — no orphans.
+    missing: list[str] = []
+    for frag in _llmlint_fragments():
+        rel = frag.relative_to(LLMLINT_ASSETS).as_posix()
+        if rel.startswith("buildout/"):
+            rel = rel[len("buildout/") :]
+        ref_rel = rel[: -len(".llmlint.yml")] + ".md"
+        if not (REFS / ref_rel).is_file():
+            missing.append(f"{rel} -> references/{ref_rel}")
+    assert not missing, f"fragments with no matching reference: {missing}"
+
+
+_NAME_LINE_RE = re.compile(r"^\s*-\s+name:\s*(\S+)\s*$")
+_SNAKE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+_TOP_KEY_RE = re.compile(r"^([A-Za-z_][\w-]*):")
+
+
+def test_every_llmlint_fragment_is_well_formed():
+    # Each fragment declares only `version` + `rules` at the top level (no
+    # fragment-level files/agents/plugins — "nearer-root wins" would ignore them),
+    # carries a version for the URL pin, and uses snake_case rule names.
+    bad: list[str] = []
+    for frag in _llmlint_fragments():
+        text = frag.read_text(encoding="utf-8")
+        name = frag.relative_to(LLMLINT_ASSETS).as_posix()
+        if not re.search(r"^version:\s*\S+", text, re.MULTILINE):
+            bad.append(f"{name}: missing version")
+        top_keys = {
+            m.group(1) for line in text.splitlines() if (m := _TOP_KEY_RE.match(line))
+        }
+        extra = top_keys - {"version", "rules"}
+        if extra:
+            bad.append(f"{name}: unexpected top-level keys {sorted(extra)}")
+        for line in text.splitlines():
+            nm = _NAME_LINE_RE.match(line)
+            if nm and not _SNAKE_RE.match(nm.group(1)):
+                bad.append(f"{name}: non-snake_case rule name {nm.group(1)!r}")
+    assert not bad, bad
+
+
 # --- structural: verification items live with each reference --------------
 
 
@@ -307,6 +462,7 @@ def test_select_relpaths_order_and_dedup():
         "languages/python.md",
         "intersections/python-cli.md",
         "ci.md",
+        "llmlint.md",
         "releasing.md",
     ]
     assert langs == ["python"]

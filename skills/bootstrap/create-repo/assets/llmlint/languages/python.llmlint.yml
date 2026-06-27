@@ -1,0 +1,17 @@
+# Python judge-level rules (plugin). Pulled in by the composer when the repo's
+# language includes python. Pairs with languages/python.md.
+#
+# Boundary input validation and the no-warnings rule are GENERAL — they live in
+# base.llmlint.yml, not here. This fragment carries only what is python-specific.
+version: 1
+
+rules:
+  - name: async_typed_clients_at_boundaries
+    description: |
+      true when every client the target files use for an external network or IO
+      service is async and typed (an official typed client, or a small typed async
+      client written for the repo). false when any external network or IO call goes
+      through an untyped or synchronous ad-hoc client.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files call an external network or IO service

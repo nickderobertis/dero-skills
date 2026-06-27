@@ -16,6 +16,7 @@
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
+# llmlint: ignore[robust_shell] `set -e` deliberately omitted — every step tolerates failure and the script always exits 0 (a flaky install must never break session startup)
 set -uo pipefail
 
 # Minimum oneharness with `ONEHARNESS_<FIELD>` env config overrides.
@@ -24,8 +25,18 @@ readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
 
-# True when $1 (installed) is older than $2 (minimum).
-older_than() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" != "$2" ]; }
+# True when $1 (installed) is older than $2 (minimum). Portable component-wise
+# numeric compare — avoids `sort -V` (GNU coreutils only, absent on some `sort`s).
+older_than() {
+  local IFS=. ; local -a have min ; read -ra have <<<"$1" ; read -ra min <<<"$2"
+  local i x y
+  for ((i = 0; i < ${#have[@]} || i < ${#min[@]}; i++)); do
+    x=${have[i]:-0} ; y=${min[i]:-0} ; x=${x%%[!0-9]*} ; y=${y%%[!0-9]*}
+    ((10#${x:-0} < 10#${y:-0})) && return 0
+    ((10#${x:-0} > 10#${y:-0})) && return 1
+  done
+  return 1
+}
 
 ensure_oneharness() {
   local have

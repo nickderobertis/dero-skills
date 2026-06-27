@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Idempotent setup for the optional `llmlint` LLM-judge tier (oneharness + llmlint).
+#
+# Wired into the Claude Code SessionStart hook (.claude/settings.json) so web/cloud
+# sessions can run `just lint-llm` / `just lint-llm-diff` with no manual steps; also
+# safe to run by hand (`just setup-llmlint`) or from a terminal. Every step
+# tolerates failure and the script always exits 0 — a flaky install must never
+# break session startup.
+#
+# What it does, and why:
+#   1. Installs `oneharness` (the harness driver) and `llmlint` if missing.
+#   2. In a Claude Code session, persists PATH (so the freshly installed binaries
+#      resolve) and — TODO — any `ONEHARNESS_*` overrides that select the harness
+#      authenticated in this environment, into CLAUDE_ENV_FILE so later Bash calls
+#      inherit them.
+#
+# Harness selection: by default llmlint resolves the harness from `oneharness.toml`
+# (or llmlint.yml's `agents.default.harness`). If the harness you run in Claude
+# Code sessions differs from the committed default, export the override below.
+# llmlint: ignore[robust_shell] `set -e` deliberately omitted — every step tolerates failure and the script always exits 0 (a flaky install must never break session startup)
+set -uo pipefail
+
+readonly BIN_DIR="$HOME/.local/bin"
+
+log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
+
+ensure_oneharness() {
+  command -v oneharness >/dev/null 2>&1 && return 0
+  log "installing oneharness"
+  curl -fsSL https://raw.githubusercontent.com/nickderobertis/oneharness/main/scripts/install.sh \
+    | sh >&2 || log "oneharness install failed (continuing)"
+}
+
+ensure_llmlint() {
+  command -v llmlint >/dev/null 2>&1 && return 0
+  log "installing llmlint"
+  curl -fsSL https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh \
+    | sh >&2 || log "llmlint install failed (continuing)"
+}
+
+# Persist env for the rest of the session via CLAUDE_ENV_FILE (Claude Code sources
+# it into every later Bash call). PATH so the freshly installed binaries resolve.
+# No-op outside a session.
+persist_session_env() {
+  [ -n "${CLAUDE_ENV_FILE:-}" ] || { log "no CLAUDE_ENV_FILE (not a session); skipping env"; return 0; }
+  {
+    case ":${PATH}:" in *":${BIN_DIR}:"*) ;; *) printf 'export PATH=%q\n' "${BIN_DIR}:${PATH}";; esac
+    # TODO: if your session harness differs from the committed oneharness.toml
+    # default, select it here, e.g.:
+    #   printf 'export ONEHARNESS_HARNESSES=%q\n' "claude-code"
+    #   printf 'export ONEHARNESS_MODEL=%q\n' "claude-opus-4-8"
+  } >> "$CLAUDE_ENV_FILE"
+  log "exported PATH"
+}
+
+export PATH="${BIN_DIR}:${PATH}"
+ensure_oneharness
+ensure_llmlint
+persist_session_env
+log "ready (oneharness: $(oneharness --version 2>/dev/null || echo missing); llmlint: $(llmlint --version 2>/dev/null || echo missing))"
+exit 0

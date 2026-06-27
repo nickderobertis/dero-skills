@@ -15,3 +15,8 @@ __pycache__/
 
 # OS / editor
 .DS_Store
+
+# Secrets / gh-secrets (manifest is committed; resolved values and sync state are not)
+.env
+.env.local
+.gh-secrets-state.json

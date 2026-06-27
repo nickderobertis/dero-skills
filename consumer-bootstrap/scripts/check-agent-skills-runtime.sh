@@ -1,38 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Checking skill runtime tools..."
+# Verify the skill runtime tools are present. Quiet on success (no output); on a
+# missing required tool, fail with the exact gap and how to close it. Optional
+# tools only warn (to stderr) when absent.
 
 missing=0
-
 if ! command -v uv >/dev/null 2>&1; then
-  echo "MISSING: uv"
+  echo "ERROR: uv is required but not found. Install it (https://docs.astral.sh/uv/getting-started/installation/) or run setup-agent-skills-runtime.sh." >&2
   missing=1
-else
-  uv --version
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "WARNING: python3 not found. uv may still manage Python, but some stdlib scripts may expect python3."
-else
-  python3 --version
-fi
+command -v python3 >/dev/null 2>&1 ||
+  echo "WARNING: python3 not found; uv can manage Python, but some stdlib scripts expect python3." >&2
+command -v node >/dev/null 2>&1 ||
+  echo "WARNING: node not found; needed only for Node-based skill scripts." >&2
+command -v bun >/dev/null 2>&1 ||
+  echo "WARNING: bun not found; needed only for skills with a package.json." >&2
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "WARNING: node not found. Required only for Node-based skill scripts."
-else
-  node --version
-fi
-
-if ! command -v bun >/dev/null 2>&1; then
-  echo "WARNING: bun not found. Required only for skills with package.json."
-else
-  bun --version
-fi
-
-if [[ "${missing}" -ne 0 ]]; then
-  echo "One or more required tools are missing." >&2
-  exit 1
-fi
-
-echo "Skill runtime check passed."
+[ "${missing}" -eq 0 ] || exit 1

@@ -47,6 +47,57 @@ jobs:
       - name: Check
         run: just check
 
+  # LLM-judge tier (llmlint) — a blocking PR check, SEPARATE from the `check`
+  # gate. It is non-deterministic and needs an authenticated harness, so it never
+  # runs inside `just check`. Scoped to the files this PR changed (the merge-base
+  # diff with main) so a PR pays for its own changes, not a full-repo sweep.
+  # Fork-safe: a fork without the harness secret skips cleanly instead of failing
+  # the contributor. Add `llmlint` to the required status checks in branch
+  # protection. See references/llmlint.md.
+  llmlint:
+    name: llmlint (changed files)
+    if: github.event_name == 'pull_request' && github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the PR head (not the synthetic merge ref) with full history so
+      # the merge-base with main resolves.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Fetch main (diff base)
+        run: git fetch --no-tags --depth=2147483647 origin main
+      - uses: extractions/setup-just@v2
+
+      - name: Skip without a harness credential (e.g. on a fork)
+        id: guard
+        env:
+          # TODO: your harness's credential secret (e.g. ANTHROPIC_API_KEY for
+          # Claude Code, OPENAI_API_KEY for Codex).
+          HARNESS_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${HARNESS_KEY:-}" ]; then
+            echo "no harness credential configured; skipping llmlint (fork-safe no-op)"
+            echo "run=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install oneharness + llmlint
+        if: steps.guard.outputs.run == '1'
+        run: |
+          ./scripts/setup-llmlint.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # TODO: install + authenticate the coding harness oneharness drives (e.g.
+      # Claude Code), exporting its credential from secrets, then run the tier
+      # over only the changed files.
+      - name: Lint changed files
+        if: steps.guard.outputs.run == '1'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: just lint-llm-diff origin/main
+
   # Prove the end-user install path on the real platform matrix. Enable this
   # when the repo ships something users install (CLI, binary, package, plugin).
   # It is deliberately separate from `check`: `just bootstrap` sets up the *dev*

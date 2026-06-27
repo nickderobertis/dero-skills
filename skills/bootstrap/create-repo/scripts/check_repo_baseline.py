@@ -43,6 +43,11 @@ Checks:
     or the root/docs variants GitHub also renders) AND names both a What and a
     Why section — so every PR states the behavior change and its driver, not a
     walkthrough of the diff. An empty or unrelated file fails.
+  * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
+    that declares `plugins` (composed from rule fragments, not empty), a
+    `llmlint` recipe that runs it, and a CI workflow that invokes it. The tier
+    runs OUTSIDE `just check` (it is non-deterministic) but is a required PR
+    check. Presence-only and deterministic: this never *runs* llmlint.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -86,6 +91,15 @@ GATE_COMMAND = "just check"
 RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:=]*:(?!=)")
 
 JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
+
+# llmlint config filenames (llmlint discovers `llmlint.yml`/`.yaml`, plain or
+# dot-prefixed). The repo's root config is the composed LLM-judge tier.
+LLMLINT_CONFIG_NAMES = (
+    "llmlint.yml",
+    "llmlint.yaml",
+    ".llmlint.yml",
+    ".llmlint.yaml",
+)
 
 # Case-insensitive marker that a recipe body is still the unfilled template.
 PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
@@ -708,6 +722,113 @@ def check_pr_template(repo: Path) -> list[Finding]:
     return [Finding("OK", "GitHub PR template present with What/Why")]
 
 
+def find_llmlint_config(repo: Path) -> Path | None:
+    for name in LLMLINT_CONFIG_NAMES:
+        candidate = repo / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def llmlint_config_has_plugins(text: str) -> bool:
+    """True when an llmlint config declares at least one plugin.
+
+    Handles the block form (``plugins:`` then indented ``- ...`` entries) and the
+    inline form (``plugins: ["..."]``). A light scan, not a YAML parse — enough to
+    tell a composed config from an empty ``plugins: []`` or a missing key.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped.startswith("plugins:"):
+            continue
+        rest = stripped[len("plugins:") :].strip()
+        if rest.startswith("["):
+            return rest not in ("[]", "[ ]")
+        # Block form: an indented list entry before the next top-level key.
+        for nxt in lines[i + 1 :]:
+            if not nxt.strip():
+                continue
+            if re.match(r"^\s+-\s+\S", nxt):
+                return True
+            if not nxt.startswith((" ", "\t")):
+                break
+    return False
+
+
+def ci_references_llmlint(repo: Path) -> bool:
+    """True when any CI workflow file mentions llmlint (the blocking PR check)."""
+    workflows = repo / ".github" / "workflows"
+    if not workflows.is_dir():
+        return False
+    return any(
+        p.is_file()
+        and p.suffix in (".yml", ".yaml")
+        and "llmlint" in p.read_text(encoding="utf-8")
+        for p in workflows.iterdir()
+    )
+
+
+def check_llmlint(repo: Path) -> list[Finding]:
+    """Require the llmlint (LLM-judge) tier to be wired — presence-only.
+
+    llmlint runs OUTSIDE the deterministic ``just check`` gate (it drives a real
+    harness, so it is non-deterministic and credentialed); this check never runs
+    it. It verifies the tier is set up: a composed ``llmlint.yml`` declaring the
+    rule-fragment ``plugins``, a ``lint-llm`` recipe to run it on demand, and a CI
+    workflow that invokes it as the blocking PR check. Compose the config with
+    ``compose_repo_plan.py --llmlint-config`` rather than hand-rolling it.
+    """
+    problems: list[Finding] = []
+
+    cfg = find_llmlint_config(repo)
+    if cfg is None:
+        problems.append(
+            Finding(
+                "ERROR",
+                "no llmlint.yml (the LLM-judge tier config)",
+                "compose it: compose_repo_plan.py --llmlint-config llmlint.yml "
+                "(see references/llmlint.md)",
+            )
+        )
+    elif not llmlint_config_has_plugins(cfg.read_text(encoding="utf-8")):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{cfg.name} declares no plugins (its rules come from composed "
+                "plugin fragments)",
+                "regenerate it with compose_repo_plan.py --llmlint-config so it "
+                "wires in the base + per-reference rule fragments",
+            )
+        )
+
+    justfile = find_justfile(repo)
+    recipes = (
+        parse_just_recipes(justfile.read_text(encoding="utf-8")) if justfile else set()
+    )
+    if "lint-llm" not in recipes:
+        problems.append(
+            Finding(
+                "ERROR",
+                "no `lint-llm` recipe in the justfile",
+                "add a `lint-llm:` recipe that runs `llmlint`, separate from `check` "
+                "(the tier is non-deterministic, so it stays out of the gate)",
+            )
+        )
+
+    if not ci_references_llmlint(repo):
+        problems.append(
+            Finding(
+                "ERROR",
+                "no CI workflow runs llmlint (the blocking PR check)",
+                "add a workflow job that runs `just lint-llm-diff`, separate from "
+                "the `check` gate and fork-safe (see references/ci.md and llmlint.md)",
+            )
+        )
+
+    return problems or [Finding("OK", "llmlint tier configured (config + recipe + CI)")]
+
+
 def audit(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     findings += check_agents_md(repo)
@@ -721,6 +842,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_coverage(repo)
     findings += check_ci(repo)
     findings += check_pr_template(repo)
+    findings += check_llmlint(repo)
     return findings
 
 

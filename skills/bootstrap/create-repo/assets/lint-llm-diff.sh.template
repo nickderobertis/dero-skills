@@ -6,6 +6,9 @@
 # after the branch started are never linted, and a stale branch still checks
 # exactly what it introduced. This is the `origin/main...HEAD` three-dot set.
 #
+# This is what the blocking `llmlint` CI check runs (diff-scoped, so a PR pays for
+# its own changes, not a full-repo sweep). Run it locally before pushing.
+#
 # Usage:
 #   scripts/lint-llm-diff.sh [BASE_REF] [-- <extra llmlint args>]
 #   BASE_REF defaults to origin/main (falls back to main). In CI, fetch main

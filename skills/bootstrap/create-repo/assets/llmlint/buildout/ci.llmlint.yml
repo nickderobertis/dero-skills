@@ -1,0 +1,20 @@
+# CI buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# These verify the CI was set up right; they are not an ongoing PR check.
+version: 1
+
+rules:
+  - name: ci_runs_the_real_gate
+    description: |
+      true when CI bootstraps a clean checkout and runs the full `just check` gate.
+      false when CI omits the gate or runs only a reduced subset of it.
+    files:
+      include: [".github/workflows/**", "justfile", "Justfile", ".justfile"]
+
+  - name: install_path_matches_docs
+    description: |
+      true when the CI end-user install job installs the artifact via the exact
+      command the README documents. false when CI's install command differs from
+      the one the README documents.
+    files:
+      include: [".github/workflows/**", "**/README*"]
+    relevance: the repository ships an installable artifact
