@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/nickderobertis/llmlint/main/assets/llmlint.schema.json
+# llmlint configuration. Docs: https://github.com/nickderobertis/llmlint
+#
+# LLM-as-judge checks for invariants deterministic linters can't express. Each
+# rule is a positive invariant: holds=true means the code complies, holds=false
+# is a violation. Keep ruff/pytest/skill-validation for everything they already
+# cover; this file only adds the cross-language launch conventions below.
+#
+# This is an OPTIONAL author-time check, not part of `just check`: it needs the
+# `oneharness` + `llmlint` binaries and a Claude token, neither of which the
+# uv-only gate assumes. Run it with `just lint-llm` (see the justfile).
+version: 1
+
+# Default targets when no paths are passed on the CLI: the surfaces where
+# "how code is launched" actually lives — scripts, skill/tool code, the command
+# surface, CI, and docs that show commands. Narrow with explicit paths, e.g.
+# `llmlint scripts/**/*.sh`.
+files:
+  include:
+    - "skills/**/*.py"
+    - "skills/**/*.sh"
+    - "skills/**/*.ts"
+    - "skills/**/*.tsx"
+    - "skills/**/*.js"
+    - "skills/**/*.mjs"
+    - "tools/**/*.py"
+    - "scripts/**/*.sh"
+    - "consumer-bootstrap/**/*.sh"
+    - "docs/**/*.md"
+    - ".github/workflows/*.yml"
+    - "justfile"
+    - "*.js"
+  exclude:
+    - "**/node_modules/**"
+    - "**/.git/**"
+    - "uv.lock"
+    - "bun.lock"
+
+# Per-judge harness timeout (seconds). The default 120 is fine for the
+# diff-scoped CI check, but a full-repo `just lint-llm` batches many files into a
+# single judge call and can exceed it; 600 gives that sweep headroom. It is a
+# ceiling, not a fixed wait — fast judges still return immediately.
+oneharness:
+  timeout: 600
+
+# Judges justify each verdict before concluding (default true) — worth the extra
+# output tokens here because these rules turn on intent (a real shell pipeline
+# vs. a thin wrapper) that the rationale makes auditable.
+rationales: true
+
+# Lints this config's own rule names/descriptions; ships inside llmlint and
+# resolves offline.
+plugins:
+  - "https://raw.githubusercontent.com/nickderobertis/llmlint/main/assets/config_lint.yml@1"
+
+agents:
+  default:
+    # Harness and model are intentionally NOT pinned here so oneharness resolves
+    # them from oneharness.toml (codex + gpt-5.5 by default) — which lets a Claude
+    # Code session's ONEHARNESS_HARNESSES / ONEHARNESS_MODEL env overrides flip the
+    # whole run to claude-code + Opus without editing this file. Pinning them here
+    # would emit `--harness`/`--model` flags that beat those env overrides.
+    prompt_template: |
+      You are reviewing how a polyglot repository launches code and manages
+      dependencies. The repository's standard is:
+
+      - Python code and Python packages are always invoked through `uv`:
+        `uv run ...`, `uv run --script` (PEP 723 self-contained scripts),
+        `uvx` / `uv tool run`, and `uv add` / `uv pip` for dependencies.
+      - TypeScript / JavaScript code and npm packages are always invoked through
+        `bun`: `bun run ...`, `bun <file>`, `bunx` / `bun x`, `bun add`,
+        `bun install`.
+
+      Judge only what the file actually shows. Cite the exact command, line, or
+      shebang that drives each verdict; do not speculate about files you cannot
+      see.
+
+rules:
+  - name: python_launched_via_uv
+    description: |
+      TRUE when every place this file launches Python or pulls in a Python
+      package does so through uv — `uv run`, `uv run --script` (PEP 723),
+      `uvx` / `uv tool run`, or `uv add` / `uv pip` for dependencies.
+      FALSE when Python is executed or installed directly: a bare `python` /
+      `python3` invocation, a `#!/usr/bin/env python3` shebang used as the
+      primary entry point, `pip` / `pip3` / `pipx`, `poetry run`, or activating
+      a virtualenv by hand instead of going through uv.
+    relevance: the file runs Python code or installs a Python package
+
+  - name: typescript_and_npm_launched_via_bun
+    description: |
+      TRUE when every place this file runs TypeScript/JavaScript or manages an
+      npm package does so through bun — `bun run`, `bun <file>`, `bunx` /
+      `bun x`, `bun add`, or `bun install`.
+      FALSE when it runs code or manages packages directly with `node`, `npm` /
+      `npx`, `pnpm`, or `yarn` instead of bun.
+    relevance: the file runs TypeScript/JavaScript or manages an npm package
+
+  - name: single_language_work_runs_directly_not_via_bash_wrapper
+    description: |
+      TRUE when a unit of work implemented entirely in one language is launched
+      directly with that language's runner — `uv` for Python, `bun` for
+      TypeScript/JavaScript — rather than through a shell script that exists only
+      to call it.
+      FALSE when a Bash/shell script's real purpose is just to invoke a single
+      single-language program: its substantive work reduces to one `uv`/`python`
+      call or one `bun`/`node` call, with no genuine shell orchestration
+      (chaining several distinct tools, filesystem/OS setup, discovery loops,
+      process management). Such a wrapper is the anti-pattern — fold the logic
+      into the program and run it directly with uv or bun.
+      A shell script that performs real multi-step orchestration is NOT a
+      violation, even if some steps call uv or bun.
+    relevance: the file is a shell script
+    judges: 3

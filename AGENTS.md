@@ -69,6 +69,8 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just format` / `just lint` / `just validate` / `just check-versions` /
   `just test` — individual steps.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
+- `just lint-llm [paths]` — optional LLM-as-judge lint (`llmlint`). NOT in the
+  gate (see "Optional LLM lint" below).
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
 The gate runs on uv alone, so it needs no Node. Nx/bun is an optional
@@ -80,6 +82,48 @@ compatible manager such as mise) via `asdf install`, then run `just bootstrap`.
 The `python` pin records the
 targeted version (uv supplies Python per `requires-python`); `just
 check-versions` keeps every pin in lockstep with CI.
+
+### Optional LLM lint (`llmlint`)
+
+`llmlint.yml` configures [`llmlint`](https://github.com/nickderobertis/llmlint),
+an LLM-as-judge linter for invariants ruff/pytest can't express — here, the
+repo's cross-language launch conventions: **Python and Python packages run
+through `uv`** (`uv run`/`uv run --script`/`uvx`/`uv add`), **TypeScript and npm
+packages run through `bun`** (`bun run`/`bunx`/`bun add`), and the **anti-pattern
+of a Bash script that only wraps a single-language program** instead of calling
+uv/bun directly. It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
+driver (>= 0.2.531, for `ONEHARNESS_<FIELD>` env overrides).
+
+**Harness split — committed default vs. Claude Code.** The committed
+`oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
+running `llmlint` from a terminal gets). Inside a Claude Code session the
+`SessionStart` hook runs `scripts/setup-llmlint.sh`, which installs the binaries
+and exports `ONEHARNESS_HARNESSES=claude-code` + `ONEHARNESS_MODEL=claude-opus-4-8`
+into the session — env overrides that beat the committed file, so the run uses
+the only harness authenticated there (Claude Code + Opus). The flip works only
+because the agents in `llmlint.yml` deliberately do **not** pin a harness/model
+(pinning would emit `--harness`/`--model` flags that beat the env). `IS_SANDBOX`
+is injected into just the claude-code harness via `oneharness.toml` so it runs
+under root without `--dangerously-skip-permissions` refusing; `oneharness.toml`
+also supplies the default harness the bundled `config_lint` plugin needs.
+
+This is **deliberately not in `just check`**: the uv-only gate must stay
+reproducible from a clean clone, whereas `llmlint` needs the separately installed
+binaries and a harness token (in Claude Code the inherited session token;
+elsewhere `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or — for the codex
+default — `OPENAI_API_KEY`). Run it on demand with `just lint-llm`;
+`just setup-llmlint` is the manual install path for a terminal (the hook covers
+Claude Code sessions). Since the repo now runs all JS through bun (`bun install`,
+`bunx nx`), the bun rule no longer fires on the authoring toolchain.
+
+**Blocking CI check.** The `llmlint` job in `.github/workflows/ci.yml` runs
+`just lint-llm-diff` on every PR — `scripts/lint-llm-diff.sh` lints only the
+files the branch changed since its **merge-base with main** (the fork point, not
+main's current tip, so unrelated later commits on main are never linted). CI
+installs the committed Codex harness via bun and authenticates it with the
+`OPENAI_API_KEY` repo secret; without that secret the job fails. It is a separate
+job (not folded into `check`) to keep the clean-clone gate uv-only — add it to
+the required status checks in branch protection to make it block merges.
 
 ## Commits, releases, and merging
 

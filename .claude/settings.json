@@ -21,6 +21,18 @@
         ],
         "matcher": "Read|Edit|Write|Glob|Grep|WebFetch|WebSearch|NotebookEdit|mcp__.*"
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/setup-llmlint.sh\"",
+            "timeout": 180,
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|resume"
+      }
     ]
   },
   "permissions": {
@@ -35,7 +47,15 @@
       "Bash(just test)",
       "Bash(just baseline)",
       "Bash(just nx)",
+      "Bash(just lint-llm:*)",
+      "Bash(just lint-llm-diff:*)",
+      "Bash(just setup-llmlint)",
       "Bash(just upgrade)",
+      "Bash(llmlint:*)",
+      "Bash(oneharness list)",
+      "Bash(./scripts/setup-llmlint.sh)",
+      "Bash(./scripts/lint-llm-diff.sh:*)",
+      "Bash(git merge-base:*)",
       "Bash(./scripts/validate-skills.sh:*)",
       "Bash(uv run:*)",
       "Bash(uv sync:*)",

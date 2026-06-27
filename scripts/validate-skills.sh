@@ -7,7 +7,7 @@
 #   ./scripts/validate-skills.sh             # validate + smoke all skills
 #   ./scripts/validate-skills.sh --no-smoke  # validate only
 #
-# Uses `uv run python` when uv is available, otherwise falls back to python3.
+# Runs the Python tooling through uv (this repo runs all Python through uv).
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,11 +18,11 @@ if [[ "${1:-}" == "--no-smoke" ]]; then
   run_smoke=0
 fi
 
-if command -v uv >/dev/null 2>&1; then
-  PY=(uv run python)
-else
-  PY=(python3)
+if ! command -v uv >/dev/null 2>&1; then
+  echo "validate-skills.sh requires uv (this repo runs Python through uv)." >&2
+  exit 1
 fi
+PY=(uv run python)
 
 mapfile -t skill_files < <(find skills -type f -name SKILL.md | sort)
 if [[ "${#skill_files[@]}" -eq 0 ]]; then

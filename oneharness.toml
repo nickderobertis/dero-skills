@@ -1,0 +1,20 @@
+# oneharness defaults for this repo. Docs: https://github.com/nickderobertis/oneharness
+#
+# The committed default targets codex + gpt-5.5 — what a contributor running
+# `llmlint` from their own terminal gets, and the default harness for plugin
+# agents (e.g. config_lint) that don't pin their own.
+#
+# Inside a Claude Code session it is different: the SessionStart hook
+# (scripts/setup-llmlint.sh) exports ONEHARNESS_HARNESSES=claude-code and
+# ONEHARNESS_MODEL=claude-opus-4-8, and those `ONEHARNESS_<FIELD>` env overrides
+# win over this file (oneharness >= 0.2.531) — so the run uses the only harness
+# authenticated there (Claude Code + Opus) without editing any committed config.
+# IS_SANDBOX is injected only into the claude-code harness below so it may run
+# under root without `--dangerously-skip-permissions` refusing.
+harnesses = ["codex"]
+
+[harness.codex]
+model = "gpt-5.5"
+
+[harness.claude-code]
+env = { IS_SANDBOX = "1" }
