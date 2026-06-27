@@ -91,11 +91,13 @@ rules:
 
   - name: agents_md_durable_and_terse
     description: |
-      true when AGENTS.md reads as durable, terse instructions — constraints,
-      tradeoffs, and judgment a future maintainer needs. false when it reads as a
-      session or changelog narrative, or restates what a command, a failing gate,
-      or a linked doc already shows.
+      true when each durable instruction file in the target files (AGENTS.md,
+      CLAUDE.md, and a skill's SKILL.md) reads as durable, terse instructions —
+      constraints, tradeoffs, and judgment a future maintainer or agent needs.
+      false when any reads as a session or changelog narrative, or restates what a
+      command, a failing gate, or a linked doc already shows.
     files:
       include:
         - "**/AGENTS.md"
         - "**/CLAUDE.md"
+        - "**/SKILL.md"

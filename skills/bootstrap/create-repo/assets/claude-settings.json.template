@@ -1,4 +1,18 @@
 {
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/setup-llmlint.sh\"",
+            "timeout": 180,
+            "type": "command"
+          }
+        ],
+        "matcher": "startup|resume"
+      }
+    ]
+  },
   "permissions": {
     "allow": [
       "Bash(just bootstrap)",
@@ -7,8 +21,12 @@
       "Bash(just lint)",
       "Bash(just format)",
       "Bash(just upgrade)",
-      "Bash(just llmlint)",
+      "Bash(just setup-llmlint)",
+      "Bash(just lint-llm:*)",
+      "Bash(just lint-llm-diff:*)",
       "Bash(llmlint:*)",
+      "Bash(./scripts/setup-llmlint.sh)",
+      "Bash(./scripts/lint-llm-diff.sh:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)",

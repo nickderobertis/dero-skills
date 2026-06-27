@@ -10,10 +10,14 @@ everything they already check, and reach for llmlint only for the judgment calls
 - **It is NOT in `just check`.** llmlint drives a real coding harness through
   `oneharness`, so it is non-deterministic, needs an authenticated harness, and
   makes network calls — the opposite of the deterministic gate. Keep it out of the
-  tight `just check` loop. It runs two ways: on demand with `just llmlint`, and as
-  a **blocking PR check** in its own CI workflow (separate from the `check` gate,
-  modelled on llmlint's own `live` workflow — fork-safe, so a fork without the
-  harness secret no-ops cleanly instead of blocking the contributor).
+  tight `just check` loop. It runs two ways: on demand over the configured set (or
+  passed paths) with `just lint-llm`, and **diff-scoped** with `just lint-llm-diff`
+  — which lints only the files the branch changed since its merge-base with main.
+  The diff-scoped run is the **blocking PR check** in its own CI workflow (separate
+  from the `check` gate, modelled on llmlint's own `live` workflow — fork-safe, so
+  a fork without the harness secret no-ops cleanly instead of blocking the
+  contributor). Scoping CI to the diff keeps each PR paying for its own changes
+  rather than a full-repo sweep on every push.
 - **Config is composed, not hand-written.** The composer
   ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
   repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard
@@ -33,10 +37,14 @@ everything they already check, and reach for llmlint only for the judgment calls
   `true` (holds) / `false` (a violation), scoped deterministically with `files`
   globs (and `relevance` only when a condition needs the judge to read the files).
   Don't restate a deterministic check llmlint can't improve on.
-- **Install.** llmlint needs `oneharness` and an authenticated harness (e.g.
-  Claude Code). Install both (`curl … | sh`, or `cargo install`), then
-  `llmlint doctor` confirms the harness is reachable. The `just llmlint` recipe
-  stays quiet on success and, on a missing binary, prints the install hint.
+- **Install is automated.** llmlint needs `oneharness` and an authenticated
+  harness (e.g. Claude Code). Bundle an idempotent `scripts/setup-llmlint.sh`
+  (from `assets/setup-llmlint.sh.template`) that installs both, wire it into the
+  Claude Code `SessionStart` hook in `.claude/settings.json` so web/cloud sessions
+  are ready with no manual steps, and expose it as `just setup-llmlint` for a plain
+  terminal. `llmlint doctor` confirms the harness is reachable; the `just lint-llm`
+  recipe stays quiet on success and, on a missing binary, points at
+  `just setup-llmlint`.
 - **Suppress narrowly.** A one-off exception uses a strict inline directive in the
   source — `// llmlint: ignore[rule_name] <reason>` — which must name the specific
   rule and give a reason (a bare or reason-less directive is a hard error).
@@ -48,15 +56,18 @@ everything they already check, and reach for llmlint only for the judgment calls
   per-reference rule fragments as `@version`-pinned plugins (composed via
   `compose_repo_plan.py --llmlint-config`), and `files.include` is set to this
   repo's real source globs.
-- [ ] **Recipe present, out of the gate.** A `just llmlint` recipe runs llmlint on
-  demand and is **not** wired into `just check` (the deterministic gate stays
-  deterministic).
-- [ ] **Blocking PR check.** A CI workflow runs `just llmlint` as its own job,
-  separate from the `check` gate and fork-safe (no-secret forks no-op cleanly),
-  and `llmlint` is in the branch-protection required-checks set.
+- [ ] **Recipes present, out of the gate.** A `just lint-llm` recipe runs llmlint
+  on demand and a `just lint-llm-diff` recipe lints the merge-base diff; neither is
+  wired into `just check` (the deterministic gate stays deterministic).
+- [ ] **Install automated.** `scripts/setup-llmlint.sh` exists (idempotent
+  toolchain install), `just setup-llmlint` runs it, and the Claude Code
+  `SessionStart` hook in `.claude/settings.json` invokes it.
+- [ ] **Blocking PR check.** A CI workflow runs `just lint-llm-diff` as its own
+  job, separate from the `check` gate and fork-safe (no-secret forks no-op
+  cleanly), and `llmlint` is in the branch-protection required-checks set.
 - [ ] **Buildout run once.** The buildout config
   (`compose_repo_plan.py --llmlint-buildout-config`) was run once during creation,
   its findings resolved, and the file deleted (not committed).
 - [ ] **Harness reachable.** `llmlint doctor` passes (oneharness + an
-  authenticated harness installed), and `just llmlint` was run once with its
+  authenticated harness installed), and `just lint-llm` was run once with its
   findings resolved.

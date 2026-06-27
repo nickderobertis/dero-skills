@@ -64,8 +64,9 @@ CHECKLIST_ITEM_RE = re.compile(r"^- \[ \]")
 # --- llmlint integration ----------------------------------------------------
 # llmlint (https://github.com/nickderobertis/llmlint) is the LLM-as-judge tier:
 # a non-deterministic linter that runs OUTSIDE the deterministic `just check`
-# gate (via `just llmlint` + a blocking PR check). The composer builds its config
-# by wiring per-reference rule fragments in as llmlint *plugins*, pinned by URL.
+# gate (via `just lint-llm` + a diff-scoped blocking PR check). The composer
+# builds its config by wiring per-reference rule fragments in as llmlint
+# *plugins*, pinned by URL.
 #
 # Two configs come out of the same selection:
 #   * ongoing (`--llmlint-config`)  -> assets/llmlint/<ref>.llmlint.yml — the
@@ -310,7 +311,7 @@ def render_plan(
         "`uv run --script scripts/check_repo_baseline.py /path/to/repo`."
     )
     out.append(
-        "- [ ] llmlint (ongoing) passes once: run `just llmlint` and resolve any "
+        "- [ ] llmlint (ongoing) passes once: run `just lint-llm` and resolve any "
         "findings."
     )
     out.append(
@@ -399,7 +400,8 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
         out += [
             "#",
             "# The LLM-judge tier — separate from the deterministic `just check` gate.",
-            "# Run with `just llmlint`; it is a blocking PR check, not part of `check`.",
+            "# Run with `just lint-llm` (or `just lint-llm-diff` for the merge-base",
+            "# diff); the diff-scoped run is the blocking PR check, not part of `check`.",
             "# Rules come from the pinned plugins below; tune one in place with",
             "# `override: true`. Bump a plugin's `@version` pin to pull new rules.",
         ]

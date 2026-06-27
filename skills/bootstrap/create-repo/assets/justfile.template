@@ -48,13 +48,26 @@ upgrade:
     @echo "TODO: upgrade dependencies (e.g. uv lock --upgrade)"
     @just check
 
+# Install/refresh the llmlint toolchain (oneharness + llmlint). Idempotent. Runs
+# automatically via the Claude Code SessionStart hook; this is the manual entry
+# point for a plain terminal.
+setup-llmlint:
+    ./scripts/setup-llmlint.sh
+
 # LLM-judge lint (llmlint) — the non-deterministic, harness-backed tier. Kept OUT
 # of `check` on purpose: the gate stays deterministic and offline. Run it on
-# demand locally; in CI it is a SEPARATE, blocking PR check. Config is the
-# composed `llmlint.yml`. See references/llmlint.md.
-llmlint:
-    @command -v llmlint >/dev/null 2>&1 || { echo "llmlint not installed — install oneharness + llmlint (https://github.com/nickderobertis/llmlint), then run 'llmlint doctor'"; exit 1; }
-    llmlint
+# demand locally over the configured set (or pass paths to narrow); config is the
+# composed `llmlint.yml`. In a terminal run `just setup-llmlint` once first. See
+# references/llmlint.md.
+lint-llm *paths:
+    @command -v llmlint >/dev/null 2>&1 || { echo "llmlint not installed — run 'just setup-llmlint' (see references/llmlint.md)"; exit 1; }
+    llmlint {{paths}}
+
+# llmlint scoped to the files this branch changed since it forked from main (the
+# merge-base diff, not a diff against main's current tip). This is the blocking
+# `llmlint` PR check; run it locally before pushing. BASE defaults to origin/main.
+lint-llm-diff base="origin/main":
+    ./scripts/lint-llm-diff.sh {{base}}
 
 # Optional, but a common addition: a diagnostics recipe so `check` can stay
 # quiet on success. Push environment/version reporting here (toolchain versions,

@@ -775,8 +775,8 @@ def check_llmlint(repo: Path) -> list[Finding]:
     llmlint runs OUTSIDE the deterministic ``just check`` gate (it drives a real
     harness, so it is non-deterministic and credentialed); this check never runs
     it. It verifies the tier is set up: a composed ``llmlint.yml`` declaring the
-    rule-fragment ``plugins``, a ``llmlint`` recipe to run it, and a CI workflow
-    that invokes it as the blocking PR check. Compose the config with
+    rule-fragment ``plugins``, a ``lint-llm`` recipe to run it on demand, and a CI
+    workflow that invokes it as the blocking PR check. Compose the config with
     ``compose_repo_plan.py --llmlint-config`` rather than hand-rolling it.
     """
     problems: list[Finding] = []
@@ -806,12 +806,12 @@ def check_llmlint(repo: Path) -> list[Finding]:
     recipes = (
         parse_just_recipes(justfile.read_text(encoding="utf-8")) if justfile else set()
     )
-    if "llmlint" not in recipes:
+    if "lint-llm" not in recipes:
         problems.append(
             Finding(
                 "ERROR",
-                "no `llmlint` recipe in the justfile",
-                "add a `llmlint:` recipe that runs `llmlint`, separate from `check` "
+                "no `lint-llm` recipe in the justfile",
+                "add a `lint-llm:` recipe that runs `llmlint`, separate from `check` "
                 "(the tier is non-deterministic, so it stays out of the gate)",
             )
         )
@@ -821,8 +821,8 @@ def check_llmlint(repo: Path) -> list[Finding]:
             Finding(
                 "ERROR",
                 "no CI workflow runs llmlint (the blocking PR check)",
-                "add a workflow job that runs `just llmlint`, separate from the "
-                "`check` gate and fork-safe (see references/ci.md and llmlint.md)",
+                "add a workflow job that runs `just lint-llm-diff`, separate from "
+                "the `check` gate and fork-safe (see references/ci.md and llmlint.md)",
             )
         )
 

@@ -48,8 +48,8 @@ format:
 upgrade:
     @just check
 
-llmlint:
-    @echo llmlint
+lint-llm:
+    @echo lint-llm
 """
 
 # A workflow that invokes the gate AND the llmlint tier (separate jobs), as the
@@ -57,7 +57,7 @@ llmlint:
 GATE_WORKFLOW = (
     "name: ci\njobs:\n"
     "  check:\n    steps:\n      - run: just check\n"
-    "  llmlint:\n    steps:\n      - run: just llmlint\n"
+    "  llmlint:\n    steps:\n      - run: just lint-llm-diff\n"
 )
 
 # A composed llmlint.yml: declares plugins (the rule fragments), as the llmlint
@@ -581,10 +581,10 @@ def test_llmlint_inline_empty_plugins_is_error(tmp_path):
 
 
 def test_missing_llmlint_recipe_is_error(tmp_path):
-    no_recipe = FULL_JUSTFILE.replace("\nllmlint:\n    @echo llmlint\n", "\n")
+    no_recipe = FULL_JUSTFILE.replace("\nlint-llm:\n    @echo lint-llm\n", "\n")
     findings = crb.audit(make_repo(tmp_path, justfile=no_recipe))
     assert crb.has_errors(findings)
-    assert any("`llmlint` recipe" in m for m in levels(findings, "ERROR"))
+    assert any("`lint-llm` recipe" in m for m in levels(findings, "ERROR"))
 
 
 def test_ci_without_llmlint_reference_is_error(tmp_path):
