@@ -47,6 +47,45 @@ jobs:
       - name: Check
         run: just check
 
+  # LLM-judge tier (llmlint) — a blocking PR check, SEPARATE from the `check`
+  # gate. It is non-deterministic and needs an authenticated harness, so it never
+  # runs inside `just check`. Fork-safe: a fork without the harness secret skips
+  # cleanly instead of failing the contributor. Add `llmlint` to the required
+  # status checks in branch protection. See references/llmlint.md.
+  llmlint:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+
+      - name: Skip without a harness credential (e.g. on a fork)
+        id: guard
+        env:
+          # TODO: your harness's credential secret (e.g. ANTHROPIC_API_KEY for Claude Code).
+          HARNESS_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${HARNESS_KEY:-}" ]; then
+            echo "no harness credential configured; skipping llmlint (fork-safe no-op)"
+            echo "run=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install oneharness + llmlint
+        if: steps.guard.outputs.run == '1'
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/nickderobertis/oneharness/main/scripts/install.sh | sh
+          curl -fsSL https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh | sh
+
+      # TODO: install + authenticate the coding harness oneharness drives (e.g.
+      # Claude Code), exporting its credential from secrets, then run the tier.
+      - name: Run llmlint
+        if: steps.guard.outputs.run == '1'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: just llmlint
+
   # Prove the end-user install path on the real platform matrix. Enable this
   # when the repo ships something users install (CLI, binary, package, plugin).
   # It is deliberately separate from `check`: `just bootstrap` sets up the *dev*

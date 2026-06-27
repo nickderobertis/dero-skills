@@ -1,0 +1,62 @@
+# Cross-cutting: llmlint (the LLM-judge tier)
+
+Applies on top of every product shape and language. [llmlint](https://github.com/nickderobertis/llmlint)
+is an LLM-as-judge linter: it enforces the code-quality checks a human reviewer
+makes — adherence to architectural patterns, coding-style intent, organization
+objectives — that deterministic linters can't express. It is **additive** to the
+strict gate, not a replacement: keep ruff/clippy/biome/shellcheck/tsc for
+everything they already check, and reach for llmlint only for the judgment calls.
+
+- **It is NOT in `just check`.** llmlint drives a real coding harness through
+  `oneharness`, so it is non-deterministic, needs an authenticated harness, and
+  makes network calls — the opposite of the deterministic gate. Keep it out of the
+  tight `just check` loop. It runs two ways: on demand with `just llmlint`, and as
+  a **blocking PR check** in its own CI workflow (separate from the `check` gate,
+  modelled on llmlint's own `live` workflow — fork-safe, so a fork without the
+  harness secret no-ops cleanly instead of blocking the contributor).
+- **Config is composed, not hand-written.** The composer
+  ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
+  repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard
+  base rule set plus the per-reference rule fragments in as `@version`-pinned
+  plugins. Bumping a hosted fragment's version pushes new rules to every repo that
+  pins it; a repo *tunes* a standard rule in place with `override: true` (inherits
+  the rule, changes only the fields it sets) rather than forking it.
+- **Ongoing vs buildout — two configs.** The committed `llmlint.yml` carries the
+  **ongoing** rules that judge code as it changes (e2e isn't mocked, inputs are
+  validated at boundaries, no unjustified suppressions, ...). A second
+  **buildout** config (`--llmlint-buildout-config`, e.g. `llmlint.buildout.yml`)
+  carries one-time *structural* checks (the release pipeline has no manual step,
+  CI runs the real gate, the monorepo delegates to its orchestrator). Run the
+  buildout config **once** during creation, resolve findings, then **delete it —
+  do not commit it**. Only the ongoing config stays and becomes the PR check.
+- **Rules are judge-level and scoped.** Each rule is a positive invariant judged
+  `true` (holds) / `false` (a violation), scoped deterministically with `files`
+  globs (and `relevance` only when a condition needs the judge to read the files).
+  Don't restate a deterministic check llmlint can't improve on.
+- **Install.** llmlint needs `oneharness` and an authenticated harness (e.g.
+  Claude Code). Install both (`curl … | sh`, or `cargo install`), then
+  `llmlint doctor` confirms the harness is reachable. The `just llmlint` recipe
+  stays quiet on success and, on a missing binary, prints the install hint.
+- **Suppress narrowly.** A one-off exception uses a strict inline directive in the
+  source — `// llmlint: ignore[rule_name] <reason>` — which must name the specific
+  rule and give a reason (a bare or reason-less directive is a hard error).
+
+## Verification
+
+- [ ] **Config composed, not hand-rolled.** `llmlint.yml` exists at the repo root,
+  declares the bundled `config_lint` plugin plus the standard base and the
+  per-reference rule fragments as `@version`-pinned plugins (composed via
+  `compose_repo_plan.py --llmlint-config`), and `files.include` is set to this
+  repo's real source globs.
+- [ ] **Recipe present, out of the gate.** A `just llmlint` recipe runs llmlint on
+  demand and is **not** wired into `just check` (the deterministic gate stays
+  deterministic).
+- [ ] **Blocking PR check.** A CI workflow runs `just llmlint` as its own job,
+  separate from the `check` gate and fork-safe (no-secret forks no-op cleanly),
+  and `llmlint` is in the branch-protection required-checks set.
+- [ ] **Buildout run once.** The buildout config
+  (`compose_repo_plan.py --llmlint-buildout-config`) was run once during creation,
+  its findings resolved, and the file deleted (not committed).
+- [ ] **Harness reachable.** `llmlint doctor` passes (oneharness + an
+  authenticated harness installed), and `just llmlint` was run once with its
+  findings resolved.
