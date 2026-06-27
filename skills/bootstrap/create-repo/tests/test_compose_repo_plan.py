@@ -37,9 +37,10 @@ spec.loader.exec_module(crp)
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
-    """Run the composer as a real subprocess, the way the skill invokes it."""
+    """Run the composer as a real subprocess, the way the skill invokes it:
+    `uv run --script` so the PEP 723 script resolves exactly as documented."""
     return subprocess.run(
-        [sys.executable, str(SCRIPT), *args],
+        ["uv", "run", "--script", str(SCRIPT), *args],
         capture_output=True,
         text=True,
     )
