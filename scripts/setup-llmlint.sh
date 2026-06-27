@@ -7,9 +7,9 @@
 # script always exits 0 — a flaky install must never break session startup.
 #
 # What it does, and why:
-#   1. Installs the pinned `oneharness` and `llmlint` versions (the constants
-#      below are the single source of truth — bump them to upgrade), reinstalling
-#      whenever the present version differs from the pin.
+#   1. Installs the pinned `oneharness` and `llmlint` versions (pins live in
+#      scripts/llmlint-versions.sh, the single source of truth — bump them
+#      there), reinstalling whenever the present version differs from the pin.
 #   2. Inside a Claude Code session, exports env that flips oneharness to the only
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
@@ -19,12 +19,12 @@
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
 set -uo pipefail
 
-# Pinned tool versions — the single source of truth. Bump these to upgrade; the
-# installs below fetch exactly these tags. oneharness must stay >= 0.2.531 (the
-# release that added the `ONEHARNESS_<FIELD>` env overrides the session env flip
-# relies on); the pin is well past that floor.
-readonly ONEHARNESS_VERSION="0.3.0"
-readonly LLMLINT_VERSION="0.2.17"
+# Pinned tool versions live in one centralized, sourceable file — bump them
+# there. The installs below fetch exactly these tags.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/llmlint-versions.sh
+. "$SCRIPT_DIR/llmlint-versions.sh"
+readonly ONEHARNESS_VERSION LLMLINT_VERSION
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }

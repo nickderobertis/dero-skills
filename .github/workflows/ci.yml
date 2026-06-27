@@ -115,11 +115,13 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           # Install the Codex CLI through bun (the repo's npm runner) and put it on
-          # PATH so oneharness can spawn `codex` in the lint step. Codex 0.142 reads
-          # its key from ~/.codex/auth.json, not the env, so authenticate via
-          # `login --with-api-key` (key on stdin), invoked through bunx per the
-          # repo's bun convention.
-          bun add -g @openai/codex
+          # PATH so oneharness can spawn `codex` in the lint step. The version is
+          # pinned in scripts/llmlint-versions.sh (the single source of truth shared
+          # with setup-llmlint.sh). Codex reads its key from ~/.codex/auth.json, not
+          # the env, so authenticate via `login --with-api-key` (key on stdin),
+          # invoked through bunx per the repo's bun convention.
+          . ./scripts/llmlint-versions.sh
+          bun add -g "@openai/codex@$CODEX_VERSION"
           bun pm bin -g >> "$GITHUB_PATH"
           printenv OPENAI_API_KEY | bunx codex login --with-api-key
 

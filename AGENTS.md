@@ -92,10 +92,11 @@ through `uv`** (`uv run`/`uv run --script`/`uvx`/`uv add`), **TypeScript and npm
 packages run through `bun`** (`bun run`/`bunx`/`bun add`), and the **anti-pattern
 of a Bash script that only wraps a single-language program** instead of calling
 uv/bun directly. It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
-driver (which supplies the `ONEHARNESS_<FIELD>` env overrides). Both
-`oneharness` and `llmlint` are pinned to fixed versions in
-`scripts/setup-llmlint.sh` — the single source of truth; bump the constants
-there to upgrade.
+driver (which supplies the `ONEHARNESS_<FIELD>` env overrides). The whole
+harness stack — `oneharness`, `llmlint`, and the Codex CLI (`@openai/codex`) —
+is pinned to fixed versions in `scripts/llmlint-versions.sh`, the single source
+of truth sourced by both `scripts/setup-llmlint.sh` (oneharness + llmlint) and
+the CI `llmlint` job (codex); bump a pin there to upgrade.
 
 **Harness split — committed default vs. Claude Code.** The committed
 `oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
