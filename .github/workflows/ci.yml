@@ -110,10 +110,18 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
-      - name: Install Codex CLI (the committed harness)
+      - name: Install & authenticate Codex CLI (the committed harness)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           bun add -g @openai/codex
-          bun pm bin -g >> "$GITHUB_PATH"
+          bun_bin="$(bun pm bin -g)"
+          echo "$bun_bin" >> "$GITHUB_PATH"
+          # Codex 0.142 does not read OPENAI_API_KEY from the env at request time;
+          # `login --with-api-key` (key on stdin) writes ~/.codex/auth.json, which
+          # `codex exec` then uses.
+          printenv OPENAI_API_KEY | "$bun_bin/codex" login --with-api-key
+          "$bun_bin/codex" login status || true
 
       - name: Install llmlint toolchain (oneharness + llmlint)
         run: |
