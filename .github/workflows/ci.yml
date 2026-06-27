@@ -114,31 +114,19 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          # Install the Codex CLI through bun (the repo's npm runner) and put it on
+          # PATH so oneharness can spawn `codex` in the lint step. Codex 0.142 reads
+          # its key from ~/.codex/auth.json, not the env, so authenticate via
+          # `login --with-api-key` (key on stdin), invoked through bunx per the
+          # repo's bun convention.
           bun add -g @openai/codex
-          bun_bin="$(bun pm bin -g)"
-          echo "$bun_bin" >> "$GITHUB_PATH"
-          # Codex 0.142 does not read OPENAI_API_KEY from the env at request time;
-          # `login --with-api-key` (key on stdin) writes ~/.codex/auth.json, which
-          # `codex exec` then uses.
-          printenv OPENAI_API_KEY | "$bun_bin/codex" login --with-api-key
-          "$bun_bin/codex" login status || true
+          bun pm bin -g >> "$GITHUB_PATH"
+          printenv OPENAI_API_KEY | bunx codex login --with-api-key
 
       - name: Install llmlint toolchain (oneharness + llmlint)
         run: |
           ./scripts/setup-llmlint.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      # TEMP diagnostic: surface exactly what the Codex harness returns so we can
-      # see why llmlint reports "no JSON value could be extracted". Remove once green.
-      - name: Debug — probe Codex harness
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          echo "== oneharness detect =="; oneharness detect || true
-          echo "== raw codex run (gpt-5.5) =="
-          oneharness run --harness codex --model gpt-5.5 \
-            --prompt 'Reply with exactly this JSON and nothing else: {"hello":"world"}' \
-            --timeout 90 2>&1 || true
 
       - name: Lint changed files
         env:
