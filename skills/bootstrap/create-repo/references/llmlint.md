@@ -46,8 +46,11 @@ everything they already check, and reach for llmlint only for the judgment calls
   recipe stays quiet on success and, on a missing binary, points at
   `just setup-llmlint`.
 - **Suppress narrowly.** A one-off exception uses a strict inline directive in the
-  source — `// llmlint: ignore[rule_name] <reason>` — which must name the specific
-  rule and give a reason (a bare or reason-less directive is a hard error).
+  source: the reserved `llmlint: ignore` prefix, then the specific configured rule
+  name(s) in `[…]` and a reason. It must name real, configured rule(s) and give a
+  reason — a bare, reason-less, or unknown-rule directive is a hard error (so don't
+  write the literal `ignore`-bracket form in linted prose with a placeholder rule:
+  llmlint parses it and rejects the unknown rule).
 
 ## Verification
 
