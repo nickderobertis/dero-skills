@@ -54,11 +54,6 @@ files:
 oneharness:
   timeout: 600
 
-# Judges justify each verdict before concluding (default true) — worth the extra
-# output tokens here because these rules turn on intent (a real shell pipeline
-# vs. a thin wrapper) that the rationale makes auditable.
-rationales: true
-
 plugins:
   # Lints this config's own rule names/descriptions; ships inside llmlint and
   # resolves offline.
@@ -74,22 +69,15 @@ plugins:
   - "skills/bootstrap/create-repo/assets/llmlint/languages/bash.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
 
-# One default agent for every rule (bespoke and plugin alike). The
-# launch-convention rules below carry their full uv/bun criteria in their own
-# descriptions, so no domain-specific prompt context is needed — a single
-# generic judging-hygiene prompt serves all rules without biasing any.
+# No `agents` block: every rule runs on the implicit default agent. The
+# launch-convention rules carry their full uv/bun criteria in their own
+# descriptions, and llmlint's master template plus rationales (on by default)
+# already ground each verdict — so no custom agent or prompt is needed.
 #
-# Harness/model are intentionally NOT pinned, so oneharness resolves them from
-# oneharness.toml (codex + gpt-5.5 by default) — which lets a Claude Code
+# Harness/model are deliberately left unset here (and in oneharness.toml beyond
+# the codex default), so oneharness resolves them — which lets a Claude Code
 # session's ONEHARNESS_HARNESSES / ONEHARNESS_MODEL env overrides flip the whole
-# run to claude-code + Opus without editing this file. Pinning here would emit
-# `--harness`/`--model` flags that beat those env overrides.
-agents:
-  default:
-    prompt_template: |
-      Judge only what the file actually shows. Cite the exact line, command, or
-      shebang that drives each verdict; do not speculate about files you cannot
-      see.
+# run to claude-code + Opus. Pinning a harness here would beat those overrides.
 
 rules:
   - name: python_launched_via_uv
