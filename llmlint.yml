@@ -34,7 +34,14 @@ files:
     - "**/node_modules/**"
     - "**/.git/**"
     - "uv.lock"
-    - "pnpm-lock.yaml"
+    - "bun.lock"
+
+# Per-judge harness timeout (seconds). The default 120 is fine for the
+# diff-scoped CI check, but a full-repo `just lint-llm` batches many files into a
+# single judge call and can exceed it; 600 gives that sweep headroom. It is a
+# ceiling, not a fixed wait — fast judges still return immediately.
+oneharness:
+  timeout: 600
 
 # Judges justify each verdict before concluding (default true) — worth the extra
 # output tokens here because these rules turn on intent (a real shell pipeline
