@@ -7,8 +7,9 @@
 # script always exits 0 — a flaky install must never break session startup.
 #
 # What it does, and why:
-#   1. Installs `oneharness` (>= the version that added `ONEHARNESS_<FIELD>` env
-#      overrides) and `llmlint` if missing.
+#   1. Installs the pinned `oneharness` and `llmlint` versions (the constants
+#      below are the single source of truth — bump them to upgrade), reinstalling
+#      whenever the present version differs from the pin.
 #   2. Inside a Claude Code session, exports env that flips oneharness to the only
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
@@ -18,31 +19,35 @@
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
 set -uo pipefail
 
-# Minimum oneharness with `ONEHARNESS_<FIELD>` env config overrides.
-readonly ONEHARNESS_MIN="0.2.531"
+# Pinned tool versions — the single source of truth. Bump these to upgrade; the
+# installs below fetch exactly these tags. oneharness must stay >= 0.2.531 (the
+# release that added the `ONEHARNESS_<FIELD>` env overrides the session env flip
+# relies on); the pin is well past that floor.
+readonly ONEHARNESS_VERSION="0.3.0"
+readonly LLMLINT_VERSION="0.2.17"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
 
-# True when $1 (installed) is older than $2 (minimum).
-older_than() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" != "$2" ]; }
+# Install $1 at exactly v$2 from its upstream install.sh unless already pinned.
+# $3 is the raw install.sh URL.
+ensure_pinned() {
+  local bin="$1" want="$2" url="$3" have
+  have="$("$bin" --version 2>/dev/null | awk '{print $2}')"
+  [ "$have" = "$want" ] && return 0
+  log "installing $bin v$want (have: ${have:-none})"
+  curl -fsSL "$url" | sh -s -- --version "v$want" >&2 \
+    || log "$bin install failed (continuing)"
+}
 
 ensure_oneharness() {
-  local have
-  if have="$(oneharness --version 2>/dev/null | awk '{print $2}')" && [ -n "$have" ] \
-     && ! older_than "$have" "$ONEHARNESS_MIN"; then
-    return 0
-  fi
-  log "installing oneharness >= v$ONEHARNESS_MIN (have: ${have:-none})"
-  curl -fsSL https://raw.githubusercontent.com/nickderobertis/oneharness/main/scripts/install.sh \
-    | sh -s -- --version "v$ONEHARNESS_MIN" >&2 || log "oneharness install failed (continuing)"
+  ensure_pinned oneharness "$ONEHARNESS_VERSION" \
+    https://raw.githubusercontent.com/nickderobertis/oneharness/main/scripts/install.sh
 }
 
 ensure_llmlint() {
-  command -v llmlint >/dev/null 2>&1 && return 0
-  log "installing llmlint"
-  curl -fsSL https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh \
-    | sh >&2 || log "llmlint install failed (continuing)"
+  ensure_pinned llmlint "$LLMLINT_VERSION" \
+    https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh
 }
 
 # Persist env for the rest of the session via CLAUDE_ENV_FILE (Claude Code sources

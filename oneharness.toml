@@ -7,7 +7,7 @@
 # Inside a Claude Code session it is different: the SessionStart hook
 # (scripts/setup-llmlint.sh) exports ONEHARNESS_HARNESSES=claude-code and
 # ONEHARNESS_MODEL=claude-opus-4-8, and those `ONEHARNESS_<FIELD>` env overrides
-# win over this file (oneharness >= 0.2.531) — so the run uses the only harness
+# win over this file (the pinned oneharness supports them) — so the run uses the only harness
 # authenticated there (Claude Code + Opus) without editing any committed config.
 # IS_SANDBOX is injected only into the claude-code harness below so it may run
 # under root without `--dangerously-skip-permissions` refusing.
