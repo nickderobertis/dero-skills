@@ -120,6 +120,18 @@ jobs:
           ./scripts/setup-llmlint.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # TEMP diagnostic: surface exactly what the Codex harness returns so we can
+      # see why llmlint reports "no JSON value could be extracted". Remove once green.
+      - name: Debug — probe Codex harness
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "== oneharness detect =="; oneharness detect || true
+          echo "== raw codex run (gpt-5.5) =="
+          oneharness run --harness codex --model gpt-5.5 \
+            --prompt 'Reply with exactly this JSON and nothing else: {"hello":"world"}' \
+            --timeout 90 2>&1 || true
+
       - name: Lint changed files
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
