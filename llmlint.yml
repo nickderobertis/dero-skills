@@ -41,6 +41,12 @@ files:
     - ".github/workflows/*.yml"
     - "justfile"
     - "*.js"
+    # This config itself, so the bundled `config_lint` plugin (below) has a target
+    # to judge our bespoke rule names/descriptions against. Without it in the set,
+    # a no-args `just lint-llm` scans it out and config_lint lints nothing here.
+    # (The diff-scoped CI check passes changed files explicitly, so it already
+    # covers llmlint.yml on edit; this makes the full-repo sweep match.)
+    - "llmlint.yml"
   exclude:
     - "**/node_modules/**"
     - "**/.git/**"
@@ -89,7 +95,12 @@ rules:
       `python3` invocation, a `#!/usr/bin/env python3` shebang used as the
       primary entry point, `pip` / `pip3` / `pipx`, `poetry run`, or activating
       a virtualenv by hand instead of going through uv.
+    # Kept on relevance, not a `files:` glob: Python is launched from many file
+    # types here (.py, shell scripts, the justfile, CI yaml), so a static file
+    # scope would blind the rule to a bare `python3`/`pip` call in a .sh or
+    # workflow — exactly the violation it exists to catch.
     relevance: the file runs Python code or installs a Python package
+    require_line_attribution: true
 
   - name: typescript_and_npm_launched_via_bun
     description: |
@@ -98,7 +109,11 @@ rules:
       `bun x`, `bun add`, or `bun install`.
       FALSE when it runs code or manages packages directly with `node`, `npm` /
       `npx`, `pnpm`, or `yarn` instead of bun.
+    # Kept on relevance for the same reason as the uv rule: npm is managed from
+    # the justfile and CI yaml (`bun install`, `bunx nx`), not just JS/TS files,
+    # so scoping to a JS/TS glob would miss a stray `npm`/`npx` in a shell/CI step.
     relevance: the file runs TypeScript/JavaScript or manages an npm package
+    require_line_attribution: true
 
   - name: single_language_work_runs_directly_not_via_bash_wrapper
     description: |
@@ -114,5 +129,11 @@ rules:
       into the program and run it directly with uv or bun.
       A shell script that performs real multi-step orchestration is NOT a
       violation, even if some steps call uv or bun.
-    relevance: the file is a shell script
+    # This rule is about shell scripts by definition, so scope it deterministically
+    # to *.sh instead of paying a judge relevance call — and it correctly leaves the
+    # justfile out (recipe bodies are wrappers by design and must not be flagged).
+    files:
+      include:
+        - "**/*.sh"
+    require_line_attribution: true
     judges: 3
