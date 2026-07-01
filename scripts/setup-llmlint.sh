@@ -7,8 +7,9 @@
 # script always exits 0 — a flaky install must never break session startup.
 #
 # What it does, and why:
-#   1. Installs `oneharness` (>= the version that added `ONEHARNESS_<FIELD>` env
-#      overrides) and `llmlint` if missing.
+#   1. Installs `oneharness` (>= the floor that satisfies both the
+#      `ONEHARNESS_<FIELD>` env overrides and the read-only mode current `llmlint`
+#      requires) and `llmlint` if missing.
 #   2. Inside a Claude Code session, exports env that flips oneharness to the only
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
@@ -19,8 +20,10 @@
 # llmlint: ignore[robust_shell] `set -e` deliberately omitted — every step tolerates failure and the script always exits 0 (a flaky install must never break session startup)
 set -uo pipefail
 
-# Minimum oneharness with `ONEHARNESS_<FIELD>` env config overrides.
-readonly ONEHARNESS_MIN="0.2.531"
+# Minimum oneharness: >= 0.3.0 is what current `llmlint` needs for read-only mode
+# (the judge reads but never edits files); it also has the `ONEHARNESS_<FIELD>`
+# env config overrides this setup relies on. Bump as llmlint raises the floor.
+readonly ONEHARNESS_MIN="0.3.3"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }

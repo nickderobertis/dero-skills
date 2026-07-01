@@ -106,7 +106,8 @@ tiers (see the header in `llmlint.yml`):
   `default` agent — no domain-specific prompt is needed.
 
 It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
-driver (>= 0.2.531, for `ONEHARNESS_<FIELD>` env overrides).
+driver (>= 0.3.0, for `llmlint`'s read-only mode and the `ONEHARNESS_<FIELD>` env
+overrides; `setup-llmlint.sh` pins the concrete floor).
 
 **Harness split — committed default vs. Claude Code.** The committed
 `oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
