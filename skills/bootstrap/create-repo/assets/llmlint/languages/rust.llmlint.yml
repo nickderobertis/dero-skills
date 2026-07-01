@@ -21,3 +21,4 @@ rules:
     files:
       include: ["**/*.rs"]
       exclude: ["**/tests/**", "**/*_test.rs", "**/benches/**"]
+    relevance: the target files perform fallible operations

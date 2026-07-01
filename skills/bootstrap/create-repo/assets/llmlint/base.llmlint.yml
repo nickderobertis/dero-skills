@@ -22,6 +22,7 @@ rules:
         - "**/*e2e*"
         - "**/integration/**"
         - "**/*.integration.*"
+    relevance: the target files define an end-to-end or integration test
 
   - name: tests_assert_real_behavior
     description: |
@@ -40,12 +41,14 @@ rules:
         - "**/*.spec.ts"
         - "**/*.spec.tsx"
         - "**/e2e/**"
+    relevance: the target files define tests
 
   - name: suppressions_justified
     description: |
       when every linter or type-checker suppression directive in the target files
       (`# noqa`, `eslint-disable`, `#[allow(...)]`, `# type: ignore`, `@ts-ignore`)
       carries a brief reason for the suppression.
+    relevance: the target files contain a linter or type-checker suppression directive
 
   - name: boundary_inputs_validated
     description: |
@@ -66,6 +69,7 @@ rules:
         - "Justfile"
         - ".justfile"
         - ".github/workflows/**"
+    relevance: the target files configure a linter, type checker, or compiler
 
   - name: tool_output_is_signal
     description: |
@@ -82,6 +86,7 @@ rules:
         - "justfile"
         - "Justfile"
         - ".justfile"
+    relevance: the target files define a script or command recipe
 
   - name: agents_md_durable_and_terse
     description: |

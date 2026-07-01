@@ -38,8 +38,12 @@ everything they already check, and reach for llmlint only for the judgment calls
   do not commit it**. Only the ongoing config stays and becomes the PR check.
 - **Rules are judge-level and scoped.** Each rule is a positive invariant judged
   `true` (holds) / `false` (a violation), scoped deterministically with `files`
-  globs (and `relevance` only when a condition needs the judge to read the files).
-  Don't restate a deterministic check llmlint can't improve on.
+  globs. Add a `relevance` clause whenever a file can match the globs but still
+  not exercise the rule's premise (a `tests/` fixture with no test, a `.py` that
+  makes no network call): relevance makes the judge **skip** the rule instead of
+  returning a spurious `false` on an unrelated change. Reach for it by default
+  unless the globs alone fully determine applicability. Don't restate a
+  deterministic check llmlint can't improve on.
 - **Install is automated.** llmlint needs `oneharness` and an authenticated
   harness (e.g. Claude Code). Bundle an idempotent `scripts/setup-llmlint.sh`
   (from `assets/setup-llmlint.sh.template`) that installs both, wire it into the

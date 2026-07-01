@@ -8,3 +8,4 @@ rules:
       exports, `__all__`, or visibility modifiers) so the public API is intentional.
       false when internal implementation is exposed in the public surface with no
       public/internal distinction.
+    relevance: the target files define part of the package's public API

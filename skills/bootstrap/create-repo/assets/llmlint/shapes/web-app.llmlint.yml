@@ -8,6 +8,7 @@ rules:
       true when secrets and privileged data access stay in server-only code and only
       non-sensitive data crosses to the client. false when a secret or a privileged
       data-access path is reachable from client code.
+    relevance: the target files handle secrets or privileged data access
 
   - name: url_state_validated
     description: |
@@ -26,3 +27,4 @@ rules:
         - "**/*e2e*"
         - "**/*.spec.ts"
         - "**/*.spec.tsx"
+    relevance: the target files define end-to-end tests that select page elements

@@ -10,6 +10,7 @@ rules:
       an operation succeeded.
     files:
       include: ["**/*.sh", "bin/**"]
+    relevance: the target files are shell scripts
 
   - name: portable_to_target_shell
     description: |
@@ -18,3 +19,4 @@ rules:
       declared shell or platform does not support.
     files:
       include: ["**/*.sh", "bin/**"]
+    relevance: the target files are shell scripts

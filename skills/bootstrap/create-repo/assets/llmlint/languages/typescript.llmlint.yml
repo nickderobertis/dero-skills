@@ -8,3 +8,4 @@ rules:
       carries a comment justifying why the type system is bypassed.
     files:
       include: ["**/*.ts", "**/*.tsx"]
+    relevance: the target files use `any` or a non-null assertion

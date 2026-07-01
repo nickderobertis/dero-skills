@@ -14,6 +14,7 @@ rules:
         - "skills/**/*.js"
         - "skills/**/*.mjs"
         - "skills/**/scripts/**"
+    relevance: the target files are bundled skill scripts
 
   - name: determinism_vs_judgment
     description: |
@@ -25,6 +26,7 @@ rules:
         - "**/SKILL.md"
         - "**/AGENTS.md"
         - "**/CLAUDE.md"
+    relevance: the target files describe procedural steps
 
   - name: skill_description_trigger_oriented
     description: |

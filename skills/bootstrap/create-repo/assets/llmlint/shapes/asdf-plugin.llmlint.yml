@@ -13,6 +13,7 @@ rules:
       partial files behind on failure.
     files:
       include: ["bin/download*", "bin/install*", "lib/**"]
+    relevance: the target files download a file
 
   - name: portable_version_handling
     description: |
@@ -20,3 +21,4 @@ rules:
       `sort -V`) and normalizes OS and arch names portably.
     files:
       include: ["bin/list-all*", "bin/latest-stable*", "lib/**"]
+    relevance: the target files sort versions or normalize OS or arch names

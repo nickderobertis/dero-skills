@@ -8,3 +8,4 @@ rules:
       writes error messages to stderr, and keeps machine-readable output (e.g.
       `--json`) separate from human prose. false when the CLI conflates exit codes,
       prints errors to stdout, or mixes machine-readable output with human prose.
+    relevance: the target files implement CLI output or exit-code handling
