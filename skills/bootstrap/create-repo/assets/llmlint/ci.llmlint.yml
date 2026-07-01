@@ -20,11 +20,10 @@ rules:
 
   - name: no_untrusted_interpolation_in_run
     description: |
-      true when no workflow in the target files interpolates untrusted event data
+      when no workflow in the target files interpolates untrusted event data
       (`${{ github.event.* }}` — a PR title, body, branch, or comment) directly into a
-      `run:` shell script; such values are passed through `env:` and referenced as
-      quoted shell variables. false when any workflow expands untrusted event data
-      straight into a `run:` command, where a crafted value can inject shell commands.
+      `run:` shell script; such values are passed through `env:` and referenced as shell
+      variables instead, so a crafted value cannot inject commands.
     files:
       include:
         - ".github/workflows/**"

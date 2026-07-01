@@ -12,10 +12,9 @@ rules:
 
   - name: authorization_enforced_server_side
     description: |
-      true when every privileged action or data-access path in the target files verifies
+      when every privileged action or data-access path in the target files verifies
       authentication and authorization on the server before acting — a control hidden in
-      the UI is never the only guard. false when a server route, action, or data query
-      performs a privileged operation without checking the caller is allowed to.
+      the UI is never the only guard.
     relevance: the target files expose a server route, action, or data-access path
 
   - name: url_state_validated
