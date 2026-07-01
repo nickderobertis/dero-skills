@@ -139,6 +139,12 @@ exact commands below are the ones this skill's own repo uses.
   the protection is the default path, not a cage. (Bump the required approval
   count above zero for a team; zero is reasonable for a solo maintainer who
   still wants every check enforced.)
+- **Require approval for fork-PR workflows.** Credential-gated checks (the
+  live/llmlint tiers) fail fast without their secret, so a fork's CI must not
+  auto-run unreviewed. Set the fork-PR approval policy (GitHub's *Settings →
+  Actions → General → Fork pull request workflows*) so a maintainer approves
+  before a fork's workflows run; default it to all external contributors. Secrets
+  stay restricted on `pull_request` from forks even after approval.
 - **Commit a required PR template.** Add `.github/pull_request_template.md`
   (start from
   [`assets/pull_request_template.md.template`](../assets/pull_request_template.md.template))
@@ -177,14 +183,23 @@ gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input - <<'JSON'
   "restrictions": null
 }
 JSON
+
+# Require maintainer approval before a fork's workflows run (so credential-gated
+# checks never auto-run unreviewed on forks).
+gh api -X PUT repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval \
+  -f approval_policy=all_external_contributors
 ```
 
-The skill bundles this as a runnable, idempotent script — pass the required
+The skill bundles this as a runnable, idempotent script — it applies the merge
+model, branch protection, *and* the fork-PR approval policy. Pass the required
 check contexts and preview with `--dry-run` first:
 
 ```bash
 uv run --script scripts/setup_github_governance.py check commitlint llmlint --dry-run
 uv run --script scripts/setup_github_governance.py check commitlint llmlint
+# tune who is gated on forks (default: all_external_contributors):
+uv run --script scripts/setup_github_governance.py check commitlint llmlint \
+  --fork-pr-approval first_time_contributors
 ```
 
 The `llmlint` context is the **LLM-judge tier** (see
@@ -218,8 +233,9 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   above).
 - [ ] **Live tier requires its credential.** Any live/integration workflow keeps
   the test compiling, requires its secret, and fails fast with a clear message
-  when it is absent (no skip/no-op to green). Fork PRs are gated by **Settings →
-  Actions → General → Fork pull request workflows → Require approval**, not by
+  when it is absent (no skip/no-op to green). Fork PRs are gated by the fork-PR
+  approval policy (applied by `setup_github_governance.py`, or **Settings →
+  Actions → General → Fork pull request workflows → Require approval**), not by
   workflow no-op logic.
 - [ ] **PR template.** A GitHub pull-request template exists
   (`.github/pull_request_template.md`) with **What** and **Why** sections
