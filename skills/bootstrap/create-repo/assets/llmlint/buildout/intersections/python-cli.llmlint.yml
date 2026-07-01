@@ -1,6 +1,5 @@
 # Python-CLI buildout rules (plugin) — run ONCE during repo creation, then
-# discarded. The "e2e drives the installed command" concern is general
-# (base.e2e_not_mocked); this fragment carries only the one-time packaging check.
+# discarded. Carries the one-time packaging check.
 version: 1
 
 rules:

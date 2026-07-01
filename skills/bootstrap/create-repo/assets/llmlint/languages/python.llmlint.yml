@@ -1,8 +1,5 @@
 # Python judge-level rules (plugin). Pulled in by the composer when the repo's
 # language includes python. Pairs with languages/python.md.
-#
-# Boundary input validation and the no-warnings rule are GENERAL — they live in
-# base.llmlint.yml, not here. This fragment carries only what is python-specific.
 version: 1
 
 rules:
@@ -15,3 +12,35 @@ rules:
     files:
       include: ["**/*.py"]
     relevance: the target files call an external network or IO service
+
+  - name: structural_pattern_matching
+    description: |
+      true when multi-branch dispatch on the shape, type, or value of a single
+      subject uses `match`/`case` with destructuring where it reads more clearly than
+      an if/elif chain. false when an if/elif chain repeats `isinstance`, index, or
+      attribute checks on one subject across branches where `match`/`case` would
+      express it directly.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files dispatch on the shape, type, or value of a subject
+
+  - name: modern_domain_modeling
+    description: |
+      true when structured data in the target files is modelled with dataclasses,
+      enums, `NamedTuple`, or typed models (e.g. Pydantic), and a meaningful
+      primitive (id, token) uses a `NewType` or type alias. false when structured
+      data is passed around as bare dicts, positional tuples, or stringly-typed
+      constants where a typed model or enum is the natural choice.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files define or pass around structured domain data
+
+  - name: protocol_based_seams
+    description: |
+      true when a pluggable dependency or seam in the target files is typed with a
+      `typing.Protocol` so callers depend on the structural interface. false when a
+      seam meant to be swappable is bound to a concrete class or a heavyweight
+      nominal ABC where a `Protocol` fits.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files define a pluggable dependency or seam

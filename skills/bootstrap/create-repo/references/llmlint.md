@@ -14,10 +14,13 @@ everything they already check, and reach for llmlint only for the judgment calls
   passed paths) with `just lint-llm`, and **diff-scoped** with `just lint-llm-diff`
   — which lints only the files the branch changed since its merge-base with main.
   The diff-scoped run is the **blocking PR check** in its own CI workflow (separate
-  from the `check` gate, modelled on llmlint's own `live` workflow — fork-safe, so
-  a fork without the harness secret no-ops cleanly instead of blocking the
-  contributor). Scoping CI to the diff keeps each PR paying for its own changes
-  rather than a full-repo sweep on every push.
+  from the `check` gate). It **requires** the harness credential and fails fast with
+  a clear message when it is absent — never no-ops to a green pass, which would
+  report unlinted files as clean. Fork PRs are handled at the repo level (GitHub's
+  require-approval-for-fork-workflows setting, see `references/ci.md`), not by a
+  no-op branch in the workflow; secrets stay restricted on `pull_request` from
+  forks even after approval. Scoping CI to the diff keeps each PR paying for its own
+  changes rather than a full-repo sweep on every push.
 - **Config is composed, not hand-written.** The composer
   ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
   repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard
@@ -35,8 +38,12 @@ everything they already check, and reach for llmlint only for the judgment calls
   do not commit it**. Only the ongoing config stays and becomes the PR check.
 - **Rules are judge-level and scoped.** Each rule is a positive invariant judged
   `true` (holds) / `false` (a violation), scoped deterministically with `files`
-  globs (and `relevance` only when a condition needs the judge to read the files).
-  Don't restate a deterministic check llmlint can't improve on.
+  globs. Add a `relevance` clause whenever a file can match the globs but still
+  not exercise the rule's premise (a `tests/` fixture with no test, a `.py` that
+  makes no network call): relevance makes the judge **skip** the rule instead of
+  returning a spurious `false` on an unrelated change. Reach for it by default
+  unless the globs alone fully determine applicability. Don't restate a
+  deterministic check llmlint can't improve on.
 - **Install is automated.** llmlint needs `oneharness` and an authenticated
   harness (e.g. Claude Code). Bundle an idempotent `scripts/setup-llmlint.sh`
   (from `assets/setup-llmlint.sh.template`) that installs both, wire it into the
@@ -66,8 +73,10 @@ everything they already check, and reach for llmlint only for the judgment calls
   toolchain install), `just setup-llmlint` runs it, and the Claude Code
   `SessionStart` hook in `.claude/settings.json` invokes it.
 - [ ] **Blocking PR check.** A CI workflow runs `just lint-llm-diff` as its own
-  job, separate from the `check` gate and fork-safe (no-secret forks no-op
-  cleanly), and `llmlint` is in the branch-protection required-checks set.
+  job, separate from the `check` gate; it requires the harness credential and
+  fails fast without it (fork PRs are gated by the repo's
+  require-approval-for-fork-workflows setting, not a no-op), and `llmlint` is in
+  the branch-protection required-checks set.
 - [ ] **Buildout run once.** The buildout config
   (`compose_repo_plan.py --llmlint-buildout-config`) was run once during creation,
   its findings resolved, and the file deleted (not committed).

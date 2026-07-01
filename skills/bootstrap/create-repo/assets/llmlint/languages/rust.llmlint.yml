@@ -1,5 +1,4 @@
-# Rust judge-level rules (plugin). Pairs with languages/rust.md. Boundary input
-# validation is general (base.llmlint.yml); this fragment is Rust-specific.
+# Rust judge-level rules (plugin). Pairs with languages/rust.md.
 version: 1
 
 rules:
@@ -16,9 +15,10 @@ rules:
 
   - name: no_panics_on_recoverable_errors
     description: |
-      true when every fallible operation in the target files returns or propagates
-      an error (`Result`, `?`). false when any fallible operation uses `unwrap()`,
+      true when every fallible operation in the target files returns or propagates an
+      error (`Result`, `?`). false when any fallible operation uses `unwrap()`,
       `expect()`, or `panic!` for an error that is recoverable.
     files:
       include: ["**/*.rs"]
       exclude: ["**/tests/**", "**/*_test.rs", "**/benches/**"]
+    relevance: the target files perform fallible operations

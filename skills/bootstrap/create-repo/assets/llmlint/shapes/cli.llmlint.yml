@@ -1,5 +1,4 @@
-# CLI judge-level rules (plugin). Pairs with shapes/cli.md. The "drive the real
-# entry point in e2e" concern is general (base.e2e_not_mocked) — not restated.
+# CLI judge-level rules (plugin). Pairs with shapes/cli.md.
 version: 1
 
 rules:
@@ -9,3 +8,4 @@ rules:
       writes error messages to stderr, and keeps machine-readable output (e.g.
       `--json`) separate from human prose. false when the CLI conflates exit codes,
       prints errors to stdout, or mixes machine-readable output with human prose.
+    relevance: the target files implement CLI output or exit-code handling

@@ -1,11 +1,11 @@
-# Library / package / service judge-level rules (plugin). Pairs with
-# shapes/library.md. Boundary validation is general (base.boundary_inputs_validated).
+# Library / package / service judge-level rules (plugin). Pairs with shapes/library.md.
 version: 1
 
 rules:
   - name: stable_public_surface
     description: |
       true when the target files mark what is public versus internal (explicit
-      exports, `__all__`, or visibility modifiers) so the public API is
-      intentional. false when internal implementation is exposed in the public
-      surface with no public/internal distinction.
+      exports, `__all__`, or visibility modifiers) so the public API is intentional.
+      false when internal implementation is exposed in the public surface with no
+      public/internal distinction.
+    relevance: the target files define part of the package's public API

@@ -4,18 +4,19 @@ version: 1
 rules:
   - name: robust_shell
     description: |
-      true when every script in the target files sets `set -euo pipefail`, quotes
-      its expansions, and handles network and filesystem failures explicitly. false
-      when any script omits `set -euo pipefail`, leaves an expansion unquoted, or
-      assumes an operation succeeded.
+      true when every script in the target files sets `set -euo pipefail`, quotes its
+      expansions, and handles network and filesystem failures explicitly. false when
+      any script omits `set -euo pipefail`, leaves an expansion unquoted, or assumes
+      an operation succeeded.
     files:
       include: ["**/*.sh", "bin/**"]
+    relevance: the target files are shell scripts
 
   - name: portable_to_target_shell
     description: |
-      true when every script in the target files stays within the declared target
-      shell and avoids non-portable constructs (`sort -V`, bashisms under POSIX
-      `sh`). false when any script uses a construct the declared target shell or
-      platform does not support.
+      when every script in the target files stays within the declared target shell
+      and avoids non-portable constructs (`sort -V`, bashisms under POSIX `sh`) the
+      declared shell or platform does not support.
     files:
       include: ["**/*.sh", "bin/**"]
+    relevance: the target files are shell scripts

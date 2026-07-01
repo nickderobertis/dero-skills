@@ -5,8 +5,8 @@ version: 1
 rules:
   - name: root_commands_delegate
     description: |
-      true when each root command recipe shells out to the orchestrator (for
-      example `nx affected` or `nx run-many`). false when any recipe hand-rolls a
+      true when each root command recipe shells out to the orchestrator (for example
+      `nx affected` or `nx run-many`). false when any recipe hand-rolls a
       for-each-package loop instead of delegating to the orchestrator.
     files:
       include: ["justfile", "Justfile", ".justfile"]

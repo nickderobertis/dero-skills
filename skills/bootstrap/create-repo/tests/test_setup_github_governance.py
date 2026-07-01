@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,7 +30,12 @@ spec.loader.exec_module(gov)
 
 
 def route(args) -> str:
-    """Classify a ``gh`` arg list the way the fake keys its canned responses."""
+    """Classify a ``gh`` arg list the way the fake keys its canned responses.
+
+    ``api`` mutations are keyed by *purpose* (the path), not just the HTTP method,
+    because the plan issues two PUTs — branch protection and the fork-PR approval
+    policy — that would otherwise collide.
+    """
     args = list(args)
     if args[:2] == ["repo", "view"]:
         if "nameWithOwner" in args:
@@ -38,7 +44,12 @@ def route(args) -> str:
             return "branch"
         return "repo-view"
     if args and args[0] == "api":
-        return "api:" + args[args.index("--method") + 1]
+        path = args[args.index("--method") + 2]
+        if path.endswith("/protection"):
+            return "api:protection"
+        if path.endswith("/fork-pr-contributor-approval"):
+            return "api:fork-approval"
+        return "api:repo-settings"
     return " ".join(args)
 
 
@@ -69,12 +80,17 @@ class FakeGh:
     def api_calls(self) -> list[tuple[list[str], str | None]]:
         return [(a, i) for a, i in self.calls if a and a[0] == "api"]
 
-    def body_for(self, method: str) -> dict:
+    def body_for(self, key: str) -> dict:
+        """Return the JSON body of the api call whose route is ``key``.
+
+        ``key`` is a route from ``route()`` (e.g. ``api:protection``,
+        ``api:fork-approval``, ``api:repo-settings``).
+        """
         for args, stdin in self.calls:
-            if args and args[0] == "api" and route(args) == f"api:{method}":
+            if args and args[0] == "api" and route(args) == key:
                 assert stdin is not None
                 return json.loads(stdin)
-        raise AssertionError(f"no {method} api call recorded")
+        raise AssertionError(f"no {key} api call recorded")
 
 
 # --- payloads --------------------------------------------------------------
@@ -147,11 +163,15 @@ def test_normalize_contexts_rejects_empty():
 # --- plan ------------------------------------------------------------------
 
 
-def test_plan_is_patch_settings_then_put_protection():
+def test_plan_is_patch_settings_then_protection_then_fork_approval():
     calls = gov.plan("owner/name", "main", ["check"], 0, False)
-    assert [c.method for c in calls] == ["PATCH", "PUT"]
+    assert [c.method for c in calls] == ["PATCH", "PUT", "PUT"]
     assert calls[0].path == "repos/owner/name"
     assert calls[1].path == "repos/owner/name/branches/main/protection"
+    assert (
+        calls[2].path
+        == "repos/owner/name/actions/permissions/fork-pr-contributor-approval"
+    )
     # The body round-trips through the gh stdin the call would send.
     assert json.loads(calls[0].stdin) == gov.repo_settings_payload()
     assert calls[0].args == [
@@ -162,6 +182,18 @@ def test_plan_is_patch_settings_then_put_protection():
         "--input",
         "-",
     ]
+
+
+def test_fork_pr_approval_payload_and_default():
+    assert gov.fork_pr_approval_payload("first_time_contributors") == {
+        "approval_policy": "first_time_contributors"
+    }
+    # The default is the most conservative: every external contributor is gated.
+    assert gov.DEFAULT_FORK_PR_APPROVAL == "all_external_contributors"
+    calls = gov.plan("owner/name", "main", ["check"], 0, False)
+    assert json.loads(calls[2].stdin) == {
+        "approval_policy": "all_external_contributors"
+    }
 
 
 # --- resolve ---------------------------------------------------------------
@@ -209,8 +241,12 @@ def test_execute_runs_each_call_with_its_json_body():
     fake = FakeGh()
     calls = gov.plan("owner/name", "main", ["check", "commitlint"], 0, False)
     gov.execute(fake, calls)
-    assert [route(a) for a, _ in fake.api_calls()] == ["api:PATCH", "api:PUT"]
-    assert fake.body_for("PUT")["required_status_checks"]["contexts"] == [
+    assert [route(a) for a, _ in fake.api_calls()] == [
+        "api:repo-settings",
+        "api:protection",
+        "api:fork-approval",
+    ]
+    assert fake.body_for("api:protection")["required_status_checks"]["contexts"] == [
         "check",
         "commitlint",
     ]
@@ -219,7 +255,7 @@ def test_execute_runs_each_call_with_its_json_body():
 def test_execute_raises_on_first_failure_naming_the_call():
     import pytest
 
-    fake = FakeGh({"api:PUT": gov.Result(1, "", "403 Forbidden")})
+    fake = FakeGh({"api:protection": gov.Result(1, "", "403 Forbidden")})
     calls = gov.plan("owner/name", "main", ["check"], 0, False)
     with pytest.raises(gov.GhError) as exc:
         gov.execute(fake, calls)
@@ -240,16 +276,21 @@ def test_main_applies_and_is_quiet_on_success(capsys):
     assert "owner/name@main" in lines[0]
     assert "auto-merge" in lines[0]
     assert "admins can override" in lines[0]
-    # Resolved repo + branch (2 reads) and applied both mutations (2 writes).
-    assert [route(a) for a, _ in fake.api_calls()] == ["api:PATCH", "api:PUT"]
+    assert "fork-PR approval: all_external_contributors" in lines[0]
+    # Resolved repo + branch (2 reads) and applied all three mutations.
+    assert [route(a) for a, _ in fake.api_calls()] == [
+        "api:repo-settings",
+        "api:protection",
+        "api:fork-approval",
+    ]
 
 
 def test_main_with_explicit_repo_and_branch_skips_resolution():
     fake = FakeGh()
     assert gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake) == 0
-    # No `repo view` calls — only the two mutations.
+    # No `repo view` calls — only the three mutations.
     assert all(a[0] == "api" for a, _ in fake.calls)
-    assert len(fake.calls) == 2
+    assert len(fake.calls) == 3
 
 
 def test_main_dry_run_offline_makes_no_gh_calls(capsys):
@@ -264,6 +305,8 @@ def test_main_dry_run_offline_makes_no_gh_calls(capsys):
     assert "DRY-RUN" in out
     assert "PATCH repos/acme/w" in out
     assert "PUT repos/acme/w/branches/main/protection" in out
+    assert "PUT repos/acme/w/actions/permissions/fork-pr-contributor-approval" in out
+    assert "all_external_contributors" in out
 
 
 def test_main_dry_run_resolves_but_never_mutates():
@@ -274,7 +317,7 @@ def test_main_dry_run_resolves_but_never_mutates():
 
 
 def test_main_failure_returns_one_with_actionable_fix(capsys):
-    fake = FakeGh({"api:PUT": gov.Result(1, "", "403 Forbidden")})
+    fake = FakeGh({"api:protection": gov.Result(1, "", "403 Forbidden")})
     assert gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake) == 1
     err = capsys.readouterr().err
     assert "ERROR" in err
@@ -288,17 +331,17 @@ def test_main_enforce_admins_flag_binds_admins():
         run=fake,
     )
     assert code == 0
-    assert fake.body_for("PUT")["enforce_admins"] is True
+    assert fake.body_for("api:protection")["enforce_admins"] is True
 
 
 def test_main_defaults_to_non_strict_and_strict_flag_opts_in():
     fake = FakeGh()
     gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake)
-    assert fake.body_for("PUT")["required_status_checks"]["strict"] is False
+    assert fake.body_for("api:protection")["required_status_checks"]["strict"] is False
 
     fake = FakeGh()
     gov.main(["check", "--repo", "acme/w", "--branch", "main", "--strict"], run=fake)
-    assert fake.body_for("PUT")["required_status_checks"]["strict"] is True
+    assert fake.body_for("api:protection")["required_status_checks"]["strict"] is True
 
 
 def test_main_approvals_flag_sets_review_count():
@@ -307,8 +350,54 @@ def test_main_approvals_flag_sets_review_count():
         ["check", "--repo", "acme/w", "--branch", "main", "--approvals", "2"],
         run=fake,
     )
-    reviews = fake.body_for("PUT")["required_pull_request_reviews"]
+    reviews = fake.body_for("api:protection")["required_pull_request_reviews"]
     assert reviews["required_approving_review_count"] == 2
+
+
+def test_main_defaults_fork_pr_approval_to_all_external():
+    fake = FakeGh()
+    gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake)
+    assert fake.body_for("api:fork-approval") == {
+        "approval_policy": "all_external_contributors"
+    }
+
+
+def test_main_fork_pr_approval_flag_overrides_policy():
+    fake = FakeGh()
+    gov.main(
+        [
+            "check",
+            "--repo",
+            "acme/w",
+            "--branch",
+            "main",
+            "--fork-pr-approval",
+            "first_time_contributors",
+        ],
+        run=fake,
+    )
+    assert fake.body_for("api:fork-approval") == {
+        "approval_policy": "first_time_contributors"
+    }
+
+
+def test_main_rejects_unknown_fork_pr_approval_policy():
+    import pytest
+
+    fake = FakeGh()
+    with pytest.raises(SystemExit):
+        gov.main(
+            [
+                "check",
+                "--repo",
+                "a/b",
+                "--branch",
+                "main",
+                "--fork-pr-approval",
+                "bogus",
+            ],
+            run=fake,
+        )
 
 
 def test_main_requires_at_least_one_check():
@@ -332,3 +421,53 @@ def test_main_offline_dry_run_works_without_gh(monkeypatch, capsys):
     code = gov.main(["check", "--repo", "acme/w", "--branch", "main", "--dry-run"])
     assert code == 0
     assert "DRY-RUN" in capsys.readouterr().out
+
+
+# --- e2e: run the real PEP 723 script as a subprocess ----------------------
+
+
+def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
+    """Invoke the governance script the way the skill documents: `uv run
+    --script`, so the PEP 723 script resolves and parses args end to end. An
+    offline `--dry-run` (with --repo/--branch) needs no `gh`, network, or auth."""
+    return subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_e2e_dry_run_plans_all_three_mutations_including_fork_approval():
+    result = _run_script(
+        "check", "commitlint", "--repo", "acme/w", "--branch", "main", "--dry-run"
+    )
+    assert result.returncode == 0, result.stderr
+    out = result.stdout
+    assert "PATCH repos/acme/w" in out
+    assert "PUT repos/acme/w/branches/main/protection" in out
+    assert "PUT repos/acme/w/actions/permissions/fork-pr-contributor-approval" in out
+    # The default policy is rendered in the body the call would send.
+    assert '"approval_policy": "all_external_contributors"' in out
+
+
+def test_e2e_dry_run_honors_fork_pr_approval_flag():
+    result = _run_script(
+        "check",
+        "--repo",
+        "acme/w",
+        "--branch",
+        "main",
+        "--fork-pr-approval",
+        "first_time_contributors",
+        "--dry-run",
+    )
+    assert result.returncode == 0, result.stderr
+    assert '"approval_policy": "first_time_contributors"' in result.stdout
+
+
+def test_e2e_rejects_unknown_fork_pr_approval_policy():
+    result = _run_script(
+        "check", "--repo", "a/b", "--branch", "main", "--fork-pr-approval", "bogus"
+    )
+    assert result.returncode != 0
+    assert "invalid choice" in result.stderr

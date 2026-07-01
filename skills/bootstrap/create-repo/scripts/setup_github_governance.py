@@ -7,7 +7,7 @@
 Usage:
     uv run --script scripts/setup_github_governance.py CHECK [CHECK ...] \
         [--repo OWNER/NAME] [--branch NAME] [--approvals N] \
-        [--enforce-admins] [--dry-run]
+        [--fork-pr-approval POLICY] [--enforce-admins] [--dry-run]
 
 The positional ``CHECK`` arguments are the status-check contexts that must be
 green before a PR can merge. List *every* gating check by name — including the
@@ -26,6 +26,11 @@ What it sets (the model the create-repo skill prescribes — see references/ci.m
     avoids the re-update-and-re-run-CI churn every time the base moves. Pass
     --strict to require branches be up to date (catches semantic conflicts
     between independently-green PRs, at the cost of that friction).
+  * Fork-PR workflow approval: requires a maintainer to approve before a fork's
+    CI runs (default: all external contributors). Credential-gated checks (the
+    live/llmlint tiers) fail fast without their secret, so fork PRs must not
+    auto-run them unreviewed. Tune the class of contributor with
+    --fork-pr-approval.
 
 This sets the *full desired state* idempotently: re-running applies the same
 config, and the branch-protection PUT replaces any existing protection on the
@@ -55,6 +60,19 @@ from dataclasses import dataclass
 # pipeline reads).
 SQUASH_TITLE = "PR_TITLE"
 SQUASH_MESSAGE = "PR_BODY"
+
+# Fork-PR workflow approval policy (GitHub's "Require approval for fork pull
+# request workflows"). The create-repo model turns this ON so a maintainer
+# approves before a fork's CI runs: credential-gated checks (the live/llmlint
+# tiers) fail fast without their secret rather than no-oping to a misleading
+# green, so fork PRs must not auto-run them unreviewed. The enum has no "off"
+# value — the setting always requires approval from *some* class of contributor.
+FORK_PR_APPROVAL_POLICIES = (
+    "first_time_contributors_new_to_github",
+    "first_time_contributors",
+    "all_external_contributors",
+)
+DEFAULT_FORK_PR_APPROVAL = "all_external_contributors"
 
 
 @dataclass
@@ -141,6 +159,11 @@ def repo_settings_payload() -> dict:
     }
 
 
+def fork_pr_approval_payload(policy: str) -> dict:
+    """The body for the fork-PR-approval PUT (``{"approval_policy": ...}``)."""
+    return {"approval_policy": policy}
+
+
 def protection_payload(
     contexts: Sequence[str],
     approvals: int,
@@ -173,8 +196,13 @@ def plan(
     approvals: int,
     enforce_admins: bool,
     strict: bool = False,
+    fork_pr_approval: str = DEFAULT_FORK_PR_APPROVAL,
 ) -> list[GhCall]:
-    """Build the ordered list of mutating calls (merge model, then protection)."""
+    """Build the ordered list of mutating calls.
+
+    Merge model, then branch protection, then the fork-PR workflow approval
+    policy (so a maintainer gates fork CI before credential-requiring checks run).
+    """
     return [
         GhCall(
             "PATCH",
@@ -187,6 +215,12 @@ def plan(
             f"repos/{repo}/branches/{branch}/protection",
             protection_payload(contexts, approvals, enforce_admins, strict),
             f"branch protection on {branch}",
+        ),
+        GhCall(
+            "PUT",
+            f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
+            fork_pr_approval_payload(fork_pr_approval),
+            f"fork PR workflow approval ({fork_pr_approval})",
         ),
     ]
 
@@ -256,13 +290,15 @@ def _success_line(
     contexts: Sequence[str],
     enforce_admins: bool,
     strict: bool,
+    fork_pr_approval: str,
 ) -> str:
     admins = "admins enforced" if enforce_admins else "admins can override"
     strictness = "strict" if strict else "non-strict"
     checks = ", ".join(contexts)
     return (
         f"OK    {repo}@{branch}: squash-only + auto-merge + delete-on-merge; "
-        f"{len(contexts)} required check(s) [{checks}], {strictness}; {admins}"
+        f"{len(contexts)} required check(s) [{checks}], {strictness}; {admins}; "
+        f"fork-PR approval: {fork_pr_approval}"
     )
 
 
@@ -294,6 +330,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "avoid the re-sync/re-run-CI churn each time the base branch moves)",
     )
     parser.add_argument(
+        "--fork-pr-approval",
+        choices=FORK_PR_APPROVAL_POLICIES,
+        default=DEFAULT_FORK_PR_APPROVAL,
+        help="who must be approved by a maintainer before their fork PR runs CI "
+        f"(default: {DEFAULT_FORK_PR_APPROVAL}); keeps credential-gated checks "
+        "from auto-running unreviewed on forks",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="print what would change without modifying the repo",
@@ -323,7 +367,13 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         repo = resolve_repo(run, args.repo)
         branch = resolve_branch(run, repo, args.branch)
         calls = plan(
-            repo, branch, contexts, args.approvals, args.enforce_admins, args.strict
+            repo,
+            branch,
+            contexts,
+            args.approvals,
+            args.enforce_admins,
+            args.strict,
+            args.fork_pr_approval,
         )
         if args.dry_run:
             print(_render_dry_run(repo, branch, calls))
@@ -333,7 +383,16 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         print(f"ERROR {exc.message}\n      fix: {exc.fix}", file=sys.stderr)
         return 1
 
-    print(_success_line(repo, branch, contexts, args.enforce_admins, args.strict))
+    print(
+        _success_line(
+            repo,
+            branch,
+            contexts,
+            args.enforce_admins,
+            args.strict,
+            args.fork_pr_approval,
+        )
+    )
     return 0
 
 

@@ -4,10 +4,6 @@
 # These are the ONGOING judgment checks an LLM judge can make that deterministic
 # linters can't; keep using ruff/clippy/biome/shellcheck/tsc for what they cover.
 #
-# Each description is mutually exclusive (true = every case holds; false = any
-# case fails). General rules live here once — no per-language/per-shape fragment
-# restates boundary validation or e2e-not-mocked.
-#
 # `version` is the published plugin version consumers pin with `@` (e.g. `@1`);
 # bump it (and the content) to push new rules to every repo that pins it.
 version: 1
@@ -15,11 +11,10 @@ version: 1
 rules:
   - name: e2e_not_mocked
     description: |
-      true when every end-to-end or integration test in the target files drives
-      the real artifact across real boundaries (the entry point as a subprocess,
-      real temp files, a real local server or database). false when any such test
-      mocks the network, filesystem, subprocess, or the entry point it is meant to
-      exercise.
+      true when every end-to-end or integration test in the target files drives the
+      real artifact across real boundaries (the entry point as a subprocess, real
+      temp files, a real local server or database). false when any such test mocks
+      the network, filesystem, subprocess, or the entry point it is meant to exercise.
     files:
       include:
         - "**/e2e/**"
@@ -27,12 +22,13 @@ rules:
         - "**/*e2e*"
         - "**/integration/**"
         - "**/*.integration.*"
+    relevance: the target files define an end-to-end or integration test
 
   - name: tests_assert_real_behavior
     description: |
-      true when every test in the target files asserts on an observable outcome (a
-      returned value, an exit code, persisted state). false when any test exercises
-      code without asserting any behavior.
+      when every test in the target files asserts on an observable outcome (a
+      returned value, an exit code, persisted state) rather than exercising code
+      without asserting any behavior.
     files:
       include:
         - "**/tests/**"
@@ -45,40 +41,42 @@ rules:
         - "**/*.spec.ts"
         - "**/*.spec.tsx"
         - "**/e2e/**"
+    relevance: the target files define tests
 
   - name: suppressions_justified
     description: |
-      true when every linter or type-checker suppression directive in the target
-      files (`# noqa`, `eslint-disable`, `#[allow(...)]`, `# type: ignore`,
-      `@ts-ignore`) carries a brief reason for the suppression. false when any such
-      directive carries no reason.
+      when every linter or type-checker suppression directive in the target files
+      (`# noqa`, `eslint-disable`, `#[allow(...)]`, `# type: ignore`, `@ts-ignore`)
+      carries a brief reason for the suppression.
+    relevance: the target files contain a linter or type-checker suppression directive
 
   - name: boundary_inputs_validated
     description: |
-      true when every external or IO input read in the target files (request
-      bodies, environment variables, config files, third-party responses, CLI
-      arguments, stdin) is validated at the boundary before use. false when any
-      external or IO input is used without validation.
+      when every external or IO input read in the target files (request bodies,
+      environment variables, config files, third-party responses, CLI arguments,
+      stdin) is validated at the boundary before use.
     relevance: the target files read external or IO input
 
-  - name: no_warnings_only_relaxation
+  - name: diagnostics_error_or_absent
     description: |
-      true when the quality gate fails on diagnostics — no linter, type checker, or
-      compiler is configured to warning-only without a documented reason. false
-      when any check is relaxed to warning-only with no documented reason.
+      true when the quality gate treats every diagnostic as a hard failure — no
+      linter, type checker, or compiler is configured to emit warning-level output.
+      false when any check is left warning-only (a warning that neither fails the
+      gate nor is fixed only bloats context; a check is either strict or removed).
     files:
       include:
         - "justfile"
         - "Justfile"
         - ".justfile"
         - ".github/workflows/**"
+    relevance: the target files configure a linter, type checker, or compiler
 
   - name: tool_output_is_signal
     description: |
       true when every script or command recipe in the target files is quiet on
-      success (a single line or nothing) and, on failure, prints the exact error
-      plus a concrete next action. false when any is noisy on success or fails with
-      a message that omits the cause or the fix.
+      success (a single line or nothing) and, on failure, prints the exact error plus
+      a concrete next action. false when any is noisy on success or fails with a
+      message that omits the cause or the fix.
     files:
       include:
         - "scripts/**"
@@ -88,14 +86,15 @@ rules:
         - "justfile"
         - "Justfile"
         - ".justfile"
+    relevance: the target files define a script or command recipe
 
   - name: agents_md_durable_and_terse
     description: |
       true when each durable instruction file in the target files (AGENTS.md,
       CLAUDE.md, and a skill's SKILL.md) reads as durable, terse instructions —
-      constraints, tradeoffs, and judgment a future maintainer or agent needs.
-      false when any reads as a session or changelog narrative, or restates what a
-      command, a failing gate, or a linked doc already shows.
+      constraints, tradeoffs, and judgment a future maintainer or agent needs. false
+      when any reads as a session or changelog narrative, or restates what a command,
+      a failing gate, or a linked doc already shows.
     files:
       include:
         - "**/AGENTS.md"

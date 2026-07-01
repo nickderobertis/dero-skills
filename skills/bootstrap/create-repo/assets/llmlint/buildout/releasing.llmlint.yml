@@ -6,8 +6,8 @@ rules:
   - name: no_manual_deploy_step
     description: |
       true when the only human action in a release is merging a PR. false when any
-      release step requires a manual command, a "Run workflow" click, or
-      hand-editing a version number.
+      release step requires a manual command, a "Run workflow" click, or hand-editing
+      a version number.
     files:
       include:
         - ".github/workflows/**"
@@ -17,10 +17,9 @@ rules:
 
   - name: versioning_decoupled_from_building
     description: |
-      true when the version job only computes the version and writes the
-      changelog, manifests, lockfiles, and tag, and a separate workflow builds and
-      publishes on the tag. false when the version job also builds or publishes
-      artifacts itself.
+      true when the version job only computes the version and writes the changelog,
+      manifests, lockfiles, and tag, and a separate workflow builds and publishes on
+      the tag. false when the version job also builds or publishes artifacts itself.
     files:
       include:
         - ".github/workflows/**"

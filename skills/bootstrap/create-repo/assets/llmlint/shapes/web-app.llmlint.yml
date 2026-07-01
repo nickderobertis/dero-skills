@@ -1,19 +1,18 @@
-# Web app judge-level rules (plugin). Pairs with shapes/web-app.md. Boundary
-# validation is general (base.boundary_inputs_validated). These apply to any web
-# app (including Next.js, which builds on this shape).
+# Web app judge-level rules (plugin). Pairs with shapes/web-app.md. Applies to any
+# web app (including Next.js, which builds on this shape).
 version: 1
 
 rules:
   - name: secrets_stay_server_side
     description: |
-      true when secrets and privileged data access stay in server-only code and
-      only non-sensitive data crosses to the client. false when a secret or a
-      privileged data-access path is reachable from client code.
+      true when secrets and privileged data access stay in server-only code and only
+      non-sensitive data crosses to the client. false when a secret or a privileged
+      data-access path is reachable from client code.
+    relevance: the target files handle secrets or privileged data access
 
   - name: url_state_validated
     description: |
-      true when shareable state kept in the URL is parsed and validated before use.
-      false when state read from the URL is used without validation.
+      when shareable state kept in the URL is parsed and validated before use.
     relevance: the target files read shareable state from the URL
 
   - name: e2e_uses_accessible_selectors
@@ -28,3 +27,4 @@ rules:
         - "**/*e2e*"
         - "**/*.spec.ts"
         - "**/*.spec.tsx"
+    relevance: the target files define end-to-end tests that select page elements

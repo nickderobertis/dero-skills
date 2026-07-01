@@ -1,0 +1,12 @@
+# asdf-plugin buildout rules (plugin) — run ONCE during repo creation, then
+# discarded. They verify the plugin was wired to the asdf script contract at setup.
+version: 1
+
+rules:
+  - name: plugin_never_calls_asdf
+    description: |
+      true when no plugin script in the target files invokes `asdf`. false when any
+      plugin script shells back out to `asdf` (for example `asdf reshim` from
+      `install`).
+    files:
+      include: ["bin/**", "lib/**"]

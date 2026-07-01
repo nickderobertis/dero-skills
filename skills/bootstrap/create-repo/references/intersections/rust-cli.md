@@ -20,8 +20,10 @@ reference implementations of this intersection.
   ignored tests, which silently makes realistic coverage opt-in.
 - **Deterministic e2e is offline and tempdir-isolated.** A *live* tier that needs
   real services or credentials is the one sanctioned use of `#[ignore]` /
-  env-gating — keep it compiling (don't `#[cfg]` it out), and run it in dedicated
-  fork-safe CI workflows. See the live/integration tier in `ci.md`.
+  env-gating — keep it compiling (don't `#[cfg]` it out), and run it in a
+  dedicated workflow that requires its credential and fails fast without it (fork
+  PRs gated by the require-approval repo setting). See the live/integration tier
+  in `ci.md`.
 - **`cargo nextest`** for fast, clear runs; snapshot stable output with `insta`
   where it helps.
 
@@ -83,7 +85,9 @@ and never gates. Keep it out of `just check`. See the bench-tier note in `ci.md`
   out of the default run.
 - [ ] **Deterministic e2e isolated; live tier gated.** Deterministic e2e is
   offline and tempdir-isolated; a live tier needing real services/credentials is
-  env-gated but still compiles, running in dedicated fork-safe CI workflows.
+  env-gated but still compiles, running in a dedicated workflow that requires its
+  credential and fails fast without it (fork PRs gated by the require-approval
+  repo setting).
 - [ ] **Toolchain + supply chain.** Toolchain pinned in `rust-toolchain.toml`,
   MSRV declared and checked, and a Linux-only supply-chain job runs `cargo deny`
   + `cargo machete`.
