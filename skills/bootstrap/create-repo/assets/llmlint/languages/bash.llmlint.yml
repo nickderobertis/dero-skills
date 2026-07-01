@@ -4,9 +4,10 @@ version: 1
 rules:
   - name: robust_shell
     description: |
-      when every script in the target files sets `set -euo pipefail`, quotes its
-      expansions, and handles network and filesystem failures explicitly instead of
-      assuming an operation succeeded.
+      true when every script in the target files sets `set -euo pipefail`, quotes its
+      expansions, and handles network and filesystem failures explicitly. false when
+      any script omits `set -euo pipefail`, leaves an expansion unquoted, or assumes
+      an operation succeeded.
     files:
       include: ["**/*.sh", "bin/**"]
 

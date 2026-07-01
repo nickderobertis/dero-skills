@@ -92,7 +92,7 @@ clone, run one command, and trust.
    not the user's. See [`references/ci.md`](./references/ci.md). CI only gates if
    the platform blocks a merge until it is green, so also configure the repo's
    merge model and branch protection — squash-merge only, auto-merge on, all
-   gating checks (including the full-e2e gate job and the separate, fork-safe
+   gating checks (including the full-e2e gate job and the separate
    `llmlint` LLM-judge check — see [`references/llmlint.md`](./references/llmlint.md))
    required, head branches deleted on merge, admins able to override — per the
    "Repository settings"
@@ -363,7 +363,8 @@ guidance that motivates it, and editing one reference updates both.
   surface with the six required recipes plus `test-e2e` wired into `check`.
 - [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
   that bootstraps a clean checkout and runs the full gate on a platform matrix,
-  plus a separate, fork-safe `llmlint` job (the diff-scoped LLM-judge check).
+  plus a separate `llmlint` job (the diff-scoped LLM-judge check) that requires
+  its harness credential and fails fast without it.
 - [`assets/setup-llmlint.sh.template`](./assets/setup-llmlint.sh.template) /
   [`assets/lint-llm-diff.sh.template`](./assets/lint-llm-diff.sh.template) — drop
   at `scripts/setup-llmlint.sh` (idempotent toolchain install, wired into the

@@ -5,7 +5,8 @@ version: 1
 rules:
   - name: console_entry_point
     description: |
-      when the CLI is declared as a `project.scripts` entry point in `pyproject.toml`,
-      so it installs as a real command rather than being runnable only via `python -m`.
+      true when the CLI is declared as a `project.scripts` entry point in
+      `pyproject.toml`, so it installs as a real command. false when the CLI is only
+      runnable via `python -m` with no console entry point declared.
     files:
       include: ["pyproject.toml"]

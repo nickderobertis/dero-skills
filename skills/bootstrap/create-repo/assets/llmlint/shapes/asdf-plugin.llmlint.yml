@@ -6,10 +6,11 @@ version: 1
 rules:
   - name: safe_pinned_downloads
     description: |
-      when every download in the target files pins an exact HTTPS version URL and
-      either verifies a published checksum or uses an atomic `.part` download,
-      cleaning up temp files on failure — never a mutable `latest` URL, an
-      unverified non-atomic download, or partial files left behind.
+      true when every download in the target files pins an exact HTTPS version URL
+      and either verifies a published checksum or uses an atomic `.part` download,
+      cleaning up temp files on failure. false when any download uses a mutable
+      `latest` URL, skips checksum verification without an atomic download, or leaves
+      partial files behind on failure.
     files:
       include: ["bin/download*", "bin/install*", "lib/**"]
 

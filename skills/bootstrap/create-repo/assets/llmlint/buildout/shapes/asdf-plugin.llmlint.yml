@@ -5,8 +5,8 @@ version: 1
 rules:
   - name: plugin_never_calls_asdf
     description: |
-      when no plugin script in the target files invokes `asdf` — the plugin
-      implements the script contract directly and never shells back out to `asdf`
-      (for example `asdf reshim` from `install`).
+      true when no plugin script in the target files invokes `asdf`. false when any
+      plugin script shells back out to `asdf` (for example `asdf reshim` from
+      `install`).
     files:
       include: ["bin/**", "lib/**"]

@@ -5,9 +5,9 @@ version: 1
 rules:
   - name: secrets_stay_server_side
     description: |
-      when secrets and privileged data access stay in server-only code and only
-      non-sensitive data crosses to the client, with no secret or privileged
-      data-access path reachable from client code.
+      true when secrets and privileged data access stay in server-only code and only
+      non-sensitive data crosses to the client. false when a secret or a privileged
+      data-access path is reachable from client code.
 
   - name: url_state_validated
     description: |
@@ -16,8 +16,9 @@ rules:
 
   - name: e2e_uses_accessible_selectors
     description: |
-      when every end-to-end test in the target files selects elements by accessible
-      role or user-facing text rather than a brittle CSS or DOM selector.
+      true when every end-to-end test in the target files selects elements by
+      accessible role or user-facing text. false when any end-to-end test selects
+      elements by a brittle CSS or DOM selector.
     files:
       include:
         - "**/e2e/**"

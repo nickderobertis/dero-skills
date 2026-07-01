@@ -63,17 +63,24 @@ the genuine call. Structure it the way these repos do:
   They run in dedicated CI workflows — often **one workflow per integration** so
   a flaky provider fails in isolation and its secrets stay scoped.
 - **Compile-but-skip — never `#[cfg]` it out.** The live test must still
-  *compile and type-check* in the normal gate even when its secret/env is unset;
-  gate it at *runtime* (skip when the credential is absent) rather than excluding
-  the code. This is the one sanctioned use of `#[ignore]` / an env guard: it
-  keeps the live code from rotting while keeping execution opt-in. (Contrast with
-  deterministic e2e, which must never be `#[ignore]`-d out of the gate.)
-- **Fork-safe.** Forked PRs don't get your secrets, so gate live jobs to the
-  canonical repo:
-  `if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository`.
-  Use a read-only token on forks, and make a job with no secret **no-op cleanly**
-  (skip with a log line) rather than fail. A required check that forks can't pass
-  blocks every external contributor.
+  *compile and type-check* in the deterministic gate even when its secret/env is
+  unset; keep the code in the build and skip it at *runtime* there (`#[ignore]` /
+  an env guard) rather than excluding it, so the live code can't rot while
+  execution stays opt-in. (Contrast with deterministic e2e, which must never be
+  `#[ignore]`-d out of the gate.) The *dedicated live workflow* is where it runs
+  for real — and there the credential is required, not optional (next bullet).
+- **Require the credential — fail fast, never no-op.** The live workflow
+  **requires** its secret and fails fast with a clear, actionable message when it
+  is absent. Do **not** make a credential-less run skip or no-op to a green pass:
+  that reports an untested path as covered — false confidence worse than a red X.
+- **Handle fork PRs at the repo level, not in workflow logic.** Forks legitimately
+  can't hold your secrets, but the fix is a repository setting, not a no-op branch
+  in the workflow. Enable **Settings → Actions → General → Fork pull request
+  workflows → Require approval for all (or first-time) contributors**, so a
+  maintainer reviews and approves before any fork CI runs. Secrets stay restricted
+  on `pull_request` from forks even after approval, so keep credential-gated live
+  checks out of the required-checks set for fork PRs and run them from a
+  maintainer-pushed branch or after merge.
 - **Prove the published shape, not the dev build.** When the live/install test
   exercises a packaged artifact, install the *publish-shape* package in a fresh
   project and unset whatever dev escape-hatch points at your local binary (e.g.
@@ -181,9 +188,11 @@ uv run --script scripts/setup_github_governance.py check commitlint llmlint
 ```
 
 The `llmlint` context is the **LLM-judge tier** (see
-[`references/llmlint.md`](llmlint.md)) — a required, fork-safe PR check that runs
-*outside* the deterministic `just check` gate. List it among the required
-contexts so a red llmlint run blocks merge, the same as the `check` gate.
+[`references/llmlint.md`](llmlint.md)) — a required PR check that runs *outside*
+the deterministic `just check` gate and requires its harness credential (fork
+PRs are gated by the repo's require-approval-for-fork-workflows setting, not a
+no-op). List it among the required contexts so a red llmlint run blocks merge,
+the same as the `check` gate.
 
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
@@ -207,6 +216,11 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
   settings, so this is verified by hand against the "Repository settings" section
   above).
+- [ ] **Live tier requires its credential.** Any live/integration workflow keeps
+  the test compiling, requires its secret, and fails fast with a clear message
+  when it is absent (no skip/no-op to green). Fork PRs are gated by **Settings →
+  Actions → General → Fork pull request workflows → Require approval**, not by
+  workflow no-op logic.
 - [ ] **PR template.** A GitHub pull-request template exists
   (`.github/pull_request_template.md`) with **What** and **Why** sections
   (**Additional info** optional).

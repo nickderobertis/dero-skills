@@ -5,8 +5,8 @@ version: 1
 rules:
   - name: ci_runs_the_real_gate
     description: |
-      when CI bootstraps a clean checkout and runs the full `just check` gate rather
-      than omitting it or running only a reduced subset.
+      true when CI bootstraps a clean checkout and runs the full `just check` gate.
+      false when CI omits the gate or runs only a reduced subset of it.
     files:
       include: [".github/workflows/**", "justfile", "Justfile", ".justfile"]
 

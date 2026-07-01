@@ -822,7 +822,8 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 "ERROR",
                 "no CI workflow runs llmlint (the blocking PR check)",
                 "add a workflow job that runs `just lint-llm-diff`, separate from "
-                "the `check` gate and fork-safe (see references/ci.md and llmlint.md)",
+                "the `check` gate, requiring its credential and failing fast without "
+                "it (see references/ci.md and llmlint.md)",
             )
         )
 

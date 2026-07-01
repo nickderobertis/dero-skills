@@ -5,37 +5,42 @@ version: 1
 rules:
   - name: async_typed_clients_at_boundaries
     description: |
-      when every client the target files use for an external network or IO service
-      is async and typed — an official typed client, or a small typed async client
-      written for the repo — rather than an untyped or synchronous ad-hoc client.
+      true when every client the target files use for an external network or IO
+      service is async and typed (an official typed client, or a small typed async
+      client written for the repo). false when any external network or IO call goes
+      through an untyped or synchronous ad-hoc client.
     files:
       include: ["**/*.py"]
     relevance: the target files call an external network or IO service
 
   - name: structural_pattern_matching
     description: |
-      when multi-branch dispatch on the shape, type, or value of a single subject
-      uses `match`/`case` where it reads more clearly than an if/elif chain —
-      destructuring in the patterns rather than repeated `isinstance`, index, or
-      attribute checks across branches.
+      true when multi-branch dispatch on the shape, type, or value of a single
+      subject uses `match`/`case` with destructuring where it reads more clearly than
+      an if/elif chain. false when an if/elif chain repeats `isinstance`, index, or
+      attribute checks on one subject across branches where `match`/`case` would
+      express it directly.
     files:
       include: ["**/*.py"]
     relevance: the target files dispatch on the shape, type, or value of a subject
 
   - name: modern_domain_modeling
     description: |
-      when structured data in the target files is modelled with dataclasses, enums,
-      `NamedTuple`, or typed models (e.g. Pydantic) rather than passed around as bare
-      dicts, positional tuples, or stringly-typed constants.
+      true when structured data in the target files is modelled with dataclasses,
+      enums, `NamedTuple`, or typed models (e.g. Pydantic), and a meaningful
+      primitive (id, token) uses a `NewType` or type alias. false when structured
+      data is passed around as bare dicts, positional tuples, or stringly-typed
+      constants where a typed model or enum is the natural choice.
     files:
       include: ["**/*.py"]
     relevance: the target files define or pass around structured domain data
 
-  - name: modern_typing_and_stdlib
+  - name: protocol_based_seams
     description: |
-      when the target files use current Python idioms — built-in generics and `X |
-      None` unions, `pathlib` over `os.path` string munging, comprehensions and
-      generator expressions over manual accumulation loops, and context managers for
-      resource lifetimes — rather than their legacy equivalents.
+      true when a pluggable dependency or seam in the target files is typed with a
+      `typing.Protocol` so callers depend on the structural interface. false when a
+      seam meant to be swappable is bound to a concrete class or a heavyweight
+      nominal ABC where a `Protocol` fits.
     files:
       include: ["**/*.py"]
+    relevance: the target files define a pluggable dependency or seam

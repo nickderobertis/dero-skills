@@ -4,6 +4,7 @@ version: 1
 rules:
   - name: stable_public_surface
     description: |
-      when the target files mark what is public versus internal (explicit exports,
-      `__all__`, or visibility modifiers) so the public API is intentional, rather
-      than exposing internal implementation with no public/internal distinction.
+      true when the target files mark what is public versus internal (explicit
+      exports, `__all__`, or visibility modifiers) so the public API is intentional.
+      false when internal implementation is exposed in the public surface with no
+      public/internal distinction.

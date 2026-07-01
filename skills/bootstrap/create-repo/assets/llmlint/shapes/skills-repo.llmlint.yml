@@ -17,9 +17,9 @@ rules:
 
   - name: determinism_vs_judgment
     description: |
-      when the deterministic steps described in the target files are implemented as
-      scripts and prose is reserved for genuine judgment, rather than a SKILL.md or
-      AGENTS.md narrating step-by-step deterministic actions that a script should own.
+      true when the deterministic steps described in the target files are implemented
+      as scripts and prose is reserved for genuine judgment. false when a SKILL.md or
+      AGENTS.md narrates step-by-step deterministic actions that a script should own.
     files:
       include:
         - "**/SKILL.md"
@@ -28,8 +28,9 @@ rules:
 
   - name: skill_description_trigger_oriented
     description: |
-      when every SKILL.md `description` in the target files is trigger-oriented
+      true when every SKILL.md `description` in the target files is trigger-oriented
       (states when to use the skill, e.g. "Use when …") and `compatibility` states
-      the skill's real runtime needs.
+      the skill's real runtime needs. false when any description is a vague title or
+      omits real runtime needs.
     files:
       include: ["**/SKILL.md"]

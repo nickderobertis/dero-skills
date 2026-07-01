@@ -11,10 +11,10 @@ version: 1
 rules:
   - name: e2e_not_mocked
     description: |
-      when every end-to-end or integration test in the target files drives the real
-      artifact across real boundaries (the entry point as a subprocess, real temp
-      files, a real local server or database) rather than mocking the network,
-      filesystem, subprocess, or the entry point it is meant to exercise.
+      true when every end-to-end or integration test in the target files drives the
+      real artifact across real boundaries (the entry point as a subprocess, real
+      temp files, a real local server or database). false when any such test mocks
+      the network, filesystem, subprocess, or the entry point it is meant to exercise.
     files:
       include:
         - "**/e2e/**"
@@ -56,10 +56,10 @@ rules:
 
   - name: diagnostics_error_or_absent
     description: |
-      when the quality gate treats every diagnostic as a hard failure or does not
-      report it at all — no linter, type checker, or compiler is left configured to
-      emit warning-level output. Warnings that neither fail the gate nor get fixed
-      only bloat context, so a check is either strict or removed, never warning-only.
+      true when the quality gate treats every diagnostic as a hard failure — no
+      linter, type checker, or compiler is configured to emit warning-level output.
+      false when any check is left warning-only (a warning that neither fails the
+      gate nor is fixed only bloats context; a check is either strict or removed).
     files:
       include:
         - "justfile"
@@ -69,9 +69,10 @@ rules:
 
   - name: tool_output_is_signal
     description: |
-      when every script or command recipe in the target files is quiet on success (a
-      single line or nothing) and, on failure, prints the exact error plus a concrete
-      next action.
+      true when every script or command recipe in the target files is quiet on
+      success (a single line or nothing) and, on failure, prints the exact error plus
+      a concrete next action. false when any is noisy on success or fails with a
+      message that omits the cause or the fix.
     files:
       include:
         - "scripts/**"
@@ -84,11 +85,11 @@ rules:
 
   - name: agents_md_durable_and_terse
     description: |
-      when each durable instruction file in the target files (AGENTS.md, CLAUDE.md,
-      and a skill's SKILL.md) reads as durable, terse instructions — the constraints,
-      tradeoffs, and judgment a future maintainer or agent needs — rather than a
-      session or changelog narrative, or a restatement of what a command, a failing
-      gate, or a linked doc already shows.
+      true when each durable instruction file in the target files (AGENTS.md,
+      CLAUDE.md, and a skill's SKILL.md) reads as durable, terse instructions —
+      constraints, tradeoffs, and judgment a future maintainer or agent needs. false
+      when any reads as a session or changelog narrative, or restates what a command,
+      a failing gate, or a linked doc already shows.
     files:
       include:
         - "**/AGENTS.md"
