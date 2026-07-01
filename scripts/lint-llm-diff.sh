@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Run llmlint over only the files this branch changed since it forked from main.
+# Run llmlint over only the lines this branch changed since it forked from main.
 #
 # Lints the diff at the branch's *fork point* (the merge-base with main), not a
 # raw diff against current main's tip — so unrelated commits that landed on main
 # after the branch started are never linted, and a stale branch still checks
 # exactly what it introduced. This is the `origin/main...HEAD` three-dot set.
+#
+# Scoped twice over: to the changed *files* (the args llmlint gets) and, via
+# `--diff --diff-base`, to the changed *lines* within them (the judge reviews the
+# fork-point diff, not the whole file) — so a PR is judged on what it introduced.
 #
 # Usage:
 #   scripts/lint-llm-diff.sh [BASE_REF] [-- <extra llmlint args>]
@@ -52,4 +56,8 @@ if [ "${#present[@]}" -eq 0 ]; then
 fi
 
 echo "lint-llm-diff: linting ${#present[@]} changed file(s) vs ${base_ref} @ ${merge_base:0:9}" >&2
-exec llmlint "${extra[@]}" "${present[@]}"
+# `--diff --diff-base "$merge_base"` puts each file's fork-point diff in the judge
+# prompt so it reviews only the *changed lines*, not the whole file — the judge
+# stops flagging pre-existing code a PR merely sits near, and can't wander into
+# lines the branch never touched.
+exec llmlint --diff --diff-base "$merge_base" "${extra[@]}" "${present[@]}"

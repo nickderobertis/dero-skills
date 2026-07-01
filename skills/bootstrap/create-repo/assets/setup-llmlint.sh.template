@@ -8,7 +8,10 @@
 # break session startup.
 #
 # What it does, and why:
-#   1. Installs `oneharness` (the harness driver) and `llmlint` if missing.
+#   1. Installs `oneharness` (the harness driver) and `llmlint`, enforcing a
+#      version floor so an older cached binary is upgraded — `lint-llm-diff.sh`
+#      needs llmlint's `--diff`/`--diff-base` (diff-scoped judge) and
+#      `check-ignores`.
 #   2. In a Claude Code session, persists PATH (so the freshly installed binaries
 #      resolve) and — TODO — any `ONEHARNESS_*` overrides that select the harness
 #      authenticated in this environment, into CLAUDE_ENV_FILE so later Bash calls
@@ -20,22 +23,48 @@
 # llmlint: ignore[robust_shell] `set -e` deliberately omitted — every step tolerates failure and the script always exits 0 (a flaky install must never break session startup)
 set -uo pipefail
 
+# Version floors. Bump as the tools raise theirs. llmlint >= 0.2.24 is what
+# `lint-llm-diff.sh` needs for `--diff`/`--diff-base`; oneharness >= 0.3.0 is
+# llmlint's read-only-mode floor.
+readonly ONEHARNESS_MIN="0.3.3"
+readonly LLMLINT_MIN="0.2.28"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
 
+# True when $1 (installed) is older than $2 (minimum). Portable component-wise
+# numeric compare — avoids `sort -V` (GNU coreutils only, absent on some `sort`s).
+older_than() {
+  local IFS=. ; local -a have min ; read -ra have <<<"$1" ; read -ra min <<<"$2"
+  local i x y
+  for ((i = 0; i < ${#have[@]} || i < ${#min[@]}; i++)); do
+    x=${have[i]:-0} ; y=${min[i]:-0} ; x=${x%%[!0-9]*} ; y=${y%%[!0-9]*}
+    ((10#${x:-0} < 10#${y:-0})) && return 0
+    ((10#${x:-0} > 10#${y:-0})) && return 1
+  done
+  return 1
+}
+
 ensure_oneharness() {
-  command -v oneharness >/dev/null 2>&1 && return 0
-  log "installing oneharness"
+  local have
+  if have="$(oneharness --version 2>/dev/null | awk '{print $2}')" && [ -n "$have" ] \
+     && ! older_than "$have" "$ONEHARNESS_MIN"; then
+    return 0
+  fi
+  log "installing oneharness >= v$ONEHARNESS_MIN (have: ${have:-none})"
   curl -fsSL https://raw.githubusercontent.com/nickderobertis/oneharness/main/scripts/install.sh \
-    | sh >&2 || log "oneharness install failed (continuing)"
+    | sh -s -- --version "v$ONEHARNESS_MIN" >&2 || log "oneharness install failed (continuing)"
 }
 
 ensure_llmlint() {
-  command -v llmlint >/dev/null 2>&1 && return 0
-  log "installing llmlint"
+  local have
+  if have="$(llmlint --version 2>/dev/null | awk '{print $2}')" && [ -n "$have" ] \
+     && ! older_than "$have" "$LLMLINT_MIN"; then
+    return 0
+  fi
+  log "installing llmlint >= v$LLMLINT_MIN (have: ${have:-none})"
   curl -fsSL https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh \
-    | sh >&2 || log "llmlint install failed (continuing)"
+    | sh -s -- --version "v$LLMLINT_MIN" >&2 || log "llmlint install failed (continuing)"
 }
 
 # Persist env for the rest of the session via CLAUDE_ENV_FILE (Claude Code sources
