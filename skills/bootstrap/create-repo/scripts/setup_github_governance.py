@@ -117,6 +117,9 @@ class GhError(Exception):
 
 
 def _subprocess_run(args: Sequence[str], *, input: str | None = None) -> Result:
+    # llmlint: ignore[async_typed_clients_at_boundaries] `gh` is the mandated GitHub
+    # boundary (see SKILL.md compatibility); a synchronous subprocess is the correct,
+    # intentional client here — there is no async typed client to prefer.
     proc = subprocess.run(
         ["gh", *args],
         input=input,
