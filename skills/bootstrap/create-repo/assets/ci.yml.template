@@ -21,6 +21,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: default the GITHUB_TOKEN to read-only and widen per-job only
+# where a job genuinely needs more (e.g. a release job adding `contents: write`,
+# the pr-title job's `pull-requests: read`). See references/ci.md.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ${{ matrix.os }}

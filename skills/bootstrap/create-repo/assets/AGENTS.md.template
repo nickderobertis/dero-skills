@@ -109,7 +109,9 @@ so it is auditable and re-appliable.
   covers it (see "Tests are context engineering").
 - Validate all external / IO inputs at trust boundaries.
 - Keep the artifact portable across the supported platform matrix.
-- Do not commit secrets, credentials, PII, or customer data.
+- **Security is gate-level.** Do not commit secrets, credentials, PII, or
+  customer data (values live in a secret store, referenced by name); keep every
+  grant — the agent allowlist, the CI token, service roles — least-privilege.
 
 ## Scripts and output are context
 

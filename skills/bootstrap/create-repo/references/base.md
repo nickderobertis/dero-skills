@@ -17,6 +17,11 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - **Realistic e2e is an invariant, not a preference.** The suite is the only QA
   loop, so it drives the real artifact across real boundaries and covers every
   user journey; mocking the layer under test is a fail.
+- **Security is a baseline invariant, not a follow-up.** Secrets never enter the
+  tree — they live in the platform's secret store and are referenced by name;
+  every external input is validated at its trust boundary before use; and every
+  grant (the agent allowlist, a CI token, a service role) is least-privilege.
+  Hold these at gate level, the same as the strict gate and real e2e.
 - **Compose deliberately and record it.** Build the repo up from the reference
   pieces and write the decision into the AGENTS.md "Stack and composition"
   section so it is auditable, not silently skipped.
@@ -31,6 +36,10 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - [ ] **Composition recorded.** `AGENTS.md` has a filled-in "Stack and
   composition" section naming the product shape, the language(s), the references
   composed, and what was excluded and why — no `<...>`/`TODO` placeholders left.
+- [ ] **Security baseline.** No secret, credential, or key is committed (values
+  live in a secret store, referenced by name); external inputs are validated at
+  the trust boundary; and grants — the `.claude` allowlist, the CI token, service
+  roles — are least-privilege, not blanket.
 - [ ] **Command surface.** The `justfile` defines `bootstrap`, `check`, `test`,
   `lint`, `format`, `upgrade`, each with a real body (no placeholder recipe
   survives), and `just bootstrap` works from a clean clone.

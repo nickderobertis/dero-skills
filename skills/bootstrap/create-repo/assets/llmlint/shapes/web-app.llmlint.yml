@@ -10,6 +10,14 @@ rules:
       data-access path is reachable from client code.
     relevance: the target files handle secrets or privileged data access
 
+  - name: authorization_enforced_server_side
+    description: |
+      true when every privileged action or data-access path in the target files verifies
+      authentication and authorization on the server before acting — a control hidden in
+      the UI is never the only guard. false when a server route, action, or data query
+      performs a privileged operation without checking the caller is allowed to.
+    relevance: the target files expose a server route, action, or data-access path
+
   - name: url_state_validated
     description: |
       when shareable state kept in the URL is parsed and validated before use.
