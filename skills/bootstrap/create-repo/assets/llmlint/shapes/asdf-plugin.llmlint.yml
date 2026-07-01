@@ -1,29 +1,21 @@
-# asdf-plugin judge-level rules (plugin). Pairs with shapes/asdf-plugin.md.
+# asdf-plugin judge-level rules (plugin). Pairs with shapes/asdf-plugin.md. The
+# "plugin scripts never shell back to asdf" convention is a one-time structural
+# check — see buildout/shapes/asdf-plugin.llmlint.yml.
 version: 1
 
 rules:
-  - name: plugin_never_calls_asdf
-    description: |
-      true when no plugin script in the target files invokes `asdf`. false when any
-      plugin script shells back out to `asdf` (for example `asdf reshim` from
-      `install`).
-    files:
-      include: ["bin/**", "lib/**"]
-
   - name: safe_pinned_downloads
     description: |
-      true when every download in the target files pins an exact HTTPS version URL
-      and either verifies a published checksum or uses an atomic `.part` download,
-      cleaning up temp files on failure. false when any download uses a mutable
-      `latest` URL, skips checksum verification without an atomic download, or
-      leaves partial files behind on failure.
+      when every download in the target files pins an exact HTTPS version URL and
+      either verifies a published checksum or uses an atomic `.part` download,
+      cleaning up temp files on failure — never a mutable `latest` URL, an
+      unverified non-atomic download, or partial files left behind.
     files:
       include: ["bin/download*", "bin/install*", "lib/**"]
 
   - name: portable_version_handling
     description: |
-      true when version sorting in the target files uses a portable comparator
-      (never `sort -V`) and normalizes OS and arch names portably. false when any
-      non-portable version sort or platform check is used.
+      when version sorting in the target files uses a portable comparator (never
+      `sort -V`) and normalizes OS and arch names portably.
     files:
       include: ["bin/list-all*", "bin/latest-stable*", "lib/**"]

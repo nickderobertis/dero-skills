@@ -1,16 +1,17 @@
 # CI judge-level rules (plugin). Pairs with ci.md. Always pulled in (ci.md is
-# always composed). Structural one-time CI checks (the gate runs the real gate,
-# install path matches docs) are buildout-only — see buildout/ci.llmlint.yml.
+# always composed). Structural one-time CI checks are buildout-only — see
+# buildout/ci.llmlint.yml.
 version: 1
 
 rules:
-  - name: live_tier_fork_safe_and_compiles
+  - name: live_tier_compiles_and_fails_closed
     description: |
-      true when every live or integration test in the target files stays compiled
-      (it is not `#[cfg]`'d out or deleted), is gated at runtime on its credential,
-      and is fork-safe (a run without the secret no-ops cleanly). false when any
-      live test is excluded from compilation, runs without a credential gate, or
-      fails on a fork that lacks the secret.
+      when every live or integration test in the target files stays compiled (never
+      `#[cfg]`'d out or deleted) and, wherever its credential is expected, fails fast
+      with a clear message on a missing credential rather than skipping or no-oping
+      to a green pass — a silent no-op reports a live path as covered when it never
+      ran. Fork pull requests stay safe by gating the whole job off at the workflow
+      level (forks cannot hold the secret), not by a test that passes without running.
     files:
       include:
         - ".github/workflows/**"

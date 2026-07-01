@@ -1,12 +1,11 @@
 # Rust-CLI buildout rules (plugin) — run ONCE during repo creation, then
-# discarded. The "e2e drives the compiled binary" concern is general
-# (base.e2e_not_mocked); this fragment carries only the one-time supply-chain check.
+# discarded. Carries the one-time supply-chain check.
 version: 1
 
 rules:
   - name: supply_chain_gate
     description: |
-      true when `cargo deny` and `cargo machete` run as a dedicated CI job and a
-      `deny.toml` is committed. false when the supply-chain gate is absent.
+      when `cargo deny` and `cargo machete` run as a dedicated CI job and a `deny.toml`
+      is committed.
     files:
       include: ["deny.toml", ".github/workflows/**"]

@@ -5,9 +5,9 @@ version: 1
 rules:
   - name: no_manual_deploy_step
     description: |
-      true when the only human action in a release is merging a PR. false when any
-      release step requires a manual command, a "Run workflow" click, or
-      hand-editing a version number.
+      when the only human action in a release is merging a PR — no release step
+      requires a manual command, a "Run workflow" click, or hand-editing a version
+      number.
     files:
       include:
         - ".github/workflows/**"
@@ -17,10 +17,9 @@ rules:
 
   - name: versioning_decoupled_from_building
     description: |
-      true when the version job only computes the version and writes the
-      changelog, manifests, lockfiles, and tag, and a separate workflow builds and
-      publishes on the tag. false when the version job also builds or publishes
-      artifacts itself.
+      when the version job only computes the version and writes the changelog,
+      manifests, lockfiles, and tag, and a separate workflow builds and publishes on
+      the tag rather than the version job building or publishing artifacts itself.
     files:
       include:
         - ".github/workflows/**"
@@ -30,17 +29,17 @@ rules:
 
   - name: release_job_uses_pat
     description: |
-      true when the release or version job authenticates with a PAT or GitHub App
-      token. false when it authenticates with the default `GITHUB_TOKEN` (whose tag
-      push does not fire downstream release or publish workflows).
+      when the release or version job authenticates with a PAT or GitHub App token
+      rather than the default `GITHUB_TOKEN` (whose tag push does not fire downstream
+      release or publish workflows).
     files:
       include: [".github/workflows/**"]
 
   - name: publish_idempotent
     description: |
-      true when publishing skips a version that is already live and reads registry
-      tokens from secrets. false when a re-run would double-publish a version or a
-      registry token is committed in the tree.
+      when publishing skips a version that is already live and reads registry tokens
+      from secrets, so a re-run cannot double-publish and no token is committed in the
+      tree.
     files:
       include: [".github/workflows/**"]
     relevance: the repository publishes to a package registry

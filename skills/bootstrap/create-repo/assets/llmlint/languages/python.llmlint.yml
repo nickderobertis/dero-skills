@@ -1,17 +1,41 @@
 # Python judge-level rules (plugin). Pulled in by the composer when the repo's
 # language includes python. Pairs with languages/python.md.
-#
-# Boundary input validation and the no-warnings rule are GENERAL — they live in
-# base.llmlint.yml, not here. This fragment carries only what is python-specific.
 version: 1
 
 rules:
   - name: async_typed_clients_at_boundaries
     description: |
-      true when every client the target files use for an external network or IO
-      service is async and typed (an official typed client, or a small typed async
-      client written for the repo). false when any external network or IO call goes
-      through an untyped or synchronous ad-hoc client.
+      when every client the target files use for an external network or IO service
+      is async and typed — an official typed client, or a small typed async client
+      written for the repo — rather than an untyped or synchronous ad-hoc client.
     files:
       include: ["**/*.py"]
     relevance: the target files call an external network or IO service
+
+  - name: structural_pattern_matching
+    description: |
+      when multi-branch dispatch on the shape, type, or value of a single subject
+      uses `match`/`case` where it reads more clearly than an if/elif chain —
+      destructuring in the patterns rather than repeated `isinstance`, index, or
+      attribute checks across branches.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files dispatch on the shape, type, or value of a subject
+
+  - name: modern_domain_modeling
+    description: |
+      when structured data in the target files is modelled with dataclasses, enums,
+      `NamedTuple`, or typed models (e.g. Pydantic) rather than passed around as bare
+      dicts, positional tuples, or stringly-typed constants.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files define or pass around structured domain data
+
+  - name: modern_typing_and_stdlib
+    description: |
+      when the target files use current Python idioms — built-in generics and `X |
+      None` unions, `pathlib` over `os.path` string munging, comprehensions and
+      generator expressions over manual accumulation loops, and context managers for
+      resource lifetimes — rather than their legacy equivalents.
+    files:
+      include: ["**/*.py"]

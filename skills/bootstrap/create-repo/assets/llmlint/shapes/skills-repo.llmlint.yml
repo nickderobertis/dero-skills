@@ -4,11 +4,10 @@ version: 1
 rules:
   - name: scripts_runtime_independent
     description: |
-      true when every bundled skill script in the target files is self-contained
-      (PEP 723 inline metadata for Python, Node built-ins for JavaScript) and
-      depends on no orchestrator, repo-root manifest or lockfile, asdf or direnv,
-      or import from the repo's own source tree. false when any bundled script
-      depends on one of those.
+      when every bundled skill script in the target files is self-contained (PEP 723
+      inline metadata for Python, Node built-ins for JavaScript) and depends on no
+      orchestrator, repo-root manifest or lockfile, asdf or direnv, or import from the
+      repo's own source tree.
     files:
       include:
         - "skills/**/*.py"
@@ -18,10 +17,9 @@ rules:
 
   - name: determinism_vs_judgment
     description: |
-      true when the deterministic steps described in the target files are
-      implemented as scripts and prose is reserved for genuine judgment. false when
-      a SKILL.md or AGENTS.md narrates step-by-step deterministic actions that a
-      script should own.
+      when the deterministic steps described in the target files are implemented as
+      scripts and prose is reserved for genuine judgment, rather than a SKILL.md or
+      AGENTS.md narrating step-by-step deterministic actions that a script should own.
     files:
       include:
         - "**/SKILL.md"
@@ -30,9 +28,8 @@ rules:
 
   - name: skill_description_trigger_oriented
     description: |
-      true when every SKILL.md `description` in the target files is trigger-oriented
+      when every SKILL.md `description` in the target files is trigger-oriented
       (states when to use the skill, e.g. "Use when …") and `compatibility` states
-      the skill's real runtime needs. false when any description is a vague title or
-      omits real runtime needs.
+      the skill's real runtime needs.
     files:
       include: ["**/SKILL.md"]

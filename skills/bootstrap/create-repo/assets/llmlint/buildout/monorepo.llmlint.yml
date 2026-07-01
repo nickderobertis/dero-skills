@@ -5,24 +5,21 @@ version: 1
 rules:
   - name: root_commands_delegate
     description: |
-      true when each root command recipe shells out to the orchestrator (for
-      example `nx affected` or `nx run-many`). false when any recipe hand-rolls a
-      for-each-package loop instead of delegating to the orchestrator.
+      when each root command recipe shells out to the orchestrator (for example `nx
+      affected` or `nx run-many`) rather than hand-rolling a for-each-package loop.
     files:
       include: ["justfile", "Justfile", ".justfile"]
 
   - name: affected_only_explicit_base
     description: |
-      true when pull-request CI runs affected-only targets against an explicitly
-      derived merge base and a full sweep runs on the main branch or nightly. false
-      when pull-request CI rebuilds the whole tree or derives no explicit base.
+      when pull-request CI runs affected-only targets against an explicitly derived
+      merge base and a full sweep runs on the main branch or nightly.
     files:
       include: [".github/workflows/**"]
 
   - name: project_boundaries_enforced
     description: |
-      true when projects declare tags and an enforced allowed-dependency rule, and
-      target names are uniform across projects. false when project boundaries are
-      unenforced or target names differ for the same logical task across projects.
+      when projects declare tags and an enforced allowed-dependency rule, and target
+      names are uniform across projects for the same logical task.
     files:
       include: ["nx.json", "**/project.json", "**/.eslintrc*", "eslint.config.*"]

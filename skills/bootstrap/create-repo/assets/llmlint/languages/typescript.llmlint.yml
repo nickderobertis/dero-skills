@@ -1,14 +1,10 @@
 # TypeScript judge-level rules (plugin). Pairs with languages/typescript.md.
-# Boundary input validation is general (base.llmlint.yml); `@ts-ignore`/
-# `eslint-disable` suppressions are covered by base.suppressions_justified. This
-# fragment carries only what is TypeScript-specific and not already covered.
 version: 1
 
 rules:
   - name: no_unjustified_any_or_non_null
     description: |
-      true when every use of `any` or a non-null assertion (`!`) in the target
-      files carries a comment justifying why the type system is bypassed. false
-      when any `any` or non-null assertion appears without a justifying comment.
+      when every use of `any` or a non-null assertion (`!`) in the target files
+      carries a comment justifying why the type system is bypassed.
     files:
       include: ["**/*.ts", "**/*.tsx"]
