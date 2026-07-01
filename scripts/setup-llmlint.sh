@@ -18,7 +18,7 @@
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
-# llmlint: ignore[robust_shell] `set -e` deliberately omitted — every step tolerates failure and the script always exits 0 (a flaky install must never break session startup)
+# llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the upstream `curl | sh` installers are the documented, version-pinned install path (each verifies the binary it fetches).
 set -uo pipefail
 
 # Minimum oneharness: >= 0.3.0 is what current `llmlint` needs for read-only mode
