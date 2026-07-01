@@ -132,9 +132,11 @@ Claude Code sessions). Since the repo now runs all JS through bun (`bun install`
 `bunx nx`), the bun rule no longer fires on the authoring toolchain.
 
 **Blocking CI check.** The `llmlint` job in `.github/workflows/ci.yml` runs
-`just lint-llm-diff` on every PR — `scripts/lint-llm-diff.sh` lints only the
-files the branch changed since its **merge-base with main** (the fork point, not
-main's current tip, so unrelated later commits on main are never linted). CI
+`just lint-llm-diff` on every PR — `scripts/lint-llm-diff.sh` passes the changed
+files and, via llmlint's `--diff --diff-base`, scopes the judge to only the
+*lines* the branch changed since its **merge-base with main** (the fork point,
+not main's current tip, so unrelated later commits on main are never linted, and
+the judge doesn't flag pre-existing code a change merely sits near). CI
 installs the committed Codex harness via bun and authenticates it with the
 `OPENAI_API_KEY` repo secret; without that secret the job fails. It is a separate
 job (not folded into `check`) to keep the clean-clone gate uv-only — add it to

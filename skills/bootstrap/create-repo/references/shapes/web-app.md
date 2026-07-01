@@ -9,6 +9,10 @@ framework with its own reference (e.g. `shapes/nextjs.md`), pull that in too.
 - **Enforce boundaries.** Keep a clear server/client split and feature/module
   boundaries. Validate all external input (requests, params, third-party
   responses) at the trust boundary.
+- **Authorize on the server.** Enforce authentication and authorization on every
+  privileged action and data-access path server-side; hiding a control in the UI
+  is not a guard. Keep secrets and privileged data access server-only (see
+  `shapes/nextjs.md` for the Next.js specifics).
 - **UI consistency.** Prefer a consistent, minimal component system (e.g.,
   shadcn/ui) over bespoke one-off UI. Keep design tokens and patterns shared.
 - **Testing — part of the gate, not opt-in.** Unit/integration tests plus
@@ -31,6 +35,9 @@ framework with its own reference (e.g. `shapes/nextjs.md`), pull that in too.
 - [ ] **Boundaries enforced.** A clear server/client split holds, and all
   external input (requests, params, third-party responses) is validated at the
   trust boundary.
+- [ ] **Server-side authorization.** Every privileged action and data-access path
+  checks authn/authz on the server; UI-only gating is never the sole guard, and
+  secrets and privileged data access stay server-only.
 - [ ] **URL state validated.** Shareable/navigable state kept in the URL is
   parsed and validated rather than trusted raw.
 - [ ] **Production build validated in CI.** CI validates the production build,

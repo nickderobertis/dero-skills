@@ -57,6 +57,21 @@ rules:
       stdin) is validated at the boundary before use.
     relevance: the target files read external or IO input
 
+  - name: no_hardcoded_secrets
+    description: |
+      when every secret the target files rely on — a credential, API key, access token,
+      connection string, or private key — is read from an environment variable or a
+      secret store by name rather than embedded as an inline literal.
+    relevance: the target files handle credentials, connect to a service, or hold configuration
+
+  - name: least_privilege_grants
+    description: |
+      when every access grant in the target files (a CI token's `permissions:`, an agent
+      command allowlist, a cloud IAM policy, a database role, an OAuth scope) is scoped to
+      the minimum the work needs — no write access where read suffices, no wildcard
+      permission, no unbounded allowlist.
+    relevance: the target files grant a permission, token scope, role, or command allowlist
+
   - name: diagnostics_error_or_absent
     description: |
       true when the quality gate treats every diagnostic as a hard failure — no

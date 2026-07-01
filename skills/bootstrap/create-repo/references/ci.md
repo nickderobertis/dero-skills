@@ -38,6 +38,13 @@ to re-run a developer's warm local environment.
   the bar — or drop it for a stack where coverage tooling genuinely doesn't fit
   — only with a documented reason in `AGENTS.md`, never by silently leaving
   coverage unmeasured.
+- **Least privilege and no script injection.** Give the workflow's `GITHUB_TOKEN`
+  the minimum `permissions:` each job needs — default the top level to
+  `contents: read` and widen per-job only where required (e.g. a release job
+  adding `contents: write`). Never interpolate untrusted event data
+  (`${{ github.event.* }}` — a PR title, body, or branch name) straight into a
+  `run:` shell; pass it through `env:` and reference it as a quoted variable, so a
+  crafted PR can't inject commands.
 - **Validate generated files.** Fail if committed generated files (lockfiles,
   schemas, formatted code) are out of date.
 - **Cache for speed, never for correctness.** Cache dependencies, but never let
@@ -221,6 +228,10 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   job (separate from the dev gate) installs it via the recommended end-user
   method on the platform matrix and smoke-tests the installed entry point — the
   path users actually take, not just `just bootstrap`.
+- [ ] **CI least privilege + no injection.** Workflows set a minimal
+  `permissions:` on the token (read-only by default, widened only where a job
+  needs it) and never interpolate untrusted `${{ github.event.* }}` data directly
+  into `run:` scripts — it is passed via `env:` and quoted instead.
 - [ ] **Generated files validated.** CI fails if committed generated files
   (lockfiles, schemas, formatted code) are out of date, and logs stay minimal on
   success.

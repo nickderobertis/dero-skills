@@ -13,6 +13,10 @@ Language-level conventions for any Python repo. Combine with a product shape
 - **Boundary validation.** Prefer Pydantic for every external / IO boundary
   (request bodies, config, env, third-party responses). Keep boundary code
   explicit and tested.
+- **No injection from untrusted input.** Run subprocesses without `shell=True` on
+  external input, keep `eval`/`exec` and unsafe deserialization (`pickle`,
+  `yaml.load` without `SafeLoader`) away from untrusted data, and build SQL and OS
+  commands with parameterized APIs, not string interpolation.
 - **Clients.** Prefer official, async, well-typed libraries at boundaries;
   otherwise write a small async typed client yourself.
 - **Coverage in the gate.** Measure coverage on every `pytest` run and fail the
@@ -45,6 +49,9 @@ Language-level conventions for any Python repo. Combine with a product shape
 - [ ] **Boundary validation.** External / IO boundaries (request bodies, config,
   env, third-party responses) are validated with Pydantic; boundary code is
   explicit and tested.
+- [ ] **Injection-safe boundaries.** No `shell=True` on external input, no
+  `eval`/`exec` or unsafe deserialization of untrusted data, and SQL / OS commands
+  are parameterized rather than string-built.
 - [ ] **Coverage enforced.** `pytest --cov --cov-fail-under=95` runs in the gate
   (95% default bar, lower only with a documented reason in `AGENTS.md`).
 - [ ] **Command mapping wired.** `just bootstrap` → `uv sync`; `just check` →

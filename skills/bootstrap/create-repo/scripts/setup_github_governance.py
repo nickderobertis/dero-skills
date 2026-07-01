@@ -47,6 +47,10 @@ action. Self-contained via PEP 723 so it runs in any consuming repo with
 
 from __future__ import annotations
 
+# llmlint: ignore-file[async_typed_clients_at_boundaries] `gh` is the mandated GitHub
+# boundary (see SKILL.md compatibility) and it inherits the operator's auth; a synchronous
+# subprocess is the correct, intentional client here — there is no async typed client to prefer.
+
 import argparse
 import json
 import shutil

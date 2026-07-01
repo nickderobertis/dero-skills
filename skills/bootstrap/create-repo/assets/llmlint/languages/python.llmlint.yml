@@ -44,3 +44,13 @@ rules:
     files:
       include: ["**/*.py"]
     relevance: the target files define a pluggable dependency or seam
+
+  - name: no_injection_from_untrusted_input
+    description: |
+      when the target files keep untrusted input out of dangerous sinks: no `shell=True`
+      on externally-influenced input, no `eval`/`exec` or unsafe deserialization
+      (`pickle.loads`, `yaml.load` without `SafeLoader`) of untrusted data, and SQL and
+      OS commands built with parameterized APIs rather than string interpolation.
+    files:
+      include: ["**/*.py"]
+    relevance: the target files run subprocesses, execute dynamic code, deserialize data, or build SQL or OS commands

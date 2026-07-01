@@ -17,3 +17,17 @@ rules:
         - "**/tests/live/**"
         - "**/*live*"
     relevance: the target files define a live or integration test tier
+
+  - name: no_untrusted_interpolation_in_run
+    description: |
+      when a workflow reads untrusted event data (`${{ github.event.* }}` — a PR title,
+      body, branch name, or comment) only by binding it to an `env:` variable and then
+      referencing that variable inside `run:` (e.g. `env: TITLE: ${{ github.event.pull_request.title }}`
+      then `run: echo "$TITLE"`), never by expanding `${{ github.event.* }}` literally in
+      the `run:` script text. Event data mapped into `env:`, `with:`, `if:`, or an action's
+      inputs is compliant — only a `${{ github.event.* }}` expansion written directly in a
+      `run:` block, where a crafted value is parsed as shell, is a violation.
+    files:
+      include:
+        - ".github/workflows/**"
+    relevance: the target files define a GitHub Actions workflow with a `run:` step

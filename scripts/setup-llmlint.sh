@@ -9,7 +9,8 @@
 # What it does, and why:
 #   1. Installs `oneharness` (>= the floor that satisfies both the
 #      `ONEHARNESS_<FIELD>` env overrides and the read-only mode current `llmlint`
-#      requires) and `llmlint` if missing.
+#      requires) and `llmlint` (>= the floor with `--diff`/`--diff-base` and
+#      `check-ignores`), upgrading an older cached binary rather than leaving it.
 #   2. Inside a Claude Code session, exports env that flips oneharness to the only
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
@@ -17,13 +18,17 @@
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
-# llmlint: ignore[robust_shell] `set -e` deliberately omitted — every step tolerates failure and the script always exits 0 (a flaky install must never break session startup)
+# llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the upstream `curl | sh` installers are the documented, version-pinned install path (each verifies the binary it fetches).
 set -uo pipefail
 
 # Minimum oneharness: >= 0.3.0 is what current `llmlint` needs for read-only mode
 # (the judge reads but never edits files); it also has the `ONEHARNESS_<FIELD>`
 # env config overrides this setup relies on. Bump as llmlint raises the floor.
 readonly ONEHARNESS_MIN="0.3.3"
+# Minimum llmlint: >= 0.2.24 gives `--diff`/`--diff-base` (the diff-scoped judge
+# `lint-llm-diff.sh` relies on) and the deterministic `check-ignores` subcommand.
+# Pin the current floor so an older cached binary is upgraded, not left in place.
+readonly LLMLINT_MIN="0.2.28"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
@@ -53,10 +58,14 @@ ensure_oneharness() {
 }
 
 ensure_llmlint() {
-  command -v llmlint >/dev/null 2>&1 && return 0
-  log "installing llmlint"
+  local have
+  if have="$(llmlint --version 2>/dev/null | awk '{print $2}')" && [ -n "$have" ] \
+     && ! older_than "$have" "$LLMLINT_MIN"; then
+    return 0
+  fi
+  log "installing llmlint >= v$LLMLINT_MIN (have: ${have:-none})"
   curl -fsSL https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh \
-    | sh >&2 || log "llmlint install failed (continuing)"
+    | sh -s -- --version "v$LLMLINT_MIN" >&2 || log "llmlint install failed (continuing)"
 }
 
 # Persist env for the rest of the session via CLAUDE_ENV_FILE (Claude Code sources

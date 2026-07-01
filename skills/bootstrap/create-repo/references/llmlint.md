@@ -12,7 +12,9 @@ everything they already check, and reach for llmlint only for the judgment calls
   makes network calls — the opposite of the deterministic gate. Keep it out of the
   tight `just check` loop. It runs two ways: on demand over the configured set (or
   passed paths) with `just lint-llm`, and **diff-scoped** with `just lint-llm-diff`
-  — which lints only the files the branch changed since its merge-base with main.
+  — which, via llmlint's `--diff --diff-base`, judges only the *lines* the branch
+  changed since its merge-base with main (not whole files), so a PR is judged on
+  what it introduced and the judge can't wander into untouched code.
   The diff-scoped run is the **blocking PR check** in its own CI workflow (separate
   from the `check` gate). It **requires** the harness credential and fails fast with
   a clear message when it is absent — never no-ops to a green pass, which would

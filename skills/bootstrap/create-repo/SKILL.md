@@ -299,7 +299,18 @@ a suggested fix.
       mocked suite is a liability, not coverage.
     - Make the journeys a growing contract in the suite — the source of truth for
       what's covered: when a feature lands, its real e2e journey lands with it.
-17. **Every task carries two standing goals beyond the user's ask.**
+17. **Security is a baseline invariant.**
+    - Treat security as gate-level, not a follow-up: secrets never enter the tree
+      (they live in the platform secret store, referenced by name), every external
+      input is validated at its trust boundary, and every grant — the agent
+      allowlist, the CI `GITHUB_TOKEN`, service roles — is least-privilege.
+    - Keep injection-prone paths safe: no `shell=True` / `eval` / unsafe
+      deserialization on untrusted input, parameterized SQL and OS commands, and no
+      untrusted `${{ github.event.* }}` interpolated into a CI `run:` shell.
+    - These ride in the composed references (`base`, `ci`, the language and
+      web-app pieces) and the llmlint judge tier, so a composed repo inherits them
+      — they are non-negotiable invariants, never "excluded with a rationale."
+18. **Every task carries two standing goals beyond the user's ask.**
     - The user drives product features; their request is the priority. But carry
       two goals into *every* task: (1) engineer the context for next time —
       realistic e2e tests that exercise what the user sees (especially for bugs
