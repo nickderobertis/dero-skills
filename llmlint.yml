@@ -22,36 +22,26 @@
 # uv-only gate assumes. Run it with `just lint-llm` (see the justfile).
 version: 1
 
-# Default targets when no paths are passed on the CLI: the surfaces where
-# "how code is launched" actually lives — scripts, skill/tool code, the command
-# surface, CI, and docs that show commands. Narrow with explicit paths, e.g.
-# `llmlint scripts/**/*.sh`.
+# No `include`: since llmlint 0.2.31, omitting it lints the whole tree from the
+# repo root (with `exclude` and `.gitignore` both honored). We rely on that so a
+# no-args `just lint-llm` covers everything relevant — including this config, so
+# the bundled `config_lint` plugin (below) judges our bespoke rule names and
+# descriptions — without curating a glob list that silently omits new surfaces.
+# The rules self-scope: each carries a `relevance` condition or per-rule `files`,
+# so a whole-tree sweep just marks non-matching files not-relevant. Narrow to
+# specific paths with `llmlint <path>` when you want a faster, targeted run.
 files:
-  include:
-    - "skills/**/*.py"
-    - "skills/**/*.sh"
-    - "skills/**/*.ts"
-    - "skills/**/*.tsx"
-    - "skills/**/*.js"
-    - "skills/**/*.mjs"
-    - "tools/**/*.py"
-    - "scripts/**/*.sh"
-    - "consumer-bootstrap/**/*.sh"
-    - "docs/**/*.md"
-    - ".github/workflows/*.yml"
-    - "justfile"
-    - "*.js"
-    # This config itself, so the bundled `config_lint` plugin (below) has a target
-    # to judge our bespoke rule names/descriptions against. Without it in the set,
-    # a no-args `just lint-llm` scans it out and config_lint lints nothing here.
-    # (The diff-scoped CI check passes changed files explicitly, so it already
-    # covers llmlint.yml on edit; this makes the full-repo sweep match.)
-    - "llmlint.yml"
+  # `.gitignore` is applied automatically, so node_modules, .venv, __pycache__,
+  # the caches, and .env* need no entry here. These are the committed-but-noise
+  # paths gitignore doesn't cover: git internals, the lock files, the large
+  # generated allowlist, and the secrets manifest (names only, but not code to
+  # judge). Keep this lean — over-excluding defeats the whole-tree default.
   exclude:
-    - "**/node_modules/**"
     - "**/.git/**"
     - "uv.lock"
     - "bun.lock"
+    - ".allowlister.json"
+    - "gh-secrets.json"
 
 # Per-judge harness timeout (seconds). The default 120 is fine for the
 # diff-scoped CI check, but a full-repo `just lint-llm` batches many files into a

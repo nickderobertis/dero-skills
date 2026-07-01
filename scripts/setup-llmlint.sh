@@ -25,10 +25,14 @@ set -uo pipefail
 # (the judge reads but never edits files); it also has the `ONEHARNESS_<FIELD>`
 # env config overrides this setup relies on. Bump as llmlint raises the floor.
 readonly ONEHARNESS_MIN="0.3.3"
-# Minimum llmlint: >= 0.2.24 gives `--diff`/`--diff-base` (the diff-scoped judge
-# `lint-llm-diff.sh` relies on) and the deterministic `check-ignores` subcommand.
-# Pin the current floor so an older cached binary is upgraded, not left in place.
-readonly LLMLINT_MIN="0.2.28"
+# Minimum llmlint: >= 0.2.31 is required because llmlint.yml now omits `files.include`
+# and relies on the whole-tree default that version added (omitting `include` lints
+# the whole tree with `exclude`/`.gitignore` honored); older binaries would scan
+# zero files on a no-args run. It also carries `--diff`/`--diff-base` (the
+# diff-scoped judge `lint-llm-diff.sh` relies on) and the deterministic
+# `check-ignores` subcommand. Pin the current floor so an older cached binary is
+# upgraded, not left in place.
+readonly LLMLINT_MIN="0.2.31"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
