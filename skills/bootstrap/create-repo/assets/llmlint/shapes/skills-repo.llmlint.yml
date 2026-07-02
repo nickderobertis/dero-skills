@@ -28,7 +28,7 @@ rules:
         - "**/CLAUDE.md"
     relevance: the target files describe procedural steps
 
-  - name: skill_description_trigger_oriented
+  - name: skill_description_trigger_and_compatibility_needs
     description: |
       true when every SKILL.md `description` in the target files is trigger-oriented
       (states when to use the skill, e.g. "Use when …") and `compatibility` states

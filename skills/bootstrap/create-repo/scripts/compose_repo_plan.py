@@ -485,7 +485,12 @@ def build_parser(
 def main(argv: list[str]) -> int:
     refs_dir = Path(__file__).resolve().parent.parent / "references"
     if not refs_dir.is_dir():
-        print(f"ERROR references directory not found: {refs_dir}", file=sys.stderr)
+        print(
+            f"ERROR references directory not found: {refs_dir}\n"
+            "      fix: reinstall the create-repo skill so its references/ "
+            "directory sits alongside scripts/.",
+            file=sys.stderr,
+        )
         return 2
 
     shapes = discover(refs_dir, "shapes")
@@ -526,7 +531,12 @@ def main(argv: list[str]) -> int:
     try:
         refs = [load_reference(refs_dir, rel) for rel in relpaths]
     except FileNotFoundError as exc:
-        print(f"ERROR missing reference file: {exc.filename}", file=sys.stderr)
+        print(
+            f"ERROR missing reference file: {exc.filename}\n"
+            "      fix: restore the create-repo skill's references/ tree; the "
+            "reference set is incomplete for this composition.",
+            file=sys.stderr,
+        )
         return 2
 
     flags = [f"--shape {args.shape}"]

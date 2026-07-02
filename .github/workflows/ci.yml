@@ -12,6 +12,12 @@ on:
 env:
   HUSKY: "0"
 
+# Least privilege by default: the check/commitlint/llmlint jobs only read the
+# repo, so the workflow-level token is read-only. The release job re-grants the
+# writes it needs in its own `permissions:` block, which overrides this default.
+permissions:
+  contents: read
+
 jobs:
   check:
     if: github.event.action != 'edited'
