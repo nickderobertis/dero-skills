@@ -42,8 +42,13 @@ rules:
       `python3` invocation, a `#!/usr/bin/env python3` shebang used as the
       primary entry point, `pip` / `pip3` / `pipx`, `poetry run`, or activating
       a virtualenv by hand instead of going through uv.
-    # On relevance, not a files glob: Python is launched from .py, shell, justfile,
-    # and CI yaml, so a static scope would miss a bare `python3` in a .sh.
+    files:
+      include:
+        - "**/*.py"
+        - "**/*.sh"
+        - "justfile"
+        - ".github/workflows/**"
+        - "docs/**/*.md"
     relevance: the file runs Python code or installs a Python package
     require_line_attribution: true
 
@@ -54,8 +59,16 @@ rules:
       `bun x`, `bun add`, or `bun install`.
       FALSE when it runs code or manages packages directly with `node`, `npm` /
       `npx`, `pnpm`, or `yarn` instead of bun.
-    # On relevance for the same reason: npm is managed from the justfile and CI
-    # yaml, not just JS/TS files.
+    files:
+      include:
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.js"
+        - "**/*.mjs"
+        - "**/*.sh"
+        - "justfile"
+        - ".github/workflows/**"
+        - "docs/**/*.md"
     relevance: the file runs TypeScript/JavaScript or manages an npm package
     require_line_attribution: true
 
