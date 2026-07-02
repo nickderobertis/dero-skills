@@ -1,41 +1,13 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/nickderobertis/llmlint/main/assets/llmlint.schema.json
-# llmlint configuration. Docs: https://github.com/nickderobertis/llmlint
-#
-# LLM-as-judge checks for invariants deterministic linters can't express. Each
-# rule is a positive invariant: holds=true means the code complies, holds=false
-# is a violation. Keep ruff/pytest/skill-validation for everything they already
-# cover.
-#
-# Two tiers combine here, all on one `default` agent:
-#   * The create-repo skill's ONGOING rule fragments (base + the
-#     skills-repo/python/bash/ci references applicable to this repo's stack),
-#     wired in as `plugins` below. We dogfood our own create-repo asset, so they
-#     are LOCAL in-tree paths — edits to a fragment take effect immediately — not
-#     the `@version`-pinned hosted URLs a consuming repo gets from the composer.
-#   * This repo's BESPOKE cross-language launch conventions (uv for Python, bun
-#     for npm, no thin Bash wrappers), defined inline in `rules`. Each rule's
-#     description carries its full uv/bun criteria, so no agent-specific prompt
-#     context is needed.
-#
-# This is an OPTIONAL author-time check, not part of `just check`: it needs the
-# `oneharness` + `llmlint` binaries and a Claude token, neither of which the
-# uv-only gate assumes. Run it with `just lint-llm` (see the justfile).
+# llmlint config — LLM-as-judge checks for invariants ruff/pytest can't express.
+# Optional author-time check (not in `just check`): needs the oneharness + llmlint
+# binaries and a token. Run with `just lint-llm`. Docs: github.com/nickderobertis/llmlint
 version: 1
 
-# No `include`: since llmlint 0.2.31, omitting it lints the whole tree from the
-# repo root (with `exclude` and `.gitignore` both honored). We rely on that so a
-# no-args `just lint-llm` covers everything relevant — including this config, so
-# the bundled `config_lint` plugin (below) judges our bespoke rule names and
-# descriptions — without curating a glob list that silently omits new surfaces.
-# The rules self-scope: each carries a `relevance` condition or per-rule `files`,
-# so a whole-tree sweep just marks non-matching files not-relevant. Narrow to
-# specific paths with `llmlint <path>` when you want a faster, targeted run.
+# No `include`: llmlint 0.2.31+ lints the whole tree (exclude + .gitignore honored),
+# so a no-args run covers everything, including this config for config_lint. Exclude
+# only what .gitignore misses and shouldn't be judged.
 files:
-  # `.gitignore` is applied automatically, so node_modules, .venv, __pycache__,
-  # the caches, and .env* need no entry here. These are the committed-but-noise
-  # paths gitignore doesn't cover: git internals, the lock files, the large
-  # generated allowlist, and the secrets manifest (names only, but not code to
-  # judge). Keep this lean — over-excluding defeats the whole-tree default.
   exclude:
     - "**/.git/**"
     - "uv.lock"
@@ -43,37 +15,22 @@ files:
     - ".allowlister.json"
     - "gh-secrets.json"
 
-# Per-judge harness timeout (seconds). The default 120 is fine for the
-# diff-scoped CI check, but a full-repo `just lint-llm` batches many files into a
-# single judge call and can exceed it; 600 gives that sweep headroom. It is a
-# ceiling, not a fixed wait — fast judges still return immediately.
 oneharness:
-  timeout: 600
+  timeout: 600  # ceiling (not a fixed wait); headroom for the full-repo sweep
 
 plugins:
-  # Lints this config's own rule names/descriptions; ships inside llmlint and
-  # resolves offline.
+  # config_lint (bundled, offline) lints this config's own rules.
   - "https://raw.githubusercontent.com/nickderobertis/llmlint/main/assets/config_lint.yml@1"
-  # create-repo ONGOING rule fragments for this repo's stack (skills-repo +
-  # python + ci, plus bash for the first-party shell scripts). Local in-tree
-  # paths because this repo HOSTS them — a consuming repo would instead pin the
-  # `@version` hosted URLs the composer emits. Buildout fragments (one-time
-  # structural checks) are deliberately excluded — they do not persist.
+  # create-repo ongoing fragments for this stack, as LOCAL in-tree paths (we host
+  # them, so edits apply immediately; consumers pin the composer's @version URLs).
   - "skills/bootstrap/create-repo/assets/llmlint/base.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/shapes/skills-repo.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/languages/python.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/languages/bash.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
 
-# No `agents` block: every rule runs on the implicit default agent. The
-# launch-convention rules carry their full uv/bun criteria in their own
-# descriptions, and llmlint's master template plus rationales (on by default)
-# already ground each verdict — so no custom agent or prompt is needed.
-#
-# Harness/model are deliberately left unset here (and in oneharness.toml beyond
-# the codex default), so oneharness resolves them — which lets a Claude Code
-# session's ONEHARNESS_HARNESSES / ONEHARNESS_MODEL env overrides flip the whole
-# run to claude-code + Opus. Pinning a harness here would beat those overrides.
+# No `agents` block: all rules run on the default agent. Harness/model are left
+# unset so a Claude Code session's ONEHARNESS_* env overrides flip the run to Opus.
 
 rules:
   - name: python_launched_via_uv
@@ -85,10 +42,8 @@ rules:
       `python3` invocation, a `#!/usr/bin/env python3` shebang used as the
       primary entry point, `pip` / `pip3` / `pipx`, `poetry run`, or activating
       a virtualenv by hand instead of going through uv.
-    # Kept on relevance, not a `files:` glob: Python is launched from many file
-    # types here (.py, shell scripts, the justfile, CI yaml), so a static file
-    # scope would blind the rule to a bare `python3`/`pip` call in a .sh or
-    # workflow — exactly the violation it exists to catch.
+    # On relevance, not a files glob: Python is launched from .py, shell, justfile,
+    # and CI yaml, so a static scope would miss a bare `python3` in a .sh.
     relevance: the file runs Python code or installs a Python package
     require_line_attribution: true
 
@@ -99,9 +54,8 @@ rules:
       `bun x`, `bun add`, or `bun install`.
       FALSE when it runs code or manages packages directly with `node`, `npm` /
       `npx`, `pnpm`, or `yarn` instead of bun.
-    # Kept on relevance for the same reason as the uv rule: npm is managed from
-    # the justfile and CI yaml (`bun install`, `bunx nx`), not just JS/TS files,
-    # so scoping to a JS/TS glob would miss a stray `npm`/`npx` in a shell/CI step.
+    # On relevance for the same reason: npm is managed from the justfile and CI
+    # yaml, not just JS/TS files.
     relevance: the file runs TypeScript/JavaScript or manages an npm package
     require_line_attribution: true
 
@@ -119,9 +73,8 @@ rules:
       into the program and run it directly with uv or bun.
       A shell script that performs real multi-step orchestration is NOT a
       violation, even if some steps call uv or bun.
-    # This rule is about shell scripts by definition, so scope it deterministically
-    # to *.sh instead of paying a judge relevance call — and it correctly leaves the
-    # justfile out (recipe bodies are wrappers by design and must not be flagged).
+    # Scoped to *.sh (not relevance): shell scripts by definition, and this leaves
+    # the justfile out — recipe bodies are wrappers by design.
     files:
       include:
         - "**/*.sh"

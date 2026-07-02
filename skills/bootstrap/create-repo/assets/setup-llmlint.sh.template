@@ -23,11 +23,11 @@
 # llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the upstream `curl | sh` installers are the documented, version-pinned install path (each verifies the binary it fetches).
 set -uo pipefail
 
-# Version floors. Bump as the tools raise theirs. llmlint >= 0.2.24 is what
-# `lint-llm-diff.sh` needs for `--diff`/`--diff-base`; oneharness >= 0.3.0 is
-# llmlint's read-only-mode floor.
+# Version floors. Bump as the tools raise theirs. llmlint >= 0.2.31 gives the
+# whole-tree default the composed llmlint.yml relies on (it omits `files.include`);
+# oneharness >= 0.3.0 is llmlint's read-only-mode floor.
 readonly ONEHARNESS_MIN="0.3.3"
-readonly LLMLINT_MIN="0.2.28"
+readonly LLMLINT_MIN="0.2.31"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }

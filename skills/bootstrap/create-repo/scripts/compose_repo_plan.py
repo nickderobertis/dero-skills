@@ -408,8 +408,10 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
     out += [
         "version: 1",
         "files:",
-        "  include:",
-        '    - "src/**"   # TODO: set to this repo\'s source globs (e.g. skills/**, app/**)',
+        "  # No `include`: llmlint lints the whole tree (exclude + .gitignore honored).",
+        "  # List committed files that shouldn't be judged (lock files, generated output).",
+        "  exclude:",
+        '    - "**/.git/**"',
         "rationales: true",
         "agents:",
         "  default:",

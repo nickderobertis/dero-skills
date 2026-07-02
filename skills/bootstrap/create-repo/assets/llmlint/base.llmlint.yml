@@ -15,13 +15,6 @@ rules:
       real artifact across real boundaries (the entry point as a subprocess, real
       temp files, a real local server or database). false when any such test mocks
       the network, filesystem, subprocess, or the entry point it is meant to exercise.
-    files:
-      include:
-        - "**/e2e/**"
-        - "**/tests/e2e/**"
-        - "**/*e2e*"
-        - "**/integration/**"
-        - "**/*.integration.*"
     relevance: the target files define an end-to-end or integration test
 
   - name: tests_assert_real_behavior
@@ -29,18 +22,6 @@ rules:
       when every test in the target files asserts on an observable outcome (a
       returned value, an exit code, persisted state) rather than exercising code
       without asserting any behavior.
-    files:
-      include:
-        - "**/tests/**"
-        - "**/test_*.py"
-        - "**/*_test.py"
-        - "**/*_test.rs"
-        - "**/*_test.go"
-        - "**/*.test.ts"
-        - "**/*.test.tsx"
-        - "**/*.spec.ts"
-        - "**/*.spec.tsx"
-        - "**/e2e/**"
     relevance: the target files define tests
 
   - name: suppressions_justified
@@ -78,12 +59,6 @@ rules:
       linter, type checker, or compiler is configured to emit warning-level output.
       false when any check is left warning-only (a warning that neither fails the
       gate nor is fixed only bloats context; a check is either strict or removed).
-    files:
-      include:
-        - "justfile"
-        - "Justfile"
-        - ".justfile"
-        - ".github/workflows/**"
     relevance: the target files configure a linter, type checker, or compiler
 
   - name: tool_output_is_signal
@@ -92,15 +67,6 @@ rules:
       success (a single line or nothing) and, on failure, prints the exact error plus
       a concrete next action. false when any is noisy on success or fails with a
       message that omits the cause or the fix.
-    files:
-      include:
-        - "scripts/**"
-        - "**/scripts/**"
-        - "bin/**"
-        - "**/*.sh"
-        - "justfile"
-        - "Justfile"
-        - ".justfile"
     relevance: the target files define a script or command recipe
 
   - name: agents_md_durable_and_terse

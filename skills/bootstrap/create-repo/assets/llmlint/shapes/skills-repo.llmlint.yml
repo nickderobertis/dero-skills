@@ -8,12 +8,6 @@ rules:
       inline metadata for Python, Node built-ins for JavaScript) and depends on no
       orchestrator, repo-root manifest or lockfile, asdf or direnv, or import from the
       repo's own source tree.
-    files:
-      include:
-        - "skills/**/*.py"
-        - "skills/**/*.js"
-        - "skills/**/*.mjs"
-        - "skills/**/scripts/**"
     relevance: the target files are bundled skill scripts
 
   - name: determinism_vs_judgment
@@ -21,11 +15,6 @@ rules:
       true when the deterministic steps described in the target files are implemented
       as scripts and prose is reserved for genuine judgment. false when a SKILL.md or
       AGENTS.md narrates step-by-step deterministic actions that a script should own.
-    files:
-      include:
-        - "**/SKILL.md"
-        - "**/AGENTS.md"
-        - "**/CLAUDE.md"
     relevance: the target files describe procedural steps
 
   - name: skill_description_trigger_oriented
