@@ -1,0 +1,21 @@
+# CLI buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural check on the release-asset naming contract; the ongoing CLI
+# judgment (output/exit-code contract) lives in shapes/cli.llmlint.yml.
+version: 1
+
+rules:
+  - name: asset_naming_contract_shared
+    description: |
+      true when every install surface that downloads a release asset (an install
+      script, a Homebrew/Scoop manifest, a CI job) constructs the SAME archive and
+      `.sha256` name the release workflow produced, from one shared naming scheme.
+      false when a surface hardcodes an asset name that can drift from what the
+      release job uploads.
+    files:
+      include:
+        - ".github/workflows/**"
+        - "**/install*.sh"
+        - "**/*.rb"
+        - "**/*.json"
+        - "**/*formula*"
+    relevance: the repo distributes downloadable release assets across more than one install surface

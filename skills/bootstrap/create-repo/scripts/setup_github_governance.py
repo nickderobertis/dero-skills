@@ -7,7 +7,7 @@
 Usage:
     uv run --script scripts/setup_github_governance.py CHECK [CHECK ...] \
         [--repo OWNER/NAME] [--branch NAME] [--approvals N] \
-        [--fork-pr-approval POLICY] [--enforce-admins] [--dry-run]
+        [--fork-pr-approval POLICY] [--enforce-admins] [--dry-run] [--verify]
 
 The positional ``CHECK`` arguments are the status-check contexts that must be
 green before a PR can merge. List *every* gating check by name — including the
@@ -36,6 +36,15 @@ This sets the *full desired state* idempotently: re-running applies the same
 config, and the branch-protection PUT replaces any existing protection on the
 branch. Use --dry-run to print exactly what it would do without touching the
 repo (pass --repo and --branch to preview fully offline).
+
+Use --verify to *read back* the live state and report where it diverges from the
+desired one — branch protection (are all gating checks required? force-push and
+deletion blocked?), the merge model (squash-only, auto-merge, delete-on-merge),
+and the fork-PR approval policy. This is the piece the filesystem baseline checker
+structurally cannot see (repo-side settings, not files), so a repo can pass every
+file-level gate while its gating checks are not actually required to merge.
+--verify writes nothing and exits non-zero on any divergence, so it belongs in a
+creation-verification step or a periodic drift check.
 
 Talks to GitHub through the authenticated ``gh`` CLI, so it carries no
 dependencies and inherits your existing credentials — it needs admin rights on
@@ -279,6 +288,246 @@ def execute(run: Runner, calls: Sequence[GhCall]) -> None:
             )
 
 
+def _flag(value: object) -> bool:
+    """Read a GitHub protection flag that GET returns as ``{"enabled": bool}``.
+
+    The branch-protection GET wraps each boolean in an ``{"enabled": ...}`` object,
+    unlike the PUT body (a bare bool). Accept either shape so verify reads the same
+    settings this script writes.
+    """
+    if isinstance(value, dict):
+        return bool(value.get("enabled"))
+    return bool(value)
+
+
+def _protection_contexts(required_status_checks: dict) -> set[str]:
+    """Return the required check contexts from a protection GET response.
+
+    GitHub exposes them as the legacy ``contexts`` list and, newer, as ``checks``
+    (each ``{"context": ..., "app_id": ...}``). Union both so a check required
+    under either representation counts. Each item's shape is validated before use —
+    this reads a third-party API response, so it never assumes the element types.
+    """
+    raw_contexts = required_status_checks.get("contexts")
+    contexts = (
+        {c for c in raw_contexts if isinstance(c, str)}
+        if isinstance(raw_contexts, list)
+        else set()
+    )
+    raw_checks = required_status_checks.get("checks")
+    if isinstance(raw_checks, list):
+        for check in raw_checks:
+            if isinstance(check, dict) and isinstance(check.get("context"), str):
+                contexts.add(check["context"])
+    return contexts
+
+
+@dataclass(frozen=True)
+class LiveMergeModel:
+    """The repo-level merge settings, parsed from the ``repos/{repo}`` GET."""
+
+    settings: dict
+
+    @classmethod
+    def from_api(cls, data: dict) -> LiveMergeModel:
+        # Validate the shape at the boundary before indexing — this is a
+        # third-party API response, not trusted internal state.
+        data = data if isinstance(data, dict) else {}
+        return cls({key: data.get(key) for key in repo_settings_payload()})
+
+
+@dataclass(frozen=True)
+class LiveProtection:
+    """Branch protection, normalized from the protection GET into plain fields.
+
+    The GET wraps booleans as ``{"enabled": ...}`` and lists required checks two
+    ways; ``from_api`` flattens both so the comparison logic works in typed fields.
+    """
+
+    required_contexts: frozenset[str]
+    strict: bool
+    enforce_admins: bool
+    approvals: int
+    linear_history: bool
+    conversation_resolution: bool
+    force_pushes: bool
+    deletions: bool
+
+    @classmethod
+    def from_api(cls, data: dict) -> LiveProtection:
+        data = data if isinstance(data, dict) else {}
+        checks = data.get("required_status_checks")
+        checks = checks if isinstance(checks, dict) else {}
+        reviews = data.get("required_pull_request_reviews")
+        reviews = reviews if isinstance(reviews, dict) else {}
+        return cls(
+            required_contexts=frozenset(_protection_contexts(checks)),
+            strict=bool(checks.get("strict")),
+            enforce_admins=_flag(data.get("enforce_admins")),
+            approvals=reviews.get("required_approving_review_count", 0),
+            linear_history=_flag(data.get("required_linear_history")),
+            conversation_resolution=_flag(data.get("required_conversation_resolution")),
+            force_pushes=_flag(data.get("allow_force_pushes")),
+            deletions=_flag(data.get("allow_deletions")),
+        )
+
+
+@dataclass(frozen=True)
+class LiveForkApproval:
+    """The fork-PR workflow approval policy, from its Actions-permissions GET."""
+
+    policy: str | None
+
+    @classmethod
+    def from_api(cls, data: dict) -> LiveForkApproval:
+        data = data if isinstance(data, dict) else {}
+        return cls(policy=data.get("approval_policy"))
+
+
+def verify_repo_settings(model: LiveMergeModel) -> list[str]:
+    """Problems where the live merge model diverges from the desired one."""
+    problems: list[str] = []
+    for key, expected in repo_settings_payload().items():
+        actual = model.settings.get(key)
+        if actual != expected:
+            problems.append(f"merge model: {key} is {actual!r}, want {expected!r}")
+    return problems
+
+
+def verify_protection(
+    live: LiveProtection,
+    contexts: Sequence[str],
+    approvals: int,
+    enforce_admins: bool,
+    strict: bool,
+) -> list[str]:
+    """Problems where live branch protection diverges from the desired state."""
+    problems: list[str] = []
+    missing = [c for c in contexts if c not in live.required_contexts]
+    if missing:
+        problems.append(
+            f"branch protection: required checks missing {missing} "
+            f"(has {sorted(live.required_contexts)})"
+        )
+    if live.strict != strict:
+        problems.append(f"branch protection: strict is {live.strict}, want {strict}")
+    if live.enforce_admins != enforce_admins:
+        problems.append(
+            f"branch protection: enforce_admins is {live.enforce_admins}, "
+            f"want {enforce_admins}"
+        )
+    if live.approvals != approvals:
+        problems.append(
+            f"branch protection: required approvals is {live.approvals}, "
+            f"want {approvals}"
+        )
+    for label, actual, want in (
+        ("required_linear_history", live.linear_history, True),
+        ("required_conversation_resolution", live.conversation_resolution, True),
+        ("allow_force_pushes", live.force_pushes, False),
+        ("allow_deletions", live.deletions, False),
+    ):
+        if actual != want:
+            problems.append(f"branch protection: {label} is {actual}, want {want}")
+    return problems
+
+
+def verify_fork_approval(live: LiveForkApproval, policy: str) -> list[str]:
+    """Problem where the live fork-PR approval policy diverges from the desired one."""
+    if live.policy != policy:
+        return [f"fork-PR approval policy is {live.policy!r}, want {policy!r}"]
+    return []
+
+
+def verify(
+    run: Runner,
+    repo: str,
+    branch: str,
+    contexts: Sequence[str],
+    approvals: int,
+    enforce_admins: bool,
+    strict: bool,
+    fork_pr_approval: str,
+) -> list[str]:
+    """Read the live governance state and return the list of divergences.
+
+    Reads (never writes) the three settings this script configures — merge model,
+    branch protection, fork-PR approval — parses each GitHub response into a typed
+    model at the boundary, and diffs it against the desired state. An empty list
+    means the repo matches; the caller reports and sets the exit code.
+    """
+    problems: list[str] = []
+
+    settings = _get_json(
+        run,
+        f"repos/{repo}",
+        "check you can read the repo (`gh auth status`) and --repo is correct",
+    )
+    problems += verify_repo_settings(LiveMergeModel.from_api(settings))
+
+    protection = _get_json(
+        run,
+        f"repos/{repo}/branches/{branch}/protection",
+        "check admin access and that --branch is correct (`gh auth status`); a "
+        "genuine 404 is reported as unprotected, other errors are surfaced here",
+        allow_missing=True,
+    )
+    if protection is None:
+        problems.append(
+            f"branch protection: {branch} is not protected (no protection rule)"
+        )
+    else:
+        problems += verify_protection(
+            LiveProtection.from_api(protection),
+            contexts,
+            approvals,
+            enforce_admins,
+            strict,
+        )
+
+    fork = _get_json(
+        run,
+        f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
+        "check admin access to Actions settings",
+    )
+    problems += verify_fork_approval(LiveForkApproval.from_api(fork), fork_pr_approval)
+
+    return problems
+
+
+def _is_not_found(stderr: str) -> bool:
+    """True when a ``gh api`` failure is a genuine 404 (the resource is absent).
+
+    Distinguished from auth/network/other API errors so ``allow_missing`` returns
+    None only for a real absence — anything else is surfaced with its actual error.
+    """
+    low = stderr.lower()
+    return "404" in low or "not found" in low
+
+
+def _get_json(
+    run: Runner, path: str, fix: str, *, allow_missing: bool = False
+) -> dict | None:
+    """GET a ``gh api`` path and parse its JSON body.
+
+    Raises GhError on any failure, carrying the exact ``gh`` error and the
+    suggested fix — except that a genuine 404 with ``allow_missing`` returns None
+    (used for branch protection, which 404s when the branch is simply unprotected:
+    a divergence to report, not a hard error). Auth, network, and other API errors
+    are never silently swallowed as "missing".
+    """
+    res = run(["api", path])
+    if res.returncode != 0:
+        stderr = res.stderr.strip()
+        if allow_missing and _is_not_found(stderr):
+            return None
+        raise GhError(f"`gh api {path}` failed: {stderr}", fix)
+    try:
+        return json.loads(res.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        raise GhError(f"`gh api {path}` returned invalid JSON: {exc}", fix) from exc
+
+
 def _render_dry_run(repo: str, branch: str, calls: Sequence[GhCall]) -> str:
     lines = [f"DRY-RUN would configure {repo}@{branch}:"]
     for call in calls:
@@ -346,6 +595,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="print what would change without modifying the repo",
     )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="read-only: report where the live governance state diverges from the "
+        "desired one (branch protection, merge model, fork-PR approval) instead of "
+        "applying it; exits non-zero on any divergence",
+    )
     return parser.parse_args(argv)
 
 
@@ -355,7 +611,8 @@ def main(argv: list[str], run: Runner | None = None) -> int:
     # With a real ``gh``, ensure it is installed before doing anything. A fully
     # offline dry-run (--repo and --branch both given) needs no ``gh`` at all.
     if run is None:
-        needs_gh = not (args.dry_run and args.repo and args.branch)
+        offline_dry_run = args.dry_run and args.repo and args.branch and not args.verify
+        needs_gh = not offline_dry_run
         if needs_gh and shutil.which("gh") is None:
             print(
                 "ERROR gh CLI not found\n"
@@ -370,6 +627,28 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         contexts = normalize_contexts(args.checks)
         repo = resolve_repo(run, args.repo)
         branch = resolve_branch(run, repo, args.branch)
+        if args.verify:
+            problems = verify(
+                run,
+                repo,
+                branch,
+                contexts,
+                args.approvals,
+                args.enforce_admins,
+                args.strict,
+                args.fork_pr_approval,
+            )
+            if problems:
+                for problem in problems:
+                    print(f"DRIFT {problem}", file=sys.stderr)
+                print(
+                    f"FAIL  {repo}@{branch}: {len(problems)} governance "
+                    "divergence(s); re-run without --verify to apply",
+                    file=sys.stderr,
+                )
+                return 1
+            print(f"OK    {repo}@{branch}: governance matches the desired state")
+            return 0
         calls = plan(
             repo,
             branch,

@@ -1,0 +1,28 @@
+# Python buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural checks that the command surface and config were wired the
+# uv-native way; the ongoing Python judgment rules live in languages/python.llmlint.yml.
+version: 1
+
+rules:
+  - name: command_surface_wired_uv
+    description: |
+      true when the justfile maps the standard recipes to the uv-native commands:
+      `bootstrap` -> `uv sync`, `check` -> `ruff format --check` + `ruff check` +
+      the type checker (`ty`) + `pytest` with coverage, and `upgrade` -> `uv lock
+      --upgrade`. false when a mapping is missing or bypasses uv (bare `pip`,
+      `python -m venv`, a hand-rolled virtualenv).
+    files:
+      include: ["justfile", "Justfile", ".justfile"]
+
+  - name: pyproject_single_source_of_config
+    description: |
+      true when project metadata and tool config live in `pyproject.toml` alone.
+      false when a committed `setup.py`, `setup.cfg`, or `requirements*.txt`
+      duplicates dependencies or tool config that `pyproject.toml` already owns
+      (two sources of truth that drift).
+    files:
+      include:
+        - "pyproject.toml"
+        - "setup.py"
+        - "setup.cfg"
+        - "requirements*.txt"

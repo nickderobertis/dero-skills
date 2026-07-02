@@ -1,0 +1,15 @@
+# Library buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural check that consumer-facing docs exist; the ongoing library
+# judgment (stable public surface) lives in shapes/library.llmlint.yml.
+version: 1
+
+rules:
+  - name: consumer_docs_and_changelog_present
+    description: |
+      true when the repo ships usage documentation written for a consumer of the
+      package (how to install and call the public API) and a changelog that records
+      releases and breaking changes. false when the only docs are internal
+      development notes.
+    files:
+      include: ["**/README*", "CHANGELOG*", "docs/**"]
+    relevance: the repo ships an installable/consumable package

@@ -29,28 +29,35 @@ spec.loader.exec_module(gov)
 # --- fake gh runner --------------------------------------------------------
 
 
+def _resource(path: str) -> str:
+    """The governance resource a ``gh api`` path targets."""
+    if path.endswith("/protection"):
+        return "protection"
+    if path.endswith("/fork-pr-contributor-approval"):
+        return "fork-approval"
+    return "repo-settings"
+
+
 def route(args) -> str:
     """Classify a ``gh`` arg list the way the fake keys its canned responses.
 
-    ``api`` mutations are keyed by *purpose* (the path), not just the HTTP method,
-    because the plan issues two PUTs — branch protection and the fork-PR approval
-    policy — that would otherwise collide.
+    ``api`` calls are keyed by *purpose* (the resource path) and by whether they
+    mutate (``--method``, keyed ``api:*``) or read (a plain GET, keyed ``get:*``),
+    so the plan's two PUTs and --verify's three GETs never collide.
     """
-    args = list(args)
-    if args[:2] == ["repo", "view"]:
-        if "nameWithOwner" in args:
-            return "repo"
-        if "defaultBranchRef" in args:
-            return "branch"
-        return "repo-view"
-    if args and args[0] == "api":
-        path = args[args.index("--method") + 2]
-        if path.endswith("/protection"):
-            return "api:protection"
-        if path.endswith("/fork-pr-contributor-approval"):
-            return "api:fork-approval"
-        return "api:repo-settings"
-    return " ".join(args)
+    match list(args):
+        case ["repo", "view", *rest]:
+            if "nameWithOwner" in rest:
+                return "repo"
+            if "defaultBranchRef" in rest:
+                return "branch"
+            return "repo-view"
+        case ["api", "--method", _, path, *_]:
+            return f"api:{_resource(path)}"
+        case ["api", path, *_]:
+            return f"get:{_resource(path)}"
+        case other:
+            return " ".join(other)
 
 
 class FakeGh:
@@ -421,6 +428,225 @@ def test_main_offline_dry_run_works_without_gh(monkeypatch, capsys):
     code = gov.main(["check", "--repo", "acme/w", "--branch", "main", "--dry-run"])
     assert code == 0
     assert "DRY-RUN" in capsys.readouterr().out
+
+
+# --- verify (read-back governance) -----------------------------------------
+
+
+def _live_settings(**over) -> dict:
+    d = dict(gov.repo_settings_payload())
+    d.update(over)
+    return d
+
+
+def _live_protection(
+    contexts=("check", "commitlint"),
+    *,
+    strict=False,
+    enforce_admins=False,
+    approvals=0,
+    linear=True,
+    conversation=True,
+    force_pushes=False,
+    deletions=False,
+) -> dict:
+    # Mirrors GitHub's protection GET shape: booleans wrapped as {"enabled": ...}.
+    return {
+        "required_status_checks": {"strict": strict, "contexts": list(contexts)},
+        "enforce_admins": {"enabled": enforce_admins},
+        "required_pull_request_reviews": {"required_approving_review_count": approvals},
+        "required_linear_history": {"enabled": linear},
+        "required_conversation_resolution": {"enabled": conversation},
+        "allow_force_pushes": {"enabled": force_pushes},
+        "allow_deletions": {"enabled": deletions},
+    }
+
+
+def _verify_fake(
+    *, settings=None, protection=..., fork_policy="all_external_contributors"
+) -> FakeGh:
+    """A fake gh whose GETs return a (by default conformant) live governance state.
+
+    Pass ``protection=None`` to simulate an unprotected branch (a 404), or a dict
+    to inject drift; ``settings``/``fork_policy`` likewise override the merge model
+    and fork policy.
+    """
+    responses = {
+        "get:repo-settings": gov.Result(
+            0, json.dumps(settings if settings is not None else _live_settings())
+        ),
+        "get:fork-approval": gov.Result(
+            0, json.dumps({"approval_policy": fork_policy})
+        ),
+    }
+    if protection is None:
+        responses["get:protection"] = gov.Result(1, "", "Not Found")
+    else:
+        prot = protection if protection is not ... else _live_protection()
+        responses["get:protection"] = gov.Result(0, json.dumps(prot))
+    return FakeGh(responses)
+
+
+def test_verify_conformant_state_reports_no_problems():
+    fake = _verify_fake()
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check", "commitlint"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert problems == []
+    # It only ever READS: no --method mutations issued.
+    assert fake.api_calls() and all("--method" not in a for a, _ in fake.api_calls())
+
+
+def test_verify_flags_missing_required_check():
+    fake = _verify_fake(protection=_live_protection(contexts=("check",)))
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check", "commitlint"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert any("commitlint" in p and "missing" in p for p in problems)
+
+
+def test_verify_flags_merge_model_drift():
+    fake = _verify_fake(settings=_live_settings(allow_merge_commit=True))
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert any("allow_merge_commit" in p for p in problems)
+
+
+def test_verify_flags_allowed_force_pushes():
+    fake = _verify_fake(protection=_live_protection(force_pushes=True))
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check", "commitlint"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert any("allow_force_pushes" in p for p in problems)
+
+
+def test_verify_flags_unprotected_branch():
+    # A genuine 404 (stderr says "Not Found") is the branch simply being unprotected.
+    fake = _verify_fake(protection=None)
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert any("not protected" in p for p in problems)
+
+
+def test_verify_non_404_protection_error_raises_not_misclassified():
+    # An auth/network error (not a 404) must surface as an error, never be
+    # silently reported as "branch not protected".
+    import pytest
+
+    fake = _verify_fake()
+    fake.responses["get:protection"] = gov.Result(1, "", "HTTP 403: Forbidden")
+    with pytest.raises(gov.GhError) as exc:
+        gov.verify(
+            fake,
+            "owner/name",
+            "main",
+            ["check"],
+            0,
+            False,
+            False,
+            "all_external_contributors",
+        )
+    assert "403" in exc.value.message
+
+
+def test_verify_flags_fork_policy_drift():
+    fake = _verify_fake(fork_policy="first_time_contributors")
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check", "commitlint"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert any("fork-PR approval" in p for p in problems)
+
+
+def test_verify_reads_nested_enabled_and_checks_shape():
+    # GitHub's newer protection GET lists checks under `checks`, not `contexts`;
+    # verify must still see a check required under that representation.
+    prot = _live_protection(contexts=())
+    prot["required_status_checks"]["checks"] = [
+        {"context": "check", "app_id": 1},
+        {"context": "commitlint", "app_id": 1},
+    ]
+    fake = _verify_fake(protection=prot)
+    problems = gov.verify(
+        fake,
+        "owner/name",
+        "main",
+        ["check", "commitlint"],
+        0,
+        False,
+        False,
+        "all_external_contributors",
+    )
+    assert problems == []
+
+
+def test_main_verify_passes_on_conformant_state(capsys):
+    fake = _verify_fake()
+    code = gov.main(
+        ["check", "commitlint", "--repo", "owner/name", "--branch", "main", "--verify"],
+        run=fake,
+    )
+    assert code == 0
+    out = capsys.readouterr()
+    assert out.err == ""
+    assert "governance matches" in out.out
+    # Verify never mutates.
+    assert fake.api_calls() and all("--method" not in a for a, _ in fake.api_calls())
+
+
+def test_main_verify_fails_and_reports_drift(capsys):
+    fake = _verify_fake(protection=_live_protection(force_pushes=True))
+    code = gov.main(
+        ["check", "commitlint", "--repo", "owner/name", "--branch", "main", "--verify"],
+        run=fake,
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "DRIFT" in err
+    assert "FAIL" in err
 
 
 # --- e2e: run the real PEP 723 script as a subprocess ----------------------

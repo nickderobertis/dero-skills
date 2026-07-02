@@ -1,0 +1,23 @@
+# Bash buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural checks that the shell quality gates and target shell were
+# decided; the ongoing shell judgment rules live in languages/bash.llmlint.yml.
+version: 1
+
+rules:
+  - name: shell_quality_gated
+    description: |
+      true when both `shellcheck` and `shfmt` run in the gate and fail on issues
+      (no warnings backlog). false when either is absent from `just check`/CI or is
+      run advisory-only, so a lint or format drift never blocks a merge.
+    files:
+      include: ["justfile", "Justfile", ".justfile", ".github/workflows/**"]
+
+  - name: target_shell_chosen
+    description: |
+      true when the target shell is an explicit decision — POSIX `sh` (no bashisms)
+      or `bash` — declared via a consistent shebang and stated in AGENTS.md, with
+      the CI matrix matching. false when scripts mix `sh` and `bash` shebangs with
+      no stated target, so portability is accidental rather than decided.
+    files:
+      include: ["**/*.sh", "bin/**", "AGENTS.md"]
+    relevance: the target files are shell scripts or record the shell decision

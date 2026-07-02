@@ -26,3 +26,21 @@ rules:
       unenforced or target names differ for the same logical task across projects.
     files:
       include: ["nx.json", "**/project.json", "**/.eslintrc*", "eslint.config.*"]
+
+  - name: each_deliverable_is_its_own_project
+    description: |
+      true when every app/package under the monorepo has its own project definition
+      declaring its local targets (`build`, `lint`, `test`, `typecheck`) that call
+      its own language-native tool. false when a deliverable has no project
+      definition, so the orchestrator cannot run or cache it as an affected unit.
+    files:
+      include: ["nx.json", "**/project.json", "**/package.json", "**/Cargo.toml", "**/pyproject.toml"]
+
+  - name: instruction_layer_localized
+    description: |
+      true when subtree rules live in a nested `AGENTS.md` inside each project and
+      `CODEOWNERS` routes reviews, leaving the root `AGENTS.md` to repo-wide
+      constraints only. false when project-specific rules are piled into the root
+      `AGENTS.md`, or there is no ownership routing.
+    files:
+      include: ["**/AGENTS.md", "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]

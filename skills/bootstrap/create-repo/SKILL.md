@@ -121,8 +121,12 @@ clone, run one command, and trust.
    ```
 
    It is silent on success and, on failure, names each missing invariant with a
-   suggested fix. The repo is not done until `just upgrade` (gate included) and
-   the checker both pass — fix failures, don't narrate them as next steps.
+   suggested fix. Pass `--buildout` to also run the one-time llmlint buildout tier
+   (the structural checks the deterministic pass can't express; needs `llmlint` on
+   PATH), and run `setup_github_governance.py --verify <checks>` to confirm the
+   repo-side branch protection the filesystem can't see. The repo is not done until
+   `just upgrade`, the checker with `--buildout`, and the governance `--verify` all
+   pass — fix failures, don't narrate them.
 
 ## Verification (run before handing off)
 
@@ -141,13 +145,26 @@ universal items (agent layer, recorded composition, command surface, strict
 gate, coverage, real e2e, upgrade) and closes with the two automated gates:
 
 1. `just check` passes locally from a clean state, **and**
-2. the baseline checker passes:
+2. the baseline checker passes, deterministic checks **and** the buildout tier:
 
    ```bash
-   uv run --script scripts/check_repo_baseline.py /path/to/repo
+   uv run --script scripts/check_repo_baseline.py /path/to/repo --buildout
    ```
 
-Fix failures until both are green — do not narrate them as next steps. The
+   Without `--buildout` it runs only the deterministic checks (silent on success);
+   with it, it also composes and runs the one-time llmlint buildout tier for the
+   stack recorded in `AGENTS.md`. **and**
+3. the repo-side governance matches (the filesystem checker cannot see it):
+
+   ```bash
+   uv run --script scripts/setup_github_governance.py <every-required-check> --verify
+   ```
+
+   `--verify` reads the live branch protection, merge model, and fork-PR approval
+   back and exits non-zero on any divergence — so a repo can't pass while its
+   gating checks aren't actually required to merge.
+
+Fix failures until all are green — do not narrate them as next steps. The
 checker is silent on success and, on failure, names each missing invariant with
 a suggested fix.
 
@@ -385,22 +402,17 @@ guidance that motivates it, and editing one reference updates both.
   — required GitHub PR template: terse **What** (the behavior change) and **Why**
   (its driver and impact), with an optional **Additional info** section. Drop it
   at `.github/pull_request_template.md`.
-- [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — audits
-  `AGENTS.md`, the `CLAUDE.md` symlink, `.claude/settings.json`, the recorded
-  reference composition, the `justfile` command surface, an e2e signal, a
-  coverage signal, CI, and the GitHub PR template. Goes past presence: it fails
-  on `TODO` placeholder recipe bodies, a `check` that doesn't run `test`, a
-  missing e2e tier, no coverage signal (a coverage recipe/config or a documented
-  `AGENTS.md` decision), an unfilled "Stack and composition" section, CI that
-  never invokes `just check`, and a PR template that is missing or lacks its
-  **What**/**Why** sections. It also raises an advisory (non-failing) warning when the
-  root `AGENTS.md` grows past a soft line cap — a nudge to keep the always-loaded
-  instruction layer terse. Silent on success; on failure prints each missing
-  invariant with a suggested fix.
+- [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — the
+  deterministic, stdlib-only audit. It checks the agent layer, recorded
+  composition, command surface, e2e/coverage signals, CI, the PR template, and the
+  llmlint tier — going past presence (placeholder recipes, a `check` that skips
+  `test`, a do-nothing CI file all fail). `--help` lists the checks; `--buildout`
+  additionally *runs* the one-time llmlint buildout tier for the recorded stack
+  (non-deterministic, needs `llmlint` on PATH, so it is opt-in). Silent on success.
 - [`scripts/setup_github_governance.py`](./scripts/setup_github_governance.py) —
-  applies the merge model + branch protection from the "Repository settings"
-  section of [`references/ci.md`](./references/ci.md) to a GitHub repo via the
-  `gh` CLI. Idempotent; takes the required check contexts as arguments and
-  supports `--dry-run`. Configures squash-only merging, auto-merge,
-  delete-on-merge, and branch protection requiring every gating check (admins
-  can override by default).
+  applies (or, with `--verify`, reads back) the merge model + branch protection
+  from the "Repository settings" section of
+  [`references/ci.md`](./references/ci.md) via `gh`. `--verify` reports where the
+  live repo-side state — which the filesystem checker can't see — diverges from
+  the desired one, closing the gap where a repo passes every file gate while its
+  checks aren't actually required to merge.
