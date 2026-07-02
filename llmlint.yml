@@ -1,83 +1,36 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/nickderobertis/llmlint/main/assets/llmlint.schema.json
-# llmlint configuration. Docs: https://github.com/nickderobertis/llmlint
-#
-# LLM-as-judge checks for invariants deterministic linters can't express. Each
-# rule is a positive invariant: holds=true means the code complies, holds=false
-# is a violation. Keep ruff/pytest/skill-validation for everything they already
-# cover.
-#
-# Two tiers combine here, all on one `default` agent:
-#   * The create-repo skill's ONGOING rule fragments (base + the
-#     skills-repo/python/bash/ci references applicable to this repo's stack),
-#     wired in as `plugins` below. We dogfood our own create-repo asset, so they
-#     are LOCAL in-tree paths — edits to a fragment take effect immediately — not
-#     the `@version`-pinned hosted URLs a consuming repo gets from the composer.
-#   * This repo's BESPOKE cross-language launch conventions (uv for Python, bun
-#     for npm, no thin Bash wrappers), defined inline in `rules`. Each rule's
-#     description carries its full uv/bun criteria, so no agent-specific prompt
-#     context is needed.
-#
-# This is an OPTIONAL author-time check, not part of `just check`: it needs the
-# `oneharness` + `llmlint` binaries and a Claude token, neither of which the
-# uv-only gate assumes. Run it with `just lint-llm` (see the justfile).
+# llmlint config — LLM-as-judge checks for invariants ruff/pytest can't express.
+# Optional author-time check (not in `just check`): needs the oneharness + llmlint
+# binaries and a token. Run with `just lint-llm`. Docs: github.com/nickderobertis/llmlint
 version: 1
 
-# Default targets when no paths are passed on the CLI: the surfaces where
-# "how code is launched" actually lives — scripts, skill/tool code, the command
-# surface, CI, and docs that show commands. Narrow with explicit paths, e.g.
-# `llmlint scripts/**/*.sh`.
+# No `include`: llmlint 0.2.31+ lints the whole tree (exclude + .gitignore honored),
+# so a no-args run covers everything, including this config for config_lint. Exclude
+# only what .gitignore misses and shouldn't be judged.
 files:
-  include:
-    - "skills/**/*.py"
-    - "skills/**/*.sh"
-    - "skills/**/*.ts"
-    - "skills/**/*.tsx"
-    - "skills/**/*.js"
-    - "skills/**/*.mjs"
-    - "tools/**/*.py"
-    - "scripts/**/*.sh"
-    - "consumer-bootstrap/**/*.sh"
-    - "docs/**/*.md"
-    - ".github/workflows/*.yml"
-    - "justfile"
-    - "*.js"
   exclude:
-    - "**/node_modules/**"
     - "**/.git/**"
     - "uv.lock"
     - "bun.lock"
+    - ".allowlister.json"
+    - "gh-secrets.json"
 
-# Per-judge harness timeout (seconds). The default 120 is fine for the
-# diff-scoped CI check, but a full-repo `just lint-llm` batches many files into a
-# single judge call and can exceed it; 600 gives that sweep headroom. It is a
-# ceiling, not a fixed wait — fast judges still return immediately.
 oneharness:
-  timeout: 600
+  timeout: 600  # ceiling (not a fixed wait); headroom for the full-repo sweep
 
 plugins:
-  # Lints this config's own rule names/descriptions; ships inside llmlint and
-  # resolves offline.
+  # config_lint (bundled, offline) lints this config's own rules.
   - "https://raw.githubusercontent.com/nickderobertis/llmlint/main/assets/config_lint.yml@1"
-  # create-repo ONGOING rule fragments for this repo's stack (skills-repo +
-  # python + ci, plus bash for the first-party shell scripts). Local in-tree
-  # paths because this repo HOSTS them — a consuming repo would instead pin the
-  # `@version` hosted URLs the composer emits. Buildout fragments (one-time
-  # structural checks) are deliberately excluded — they do not persist.
+  # create-repo ongoing fragments for this stack, as LOCAL in-tree paths (we host
+  # them, so edits apply immediately; consumers pin the composer's @version URLs).
   - "skills/bootstrap/create-repo/assets/llmlint/base.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/shapes/skills-repo.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/languages/python.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/languages/bash.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
 
-# No `agents` block: every rule runs on the implicit default agent. The
-# launch-convention rules carry their full uv/bun criteria in their own
-# descriptions, and llmlint's master template plus rationales (on by default)
-# already ground each verdict — so no custom agent or prompt is needed.
-#
-# Harness/model are deliberately left unset here (and in oneharness.toml beyond
-# the codex default), so oneharness resolves them — which lets a Claude Code
-# session's ONEHARNESS_HARNESSES / ONEHARNESS_MODEL env overrides flip the whole
-# run to claude-code + Opus. Pinning a harness here would beat those overrides.
+# No `agents` block: all rules run on the default agent. Harness/model are left
+# unset so a Claude Code session's ONEHARNESS_* env overrides flip the run to Opus.
 
 rules:
   - name: python_launched_via_uv
@@ -89,7 +42,15 @@ rules:
       `python3` invocation, a `#!/usr/bin/env python3` shebang used as the
       primary entry point, `pip` / `pip3` / `pipx`, `poetry run`, or activating
       a virtualenv by hand instead of going through uv.
+    files:
+      include:
+        - "**/*.py"
+        - "**/*.sh"
+        - "justfile"
+        - ".github/workflows/**"
+        - "docs/**/*.md"
     relevance: the file runs Python code or installs a Python package
+    require_line_attribution: true
 
   - name: typescript_and_npm_launched_via_bun
     description: |
@@ -98,7 +59,18 @@ rules:
       `bun x`, `bun add`, or `bun install`.
       FALSE when it runs code or manages packages directly with `node`, `npm` /
       `npx`, `pnpm`, or `yarn` instead of bun.
+    files:
+      include:
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.js"
+        - "**/*.mjs"
+        - "**/*.sh"
+        - "justfile"
+        - ".github/workflows/**"
+        - "docs/**/*.md"
     relevance: the file runs TypeScript/JavaScript or manages an npm package
+    require_line_attribution: true
 
   - name: single_language_work_runs_directly_not_via_bash_wrapper
     description: |
@@ -114,5 +86,10 @@ rules:
       into the program and run it directly with uv or bun.
       A shell script that performs real multi-step orchestration is NOT a
       violation, even if some steps call uv or bun.
-    relevance: the file is a shell script
+    # Scoped to *.sh (not relevance): shell scripts by definition, and this leaves
+    # the justfile out — recipe bodies are wrappers by design.
+    files:
+      include:
+        - "**/*.sh"
+    require_line_attribution: true
     judges: 3

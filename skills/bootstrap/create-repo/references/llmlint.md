@@ -66,8 +66,8 @@ everything they already check, and reach for llmlint only for the judgment calls
 - [ ] **Config composed, not hand-rolled.** `llmlint.yml` exists at the repo root,
   declares the bundled `config_lint` plugin plus the standard base and the
   per-reference rule fragments as `@version`-pinned plugins (composed via
-  `compose_repo_plan.py --llmlint-config`), and `files.include` is set to this
-  repo's real source globs.
+  `compose_repo_plan.py --llmlint-config`), and omits `files.include` so llmlint
+  lints the whole tree (add `files.exclude` globs for committed noise).
 - [ ] **Recipes present, out of the gate.** A `just lint-llm` recipe runs llmlint
   on demand and a `just lint-llm-diff` recipe lints the merge-base diff; neither is
   wired into `just check` (the deterministic gate stays deterministic).
