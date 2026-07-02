@@ -24,11 +24,13 @@ set -uo pipefail
 # Minimum oneharness: >= 0.3.0 is what current `llmlint` needs for read-only mode
 # (the judge reads but never edits files); it also has the `ONEHARNESS_<FIELD>`
 # env config overrides this setup relies on. Bump as llmlint raises the floor.
-readonly ONEHARNESS_MIN="0.3.3"
-# Minimum llmlint: >= 0.2.31 — llmlint.yml omits `files.include` and relies on the
-# whole-tree default that version added (older binaries scan zero files on a no-args
-# run). Bump the floor as llmlint raises it; an older cached binary is upgraded.
-readonly LLMLINT_MIN="0.2.31"
+readonly ONEHARNESS_MIN="0.3.4"
+# Minimum llmlint: >= 0.3.1 — llmlint.yml omits `files.include` and relies on the
+# whole-tree default (added in 0.2.31; older binaries scan zero files on a no-args
+# run). 0.3.0 was a breaking change (agents scope to their subtree, `agent.files`
+# removed) but this repo's config has no `agents` block, so it is unaffected. Bump
+# the floor as llmlint raises it; an older cached binary is upgraded.
+readonly LLMLINT_MIN="0.3.1"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
