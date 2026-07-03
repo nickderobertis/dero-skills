@@ -36,12 +36,14 @@ if ! git rev-parse --verify --quiet "$base_ref" >/dev/null; then
     base_ref="main"
   else
     echo "lint-llm-diff: cannot resolve base ref '$base_ref' (and no 'main')" >&2
+    echo "lint-llm-diff: fetch it first (\`git fetch origin main\`) or pass a resolvable BASE_REF" >&2
     exit 2
   fi
 fi
 
 merge_base="$(git merge-base "$base_ref" HEAD)" || {
   echo "lint-llm-diff: no merge-base between '$base_ref' and HEAD" >&2
+  echo "lint-llm-diff: fetch the shared history (\`git fetch --unshallow origin main\` on a shallow clone) so the fork point resolves" >&2
   exit 2
 }
 

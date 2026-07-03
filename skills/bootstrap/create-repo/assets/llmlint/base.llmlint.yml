@@ -115,3 +115,18 @@ rules:
         - "**/AGENTS.md"
         - "**/CLAUDE.md"
         - "**/SKILL.md"
+
+  - name: work_goes_through_command_surface
+    description: |
+      true when docs, CI workflows, and scripts invoke build, test, lint, format, or
+      setup work through the project's documented command surface (its `just`/task
+      recipes) rather than re-implementing the underlying commands inline. false when a
+      workflow, doc, or script hand-rolls the raw command a recipe already wraps, so the
+      two drift and the recipe stops being the single place that defines the behavior.
+    files:
+      include:
+        - ".github/workflows/**"
+        - "**/*.md"
+        - "scripts/**"
+        - "**/scripts/**"
+    relevance: the target files run a build, test, lint, format, or setup step that a documented recipe already wraps
