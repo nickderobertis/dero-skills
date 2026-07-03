@@ -1,0 +1,24 @@
+# Skills-repo buildout rules (plugin) — run ONCE during repo creation, then
+# discarded. One-time structural checks that skill validation and self-dogfooding
+# are wired into the gate; the ongoing skills-repo judgment (runtime independence,
+# determinism-vs-judgment) lives in shapes/skills-repo.llmlint.yml.
+version: 1
+
+rules:
+  - name: validate_and_smoke_every_skill_gated
+    description: |
+      true when `just check` both validates every `SKILL.md` (frontmatter,
+      forbidden runtime deps) and SMOKE-runs every bundled script once, so a broken
+      skill fails the gate. false when validation/smoke exists but is not wired into
+      `check`, or only a subset of skills is covered.
+    files:
+      include: ["justfile", "Justfile", ".justfile", ".github/workflows/**", "scripts/**"]
+
+  - name: own_checks_dogfooded
+    description: |
+      true when any repo-baseline or lint script the repo itself ships is run
+      against this repo inside `just check`, so the canonical example stays passing.
+      false when the repo authors such a check but never runs it on itself.
+    files:
+      include: ["justfile", "Justfile", ".justfile"]
+    relevance: the repo ships its own baseline/lint tooling

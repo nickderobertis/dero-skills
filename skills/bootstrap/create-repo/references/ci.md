@@ -239,9 +239,13 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   squash-merge only, auto-merge on, head branches deleted on merge, and *every*
   gating CI check (including the full-e2e gate job) required before merge, with
   admins able to override. The model is recorded in the "Commits, releases, and
-  merging" section of `AGENTS.md` (the filesystem checker cannot see repo-side
-  settings, so this is verified by hand against the "Repository settings" section
-  above).
+  merging" section of `AGENTS.md`. The filesystem checker cannot see repo-side
+  settings, so verify them against the live repo with
+  `setup_github_governance.py --verify <every-required-check>` — it reads branch
+  protection, the merge model, and fork-PR approval back and fails on any
+  divergence (a required check missing, force-pushes allowed, the wrong merge
+  model), rather than trusting a by-hand read of the "Repository settings" section
+  above.
 - [ ] **Live tier requires its credential.** Any live/integration workflow keeps
   the test compiling, requires its secret, and fails fast with a clear message
   when it is absent (no skip/no-op to green). Fork PRs are gated by the fork-PR

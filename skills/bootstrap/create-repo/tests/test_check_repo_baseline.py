@@ -8,10 +8,14 @@ directly. The module is registered in sys.modules before exec so the
 from __future__ import annotations
 
 import importlib.util
+import os
+import stat
+import subprocess
 import sys
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "check_repo_baseline.py"
+SKILL_DIR = Path(__file__).resolve().parents[1]
+SCRIPT = SKILL_DIR / "scripts" / "check_repo_baseline.py"
 
 spec = importlib.util.spec_from_file_location("check_repo_baseline", SCRIPT)
 assert spec is not None and spec.loader is not None
@@ -50,7 +54,18 @@ upgrade:
 
 lint-llm:
     @echo lint-llm
+
+lint-llm-diff:
+    @echo lint-llm-diff
 """
+
+# A .claude/settings.json that wires the llmlint installer into a SessionStart
+# hook (the automated-install invariant), with a narrow allowlist.
+CONFORMANT_SETTINGS = (
+    '{"hooks": {"SessionStart": [{"matcher": "startup|resume", "hooks": '
+    '[{"type": "command", "command": "bash scripts/setup-llmlint.sh"}]}]}, '
+    '"permissions": {"allow": []}}'
+)
 
 # A workflow that invokes the gate AND the llmlint tier (separate jobs), as the
 # CI and llmlint invariants require.
@@ -133,9 +148,7 @@ def make_repo(
         (repo / "CLAUDE.md").write_text("# not a symlink\n", encoding="utf-8")
     if settings is not False:
         (repo / ".claude").mkdir(exist_ok=True)
-        body = (
-            settings if isinstance(settings, str) else '{"permissions": {"allow": []}}'
-        )
+        body = settings if isinstance(settings, str) else CONFORMANT_SETTINGS
         (repo / ".claude" / "settings.json").write_text(body, encoding="utf-8")
     if justfile is not None:
         (repo / "justfile").write_text(justfile, encoding="utf-8")
@@ -152,6 +165,13 @@ def make_repo(
     if llmlint is not False:
         body = llmlint if isinstance(llmlint, str) else LLMLINT_CONFIG
         (repo / "llmlint.yml").write_text(body, encoding="utf-8")
+        # The automated-install half of the llmlint tier: the setup script the
+        # SessionStart hook (in CONFORMANT_SETTINGS) runs.
+        scripts = repo / "scripts"
+        scripts.mkdir(exist_ok=True)
+        (scripts / "setup-llmlint.sh").write_text(
+            "#!/usr/bin/env bash\n# idempotent llmlint install\n", encoding="utf-8"
+        )
     return repo
 
 
@@ -173,6 +193,16 @@ def test_parse_recipes_extracts_names_and_ignores_assignments_and_bodies():
         "upgrade",
         "default",
     } <= recipes
+
+
+def test_parse_recipes_recognizes_defaulted_parameters():
+    # A recipe with a defaulted parameter carries an '=' before its ':'. The '='
+    # must not hide the recipe (regression: `lint-llm-diff base="origin/main":`).
+    text = 'lint-llm-diff base="origin/main":\n    ./scripts/x.sh {{base}}\n'
+    recipes = crb.parse_just_recipes(text)
+    assert recipes == {"lint-llm-diff"}
+    details = crb.parse_just_recipe_details(text)
+    assert "lint-llm-diff" in details
 
 
 def test_parse_recipes_excludes_variable_assignments():
@@ -597,6 +627,30 @@ def test_ci_without_llmlint_reference_is_error(tmp_path):
     )
 
 
+def test_missing_lint_llm_diff_recipe_is_error(tmp_path):
+    # The blocking PR check runs the diff-scoped recipe; `lint-llm` alone is not it.
+    no_diff = FULL_JUSTFILE.replace("\nlint-llm-diff:\n    @echo lint-llm-diff\n", "\n")
+    findings = crb.audit(make_repo(tmp_path, justfile=no_diff))
+    assert crb.has_errors(findings)
+    assert any("lint-llm-diff" in m for m in levels(findings, "ERROR"))
+
+
+def test_missing_setup_llmlint_script_is_error(tmp_path):
+    # The tier config/recipes/CI are all present, but install is not automated.
+    repo = make_repo(tmp_path)
+    (repo / "scripts" / "setup-llmlint.sh").unlink()
+    findings = crb.audit(repo)
+    assert crb.has_errors(findings)
+    assert any("setup-llmlint.sh" in m for m in levels(findings, "ERROR"))
+
+
+def test_setup_llmlint_not_wired_into_sessionstart_is_error(tmp_path):
+    # The setup script exists but no SessionStart hook runs it — not automated.
+    findings = crb.audit(make_repo(tmp_path, settings='{"permissions": {"allow": []}}'))
+    assert crb.has_errors(findings)
+    assert any("SessionStart" in m for m in levels(findings, "ERROR"))
+
+
 # --- AGENTS.md length (advisory) -------------------------------------------
 
 
@@ -636,3 +690,193 @@ def test_main_returns_one_and_reports_fixes_on_failure(tmp_path, capsys):
 
 def test_main_returns_two_on_missing_directory(tmp_path):
     assert crb.main([str(tmp_path / "does-not-exist")]) == 2
+
+
+# --- buildout llmlint run (--buildout, opt-in / non-deterministic) ----------
+
+
+def test_parse_composed_references_handles_comma_and_plus():
+    assert crb.parse_composed_references(
+        "- **References composed:** base.md, shapes/cli.md, ci.md"
+    ) == ["base.md", "shapes/cli.md", "ci.md"]
+    assert crb.parse_composed_references(
+        "- References composed: shapes/cli.md + languages/python.md + ci.md"
+    ) == ["shapes/cli.md", "languages/python.md", "ci.md"]
+    assert crb.parse_composed_references("no composition line here") == []
+
+
+def test_parse_composed_references_follows_a_wrapped_bullet():
+    # A hand-written AGENTS.md wraps the bullet across physical lines; references
+    # on the continuation line must not be lost (regression: ci.md/monorepo.md).
+    agents = (
+        "- **References composed:** `shapes/skills-repo.md` + `languages/python.md` +\n"
+        "  `ci.md`, with Nx from `monorepo.md` as an optional accelerator\n"
+        "  (the gate runs on uv alone).\n"
+        "- **Excluded, and why:** ty and coverage.\n"
+    )
+    refs = crb.parse_composed_references(agents)
+    assert refs == [
+        "shapes/skills-repo.md",
+        "languages/python.md",
+        "ci.md",
+        "monorepo.md",
+    ]
+
+
+def _buildout_repo(tmp_path) -> Path:
+    """A conformant repo whose AGENTS.md records a stack with buildout fragments."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    return make_repo(
+        tmp_path,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: base.md, shapes/cli.md, languages/python.md, ci.md\n"
+        ),
+    )
+
+
+def test_run_buildout_wires_local_fragments_and_passes(tmp_path):
+    seen = {}
+
+    def fake(cfg, repo):
+        seen["cfg"] = Path(cfg).read_text(encoding="utf-8")
+        seen["existed"] = Path(cfg).is_file()
+        return (0, "clean", "")
+
+    findings = crb.run_buildout(
+        _buildout_repo(tmp_path), SKILL_DIR, llmlint_runner=fake
+    )
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    # The throwaway config wired the LOCAL buildout fragments in as plugins.
+    assert "buildout/base.llmlint.yml" in seen["cfg"]
+    assert "buildout/shapes/cli.llmlint.yml" in seen["cfg"]
+    assert "buildout/languages/python.llmlint.yml" in seen["cfg"]
+    assert seen["existed"]
+
+
+def test_run_buildout_always_includes_base_even_when_omitted(tmp_path):
+    # base.md is always-applied; its buildout runs even if the composition line
+    # (hand-written here) never names it.
+    seen = {}
+    repo = make_repo(
+        tmp_path,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: shapes/cli.md, languages/python.md, ci.md\n"
+        ),
+    )
+
+    def fake(cfg, repo_):
+        seen["cfg"] = Path(cfg).read_text(encoding="utf-8")
+        return (0, "", "")
+
+    crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert "buildout/base.llmlint.yml" in seen["cfg"]
+
+
+def test_run_buildout_ignores_path_escaping_tokens(tmp_path):
+    # A `../`-style token in the composition must not pull a file from outside the
+    # buildout tree into the config; only in-tree fragments are wired in.
+    seen = {}
+    repo = make_repo(
+        tmp_path,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: base.md, ../../../etc/evil.md, shapes/cli.md\n"
+        ),
+    )
+
+    def fake(cfg, repo_):
+        seen["cfg"] = Path(cfg).read_text(encoding="utf-8")
+        return (0, "", "")
+
+    crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert "etc/evil" not in seen["cfg"]
+    assert "../" not in seen["cfg"]
+    assert "buildout/base.llmlint.yml" in seen["cfg"]
+
+
+def test_run_buildout_removes_the_temp_config(tmp_path):
+    captured = {}
+
+    def fake(cfg, repo):
+        captured["path"] = Path(cfg)
+        return (0, "", "")
+
+    crb.run_buildout(_buildout_repo(tmp_path), SKILL_DIR, llmlint_runner=fake)
+    assert not captured["path"].exists()
+
+
+def test_run_buildout_violations_are_error(tmp_path):
+    findings = crb.run_buildout(
+        _buildout_repo(tmp_path),
+        SKILL_DIR,
+        llmlint_runner=lambda c, r: (1, "gate_runs_every_stage: false\n", ""),
+    )
+    assert crb.has_errors(findings)
+    assert any("structural issue" in m for m in levels(findings, "ERROR"))
+
+
+def test_run_buildout_missing_binary_is_actionable(tmp_path):
+    findings = crb.run_buildout(
+        _buildout_repo(tmp_path),
+        SKILL_DIR,
+        llmlint_runner=lambda c, r: (crb.LLMLINT_MISSING, "", "not found"),
+    )
+    assert any("not installed" in m for m in levels(findings, "ERROR"))
+
+
+def test_run_buildout_harness_error_is_error(tmp_path):
+    findings = crb.run_buildout(
+        _buildout_repo(tmp_path),
+        SKILL_DIR,
+        llmlint_runner=lambda c, r: (2, "", "harness unauthenticated"),
+    )
+    assert any("could not run" in m for m in levels(findings, "ERROR"))
+
+
+def test_run_buildout_without_composition_line_is_error(tmp_path):
+    repo = make_repo(tmp_path, composition="# AGENTS\n\n## Stack\n\nnothing composed\n")
+    findings = crb.run_buildout(
+        repo, SKILL_DIR, llmlint_runner=lambda c, r: (0, "", "")
+    )
+    assert any("determine the stack" in m for m in levels(findings, "ERROR"))
+
+
+def _write_stub_llmlint(dir_path: Path, exit_code: int) -> None:
+    """Drop a fake `llmlint` on PATH — the genuinely-external harness we may stub."""
+    stub = dir_path / "llmlint"
+    stub.write_text(
+        f'#!/usr/bin/env bash\necho "stub llmlint $*" >&2\nexit {exit_code}\n',
+        encoding="utf-8",
+    )
+    stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _run_script_with_stub(repo: Path, exit_code: int, tmp_path: Path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_stub_llmlint(bin_dir, exit_code)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    return subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), str(repo), "--buildout"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_e2e_buildout_invokes_real_llmlint_binary_and_passes(tmp_path):
+    # Drive the real script end to end: it composes the config and actually shells
+    # out to `llmlint` (a stub on PATH, exit 0). Only the external harness is stubbed.
+    repo = _buildout_repo(tmp_path / "repo")
+    result = _run_script_with_stub(repo, 0, tmp_path)
+    assert result.returncode == 0, result.stderr
+
+
+def test_e2e_buildout_propagates_llmlint_violations(tmp_path):
+    # Stub llmlint fails (exit 1); the checker surfaces it as a failing invariant.
+    repo = _buildout_repo(tmp_path / "repo")
+    result = _run_script_with_stub(repo, 1, tmp_path)
+    assert result.returncode == 1
+    assert "structural issue" in result.stderr

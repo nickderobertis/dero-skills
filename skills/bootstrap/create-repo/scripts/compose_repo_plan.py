@@ -315,9 +315,15 @@ def render_plan(
         "findings."
     )
     out.append(
-        "- [ ] llmlint (buildout) passes once: compose `llmlint.buildout.yml` "
-        "(`--llmlint-buildout-config`), run `llmlint -c llmlint.buildout.yml`, "
-        "resolve findings, then delete it — do not commit."
+        "- [ ] llmlint (buildout) passes once: run "
+        "`check_repo_baseline.py /path/to/repo --buildout` (composes and runs the "
+        "buildout tier for the recorded stack, then cleans up), or by hand via "
+        "`--llmlint-buildout-config` + `llmlint -c ...`, then delete — do not commit."
+    )
+    out.append(
+        "- [ ] Repo governance matches: "
+        "`setup_github_governance.py <every-required-check> --verify` reports no "
+        "divergence (branch protection, merge model, fork-PR approval)."
     )
     out.append("")
 
@@ -325,8 +331,8 @@ def render_plan(
 
 
 def count_items(refs: list[Reference]) -> int:
-    """Count checklist items across references, plus the four closing automated gates."""
-    total = 4
+    """Count checklist items across references, plus the five closing automated gates."""
+    total = 5
     for ref in refs:
         total += sum(
             1 for line in ref.verification.splitlines() if CHECKLIST_ITEM_RE.match(line)

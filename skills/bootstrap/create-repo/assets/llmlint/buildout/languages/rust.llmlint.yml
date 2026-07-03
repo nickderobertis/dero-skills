@@ -1,0 +1,28 @@
+# Rust buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural checks on toolchain pinning and the strict clippy gate; the
+# ongoing Rust judgment rules live in languages/rust.llmlint.yml.
+version: 1
+
+rules:
+  - name: toolchain_pinned_and_installed
+    description: |
+      true when `rust-toolchain.toml` pins the channel and the components/targets the
+      build needs, and CI installs the toolchain from it rather than a floating
+      `stable`. false when there is no pinned toolchain file, or CI hardcodes a
+      channel that can drift from the committed pin.
+    files:
+      include: ["rust-toolchain.toml", "rust-toolchain", ".github/workflows/**"]
+
+  - name: clippy_denies_warnings
+    description: |
+      true when the gate runs `clippy` with warnings promoted to errors (`-D
+      warnings` or an equivalent `deny` config), so a lint is a hard failure. false
+      when clippy runs warning-only, or is absent from the gate entirely.
+    files:
+      include:
+        - "justfile"
+        - "Justfile"
+        - ".justfile"
+        - ".github/workflows/**"
+        - "clippy.toml"
+        - ".cargo/config.toml"

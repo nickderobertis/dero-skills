@@ -251,6 +251,24 @@ def test_llmlint_buildout_config_carries_only_buildout_fragments(tmp_path):
     assert "/assets/llmlint/base.llmlint.yml@1" not in cfg
 
 
+def test_llmlint_buildout_covers_base_language_and_shape(tmp_path):
+    # The buildout tier now backs the universal (base), per-language, and
+    # per-shape one-time structural invariants — not just ci/intersection.
+    out = tmp_path / "b.yml"
+    run(
+        "--shape",
+        "web-app",
+        "--language",
+        "typescript",
+        "--llmlint-buildout-config",
+        str(out),
+    )
+    cfg = out.read_text(encoding="utf-8")
+    assert "/buildout/base.llmlint.yml@1" in cfg
+    assert "/buildout/languages/typescript.llmlint.yml@1" in cfg
+    assert "/buildout/shapes/web-app.llmlint.yml@1" in cfg
+
+
 def test_llmlint_buildout_releasing_and_monorepo_gated_by_flags(tmp_path):
     out = tmp_path / "b.yml"
     run(

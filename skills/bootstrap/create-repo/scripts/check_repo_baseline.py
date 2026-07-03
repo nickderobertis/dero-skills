@@ -5,7 +5,8 @@
 """Audit a repository against the create-repo baseline invariants.
 
 Usage:
-    uv run --script scripts/check_repo_baseline.py [REPO_DIR]   # default: .
+    uv run --script scripts/check_repo_baseline.py [REPO_DIR]              # default: .
+    uv run --script scripts/check_repo_baseline.py [REPO_DIR] --buildout   # + buildout tier
 
 Stack-agnostic on purpose: this checks the invariants the create-repo skill
 prescribes for *every* repository, regardless of language. Stack-specific gates
@@ -45,9 +46,13 @@ Checks:
     walkthrough of the diff. An empty or unrelated file fails.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
-    `llmlint` recipe that runs it, and a CI workflow that invokes it. The tier
-    runs OUTSIDE `just check` (it is non-deterministic) but is a required PR
-    check. Presence-only and deterministic: this never *runs* llmlint.
+    `lint-llm` recipe and the diff-scoped `lint-llm-diff` recipe (the blocking PR
+    check), an automated install (`scripts/setup-llmlint.sh` wired into a
+    SessionStart hook), and a CI workflow that invokes it. The tier runs OUTSIDE
+    `just check` (it is non-deterministic) but is a required PR check.
+    Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
+    `--buildout` flag additionally composes and runs the one-time buildout tier —
+    non-deterministic, so opt-in and never part of `audit()`; see run_buildout.)
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -64,12 +69,22 @@ consuming repo with `uv run --script`.
 
 from __future__ import annotations
 
+# llmlint: ignore-file[async_typed_clients_at_boundaries] the only external call is invoking
+# the `llmlint` CLI binary as a subprocess for the opt-in --buildout tier; a CLI has no async
+# typed client, and this is a stdlib-only PEP 723 script (dependencies = []). A synchronous
+# subprocess is the correct, intentional client — same rationale as the `gh` call in
+# setup_github_governance.py.
+
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple, Protocol
 
 # Recipes the skill's command surface must define.
 REQUIRED_RECIPES = ("bootstrap", "check", "test", "lint", "format", "upgrade")
@@ -86,9 +101,12 @@ AGENTS_MD_MAX_LINES = 250
 GATE_COMMAND = "just check"
 
 # A justfile recipe header starts at column 0 with an identifier, may take
-# parameters, and ends in a single ':'. Assignments (`name := value`) are
-# excluded via the negative lookahead so they are not mistaken for recipes.
-RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:=]*:(?!=)")
+# parameters (including defaulted ones like `base="origin/main"`), and ends in a
+# single ':'. Assignments (`name := value`) are excluded via the negative
+# lookahead — the ':' before '=' fails `(?!=)` — so only the terminating recipe
+# colon matches. The parameter span allows '=' so a defaulted parameter does not
+# hide the recipe (it must, or e.g. `lint-llm-diff base="origin/main":` is missed).
+RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
 
 JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 
@@ -769,6 +787,58 @@ def ci_references_llmlint(repo: Path) -> bool:
     )
 
 
+def find_setup_llmlint_script(repo: Path) -> Path | None:
+    """Return the idempotent llmlint toolchain installer, or None.
+
+    The skill drops it at ``scripts/setup-llmlint.sh``; accept a couple of nearby
+    spellings so the check is about the automation existing, not the exact path.
+    """
+    for rel in (
+        "scripts/setup-llmlint.sh",
+        "scripts/setup_llmlint.sh",
+        "setup-llmlint.sh",
+    ):
+        candidate = repo / rel
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def settings_sessionstart_runs_llmlint_setup(repo: Path) -> bool:
+    """True when a SessionStart hook in .claude/settings.json runs the llmlint setup.
+
+    The install is automated by wiring ``setup-llmlint.sh`` into the Claude Code
+    ``SessionStart`` hook, so a web/cloud session is ready with no manual step. A
+    light structural read of the settings JSON, tolerant of malformed files (a
+    separate check reports invalid JSON).
+    """
+    settings = repo / ".claude" / "settings.json"
+    if not settings.is_file():
+        return False
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(hooks, dict):
+        return False
+    session_start = hooks.get("SessionStart")
+    if not isinstance(session_start, list):
+        return False
+    for entry in session_start:
+        if not isinstance(entry, dict):
+            continue
+        entry_hooks = entry.get("hooks")
+        if not isinstance(entry_hooks, list):
+            continue
+        for hook in entry_hooks:
+            if isinstance(hook, dict) and "setup-llmlint" in str(
+                hook.get("command", "")
+            ):
+                return True
+    return False
+
+
 def check_llmlint(repo: Path) -> list[Finding]:
     """Require the llmlint (LLM-judge) tier to be wired — presence-only.
 
@@ -815,6 +885,38 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 "(the tier is non-deterministic, so it stays out of the gate)",
             )
         )
+    # The blocking PR check runs the merge-base-scoped `lint-llm-diff`, so a PR is
+    # judged on the lines it changed. Its own recipe must exist, not just `lint-llm`.
+    if "lint-llm-diff" not in recipes:
+        problems.append(
+            Finding(
+                "ERROR",
+                "no `lint-llm-diff` recipe in the justfile (the diff-scoped PR check)",
+                "add a `lint-llm-diff:` recipe running scripts/lint-llm-diff.sh so "
+                "CI judges only the lines the branch changed (see llmlint.md)",
+            )
+        )
+
+    # Install must be automated: the setup script exists AND a SessionStart hook
+    # runs it, so a web/cloud session can run the tier with no manual step.
+    if find_setup_llmlint_script(repo) is None:
+        problems.append(
+            Finding(
+                "ERROR",
+                "no scripts/setup-llmlint.sh (the automated llmlint toolchain install)",
+                "add scripts/setup-llmlint.sh (idempotent oneharness + llmlint "
+                "install) from the skill's assets/setup-llmlint.sh.template",
+            )
+        )
+    elif not settings_sessionstart_runs_llmlint_setup(repo):
+        problems.append(
+            Finding(
+                "ERROR",
+                "setup-llmlint.sh is not wired into a SessionStart hook",
+                "add a SessionStart hook to .claude/settings.json that runs "
+                "scripts/setup-llmlint.sh so sessions are ready with no manual step",
+            )
+        )
 
     if not ci_references_llmlint(repo):
         problems.append(
@@ -827,7 +929,245 @@ def check_llmlint(repo: Path) -> list[Finding]:
             )
         )
 
-    return problems or [Finding("OK", "llmlint tier configured (config + recipe + CI)")]
+    return problems or [
+        Finding("OK", "llmlint tier configured (config + recipes + install + CI)")
+    ]
+
+
+# --- buildout llmlint tier (opt-in, non-deterministic) ---------------------
+# The `--buildout` mode composes the one-time llmlint *buildout* config for this
+# repo's stack and RUNS it. Unlike everything in audit(), this is non-deterministic
+# (it drives a real LLM harness through the `llmlint` binary and makes network
+# calls), so it is opt-in and never part of audit() / the deterministic gate. It
+# folds the buildout tier — previously a manual "compose, run, resolve, delete"
+# dance — into the same command that runs the baseline, so the structural one-time
+# checks actually run instead of being skipped. Requires the create-repo skill's
+# assets (the buildout fragments) to sit next to this script, and `llmlint` on PATH.
+
+# The composer records the composition in AGENTS.md on a "References composed:"
+# line; the buildout run reads it back to know which fragments apply. Tolerant of
+# the comma form the composer emits and the `+` form used in prose.
+COMPOSED_REFS_RE = re.compile(r"references\s+composed", re.IGNORECASE)
+REFERENCE_TOKEN_RE = re.compile(r"[\w./-]+\.md")
+# A new markdown list item (up to 3 leading spaces, a bullet, a space) — where a
+# wrapped "References composed" bullet ends.
+LIST_ITEM_RE = re.compile(r"^\s{0,3}[-*+]\s")
+
+# llmlint exit codes (shared with lint-llm-diff.sh): 0 clean, 1 violations,
+# 2 config/harness error; 127 is our sentinel for "binary not found".
+LLMLINT_MISSING = 127
+
+
+class LlmlintResult(NamedTuple):
+    """The structured outcome of one llmlint run (unpacks like a plain tuple)."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+class LlmlintRunner(Protocol):
+    """A seam for running llmlint over the composed buildout config.
+
+    Takes the config path and the repo, and returns an ``LlmlintResult``. Injected
+    in tests so the orchestration is exercised without a real llmlint.
+    """
+
+    def __call__(self, config_path: Path, repo: Path) -> LlmlintResult: ...
+
+
+def parse_composed_references(agents_text: str) -> list[str]:
+    """Return the reference relpaths recorded on the AGENTS.md composition line.
+
+    Reads the ``References composed:`` bullet — one the composer emits on a single
+    line (``base.md, shapes/cli.md, languages/python.md, ci.md``) or a hand-written
+    one wrapped across several lines — and extracts each ``*.md`` token,
+    separator-agnostic (comma or ``+``). Collection follows the wrapped bullet's
+    continuation lines (indented, non-blank) until a blank line, a new list item,
+    or a heading, so a reference on the second physical line is not lost. Stray
+    ``*.md`` prose tokens are harmless: only tokens with a real buildout fragment
+    survive the later mapping. De-duplicated, order preserved. Empty if no such
+    bullet.
+    """
+    lines = agents_text.splitlines()
+    for i, line in enumerate(lines):
+        match = COMPOSED_REFS_RE.search(line)
+        if not match:
+            continue
+        tokens = REFERENCE_TOKEN_RE.findall(line[match.end() :])
+        for nxt in lines[i + 1 :]:
+            if not nxt.strip() or LIST_ITEM_RE.match(nxt) or nxt.startswith("#"):
+                break
+            tokens += REFERENCE_TOKEN_RE.findall(nxt)
+        seen: set[str] = set()
+        return [t for t in tokens if not (t in seen or seen.add(t))]
+    return []
+
+
+def _default_llmlint_runner(config_path: Path, repo: Path) -> LlmlintResult:
+    """Run ``llmlint -c CONFIG`` over the repo tree; return the structured result."""
+    try:
+        proc = subprocess.run(
+            ["llmlint", "-c", str(config_path)],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return LlmlintResult(LLMLINT_MISSING, "", "llmlint binary not found on PATH")
+    return LlmlintResult(proc.returncode, proc.stdout, proc.stderr)
+
+
+def _render_buildout_config(fragments: list[Path]) -> str:
+    """A throwaway llmlint config wiring the local buildout fragments in as plugins.
+
+    Uses absolute local paths (not hosted ``@version`` URLs) so it reflects the
+    in-tree fragments exactly and needs no network to resolve them.
+    """
+    lines = [
+        "# TEMPORARY buildout config generated by check_repo_baseline --buildout.",
+        "# One-time STRUCTURAL checks; not committed, not the ongoing PR check.",
+        "version: 1",
+        "files:",
+        "  exclude:",
+        '    - "**/.git/**"',
+        "rationales: true",
+        "agents:",
+        "  default:",
+        "    harness: claude-code   # any id from `oneharness list`; env overrides win",
+        "plugins:",
+    ]
+    lines += [f'  - "{frag.resolve().as_posix()}"' for frag in fragments]
+    return "\n".join(lines) + "\n"
+
+
+def _trim(text: str, *, max_lines: int = 12, max_chars: int = 1200) -> str:
+    """Keep the tail of llmlint output — where the findings summary sits — bounded."""
+    text = text.strip()
+    if not text:
+        return ""
+    tail = "\n".join(text.splitlines()[-max_lines:])
+    return tail[-max_chars:]
+
+
+def _buildout_findings(rc: int, out: str, err: str, n: int) -> list[Finding]:
+    match rc:
+        case 0:
+            return [Finding("OK", f"buildout llmlint passed ({n} fragment(s))")]
+        case 127:  # LLMLINT_MISSING sentinel from _default_llmlint_runner
+            return [
+                Finding(
+                    "ERROR",
+                    "llmlint is not installed, so the buildout tier could not run",
+                    "install it (`just setup-llmlint` / scripts/setup-llmlint.sh), "
+                    "or drop --buildout to run only the deterministic checks",
+                )
+            ]
+        case 2:
+            # A concrete next action first; the raw llmlint stderr is appended as
+            # context, never used as the whole fix.
+            fix = (
+                "confirm the harness is authenticated (`llmlint doctor`) and the "
+                "composition in AGENTS.md is valid, then re-run"
+            )
+            detail = _trim(err or out)
+            return [
+                Finding(
+                    "ERROR",
+                    "buildout llmlint could not run (config or harness error)",
+                    fix + (f"; llmlint reported:\n{detail}" if detail else ""),
+                )
+            ]
+        case _:  # 1 (violations), or any other non-zero exit
+            detail = _trim(out or err)
+            return [
+                Finding(
+                    "ERROR",
+                    "buildout llmlint found structural issue(s) in the repo setup",
+                    "resolve the buildout findings below, then re-run"
+                    + (f":\n{detail}" if detail else ""),
+                )
+            ]
+
+
+def run_buildout(
+    repo: Path, skill_dir: Path, *, llmlint_runner: LlmlintRunner | None = None
+) -> list[Finding]:
+    """Compose the buildout config for this repo's stack and run llmlint against it.
+
+    Reads the composition from AGENTS.md, maps each reference to its buildout
+    fragment (the ones that have one), writes a throwaway config wiring those
+    fragments in as local plugins, runs ``llmlint`` over the repo, and maps the
+    exit code to a Finding. The temp config is always removed. Non-deterministic
+    and credentialed — callers reach it only via ``--buildout``.
+    """
+    runner = llmlint_runner or _default_llmlint_runner
+
+    buildout_dir = skill_dir / "assets" / "llmlint" / "buildout"
+    if not buildout_dir.is_dir():
+        return [
+            Finding(
+                "ERROR",
+                "buildout fragments not found next to the checker",
+                "run check_repo_baseline.py from the create-repo skill checkout so "
+                "assets/llmlint/buildout/ is available (or drop --buildout)",
+            )
+        ]
+
+    agents = repo / "AGENTS.md"
+    refs = (
+        parse_composed_references(agents.read_text(encoding="utf-8"))
+        if agents.is_file()
+        else []
+    )
+    if not refs:
+        return [
+            Finding(
+                "ERROR",
+                "cannot determine the stack for the buildout run (no 'References "
+                "composed' line in AGENTS.md)",
+                "record the composition in AGENTS.md (the composer writes a "
+                "'References composed:' line) so the buildout tier knows which "
+                "fragments apply",
+            )
+        ]
+
+    # base.md is always-applied (the universal invariants), so its buildout tier
+    # runs regardless of whether the composition line happens to spell it out.
+    if "base.md" not in refs:
+        refs = ["base.md", *refs]
+
+    # Map each recorded reference token to its buildout fragment, validating that
+    # the token stays *inside* the buildout tree. AGENTS.md is in-repo, but the
+    # token pattern admits `.`/`/`, so a stray or hostile `../…` token must not
+    # escape buildout/ and pull an arbitrary file in as a plugin.
+    buildout_root = buildout_dir.resolve()
+    fragments: list[Path] = []
+    seen: set[str] = set()
+    for ref in refs:
+        stem = ref[:-3] if ref.endswith(".md") else ref
+        if stem in seen:
+            continue
+        frag = (buildout_dir / f"{stem}.llmlint.yml").resolve()
+        if not frag.is_relative_to(buildout_root):
+            continue  # token escaped the buildout tree — ignore it
+        if frag.is_file():
+            seen.add(stem)
+            fragments.append(frag)
+    if not fragments:
+        return [Finding("OK", "no buildout rules apply to this stack")]
+
+    fd, tmp_name = tempfile.mkstemp(suffix=".llmlint.yml", prefix="buildout-")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(_render_buildout_config(fragments))
+        rc, out, err = runner(tmp, repo)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    return _buildout_findings(rc, out, err, len(fragments))
 
 
 def audit(repo: Path) -> list[Finding]:
@@ -862,6 +1202,14 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "repo", nargs="?", default=".", help="path to the repository (default: .)"
     )
+    parser.add_argument(
+        "--buildout",
+        action="store_true",
+        help="ALSO compose and RUN the one-time llmlint buildout tier (structural "
+        "one-time checks) for this repo's stack. Non-deterministic and credentialed "
+        "(drives the llmlint harness), so it is opt-in and NOT part of the "
+        "deterministic checks; needs `llmlint` on PATH and the skill's assets.",
+    )
     args = parser.parse_args(argv)
 
     repo = Path(args.repo).resolve()
@@ -870,6 +1218,9 @@ def main(argv: list[str]) -> int:
         return 2
 
     findings = audit(repo)
+    if args.buildout:
+        skill_dir = Path(__file__).resolve().parent.parent
+        findings += run_buildout(repo, skill_dir)
     warnings = [f for f in findings if f.level == "WARN"]
     errors = [f for f in findings if f.level == "ERROR"]
 

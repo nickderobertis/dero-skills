@@ -1,0 +1,56 @@
+# Base buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# These are the universal, one-time STRUCTURAL invariants that the deterministic
+# `check_repo_baseline.py` can only weakly signal (it is stack-agnostic, so it
+# confirms a coverage *word* appears and that `check` runs `test`, but cannot see
+# that every gate stage is wired or that the threshold actually fails the build).
+# The ongoing judgment rules live in the committed base.llmlint.yml; these do not
+# persist.
+version: 1
+
+rules:
+  - name: gate_runs_every_stage
+    description: |
+      true when `just check` composes the FULL gate for this stack — format check,
+      lint, type check (where the language has one), unit tests, AND e2e — each an
+      actually-invoked command. false when a stage the stack needs is missing from
+      `check` (e.g. type checking or e2e is defined as a recipe but never reached by
+      `check`), so the gate passes while a whole class of defect goes unchecked.
+    files:
+      include: ["justfile", "Justfile", ".justfile", ".github/workflows/**"]
+
+  - name: coverage_gate_actually_fails
+    description: |
+      true when the test command in the gate both measures coverage and FAILS the
+      build below the threshold — a real `--cov-fail-under`, `coverageThreshold`,
+      `--fail-under-lines`, or equivalent enforcing flag. false when coverage is
+      only reported (printed, uploaded) without a failing threshold, or the
+      threshold is commented out.
+    files:
+      include:
+        - "justfile"
+        - "Justfile"
+        - ".justfile"
+        - "pyproject.toml"
+        - "vitest.config.*"
+        - "vite.config.*"
+        - "jest.config.*"
+        - "Cargo.toml"
+        - ".coveragerc"
+    relevance: the repo enforces coverage in-gate rather than documenting an opt-out in AGENTS.md
+
+  - name: upgrade_refreshes_and_gates
+    description: |
+      true when `just upgrade` (or the equivalent recipe) upgrades dependencies to
+      their latest allowed versions AND re-runs the full gate, so a fresh repo lands
+      on current deps proven green. false when `upgrade` only bumps a lockfile
+      without re-running `check`, or no upgrade path exists at all.
+    files:
+      include: ["justfile", "Justfile", ".justfile"]
+
+  - name: no_secret_committed_in_tree
+    description: |
+      true when no credential, API key, access token, connection string, or private
+      key is committed anywhere in the tree — every secret is referenced by name from
+      an environment variable or secret store. false when any real secret value is
+      embedded in a committed file.
+    relevance: the target file could hold a credential, token, key, or connection string

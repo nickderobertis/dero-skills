@@ -43,3 +43,12 @@ rules:
     files:
       include: [".github/workflows/**"]
     relevance: the repository publishes to a package registry
+
+  - name: pr_title_conventional_commit_linted
+    description: |
+      true when a CI job runs on `pull_request` that lints the PR title (the
+      squash-merge subject the release pipeline reads) against Conventional Commits
+      — a `commitlint` or equivalent PR-title-lint step. false when no workflow lints
+      the PR title.
+    files:
+      include: [".github/workflows/**", "commitlint.config.*", ".commitlintrc*"]

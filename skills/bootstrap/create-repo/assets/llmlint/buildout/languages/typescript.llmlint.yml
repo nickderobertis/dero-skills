@@ -1,0 +1,28 @@
+# TypeScript buildout rules (plugin) — run ONCE during repo creation, then
+# discarded. One-time structural checks on the command surface and package
+# manager; the ongoing TS judgment rules live in languages/typescript.llmlint.yml.
+version: 1
+
+rules:
+  - name: command_surface_wired_bun
+    description: |
+      true when the justfile maps the standard recipes to the bun-native commands:
+      `bootstrap` -> `bun install`, `check` -> format check + lint + `tsc --noEmit`
+      + tests with coverage, and `upgrade` -> `bun update`. false when a mapping is
+      missing or bypasses bun (bare `npm`/`yarn`/`pnpm` with no documented reason).
+    files:
+      include: ["justfile", "Justfile", ".justfile"]
+
+  - name: single_lockfile_bun
+    description: |
+      true when `bun.lock` (or `bun.lockb`) is committed and no competing
+      `package-lock.json`, `pnpm-lock.yaml`, or `yarn.lock` sits beside it. false
+      when a second package manager's lockfile is committed without a documented
+      fallback reason — two lockfiles resolve to different trees.
+    files:
+      include:
+        - "bun.lock"
+        - "bun.lockb"
+        - "package-lock.json"
+        - "pnpm-lock.yaml"
+        - "yarn.lock"

@@ -34,10 +34,19 @@ everything they already check, and reach for llmlint only for the judgment calls
   **ongoing** rules that judge code as it changes (e2e isn't mocked, inputs are
   validated at boundaries, no unjustified suppressions, ...). A second
   **buildout** config (`--llmlint-buildout-config`, e.g. `llmlint.buildout.yml`)
-  carries one-time *structural* checks (the release pipeline has no manual step,
-  CI runs the real gate, the monorepo delegates to its orchestrator). Run the
-  buildout config **once** during creation, resolve findings, then **delete it —
-  do not commit it**. Only the ongoing config stays and becomes the PR check.
+  carries one-time *structural* checks — the universal invariants the deterministic
+  checker can't express (the gate wires every stage, coverage actually fails the
+  build, no secret is committed, deps were upgraded) plus the per-stack ones
+  (command surface wired the language-native way, toolchain pinned, the release
+  pipeline has no manual step, CI runs the real gate, the monorepo delegates to
+  its orchestrator, one asset-naming contract, the production build validated).
+  Every composed reference — `base`, each language, each shape, and the
+  cross-cutting pieces — contributes its buildout fragment. Run the buildout config
+  **once** during creation, resolve findings, then **delete it — do not commit
+  it**. Only the ongoing config stays and becomes the PR check. The easiest way to
+  run it is `check_repo_baseline.py --buildout`, which composes the buildout config
+  for the stack recorded in `AGENTS.md`, runs `llmlint`, and cleans up the temp
+  config — so the compose/run/delete cycle isn't a manual dance to forget.
 - **Rules are judge-level and scoped.** Each rule is a positive invariant judged
   `true` (holds) / `false` (a violation), scoped deterministically with `files`
   globs. Add a `relevance` clause whenever a file can match the globs but still
@@ -79,9 +88,11 @@ everything they already check, and reach for llmlint only for the judgment calls
   fails fast without it (fork PRs are gated by the repo's
   require-approval-for-fork-workflows setting, not a no-op), and `llmlint` is in
   the branch-protection required-checks set.
-- [ ] **Buildout run once.** The buildout config
-  (`compose_repo_plan.py --llmlint-buildout-config`) was run once during creation,
-  its findings resolved, and the file deleted (not committed).
+- [ ] **Buildout run once.** The buildout tier was run once during creation and
+  its findings resolved — easiest via `check_repo_baseline.py --buildout` (it
+  composes the buildout config for the recorded stack, runs `llmlint`, and cleans
+  up), or by hand with `compose_repo_plan.py --llmlint-buildout-config` then
+  deleting the file (never commit it).
 - [ ] **Harness reachable.** `llmlint doctor` passes (oneharness + an
   authenticated harness installed), and `just lint-llm` was run once with its
   findings resolved.
