@@ -11,6 +11,11 @@ to re-run a developer's warm local environment.
   checkout, runs `just bootstrap`, then `just check` (which includes e2e). If
   bootstrap can't produce a working repo from scratch, that is the bug. The
   baseline checker fails CI that never references `just check`.
+- **Pins stay in lockstep.** A toolchain version pinned in more than one place
+  (`.tool-versions`, a CI `setup-*` action or matrix entry, a `Dockerfile`, the
+  docs) must hold the same value everywhere, or be reconciled by a single check —
+  otherwise local and CI silently run different toolchains and the gate stops
+  meaning what a contributor sees.
 - **Realistic platform matrix.** Use an OS matrix when the artifact is
   cross-platform (CLIs, plugins, binaries). Test the versions you actually
   support. When the matrix includes Windows, commit a `.gitattributes` with
