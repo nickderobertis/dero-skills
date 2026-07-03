@@ -7,15 +7,15 @@
 # script always exits 0 — a flaky install must never break session startup.
 #
 # What it does, and why:
-#   1. Installs the `llmlint` + `oneharness` binaries from PyPI via `uv tool`.
-#      `llmlint-cli` wraps the same prebuilt binary the upstream installer ships
-#      and depends on `oneharness-cli`, so one dependency resolution fetches both
-#      wheels with no Rust toolchain and no github.com reachability (handy in
-#      restricted-egress sessions where PyPI is reachable but raw.githubusercontent
-#      is not). `uv tool` only links the *requested* package's executable, so
-#      `oneharness-cli` is installed as its own tool to expose the `oneharness`
-#      binary `llmlint` needs on PATH. `--upgrade` bumps an older cached tool
-#      rather than leaving it, honouring the version floors below.
+#   1. Installs the `llmlint` binary from PyPI via `uv tool`. `llmlint-cli` wraps
+#      the same prebuilt binary the upstream installer ships and depends on
+#      `oneharness-cli`, so one dependency resolution fetches both wheels with no
+#      Rust toolchain and no github.com reachability (handy in restricted-egress
+#      sessions where PyPI is reachable but raw.githubusercontent is not). `uv tool`
+#      links only the *requested* package's executable onto PATH, but llmlint >=
+#      0.3.6 finds `oneharness` beside its own binary in the tool venv — so this one
+#      install is a complete setup; no separate oneharness install / PATH entry.
+#      `--upgrade` bumps an older cached tool rather than leaving it.
 #   2. Inside a Claude Code session, exports env that flips oneharness to the only
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
@@ -23,36 +23,31 @@
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
-# llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the toolchain is installed from PyPI (`uv tool install llmlint-cli`/`oneharness-cli`) whose wheels ship with Trusted Publishing + PEP 740 attestations, so no unvalidated external input is executed.
+# llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the toolchain is installed from PyPI (`uv tool install llmlint-cli`) whose wheels ship with Trusted Publishing + PEP 740 attestations, so no unvalidated external input is executed.
 set -uo pipefail
 
-# Version floors, as PyPI constraints (the `*-cli` package version tracks the
+# Version floor, as a PyPI constraint (the `llmlint-cli` package version tracks the
 # wrapped binary version). `uv tool install --upgrade` installs the newest release
-# satisfying each floor. Bump as the tools raise theirs.
-#   oneharness >= 0.3.4 — the read-only mode current `llmlint` requires plus the
-#     `ONEHARNESS_<FIELD>` env config overrides this setup relies on.
-#   llmlint    >= 0.3.1 — llmlint.yml omits `files.include` and relies on the
-#     whole-tree default; also needs `--diff`/`--diff-base` and `check-ignores`.
-readonly ONEHARNESS_MIN="0.3.4"
-readonly LLMLINT_MIN="0.3.1"
+# satisfying it; oneharness comes along transitively at a compatible version.
+#   llmlint >= 0.3.6 — finds `oneharness` beside its own executable (so a lone
+#     `uv tool install llmlint-cli` works); also needs the whole-tree default (no
+#     `files.include`), `--diff`/`--diff-base`, and `check-ignores`.
+readonly LLMLINT_MIN="0.3.6"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
 
-# Install both binaries from PyPI via uv (the repo's Python package manager). uv is
-# a clean-clone prerequisite; if it is somehow absent, log an actionable pointer and
-# leave any already-installed binaries in place rather than aborting startup.
+# Install llmlint from PyPI via uv (the repo's Python package manager). uv is a
+# clean-clone prerequisite; if it is somehow absent, log an actionable pointer and
+# leave any already-installed binary in place rather than aborting startup.
 ensure_toolchain() {
   if ! command -v uv >/dev/null 2>&1; then
-    log "uv not found; cannot install the llmlint toolchain (install uv: https://docs.astral.sh/uv/)"
+    log "uv not found; cannot install llmlint (install uv: https://docs.astral.sh/uv/)"
     return 0
   fi
-  # oneharness-cli exposes the `oneharness` binary; llmlint-cli exposes `llmlint`
-  # (and pulls oneharness-cli as a dependency, but uv tool only links the primary
-  # package's executable — hence the separate install to put `oneharness` on PATH).
-  log "installing oneharness-cli >= $ONEHARNESS_MIN + llmlint-cli >= $LLMLINT_MIN via uv tool"
-  uv tool install --upgrade "oneharness-cli>=$ONEHARNESS_MIN" >&2 \
-    || log "oneharness-cli install failed (continuing)"
+  # llmlint-cli pulls oneharness-cli as a dependency into the same tool venv, where
+  # llmlint discovers the `oneharness` binary beside its own — no separate install.
+  log "installing llmlint-cli >= $LLMLINT_MIN via uv tool"
   uv tool install --upgrade "llmlint-cli>=$LLMLINT_MIN" >&2 \
     || log "llmlint-cli install failed (continuing)"
 }
@@ -73,5 +68,12 @@ persist_session_env() {
 export PATH="${BIN_DIR}:${PATH}"
 ensure_toolchain
 persist_session_env
-log "ready (oneharness: $(oneharness --version 2>/dev/null || echo missing); llmlint: $(llmlint --version 2>/dev/null || echo missing))"
+# `llmlint doctor` confirms the sibling `oneharness` is reachable (it is not on
+# PATH — llmlint resolves it beside its own binary), so report via doctor.
+if command -v llmlint >/dev/null 2>&1; then
+  log "ready (llmlint: $(llmlint --version 2>/dev/null || echo unknown))"
+  llmlint doctor >&2 2>&1 || log "llmlint doctor reported an issue (see above)"
+else
+  log "llmlint not installed"
+fi
 exit 0
