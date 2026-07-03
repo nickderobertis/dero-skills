@@ -7,10 +7,15 @@
 # script always exits 0 — a flaky install must never break session startup.
 #
 # What it does, and why:
-#   1. Installs `oneharness` (>= the floor that satisfies both the
-#      `ONEHARNESS_<FIELD>` env overrides and the read-only mode current `llmlint`
-#      requires) and `llmlint` (>= the floor with `--diff`/`--diff-base` and
-#      `check-ignores`), upgrading an older cached binary rather than leaving it.
+#   1. Installs the `llmlint` + `oneharness` binaries from PyPI via `uv tool`.
+#      `llmlint-cli` wraps the same prebuilt binary the upstream installer ships
+#      and depends on `oneharness-cli`, so one dependency resolution fetches both
+#      wheels with no Rust toolchain and no github.com reachability (handy in
+#      restricted-egress sessions where PyPI is reachable but raw.githubusercontent
+#      is not). `uv tool` only links the *requested* package's executable, so
+#      `oneharness-cli` is installed as its own tool to expose the `oneharness`
+#      binary `llmlint` needs on PATH. `--upgrade` bumps an older cached tool
+#      rather than leaving it, honouring the version floors below.
 #   2. Inside a Claude Code session, exports env that flips oneharness to the only
 #      harness authenticated here — claude-code + Opus — overriding the committed
 #      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
@@ -18,56 +23,38 @@
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
-# llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the upstream `curl | sh` installers are the documented, version-pinned install path (each verifies the binary it fetches).
+# llmlint: ignore-file[robust_shell, tool_output_is_signal, boundary_inputs_validated] deliberate for a session-startup installer (see header): `set -e` is omitted so a flaky install can't abort the hook — the script owns its exit codes and always exits 0; success stays quiet while failures log-and-continue rather than block startup; and the toolchain is installed from PyPI (`uv tool install llmlint-cli`/`oneharness-cli`) whose wheels ship with Trusted Publishing + PEP 740 attestations, so no unvalidated external input is executed.
 set -uo pipefail
 
-# Minimum oneharness: >= 0.3.0 is what current `llmlint` needs for read-only mode
-# (the judge reads but never edits files); it also has the `ONEHARNESS_<FIELD>`
-# env config overrides this setup relies on. Bump as llmlint raises the floor.
+# Version floors, as PyPI constraints (the `*-cli` package version tracks the
+# wrapped binary version). `uv tool install --upgrade` installs the newest release
+# satisfying each floor. Bump as the tools raise theirs.
+#   oneharness >= 0.3.4 — the read-only mode current `llmlint` requires plus the
+#     `ONEHARNESS_<FIELD>` env config overrides this setup relies on.
+#   llmlint    >= 0.3.1 — llmlint.yml omits `files.include` and relies on the
+#     whole-tree default; also needs `--diff`/`--diff-base` and `check-ignores`.
 readonly ONEHARNESS_MIN="0.3.4"
-# Minimum llmlint: >= 0.3.1 — llmlint.yml omits `files.include` and relies on the
-# whole-tree default (added in 0.2.31; older binaries scan zero files on a no-args
-# run). 0.3.0 was a breaking change (agents scope to their subtree, `agent.files`
-# removed) but this repo's config has no `agents` block, so it is unaffected. Bump
-# the floor as llmlint raises it; an older cached binary is upgraded.
 readonly LLMLINT_MIN="0.3.1"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
 
-# True when $1 (installed) is older than $2 (minimum). Portable component-wise
-# numeric compare — avoids `sort -V` (GNU coreutils only, absent on some `sort`s).
-older_than() {
-  local IFS=. ; local -a have min ; read -ra have <<<"$1" ; read -ra min <<<"$2"
-  local i x y
-  for ((i = 0; i < ${#have[@]} || i < ${#min[@]}; i++)); do
-    x=${have[i]:-0} ; y=${min[i]:-0} ; x=${x%%[!0-9]*} ; y=${y%%[!0-9]*}
-    ((10#${x:-0} < 10#${y:-0})) && return 0
-    ((10#${x:-0} > 10#${y:-0})) && return 1
-  done
-  return 1
-}
-
-ensure_oneharness() {
-  local have
-  if have="$(oneharness --version 2>/dev/null | awk '{print $2}')" && [ -n "$have" ] \
-     && ! older_than "$have" "$ONEHARNESS_MIN"; then
+# Install both binaries from PyPI via uv (the repo's Python package manager). uv is
+# a clean-clone prerequisite; if it is somehow absent, log an actionable pointer and
+# leave any already-installed binaries in place rather than aborting startup.
+ensure_toolchain() {
+  if ! command -v uv >/dev/null 2>&1; then
+    log "uv not found; cannot install the llmlint toolchain (install uv: https://docs.astral.sh/uv/)"
     return 0
   fi
-  log "installing oneharness >= v$ONEHARNESS_MIN (have: ${have:-none})"
-  curl -fsSL https://raw.githubusercontent.com/nickderobertis/oneharness/main/scripts/install.sh \
-    | sh -s -- --version "v$ONEHARNESS_MIN" >&2 || log "oneharness install failed (continuing)"
-}
-
-ensure_llmlint() {
-  local have
-  if have="$(llmlint --version 2>/dev/null | awk '{print $2}')" && [ -n "$have" ] \
-     && ! older_than "$have" "$LLMLINT_MIN"; then
-    return 0
-  fi
-  log "installing llmlint >= v$LLMLINT_MIN (have: ${have:-none})"
-  curl -fsSL https://raw.githubusercontent.com/nickderobertis/llmlint/main/scripts/install.sh \
-    | sh -s -- --version "v$LLMLINT_MIN" >&2 || log "llmlint install failed (continuing)"
+  # oneharness-cli exposes the `oneharness` binary; llmlint-cli exposes `llmlint`
+  # (and pulls oneharness-cli as a dependency, but uv tool only links the primary
+  # package's executable — hence the separate install to put `oneharness` on PATH).
+  log "installing oneharness-cli >= $ONEHARNESS_MIN + llmlint-cli >= $LLMLINT_MIN via uv tool"
+  uv tool install --upgrade "oneharness-cli>=$ONEHARNESS_MIN" >&2 \
+    || log "oneharness-cli install failed (continuing)"
+  uv tool install --upgrade "llmlint-cli>=$LLMLINT_MIN" >&2 \
+    || log "llmlint-cli install failed (continuing)"
 }
 
 # Persist env for the rest of the session via CLAUDE_ENV_FILE (Claude Code sources
@@ -84,8 +71,7 @@ persist_session_env() {
 }
 
 export PATH="${BIN_DIR}:${PATH}"
-ensure_oneharness
-ensure_llmlint
+ensure_toolchain
 persist_session_env
 log "ready (oneharness: $(oneharness --version 2>/dev/null || echo missing); llmlint: $(llmlint --version 2>/dev/null || echo missing))"
 exit 0

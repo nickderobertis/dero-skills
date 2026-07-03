@@ -113,7 +113,9 @@ overrides; `setup-llmlint.sh` pins the concrete floor).
 `oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
 running `llmlint` from a terminal gets). Inside a Claude Code session the
 `SessionStart` hook runs `scripts/setup-llmlint.sh`, which installs the binaries
-and exports `ONEHARNESS_HARNESSES=claude-code` + `ONEHARNESS_MODEL=claude-opus-4-8`
+(via `uv tool install` of the `llmlint-cli`/`oneharness-cli` PyPI wheels — one
+dependency resolution, no Rust toolchain or github.com reachability needed) and
+exports `ONEHARNESS_HARNESSES=claude-code` + `ONEHARNESS_MODEL=claude-opus-4-8`
 into the session — env overrides that beat the committed file, so the run uses
 the only harness authenticated there (Claude Code + Opus). The flip works only
 because the agents in `llmlint.yml` deliberately do **not** pin a harness/model
