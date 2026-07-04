@@ -76,8 +76,7 @@ rules:
     description: |
       true when the quality gate treats every diagnostic as a hard failure — no
       linter, type checker, or compiler is configured to emit warning-level output.
-      false when any check is left warning-only (a warning that neither fails the
-      gate nor is fixed only bloats context; a check is either strict or removed).
+      false when any check is left warning-only.
     files:
       include:
         - "justfile"
