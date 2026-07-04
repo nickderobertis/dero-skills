@@ -28,6 +28,36 @@ rules:
       the source of truth, so the store and the server can drift out of sync.
     relevance: the target files fetch server data or define a global client store
 
+  - name: stateful_logic_extracted_to_hooks
+    description: |
+      true when a component's data-fetching, mutations, subscriptions, and
+      non-trivial derived state live in custom hooks (`useX`), leaving the
+      component body mostly declarative markup that wires hook results to JSX.
+      false when a component inlines substantial business logic — fetching,
+      effects, and branching orchestration — beside its render instead of
+      extracting it into a hook.
+    files:
+      include:
+        - "**/*.tsx"
+        - "**/*.jsx"
+    relevance: the target files define a React component
+
+  - name: feature_code_colocated
+    description: |
+      true when a feature's components, hooks, API calls, state, and types live
+      together under `src/features/<feature>/`. false when code belonging to one
+      feature is scattered across global type-based folders (a top-level
+      `components/`, `hooks/`, or `services/`) instead of being colocated with its
+      feature, so no directory owns the feature end to end.
+    files:
+      include:
+        - "**/features/**/*.ts"
+        - "**/features/**/*.tsx"
+        - "**/components/**/*.tsx"
+        - "**/hooks/**/*.ts"
+        - "**/services/**/*.ts"
+    relevance: the target files belong to a feature that should be colocated
+
   - name: dangerous_html_is_sanitized
     description: |
       true when every `dangerouslySetInnerHTML` is fed HTML that is constant or

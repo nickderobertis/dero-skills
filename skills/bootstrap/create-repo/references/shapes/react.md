@@ -37,6 +37,12 @@ them, don't re-derive them.
 - **Composition over prop-drilling.** Keep components small and focused; prefer
   composition (children/slots) and a handful of well-scoped contexts over
   threading props through many layers or over-generalized "God" components.
+- **Keep logic out of the view.** Extract data-fetching, mutations,
+  subscriptions, and non-trivial derived state into custom hooks (`useX`) so the
+  component stays mostly declarative markup wiring hook results to JSX. A
+  component that inlines fetching + effects + branching business logic beside its
+  render should split into a hook (the logic) and a presentational component (the
+  view); reuse the logic by sharing the hook, not by copying the component.
 - **Forms are validated.** Use a form library (e.g. React Hook Form) with a
   schema resolver (Zod) so the same schema validates the form and types its
   values — no hand-rolled `onChange` validation.
@@ -74,6 +80,11 @@ them, don't re-derive them.
 - [ ] **Declarative data layer.** Data access goes through one typed client with
   queries/mutations colocated per feature and responses validated at the
   boundary — no scattered raw `fetch`/`axios` in components.
+- [ ] **Logic extracted to hooks.** Data-fetching, mutations, subscriptions, and
+  non-trivial derived state live in custom hooks; components stay mostly
+  declarative markup rather than inlining substantial business logic beside JSX.
+- [ ] **Feature code colocated.** A feature's components/hooks/api/state live
+  under `src/features/<feature>/`, not scattered across global type-based folders.
 - [ ] **Forms validated by schema.** Forms use a form library with a schema
   resolver (Zod) rather than hand-rolled validation.
 - [ ] **Error boundaries in place.** Route/feature subtrees are wrapped in error
