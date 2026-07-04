@@ -3,14 +3,16 @@
 Loads the PEP 723 script as a module so its functions can be exercised
 directly. The module is registered in sys.modules before exec so the
 ``@dataclass`` in it can resolve ``__module__`` under all Python versions.
+
+The end-to-end layer — running the script as a real ``uv run --script``
+subprocess with a stubbed external ``llmlint`` — lives in
+``e2e/test_check_repo_baseline_e2e.py``, which imports the repo-builder helpers
+(``make_repo``/``_buildout_repo``) from this module.
 """
 
 from __future__ import annotations
 
 import importlib.util
-import os
-import stat
-import subprocess
 import sys
 from pathlib import Path
 
@@ -841,42 +843,3 @@ def test_run_buildout_without_composition_line_is_error(tmp_path):
         repo, SKILL_DIR, llmlint_runner=lambda c, r: (0, "", "")
     )
     assert any("determine the stack" in m for m in levels(findings, "ERROR"))
-
-
-def _write_stub_llmlint(dir_path: Path, exit_code: int) -> None:
-    """Drop a fake `llmlint` on PATH — the genuinely-external harness we may stub."""
-    stub = dir_path / "llmlint"
-    stub.write_text(
-        f'#!/usr/bin/env bash\necho "stub llmlint $*" >&2\nexit {exit_code}\n',
-        encoding="utf-8",
-    )
-    stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-
-def _run_script_with_stub(repo: Path, exit_code: int, tmp_path: Path):
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    _write_stub_llmlint(bin_dir, exit_code)
-    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
-    return subprocess.run(
-        ["uv", "run", "--script", str(SCRIPT), str(repo), "--buildout"],
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-
-
-def test_e2e_buildout_invokes_real_llmlint_binary_and_passes(tmp_path):
-    # Drive the real script end to end: it composes the config and actually shells
-    # out to `llmlint` (a stub on PATH, exit 0). Only the external harness is stubbed.
-    repo = _buildout_repo(tmp_path / "repo")
-    result = _run_script_with_stub(repo, 0, tmp_path)
-    assert result.returncode == 0, result.stderr
-
-
-def test_e2e_buildout_propagates_llmlint_violations(tmp_path):
-    # Stub llmlint fails (exit 1); the checker surfaces it as a failing invariant.
-    repo = _buildout_repo(tmp_path / "repo")
-    result = _run_script_with_stub(repo, 1, tmp_path)
-    assert result.returncode == 1
-    assert "structural issue" in result.stderr
