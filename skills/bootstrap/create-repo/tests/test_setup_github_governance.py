@@ -7,13 +7,15 @@ the script *would* make and the payloads it builds.
 
 The module is registered in sys.modules before exec so the ``@dataclass`` in it
 can resolve ``__module__`` under all Python versions.
+
+The end-to-end layer — running the script as a real ``uv run --script``
+subprocess — lives in ``e2e/test_setup_github_governance_e2e.py``.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -647,53 +649,3 @@ def test_main_verify_fails_and_reports_drift(capsys):
     err = capsys.readouterr().err
     assert "DRIFT" in err
     assert "FAIL" in err
-
-
-# --- e2e: run the real PEP 723 script as a subprocess ----------------------
-
-
-def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
-    """Invoke the governance script the way the skill documents: `uv run
-    --script`, so the PEP 723 script resolves and parses args end to end. An
-    offline `--dry-run` (with --repo/--branch) needs no `gh`, network, or auth."""
-    return subprocess.run(
-        ["uv", "run", "--script", str(SCRIPT), *args],
-        capture_output=True,
-        text=True,
-    )
-
-
-def test_e2e_dry_run_plans_all_three_mutations_including_fork_approval():
-    result = _run_script(
-        "check", "commitlint", "--repo", "acme/w", "--branch", "main", "--dry-run"
-    )
-    assert result.returncode == 0, result.stderr
-    out = result.stdout
-    assert "PATCH repos/acme/w" in out
-    assert "PUT repos/acme/w/branches/main/protection" in out
-    assert "PUT repos/acme/w/actions/permissions/fork-pr-contributor-approval" in out
-    # The default policy is rendered in the body the call would send.
-    assert '"approval_policy": "all_external_contributors"' in out
-
-
-def test_e2e_dry_run_honors_fork_pr_approval_flag():
-    result = _run_script(
-        "check",
-        "--repo",
-        "acme/w",
-        "--branch",
-        "main",
-        "--fork-pr-approval",
-        "first_time_contributors",
-        "--dry-run",
-    )
-    assert result.returncode == 0, result.stderr
-    assert '"approval_policy": "first_time_contributors"' in result.stdout
-
-
-def test_e2e_rejects_unknown_fork_pr_approval_policy():
-    result = _run_script(
-        "check", "--repo", "a/b", "--branch", "main", "--fork-pr-approval", "bogus"
-    )
-    assert result.returncode != 0
-    assert "invalid choice" in result.stderr
