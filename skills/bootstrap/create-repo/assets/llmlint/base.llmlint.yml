@@ -17,8 +17,10 @@ rules:
       the network, filesystem, subprocess, or the entry point it is meant to exercise.
     files:
       include:
+        # `**/e2e/**` catches any file inside an e2e/ dir (whatever its name);
+        # `**/*e2e*` catches e2e-named files outside such a dir. `**/tests/e2e/**`
+        # would be a strict subset of the first, so it is intentionally omitted.
         - "**/e2e/**"
-        - "**/tests/e2e/**"
         - "**/*e2e*"
         - "**/integration/**"
         - "**/*.integration.*"
