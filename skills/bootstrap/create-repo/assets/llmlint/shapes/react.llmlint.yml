@@ -21,6 +21,12 @@ rules:
     relevance: the target files live inside a feature module
 
   - name: server_state_not_duplicated_in_global_store
+    files:
+      include:
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.js"
+        - "**/*.jsx"
     description: |
       true when server-fetched data is owned by a data-fetching/query layer (e.g.
       TanStack Query, RTK Query) and read from there. false when data fetched from
