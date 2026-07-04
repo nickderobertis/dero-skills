@@ -1,0 +1,41 @@
+# React judge-level rules (plugin). Pairs with shapes/react.md. Applies to any
+# React app (including Next.js, which builds on this shape). The server-boundary,
+# authorization, and URL-state rules come from shapes/web-app.llmlint.yml; the
+# one-time hooks-lint/import-boundary setup checks are buildout-only
+# (buildout/shapes/react.llmlint.yml). This adds the ongoing React-code judgment
+# that ESLint/Biome can't express.
+version: 1
+
+rules:
+  - name: features_do_not_cross_import
+    description: |
+      true when no module under `src/features/<A>` imports from another feature's
+      internals (`src/features/<B>/...`); features are composed only at the
+      routes/app layer or through shared top-level modules. false when a feature
+      module reaches directly into another feature's internal files, coupling the
+      two and breaking the unidirectional shared → features → app flow.
+    files:
+      include:
+        - "**/features/**/*.ts"
+        - "**/features/**/*.tsx"
+    relevance: the target files live inside a feature module
+
+  - name: server_state_not_duplicated_in_global_store
+    description: |
+      true when server-fetched data is owned by a data-fetching/query layer (e.g.
+      TanStack Query, RTK Query) and read from there. false when data fetched from
+      the server is copied into a global client store (Redux/Zustand/Context) as
+      the source of truth, so the store and the server can drift out of sync.
+    relevance: the target files fetch server data or define a global client store
+
+  - name: dangerous_html_is_sanitized
+    description: |
+      true when every `dangerouslySetInnerHTML` is fed HTML that is constant or
+      sanitized (e.g. via DOMPurify) before rendering. false when user-supplied or
+      other untrusted content is passed to `dangerouslySetInnerHTML` without
+      sanitization, opening an XSS hole.
+    files:
+      include:
+        - "**/*.tsx"
+        - "**/*.jsx"
+    relevance: the target files render `dangerouslySetInnerHTML`

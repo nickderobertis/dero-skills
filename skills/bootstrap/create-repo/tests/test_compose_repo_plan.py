@@ -214,6 +214,51 @@ def test_select_relpaths_order_and_dedup():
     assert any("python-cli" in n for n in notes)
 
 
+def test_select_relpaths_shape_build_on_chain():
+    # nextjs builds on react builds on web-app; all assume TypeScript. The parent
+    # shapes compose base-most first, then the concrete shape, then the language.
+    notes: list[str] = []
+    relpaths, langs = crp.select_relpaths(
+        REFS,
+        shape="nextjs",
+        languages=[],
+        intersections=[],
+        releasing=False,
+        monorepo=False,
+        notes=notes,
+    )
+    assert relpaths[:5] == [
+        "base.md",
+        "shapes/web-app.md",
+        "shapes/react.md",
+        "shapes/nextjs.md",
+        "languages/typescript.md",
+    ]
+    assert langs == ["typescript"]
+
+    # react alone pulls in web-app + typescript, nothing more.
+    relpaths, langs = crp.select_relpaths(REFS, "react", [], [], False, False, [])
+    assert relpaths[:4] == [
+        "base.md",
+        "shapes/web-app.md",
+        "shapes/react.md",
+        "languages/typescript.md",
+    ]
+    assert langs == ["typescript"]
+
+
+def test_react_llmlint_fragment_wired_when_composing_react(tmp_path):
+    out = tmp_path / "llmlint.yml"
+    result = run(
+        "--shape", "react", "--language", "typescript", "--llmlint-config", str(out)
+    )
+    assert result.returncode == 0
+    cfg = out.read_text(encoding="utf-8")
+    # react's own fragment plus the web-app fragment it builds on are both wired.
+    assert "/assets/llmlint/shapes/react.llmlint.yml@1" in cfg
+    assert "/assets/llmlint/shapes/web-app.llmlint.yml@1" in cfg
+
+
 def test_count_items_includes_closing_gates():
     relpaths, _ = crp.select_relpaths(REFS, "cli", ["python"], [], False, False, [])
     refs = [crp.load_reference(REFS, rel) for rel in relpaths]

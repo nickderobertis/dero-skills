@@ -1,8 +1,10 @@
 # Next.js judge-level rules (plugin). Pairs with shapes/nextjs.md. Composed on top
-# of the web-app fragment (nextjs builds on web-app), so the server-boundary,
-# authorization, and URL-state rules come from shapes/web-app.llmlint.yml; this
-# adds only the Next.js-specific server-action/route-handler validation judgment.
-# The one-time production-build check is buildout-only (buildout/shapes/nextjs...).
+# of the react + web-app fragments (nextjs builds on react builds on web-app), so
+# the server-boundary/authorization/URL-state rules come from
+# shapes/web-app.llmlint.yml and the React architecture/hooks/XSS rules from
+# shapes/react.llmlint.yml; this adds only the Next.js-specific
+# server-action/route-handler validation judgment. The one-time production-build
+# check is buildout-only (buildout/shapes/nextjs...).
 version: 1
 
 rules:

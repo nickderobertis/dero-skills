@@ -7,10 +7,12 @@ them for the repo in front of you.
 ## How to compose
 
 1. **Pick one product shape** — what the repo *is*: `shapes/cli.md`,
-   `shapes/web-app.md`, `shapes/nextjs.md`, `shapes/library.md`,
-   `shapes/skills-repo.md`, or `shapes/asdf-plugin.md`. Shapes are
-   language-agnostic wherever possible — `cli.md` is about building a good CLI
-   regardless of language.
+   `shapes/web-app.md`, `shapes/react.md`, `shapes/nextjs.md`,
+   `shapes/library.md`, `shapes/skills-repo.md`, or `shapes/asdf-plugin.md`.
+   Shapes are language-agnostic wherever possible — `cli.md` is about building a
+   good CLI regardless of language. Some shapes build on others: `react.md`
+   layers on `web-app.md`, and `nextjs.md` layers on `react.md` — pick the
+   most specific one and the composer pulls in the shapes beneath it.
 2. **Pull in the language(s)** the repo is built in: `languages/python.md`,
    `languages/typescript.md`, `languages/rust.md`, `languages/bash.md`. The
    language reference carries the toolchain (formatter, linter, type checker,
@@ -33,9 +35,11 @@ them for the repo in front of you.
 ## Worked examples
 
 - **A TypeScript web app.** Start from `shapes/web-app.md` +
-  `languages/typescript.md` + `ci.md`. If you then choose Next.js as the
-  framework, also pull in `shapes/nextjs.md` (it builds on `web-app.md` and
-  assumes TypeScript).
+  `languages/typescript.md` + `ci.md`. If it is a React app, pick
+  `shapes/react.md` instead — the composer pulls in `web-app.md` beneath it and
+  assumes TypeScript. If you then choose Next.js as the framework, pick
+  `shapes/nextjs.md` (it builds on `react.md`, which builds on `web-app.md`, all
+  assuming TypeScript).
 - **A Python CLI.** `shapes/cli.md` gives the language-agnostic CLI principles;
   `languages/python.md` gives the toolchain. Their overlap — packaging a console
   entry point, e2e-testing the installed command — is concrete enough to have
@@ -56,7 +60,7 @@ them for the repo in front of you.
 
 | Axis | References |
 | --- | --- |
-| Product shape | `shapes/cli.md`, `shapes/web-app.md`, `shapes/nextjs.md`, `shapes/library.md`, `shapes/skills-repo.md`, `shapes/asdf-plugin.md` |
+| Product shape | `shapes/cli.md`, `shapes/web-app.md`, `shapes/react.md`, `shapes/nextjs.md`, `shapes/library.md`, `shapes/skills-repo.md`, `shapes/asdf-plugin.md` |
 | Language | `languages/python.md`, `languages/typescript.md`, `languages/rust.md`, `languages/bash.md` |
 | Cross-cutting | `ci.md` (always), `releasing.md` (when shipping a versioned artifact), `monorepo.md` (when >1 app/package/language) |
 | Intersection | `intersections/python-cli.md`, `intersections/rust-cli.md` |

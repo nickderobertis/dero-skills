@@ -1,7 +1,10 @@
 # Shape: Next.js app
 
-Next.js specifics. This builds on `shapes/web-app.md` and assumes
-`languages/typescript.md`; pull all three plus `ci.md`.
+Next.js specifics. This builds on `shapes/react.md` (which itself builds on
+`shapes/web-app.md`) and assumes `languages/typescript.md`; pull all four plus
+`ci.md`. The React architecture principles — feature-based structure,
+unidirectional imports, Rules of Hooks, state-by-kind — come from `react.md`;
+this adds only the Next.js-specific concerns below.
 
 - **Server/client boundary.** Be deliberate about server vs client components.
   Keep secrets and data access on the server; pass only what the client needs.

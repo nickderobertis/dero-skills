@@ -1,0 +1,39 @@
+# React buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural checks that the linter enforces React's Rules of Hooks and
+# the feature-import boundaries; the ongoing React code judgment (cross-feature
+# imports, server-state-in-global-store, unsanitized HTML) lives in
+# shapes/react.llmlint.yml, and the shared web-app buildout rule covers the
+# generic production-build case.
+version: 1
+
+rules:
+  - name: react_hooks_lint_rules_enabled
+    description: |
+      true when the lint config enables the Rules of Hooks and the effect
+      dependency check — `eslint-plugin-react-hooks` with `rules-of-hooks` and
+      `exhaustive-deps` as errors, or the Biome equivalents (`useHookAtTopLevel`,
+      `useExhaustiveDependencies`). false when neither is configured, so hook
+      misuse and stale-closure effect bugs pass the gate.
+    files:
+      include:
+        - "**/eslint.config.*"
+        - "**/.eslintrc*"
+        - "**/biome.json"
+        - "**/biome.jsonc"
+        - "**/package.json"
+    relevance: the target files configure the JS/TS linter
+
+  - name: feature_import_boundaries_enforced_by_lint
+    description: |
+      true when the lint config enforces the unidirectional feature-import
+      architecture — an `import/no-restricted-paths` (ESLint) or `noRestrictedImports`
+      (Biome) rule that bans cross-feature internal imports and shared code
+      importing from features. false when no such rule exists, leaving the
+      shared → features → app boundary unenforced.
+    files:
+      include:
+        - "**/eslint.config.*"
+        - "**/.eslintrc*"
+        - "**/biome.json"
+        - "**/biome.jsonc"
+    relevance: the target files configure the JS/TS linter's import rules
