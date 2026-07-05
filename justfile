@@ -40,6 +40,15 @@ check-versions:
 test:
     uv run pytest
 
+# Run the skilltest natural-language evals (skilltest-pytest). NOT part of
+# `just check`: like `lint-llm`, it needs a provider (`oneharness` on PATH or a
+# custom `SKILLTEST_PROVIDER`) plus a harness token, so the uv-only gate does not
+# assume it — in the gate the eval skips. With a provider available it drives the
+# skill through the harness for real. Selects the skilltest tests by keyword;
+# pass extra pytest args to narrow further, e.g. `just skilltest -x`.
+skilltest *args:
+    uv run pytest -k skilltest {{args}}
+
 # Audit this repo against the create-repo baseline invariants (dogfooding).
 baseline:
     uv run --script skills/bootstrap/create-repo/scripts/check_repo_baseline.py .

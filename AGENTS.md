@@ -71,6 +71,8 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
 - `just lint-llm [paths]` — optional LLM-as-judge lint (`llmlint`). NOT in the
   gate (see "Optional LLM lint" below).
+- `just skilltest [args]` — run the `skilltest-pytest` natural-language skill
+  evals. NOT in the gate (see "Skill evals" below); with no provider they skip.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
 The gate runs on uv alone, so it needs no Node. Nx/bun is an optional
@@ -146,7 +148,32 @@ installs the committed Codex harness via bun and authenticates it with the
 job (not folded into `check`) to keep the clean-clone gate uv-only — add it to
 the required status checks in branch protection to make it block merges.
 
-## Commits, releases, and merging
+### Skill evals (`skilltest-pytest`)
+
+The skills this repo ships are exercised as natural-language evals with
+[`skilltest-pytest`](https://pypi.org/project/skilltest-pytest/) (a dev
+dependency): a case YAML feeds an input to the skill through a real harness and a
+judge scores the transcript against boolean/numeric criteria. `create-repo`'s
+eval lives beside its other tests —
+`skills/bootstrap/create-repo/tests/cases/create_repo.yaml` (the case) plus
+`test_create_repo_skilltest.py` (the runner).
+
+Two deliberate choices keep this out of the deterministic gate, mirroring how
+`llmlint` is handled — it needs a provider (`oneharness` on `PATH`, or a custom
+`SKILLTEST_PROVIDER`) plus a harness token, which the uv-only gate must not
+assume:
+
+- **The code (`run_skill`) form, not an auto-collected `*.skilltest.yaml`.**
+  skilltest-pytest auto-collects any `*.skilltest.yaml` under the test paths into
+  *every* `uv run pytest`, with no skip hook — under `just check` (no provider)
+  that would error, not skip. The runner test instead `skipif`s when no provider
+  is reachable, so a clean clone stays green and the eval runs for real only when
+  one is available. The case file is therefore named `create_repo.yaml`, **not**
+  `create_repo.skilltest.yaml`, so nothing auto-collects it.
+- **Not in `just check`.** Run it on demand with `just skilltest`. The
+  `skilltest` binary comes from the `skilltest-sdk` platform wheel (a pure wheel
+  ships none — fall back to `$SKILLTEST_BIN`/`PATH`); you supply the provider. In
+  `just check`/`just test` it simply skips.
 
 - **Conventional Commits are required.** The type drives releases: `feat:` →
   minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types

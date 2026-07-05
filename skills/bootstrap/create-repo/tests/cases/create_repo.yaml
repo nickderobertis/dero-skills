@@ -1,0 +1,42 @@
+# Skilltest case for the `create-repo` skill.
+#
+# This is the natural-language eval artifact: it drives the real skill through a
+# harness and lets a judge score whether the plan the skill produces follows the
+# skill's load-bearing invariants. It is run by `test_create_repo_skilltest.py`
+# (the `run_skill` code form) so the run can be skipped cleanly when no provider
+# is on PATH, keeping the uv-only `just check` gate green from a clean clone.
+#
+# The filename intentionally does NOT end in `.skilltest.yaml`: that suffix
+# would make skilltest-pytest auto-collect it into every `uv run pytest`,
+# including the deterministic gate, where it would error with no provider.
+name: create-repo-bootstraps-a-python-cli
+skill: ../..
+input: >-
+  I'm starting a brand-new repository for a Python command-line tool. Walk me
+  through bootstrapping it end to end so a future maintainer can clone it, run
+  one command, and trust it.
+evals:
+  - type: boolean
+    name: agent-layer-first
+    criterion: >-
+      the response lays down the agent instruction layer first — it creates an
+      `AGENTS.md` (with `CLAUDE.md` symlinked to it) as the always-loaded
+      instructions for the repo.
+  - type: boolean
+    name: composes-for-the-stack
+    criterion: >-
+      the response composes the setup to fit the actual stack (a Python CLI) —
+      e.g. by running the plan composer for that shape and language — rather
+      than pasting a generic, stack-agnostic template.
+  - type: boolean
+    name: strict-deterministic-gate
+    criterion: >-
+      the response establishes a single strict, deterministic quality gate (a
+      `just check`-style command covering format, lint, and tests with no
+      warnings-only mode) that is also run in CI to prove the artifact.
+  - type: boolean
+    name: unmocked-e2e-tests
+    criterion: >-
+      the response requires realistic, un-mocked end-to-end tests of the real
+      user journeys — it does not treat one smoke test or a mocked stand-in as
+      sufficient.
