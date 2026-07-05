@@ -115,7 +115,7 @@ running `llmlint` from a terminal gets). Inside a Claude Code session the
 `SessionStart` hook runs `scripts/setup-llmlint.sh`, which installs llmlint (via
 `uv tool install llmlint-cli` — one PyPI dependency resolution that also fetches
 `oneharness-cli`, no Rust toolchain or github.com reachability needed; llmlint >=
-0.3.6 finds the `oneharness` binary beside its own in the tool venv, so no
+0.3.7 finds the `oneharness` binary beside its own in the tool venv, so no
 separate install) and exports `ONEHARNESS_HARNESSES=claude-code` +
 `ONEHARNESS_MODEL=claude-opus-4-8`
 into the session — env overrides that beat the committed file, so the run uses
