@@ -94,6 +94,19 @@ LLMLINT_BASE_URL = (
 LLMLINT_VERSION_RE = re.compile(r"^version:\s*(\S+)", re.MULTILINE)
 
 
+# A shape can build on other shapes, composing their guidance first (base-most
+# first, so the concrete shape's guidance lands last and specializes it). react
+# builds on web-app; nextjs builds on react (and thus web-app). Each parent is
+# included only if its reference file exists, so the chain degrades gracefully.
+SHAPE_PARENTS: dict[str, list[str]] = {
+    "react": ["web-app"],
+    "nextjs": ["web-app", "react"],
+}
+# Shapes whose framework assumes TypeScript as the implementation language; the
+# composer auto-includes languages/typescript.md when it isn't passed explicitly.
+TYPESCRIPT_SHAPES = frozenset({"react", "nextjs"})
+
+
 # Intersection references follow a `<language>-<shape>` naming convention
 # (e.g. `python-cli.md` = python + cli, `rust-cli.md` = rust + cli). The composer
 # derives the candidate name from each shape+language pair and auto-includes the
@@ -195,17 +208,21 @@ def select_relpaths(
     """
     ordered: list[str] = ["base.md"]
 
-    # Next.js builds on the web-app shape and assumes TypeScript.
-    if shape == "nextjs" and (refs_dir / "shapes" / "web-app.md").is_file():
-        ordered.append("shapes/web-app.md")
-        notes.append("nextjs builds on the web-app shape — included shapes/web-app.md")
+    # A shape composes any shape(s) it builds on first (base-most first), then
+    # itself: react builds on web-app; nextjs builds on react (and thus web-app).
+    for parent in SHAPE_PARENTS.get(shape, []):
+        if (refs_dir / "shapes" / f"{parent}.md").is_file():
+            ordered.append(f"shapes/{parent}.md")
+            notes.append(
+                f"{shape} builds on the {parent} shape — included shapes/{parent}.md"
+            )
     ordered.append(f"shapes/{shape}.md")
 
     langs = list(languages)
-    if shape == "nextjs" and "typescript" not in langs:
+    if shape in TYPESCRIPT_SHAPES and "typescript" not in langs:
         langs.append("typescript")
         notes.append(
-            "nextjs assumes TypeScript — auto-included languages/typescript.md"
+            f"{shape} assumes TypeScript — auto-included languages/typescript.md"
         )
     ordered.extend(f"languages/{lang}.md" for lang in langs)
 

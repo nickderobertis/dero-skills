@@ -359,8 +359,9 @@ guidance that motivates it, and editing one reference updates both.
 
 - **Always applied** — `base.md` (the shape/language-agnostic invariants, first
   in every plan) and `ci` (GitHub Actions, on top of every shape).
-- **Product shapes** — `cli`, `web-app`, `nextjs`, `library`, `skills-repo`,
-  `asdf-plugin` (language-agnostic where possible).
+- **Product shapes** — `cli`, `web-app`, `react`, `nextjs`, `library`,
+  `skills-repo`, `asdf-plugin` (language-agnostic where possible; `react` builds
+  on `web-app` and `nextjs` builds on `react`).
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
 - **Cross-cutting (flagged)** — `releasing` (Conventional Commits → automated
   release), via `--releasing` when the repo ships a versioned artifact;
@@ -377,7 +378,8 @@ guidance that motivates it, and editing one reference updates both.
   composed guidance plus a single verification checklist assembled from each
   reference's `## Verification` items. Discovers the available flags by scanning
   `references/`, auto-derives intersections (`cli` + `python` → `python-cli`) and
-  the Next.js → web-app + TypeScript implications, and writes the plan to stdout
+  the shape build-on chain (`react` → web-app; `nextjs` → react → web-app; both
+  assume TypeScript), and writes the plan to stdout
   or `-o FILE` with notes on stderr. `--llmlint-config FILE` /
   `--llmlint-buildout-config FILE` additionally compose the repo's `llmlint.yml`
   (the LLM-judge tier) by wiring the selected references' rule fragments in as

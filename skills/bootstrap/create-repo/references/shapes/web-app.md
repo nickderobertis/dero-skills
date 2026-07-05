@@ -1,8 +1,9 @@
 # Shape: Web app
 
 Language-agnostic principles for a web application. Pair with the implementation
-language (usually `languages/typescript.md`) and `ci.md`. If you pick a
-framework with its own reference (e.g. `shapes/nextjs.md`), pull that in too.
+language (usually `languages/typescript.md`) and `ci.md`. If it is a React app,
+pick the more specific `shapes/react.md` (or `shapes/nextjs.md` for Next.js) —
+each builds on this shape and the composer pulls this one in beneath it.
 
 - **State in the URL.** Keep shareable, navigable state in the URL where
   reasonable; parse and validate it rather than trusting it raw.

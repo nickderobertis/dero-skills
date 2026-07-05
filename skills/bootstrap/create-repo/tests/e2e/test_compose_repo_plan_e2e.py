@@ -120,12 +120,44 @@ def test_releasing_omitted_by_default():
     assert "(`monorepo.md`)" not in doc
 
 
-def test_nextjs_pulls_webapp_and_assumes_typescript():
+def test_react_pulls_webapp_and_assumes_typescript():
+    result = run("--shape", "react", "--language", "typescript")
+    doc = result.stdout
+    assert "shapes/web-app.md" in doc
+    assert "shapes/react.md" in doc
+    assert "### Shape: React app  (`shapes/react.md`)" in doc
+    assert "react builds on the web-app shape" in result.stderr
+    # Order: the base-most shape (web-app) precedes the concrete shape (react).
+    assert doc.index("shapes/web-app.md") < doc.index("shapes/react.md")
+
+
+def test_react_auto_adds_typescript_when_missing():
+    result = run("--shape", "react", "--language", "bash")
+    assert result.returncode == 0
+    assert "languages/typescript.md" in result.stdout
+    assert "react assumes TypeScript" in result.stderr
+    assert "react + bash, typescript" in result.stdout
+
+
+def test_nextjs_pulls_react_webapp_and_assumes_typescript():
     result = run("--shape", "nextjs", "--language", "typescript")
     doc = result.stdout
     assert "shapes/web-app.md" in doc
+    assert "shapes/react.md" in doc
     assert "shapes/nextjs.md" in doc
     assert "builds on the web-app shape" in result.stderr
+    assert "builds on the react shape" in result.stderr
+    # The build-on chain composes base-most first: web-app, then react, then nextjs.
+    assert (
+        doc.index("shapes/web-app.md")
+        < doc.index("shapes/react.md")
+        < doc.index("shapes/nextjs.md")
+    )
+    # The composition line records the full chain in order.
+    assert (
+        "base.md, shapes/web-app.md, shapes/react.md, shapes/nextjs.md, "
+        "languages/typescript.md" in doc
+    )
 
 
 def test_nextjs_auto_adds_typescript_when_missing():
