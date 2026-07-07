@@ -66,3 +66,6 @@ def test_e2e_buildout_propagates_llmlint_violations(tmp_path):
     assert result.stderr.index(str(repo / "llmlint.yml")) < result.stderr.index(
         "buildout-"
     )
+    # The buildout per-judge ceiling rides the CLI flag — the only place it beats
+    # the committed config's own `oneharness.timeout` under first-config-wins.
+    assert "--timeout 900" in result.stderr

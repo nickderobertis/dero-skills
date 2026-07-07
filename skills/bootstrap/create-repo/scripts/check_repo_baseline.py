@@ -957,6 +957,14 @@ LIST_ITEM_RE = re.compile(r"^\s{0,3}[-*+]\s")
 # 2 config/harness error; 127 is our sentinel for "binary not found".
 LLMLINT_MISSING = 127
 
+# Per-judge ceiling for the buildout run. Buildout rules judge whole-repo
+# structure (a judge may read many files), so they need more headroom than
+# llmlint's 120s default or a typical ongoing config's value. Passed as the
+# `--timeout` CLI flag, which beats any merged config's `oneharness.timeout` —
+# a temp-config value would lose to the committed config under llmlint's
+# first-config-wins merge.
+BUILDOUT_JUDGE_TIMEOUT_SECS = 900
+
 
 class LlmlintResult(NamedTuple):
     """The structured outcome of one llmlint run (unpacks like a plain tuple)."""
@@ -1009,7 +1017,12 @@ def _default_llmlint_runner(config_paths: list[Path], repo: Path) -> LlmlintResu
     """Run ``llmlint -c CONFIG [-c CONFIG ...]``; return the structured result."""
     try:
         proc = subprocess.run(
-            ["llmlint", *(arg for p in config_paths for arg in ("-c", str(p)))],
+            [
+                "llmlint",
+                *(arg for p in config_paths for arg in ("-c", str(p))),
+                "--timeout",
+                str(BUILDOUT_JUDGE_TIMEOUT_SECS),
+            ],
             cwd=repo,
             capture_output=True,
             text=True,
