@@ -740,9 +740,9 @@ def _buildout_repo(tmp_path) -> Path:
 def test_run_buildout_wires_local_fragments_and_passes(tmp_path):
     seen = {}
 
-    def fake(cfg, repo):
-        seen["cfg"] = Path(cfg).read_text(encoding="utf-8")
-        seen["existed"] = Path(cfg).is_file()
+    def fake(cfgs, repo):
+        seen["cfg"] = Path(cfgs[-1]).read_text(encoding="utf-8")
+        seen["existed"] = Path(cfgs[-1]).is_file()
         return (0, "clean", "")
 
     findings = crb.run_buildout(
@@ -754,6 +754,45 @@ def test_run_buildout_wires_local_fragments_and_passes(tmp_path):
     assert "buildout/shapes/cli.llmlint.yml" in seen["cfg"]
     assert "buildout/languages/python.llmlint.yml" in seen["cfg"]
     assert seen["existed"]
+
+
+def test_run_buildout_passes_committed_config_before_the_temp_one(tmp_path):
+    # llmlint preflight-validates inline ignore directives against the configured
+    # rule set: without the committed (ongoing) config, a directive naming an
+    # ongoing rule is an "unknown rule" hard error. It must come FIRST — llmlint's
+    # first config wins conflicting settings, so the repo's own choices beat the
+    # temp config's defaults.
+    seen = {}
+    repo = _buildout_repo(tmp_path)
+
+    def fake(cfgs, repo_):
+        seen["cfgs"] = [Path(c) for c in cfgs]
+        return (0, "", "")
+
+    crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert seen["cfgs"][0] == repo / "llmlint.yml"
+    assert len(seen["cfgs"]) == 2  # committed config, then the temp buildout one
+
+
+def test_run_buildout_without_committed_config_runs_the_temp_one_alone(tmp_path):
+    # A repo whose ongoing config isn't composed yet still gets the buildout run.
+    seen = {}
+    repo = make_repo(
+        tmp_path,
+        llmlint=False,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: base.md, shapes/cli.md\n"
+        ),
+    )
+
+    def fake(cfgs, repo_):
+        seen["cfgs"] = [Path(c) for c in cfgs]
+        return (0, "", "")
+
+    crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert len(seen["cfgs"]) == 1
+    assert seen["cfgs"][0].name.startswith("buildout-")
 
 
 def test_run_buildout_always_includes_base_even_when_omitted(tmp_path):
@@ -768,8 +807,8 @@ def test_run_buildout_always_includes_base_even_when_omitted(tmp_path):
         ),
     )
 
-    def fake(cfg, repo_):
-        seen["cfg"] = Path(cfg).read_text(encoding="utf-8")
+    def fake(cfgs, repo_):
+        seen["cfg"] = Path(cfgs[-1]).read_text(encoding="utf-8")
         return (0, "", "")
 
     crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
@@ -788,8 +827,8 @@ def test_run_buildout_ignores_path_escaping_tokens(tmp_path):
         ),
     )
 
-    def fake(cfg, repo_):
-        seen["cfg"] = Path(cfg).read_text(encoding="utf-8")
+    def fake(cfgs, repo_):
+        seen["cfg"] = Path(cfgs[-1]).read_text(encoding="utf-8")
         return (0, "", "")
 
     crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
@@ -801,8 +840,8 @@ def test_run_buildout_ignores_path_escaping_tokens(tmp_path):
 def test_run_buildout_removes_the_temp_config(tmp_path):
     captured = {}
 
-    def fake(cfg, repo):
-        captured["path"] = Path(cfg)
+    def fake(cfgs, repo):
+        captured["path"] = Path(cfgs[-1])
         return (0, "", "")
 
     crb.run_buildout(_buildout_repo(tmp_path), SKILL_DIR, llmlint_runner=fake)

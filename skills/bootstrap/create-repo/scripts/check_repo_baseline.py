@@ -967,13 +967,14 @@ class LlmlintResult(NamedTuple):
 
 
 class LlmlintRunner(Protocol):
-    """A seam for running llmlint over the composed buildout config.
+    """A seam for running llmlint over the composed buildout config(s).
 
-    Takes the config path and the repo, and returns an ``LlmlintResult``. Injected
-    in tests so the orchestration is exercised without a real llmlint.
+    Takes the config paths (merged in order by llmlint's repeatable ``-c``) and
+    the repo, and returns an ``LlmlintResult``. Injected in tests so the
+    orchestration is exercised without a real llmlint.
     """
 
-    def __call__(self, config_path: Path, repo: Path) -> LlmlintResult: ...
+    def __call__(self, config_paths: list[Path], repo: Path) -> LlmlintResult: ...
 
 
 def parse_composed_references(agents_text: str) -> list[str]:
@@ -1004,11 +1005,11 @@ def parse_composed_references(agents_text: str) -> list[str]:
     return []
 
 
-def _default_llmlint_runner(config_path: Path, repo: Path) -> LlmlintResult:
-    """Run ``llmlint -c CONFIG`` over the repo tree; return the structured result."""
+def _default_llmlint_runner(config_paths: list[Path], repo: Path) -> LlmlintResult:
+    """Run ``llmlint -c CONFIG [-c CONFIG ...]``; return the structured result."""
     try:
         proc = subprocess.run(
-            ["llmlint", "-c", str(config_path)],
+            ["llmlint", *(arg for p in config_paths for arg in ("-c", str(p)))],
             cwd=repo,
             capture_output=True,
             text=True,
@@ -1099,8 +1100,10 @@ def run_buildout(
     Reads the composition from AGENTS.md, maps each reference to its buildout
     fragment (the ones that have one), writes a throwaway config wiring those
     fragments in as local plugins, runs ``llmlint`` over the repo, and maps the
-    exit code to a Finding. The temp config is always removed. Non-deterministic
-    and credentialed — callers reach it only via ``--buildout``.
+    exit code to a Finding. The repo's committed (ongoing) config is passed
+    alongside the temp one — see the comment at the call site. The temp config
+    is always removed. Non-deterministic and credentialed — callers reach it
+    only via ``--buildout``.
     """
     runner = llmlint_runner or _default_llmlint_runner
 
@@ -1158,12 +1161,25 @@ def run_buildout(
     if not fragments:
         return [Finding("OK", "no buildout rules apply to this stack")]
 
+    # llmlint's preflight validates every inline `llmlint: ignore` directive
+    # against the *configured* rule set before any rule runs. Source files
+    # legitimately carry directives naming ongoing rules (from the committed
+    # llmlint.yml); run the buildout config in isolation and those directives
+    # name "unknown rules" — a hard error (exit 2) that kills the run at
+    # preflight. Pass the committed config too so the merged rule set makes the
+    # directives resolvable. It goes FIRST: llmlint's first config wins on
+    # conflicting settings, so the repo's own harness/timeout choices beat the
+    # temp config's defaults, which only fill what the repo leaves unset. The
+    # merge also runs the ongoing rules alongside the buildout ones — acceptable:
+    # the creation flow requires one full ongoing run anyway (see llmlint.md).
+    ongoing = find_llmlint_config(repo)
+
     fd, tmp_name = tempfile.mkstemp(suffix=".llmlint.yml", prefix="buildout-")
     tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(_render_buildout_config(fragments))
-        rc, out, err = runner(tmp, repo)
+        rc, out, err = runner([ongoing, tmp] if ongoing else [tmp], repo)
     finally:
         tmp.unlink(missing_ok=True)
 
