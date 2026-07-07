@@ -93,7 +93,6 @@ case "$1" in
   auth)
     case "$2" in
       status) {{ echo "github.com"; echo "  ✓ Logged in to github.com account nickderobertis (keyring)"; echo "  - Active account: true"; echo "  - Git operations protocol: https"; }} 1>&2 ;;
-      token) echo "gho_0000000000000000000000000000000000" ;;
     esac ;;
   repo)
     case "$2" in

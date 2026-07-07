@@ -4,8 +4,8 @@ Two tiers live here:
 
 - **Deterministic script tests** (`test_*.py` + `e2e/`) for the skill's PEP 723
   scripts (`compose_repo_plan`, `check_repo_baseline`, `setup_github_governance`).
-  Fast, un-mocked, and part of the gate (`uv run pytest` / `just check`). See the
-  root `AGENTS.md` "Tests are context engineering".
+  Fast, un-mocked, and part of the gate — they run under `just check` (and
+  `just test`). See the root `AGENTS.md` "Tests are context engineering".
 - **The skill eval** (`test_create_repo_skilltest.py`), documented below.
 
 ## The skilltest skill eval
@@ -42,7 +42,7 @@ mechanics; the load-bearing rules:
 Opt-in only — it drives a real ~20-30 min bootstrap and is never in `just check`:
 
 ```
-just skilltest              # = pytest -m skilltest_e2e --skilltest-e2e
+just skilltest
 ```
 
 It needs a provider (`oneharness` on `PATH`, or a custom `SKILLTEST_PROVIDER`)
