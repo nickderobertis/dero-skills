@@ -150,17 +150,11 @@ the required status checks in branch protection to make it block merges.
 
 ### Skill evals (`skilltest-pytest`)
 
-Skills are exercised end to end with
-[`skilltest-pytest`](https://pypi.org/project/skilltest-pytest/) (a dev dep).
-`create-repo`'s eval lives beside its other tests
-(`skills/bootstrap/create-repo/tests/`, `test_create_repo_skilltest.py` + the
-`cases/` YAML); the runner docstring explains its design. It bootstraps a real
-Rust CLI on a real filesystem, then checks **deterministically** (baseline
-checker, files, `cargo run`), mocks `gh`/`git push` so no remote is created, and
-reserves YAML `evals` for what code can't check. Like `llmlint`, it needs a
-provider + sandbox, so it is **not in `just check`** (it `skipif`s without one) —
-run it with `just skilltest`. Name cases `*.yaml`, not `*.skilltest.yaml`, or
-they auto-collect into the provider-less gate and error.
+Skills have opt-in end-to-end evals (`skilltest-pytest`, a dev dep):
+`create-repo`'s bootstraps a real repo and checks it deterministically — see
+`skills/bootstrap/create-repo/tests/test_create_repo_skilltest.py` (its docstring
+covers the design). Like `llmlint` it needs a provider + sandbox, so it is not in
+`just check` (it skips); run it with `just skilltest`.
 
 - **Conventional Commits are required.** The type drives releases: `feat:` →
   minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types

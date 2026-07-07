@@ -12,7 +12,7 @@ dependencies = []
 dev = [
     "pytest>=8.0",
     "ruff>=0.8",
-    "skilltest-pytest>=0.5.0",
+    "skilltest-pytest>=0.6.0",
 ]
 
 [tool.uv]
