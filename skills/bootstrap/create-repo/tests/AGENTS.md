@@ -20,9 +20,9 @@ mechanics; the load-bearing rules:
   files exist (`Cargo.toml`, `src/main.rs`, `AGENTS.md`, the `CLAUDE.md` symlink),
   and `cargo run` prints a greeting. The YAML-level `eval`s are deterministic
   mock-call assertions (no LLM judge): the skill runs no destructive command
-  (`not_called`) and does self-verify by running its own baseline checker
-  (`called`). Add new deterministic checks in code; reserve `evals` for what code
-  genuinely can't check.
+  (`not_called`) and does self-verify by running its own baseline checker,
+  including the one-time `--buildout` tier (`called`). Add new deterministic
+  checks in code; reserve `evals` for what code genuinely can't check.
 - **The model must not know it is under test.** A short, natural prompt (no
   coaching); the env is scrubbed of every harness tell; a neutrally-named `/tmp`
   workspace (never pytest's `tmp_path`); bypass mode via a hidden
