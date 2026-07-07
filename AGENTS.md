@@ -150,11 +150,10 @@ the required status checks in branch protection to make it block merges.
 
 ### Skill evals (`skilltest-pytest`)
 
-Skills have opt-in end-to-end evals (`skilltest-pytest`, a dev dep):
-`create-repo`'s bootstraps a real repo and checks it deterministically — see
-`skills/bootstrap/create-repo/tests/test_create_repo_skilltest.py` (its docstring
-covers the design). Like `llmlint` it needs a provider + sandbox, so it is not in
-`just check` (it skips); run it with `just skilltest`.
+Skills have opt-in end-to-end evals (`skilltest-pytest`, a dev dep) that drive the
+skill through a real harness. They are slow and never in `just check`; run with
+`just skilltest`. `create-repo`'s is documented in
+[`skills/bootstrap/create-repo/tests/AGENTS.md`](skills/bootstrap/create-repo/tests/AGENTS.md).
 
 - **Conventional Commits are required.** The type drives releases: `feat:` →
   minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types

@@ -146,6 +146,7 @@ def _tree(root: Path, limit: int = 60) -> str:
     return "\n".join(lines) or "(empty)"
 
 
+@pytest.mark.skilltest_e2e  # opt-in only (slow ~20-30min run); see conftest.py / tests/AGENTS.md
 @pytest.mark.skipif(
     not _provider_available(),
     reason="no skilltest provider available (set SKILLTEST_PROVIDER or put oneharness on PATH)",
