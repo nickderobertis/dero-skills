@@ -187,18 +187,19 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
     # Bypass mode via a hidden config discovered upward from cwd — not an env var
     # (which the model's shell would inherit and see).
     (base / ".oneharness.toml").write_text('mode = "bypass"\n', encoding="utf-8")
-    # Bound the harness wall-clock (the 120s default is far too short) — but this is
-    # a ceiling, not the pass/fail line: a faithful "get it set up" bootstrap lays the
-    # repo down early and then keeps polishing/greening the gate, none of which the
-    # structural baseline checker below cares about, so a timeout here does not mean a
-    # bad artifact (see the run block).
+    # Wall-clock ceiling for the whole bootstrap (the 120s default is far too
+    # short). Set it generously: the model stops when the task is genuinely done,
+    # so a high ceiling only bites a pathological run, and reaching it costs
+    # nothing when the model finishes earlier. Finishing cleanly matters — the
+    # mock-call evals (below) live in the report, which `run_skill` only returns on
+    # clean completion; on a timeout only the on-disk artifact is judged.
     config = tools / "skilltest.yaml"
     config.write_text(
         "provider:\n"
         "  kind: oneharness\n"
         f"  bin: {ONEHARNESS or 'oneharness'}\n"
         "  judge_harness: claude-code\n"
-        "  timeout_secs: 1800\n",
+        "  timeout_secs: 3000\n",
         encoding="utf-8",
     )
     gh = tools / "gh"

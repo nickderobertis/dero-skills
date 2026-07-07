@@ -31,9 +31,11 @@ mechanics; the load-bearing rules:
   `/proc/<pid>/environ` mid-run — it must look like a normal sandboxed session.
 - **The remote is never created.** skilltest `stub`s + a fake `gh` on `PATH` make
   `gh repo create`/`git push` return realistic success without touching GitHub.
-- **The harness timeout is a ceiling, not the pass line.** A faithful bootstrap
-  keeps polishing after the repo is structurally complete, so a timeout does not
-  discard the artifact — the deterministic checks judge whatever is on disk.
+- **The harness timeout is a generous ceiling.** The model stops when the task is
+  done, so a high ceiling only bites a pathological run. On a timeout the on-disk
+  artifact is still judged, but the mock-call evals (`called`/`not_called`) live in
+  the report, which `run_skill` only returns on clean completion — so keep the
+  ceiling high enough that the bootstrap finishes and those evals actually run.
 
 ### Running it
 
