@@ -58,3 +58,11 @@ def test_e2e_buildout_propagates_llmlint_violations(tmp_path):
     result = _run_script_with_stub(repo, 1, tmp_path)
     assert result.returncode == 1
     assert "structural issue" in result.stderr
+    # The stub echoes its argv (surfaced in the finding detail): the committed
+    # (ongoing) config is merged in AHEAD of the temp buildout config, so inline
+    # ignore directives naming ongoing rules resolve at llmlint's preflight and
+    # the repo's own settings win over the temp config's defaults.
+    assert f"-c {repo / 'llmlint.yml'}" in result.stderr
+    assert result.stderr.index(str(repo / "llmlint.yml")) < result.stderr.index(
+        "buildout-"
+    )

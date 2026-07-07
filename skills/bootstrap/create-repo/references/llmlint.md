@@ -46,7 +46,10 @@ everything they already check, and reach for llmlint only for the judgment calls
   it**. Only the ongoing config stays and becomes the PR check. The easiest way to
   run it is `check_repo_baseline.py --buildout`, which composes the buildout config
   for the stack recorded in `AGENTS.md`, runs `llmlint`, and cleans up the temp
-  config — so the compose/run/delete cycle isn't a manual dance to forget.
+  config — so the compose/run/delete cycle isn't a manual dance to forget. It merges
+  the committed ongoing config in alongside (llmlint preflight-validates inline
+  ignore directives against the *configured* rules, so run in isolation the buildout
+  config would hard-error on directives naming ongoing rules).
 - **Rules are judge-level and scoped.** Each rule is a positive invariant judged
   `true` (holds) / `false` (a violation), scoped deterministically with `files`
   globs. Add a `relevance` clause whenever a file can match the globs but still
