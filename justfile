@@ -40,6 +40,15 @@ check-versions:
 test:
     uv run pytest
 
+# Run the opt-in skilltest skill evals (skilltest-pytest). NOT part of
+# `just check`: each drives a real ~20-30min repo bootstrap through a harness, so
+# it needs a provider (`oneharness` on PATH or a custom `SKILLTEST_PROVIDER`) plus
+# a sandbox, and it never runs without the `--skilltest-e2e` opt-in. In the gate
+# it skips. Pass extra pytest args to narrow, e.g. `just skilltest -x`.
+# llmlint: ignore[tool_output_is_signal] a developer-facing test runner — pytest's own pass/fail output is the signal you invoke it for, exactly as `just test`/`just check` do.
+skilltest *args:
+    uv run pytest -m skilltest_e2e --skilltest-e2e {{args}}
+
 # Audit this repo against the create-repo baseline invariants (dogfooding).
 baseline:
     uv run --script skills/bootstrap/create-repo/scripts/check_repo_baseline.py .

@@ -45,6 +45,7 @@
       "Bash(just validate)",
       "Bash(just check-versions)",
       "Bash(just test)",
+      "Bash(just skilltest)",
       "Bash(just baseline)",
       "Bash(just nx)",
       "Bash(just lint-llm:*)",

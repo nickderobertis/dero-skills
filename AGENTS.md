@@ -71,6 +71,8 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
 - `just lint-llm [paths]` — optional LLM-as-judge lint (`llmlint`). NOT in the
   gate (see "Optional LLM lint" below).
+- `just skilltest [args]` — run the `skilltest-pytest` natural-language skill
+  evals. NOT in the gate (see "Skill evals" below); with no provider they skip.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
 The gate runs on uv alone, so it needs no Node. Nx/bun is an optional
@@ -146,7 +148,12 @@ installs the committed Codex harness via bun and authenticates it with the
 job (not folded into `check`) to keep the clean-clone gate uv-only — add it to
 the required status checks in branch protection to make it block merges.
 
-## Commits, releases, and merging
+### Skill evals (`skilltest-pytest`)
+
+Skills have opt-in end-to-end evals (`skilltest-pytest`, a dev dep) that drive the
+skill through a real harness. They are slow and never in `just check`; run with
+`just skilltest`. `create-repo`'s is documented in
+[`skills/bootstrap/create-repo/tests/AGENTS.md`](skills/bootstrap/create-repo/tests/AGENTS.md).
 
 - **Conventional Commits are required.** The type drives releases: `feat:` →
   minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types
