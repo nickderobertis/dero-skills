@@ -32,7 +32,13 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    if config.getoption("--skilltest-e2e") or os.environ.get("SKILLTEST_E2E"):
+    env_opt_in = os.environ.get("SKILLTEST_E2E", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if config.getoption("--skilltest-e2e") or env_opt_in:
         return
     skip = pytest.mark.skip(
         reason="opt-in eval: pass --skilltest-e2e or set SKILLTEST_E2E=1 (or run `just skilltest`)"

@@ -107,7 +107,12 @@ exit 0
 
 
 def _provider_available() -> bool:
-    return bool(os.environ.get("SKILLTEST_PROVIDER") or ONEHARNESS)
+    # A custom SKILLTEST_PROVIDER is a command string; treat it as usable only when
+    # its executable actually resolves on PATH. Otherwise fall back to oneharness.
+    provider = os.environ.get("SKILLTEST_PROVIDER", "").strip()
+    if provider:
+        return shutil.which(provider.split()[0]) is not None
+    return ONEHARNESS is not None
 
 
 def _stealth_env(workspace: Path, fake_bin: Path) -> None:
