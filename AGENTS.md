@@ -150,26 +150,42 @@ the required status checks in branch protection to make it block merges.
 
 ### Skill evals (`skilltest-pytest`)
 
-The skills this repo ships are exercised as natural-language evals with
+The skills this repo ships are exercised end to end with
 [`skilltest-pytest`](https://pypi.org/project/skilltest-pytest/) (a dev
-dependency): a case YAML feeds an input to the skill through a real harness and a
-judge scores the transcript against boolean/numeric criteria. `create-repo`'s
-eval lives beside its other tests —
-`skills/bootstrap/create-repo/tests/cases/create_repo.yaml` (the case) plus
-`test_create_repo_skilltest.py` (the runner).
+dependency): a case YAML drives the skill through a real harness, and the runner
+checks the result. `create-repo`'s eval lives beside its other tests —
+`skills/bootstrap/create-repo/tests/cases/create_repo_rust_cli.yaml` (the case)
+plus `test_create_repo_skilltest.py` (the runner).
 
-Two deliberate choices keep this out of the deterministic gate, mirroring how
-`llmlint` is handled — it needs a provider (`oneharness` on `PATH`, or a custom
-`SKILLTEST_PROVIDER`) plus a harness token, which the uv-only gate must not
-assume:
+**Deterministic-first, evals as a last resort.** The case has the skill bootstrap
+a real hello-world Rust CLI on a **real local filesystem** (a throwaway
+`tmp_path`, harness in bypass mode so it can write files), and the runner then
+asserts in code everything that *can* be checked deterministically: the skill's
+own `check_repo_baseline.py` passes against the produced directory (the
+load-bearing assertion), the expected files exist (`Cargo.toml`, `src/main.rs`,
+`AGENTS.md`, the `CLAUDE.md` symlink), and the CLI actually builds and prints a
+greeting (`cargo run`). YAML `evals` are reserved for what a deterministic check
+can't express; the one here is a **deterministic mock-call** eval (`not_called`
+on a destructive-command spy) — no LLM judge, so no judge flakiness.
+
+**The remote is mocked — no repo is ever created.** skilltest 0.5.0's `mocks:`
+block stubs the model's direct `gh` and `git push` calls; because the mock hook
+only sees the model's own tool calls (not a `gh` a skill script spawns
+internally), the runner also puts a fake `gh` on `PATH`. Together they guarantee
+the run never creates `nickderobertis/create-repo-e2e-rust-cli` or pushes.
+
+Two choices keep this out of the deterministic gate, mirroring how `llmlint` is
+handled — it needs a provider (`oneharness` on `PATH`, or a custom
+`SKILLTEST_PROVIDER`) plus a harness token, and a sandbox it can write in, which
+the uv-only gate must not assume:
 
 - **The code (`run_skill`) form, not an auto-collected `*.skilltest.yaml`.**
   skilltest-pytest auto-collects any `*.skilltest.yaml` under the test paths into
   *every* `uv run pytest`, with no skip hook — under `just check` (no provider)
   that would error, not skip. The runner test instead `skipif`s when no provider
   is reachable, so a clean clone stays green and the eval runs for real only when
-  one is available. The case file is therefore named `create_repo.yaml`, **not**
-  `create_repo.skilltest.yaml`, so nothing auto-collects it.
+  one is available. The case file is therefore named `create_repo_rust_cli.yaml`,
+  **not** `…​.skilltest.yaml`, so nothing auto-collects it.
 - **Not in `just check`.** Run it on demand with `just skilltest`. The
   `skilltest` binary comes from the `skilltest-sdk` platform wheel (a pure wheel
   ships none — fall back to `$SKILLTEST_BIN`/`PATH`); you supply the provider. In

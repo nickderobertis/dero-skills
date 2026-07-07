@@ -38,7 +38,7 @@ dev = [
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.8" },
-    { name = "skilltest-pytest", specifier = ">=0.3.0" },
+    { name = "skilltest-pytest", specifier = ">=0.5.0" },
 ]
 
 [[package]]
@@ -210,31 +210,31 @@ wheels = [
 
 [[package]]
 name = "skilltest-pytest"
-version = "0.3.0"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytest" },
     { name = "skilltest-sdk" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/17/0f/5d8d4c7074f298f129f13c5bd129d56440360e65214f366e94e102b3d3c3/skilltest_pytest-0.3.0.tar.gz", hash = "sha256:9e8e566eb0080954c9003c49784a4e3c88a2eaf0ac76dddfe6a62819014da7b3", size = 18959, upload-time = "2026-06-12T14:15:58.784Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/74/61d6f686364fd4d1fe8cacbe3e1fa83fb118e636565a5ed5ec61f976f3a6/skilltest_pytest-0.5.0.tar.gz", hash = "sha256:c4e8ad705fb18e55487c1267de45cb0d2277f17141136091f104d02f9fa3a131", size = 20506, upload-time = "2026-07-06T23:40:57.959Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/52/7227d678af120eb7d8488a622a4cafe1eb3f422e41a7a867616cf7e01720/skilltest_pytest-0.3.0-py3-none-any.whl", hash = "sha256:0529b213a59b26d69dd8ab33e6cdfe02cc66a2b646885df707f0516a3e1c75b8", size = 4206, upload-time = "2026-06-12T14:15:59.407Z" },
+    { url = "https://files.pythonhosted.org/packages/32/08/4590ebd2c860dd300c9eafad5458277ee25f14da8aaa345dd6cbb678dae3/skilltest_pytest-0.5.0-py3-none-any.whl", hash = "sha256:3619f68b357e7e18b8ae2c0d03eb2b4d654cbb725ed7ccdec709d94dfdd32459", size = 4738, upload-time = "2026-07-06T23:40:57.144Z" },
 ]
 
 [[package]]
 name = "skilltest-sdk"
-version = "0.3.0"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a4/7b/5c92505eddcecca6be60ea0f61f628274e359f38c92abf9f72e946ac9649/skilltest_sdk-0.3.0.tar.gz", hash = "sha256:65fd4779bfc330a734d3f3d824576aae61ee92d1d322c17bfdfe3a29d804efb9", size = 38715, upload-time = "2026-06-12T14:15:55.462Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/91/31/4dc1341674075414adf4702ad6cfd56976b16d73463729f9eda786a5ebff/skilltest_sdk-0.5.0.tar.gz", hash = "sha256:0c6dda3781fa747396f7ef1f9d96f11064061091bf76919bc7fa389f46973294", size = 51976, upload-time = "2026-07-06T23:40:55.315Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/84/74e00e48a766dbe88000e90680213a2d4e081fe7b3b66e23c7b2d5b76f78/skilltest_sdk-0.3.0-py3-none-any.whl", hash = "sha256:bdc55e7978857d576e458a9ae18e4b9927e0144075f960d65e1fedae8820c8e5", size = 8515, upload-time = "2026-06-12T14:15:57.247Z" },
-    { url = "https://files.pythonhosted.org/packages/14/17/dc2d4bc3b85fd5babdd0bb88c45796222322f3f309e7fb921e299a202e3a/skilltest_sdk-0.3.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:ba7c43b1406d2a88eb38f58244d794fc9e92cbfbc6f548875100d3a7429c823b", size = 879144, upload-time = "2026-06-12T14:15:56.259Z" },
-    { url = "https://files.pythonhosted.org/packages/44/ce/272a85083679d883e1f27c2a7769958503f78bfe71ac952df27d5217b540/skilltest_sdk-0.3.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:4ec5ed1d9959930134f14f7a8702a32949bc1dc2d96f0fa02fbddefe6dfed81d", size = 825126, upload-time = "2026-06-12T14:15:52.129Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/0e/9240c09dc89f5caa00e5139d0c5006d62248bbcc0ee75f827e7041b36477/skilltest_sdk-0.3.0-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:e9f1f2617d6704883075f1b0c3d35edb877323408bf3d82113b3305229950c7b", size = 869560, upload-time = "2026-06-12T14:15:54.502Z" },
-    { url = "https://files.pythonhosted.org/packages/9f/68/16532214d0b8a339d3e62864cf50378cae8f03c1bd62656dbf523fdc372f/skilltest_sdk-0.3.0-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:77c57dbbbb06334354ce19db7494bb7c206f1a71a5c8f0433645222c21edb2fc", size = 923793, upload-time = "2026-06-12T14:15:53.213Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/31/c942903ad3224e0d4f3fbf7c34dd76ae18740c0d3f4f61b581726cc4a388/skilltest_sdk-0.5.0-py3-none-any.whl", hash = "sha256:a9fd18b1d2dd6296f5da89f43dcebce11f6bb793255e374e309356e36a7f02a1", size = 20302, upload-time = "2026-07-06T23:40:48.051Z" },
+    { url = "https://files.pythonhosted.org/packages/56/0c/e7f04d3a6252e54d0730f0718ea23596a4c9e7973d4ef0d7033b8c3d0417/skilltest_sdk-0.5.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:967aae513cd2ca24bbffcffea140909fe13aa99f3a31a313f1729393b5402db4", size = 1694214, upload-time = "2026-07-06T23:40:49.338Z" },
+    { url = "https://files.pythonhosted.org/packages/75/19/36f97dad153cd42d10e112bce625c75ad6fe53520c3f2d0ece66bd5ba945/skilltest_sdk-0.5.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:df17db647f95a9c8037c604da522c713811dfcf9e57e3c5ae1f816afae87442a", size = 1590570, upload-time = "2026-07-06T23:40:50.929Z" },
+    { url = "https://files.pythonhosted.org/packages/25/1f/2194f5a58c8a142561b94fdf3cd82cbb96db4d10b15337e44feb9d8dde1b/skilltest_sdk-0.5.0-py3-none-manylinux_2_17_aarch64.whl", hash = "sha256:1975c0697a703e780840e629f47f29736d740ee5c2ac95a3a06a852645fd0d18", size = 1724054, upload-time = "2026-07-06T23:40:52.631Z" },
+    { url = "https://files.pythonhosted.org/packages/df/2c/961d9b20b360df92a1ed9784d50c7bbf7e30c684598dd47cb9794fb4ff5c/skilltest_sdk-0.5.0-py3-none-manylinux_2_17_x86_64.whl", hash = "sha256:f4f3904f2dd281fd2859df4ed6a2daef600810eec1517c2f4c0afc56216bbffc", size = 1792324, upload-time = "2026-07-06T23:40:54.255Z" },
 ]
 
 [[package]]
