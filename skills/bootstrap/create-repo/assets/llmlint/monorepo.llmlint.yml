@@ -1,0 +1,14 @@
+# Monorepo ongoing rules (plugin). Pairs with monorepo.md — the checks that keep
+# a multi-deliverable repo's instruction layer localized as it keeps changing,
+# not just at creation. Pulled in only when the repo composes with `--monorepo`.
+version: 1
+
+rules:
+  - name: instruction_layer_localized
+    description: |
+      true when subtree rules live in a nested `AGENTS.md` inside each project and
+      `CODEOWNERS` routes reviews, leaving the root `AGENTS.md` to repo-wide
+      constraints only. false when project-specific rules are piled into the root
+      `AGENTS.md`, or there is no ownership routing.
+    files:
+      include: ["**/AGENTS.md", "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]

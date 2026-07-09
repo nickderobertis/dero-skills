@@ -117,6 +117,31 @@ rules:
         - "**/CLAUDE.md"
         - "**/SKILL.md"
 
+  - name: no_redundant_instruction_pointers
+    description: |
+      The agent harness auto-loads every AGENTS.md/CLAUDE.md colocated with or in an
+      ancestor of the files in scope, and any markdown doc reachable from one of those by
+      following reference links — directly, or nested through other docs — is thereby
+      surfaced to the reader as already available to load. This rule judges the files in
+      that set. true when the target file does not redirect the reader to read, see, or
+      consult another file already present in the same context — a colocated or containing
+      AGENTS.md/CLAUDE.md (auto-loaded up the tree), or a doc already loaded or already
+      advertised upstream on the reference path that reached this file (e.g. a referenced
+      doc pointing back at the parent that linked it). false when it defers content to, or
+      tells the reader to go read, such an already-present file as if it were not already
+      available: dead weight that silently rots when the target moves or is renamed.
+      Introducing a genuinely new resource — one not already reachable in the current
+      context — is fine, as is a plain note about a file's role (e.g. that CLAUDE.md is a
+      symlink of AGENTS.md).
+    files:
+      include:
+        - "**/*.md"
+    relevance: |
+      the target file is an AGENTS.md/CLAUDE.md, or a markdown doc reachable from one by
+      following reference links (directly or nested through other docs) — i.e. a file the
+      agent already loads automatically or has been prompted it can load; skip markdown no
+      AGENTS.md reaches
+
   - name: work_goes_through_command_surface
     description: |
       true when docs, CI workflows, and scripts invoke build, test, lint, format, or

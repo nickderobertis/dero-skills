@@ -36,11 +36,6 @@ rules:
     files:
       include: ["nx.json", "**/project.json", "**/package.json", "**/Cargo.toml", "**/pyproject.toml"]
 
-  - name: instruction_layer_localized
-    description: |
-      true when subtree rules live in a nested `AGENTS.md` inside each project and
-      `CODEOWNERS` routes reviews, leaving the root `AGENTS.md` to repo-wide
-      constraints only. false when project-specific rules are piled into the root
-      `AGENTS.md`, or there is no ownership routing.
-    files:
-      include: ["**/AGENTS.md", "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
+# `instruction_layer_localized` used to live here as a one-time check; it is now an
+# ONGOING rule (see ../monorepo.llmlint.yml) so a nested AGENTS.md that drifts into
+# root-level sprawl is caught on every PR, not just at creation.
