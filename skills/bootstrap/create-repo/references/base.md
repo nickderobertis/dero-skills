@@ -26,7 +26,11 @@ composed plan carries before any shape/language/cross-cutting items are added.
   issues — no warnings-only mode — with coverage measured and enforced.
 - **Realistic e2e is an invariant, not a preference.** The suite is the only QA
   loop, so it drives the real artifact across real boundaries and covers every
-  user journey; mocking the layer under test is a fail.
+  user journey; mocking the layer under test is a fail. Test as close as possible
+  to what the user does — exercise the software through its real interface (the
+  CLI as a command, an HTTP route as a request, the public API as a caller, the
+  UI through user-facing actions), not through internal shortcuts a real user
+  could never take.
 - **Security is a baseline invariant, not a follow-up.** Secrets never enter the
   tree — they live in the platform's secret store and are referenced by name;
   every external input is validated at its trust boundary before use; and every
