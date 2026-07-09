@@ -32,7 +32,12 @@ each builds on this shape and the composer pulls this one in beneath it.
 
 - [ ] **E2E covers critical journeys.** A `test-e2e` recipe (run by `just check`
   and CI) drives sign-in, the core happy path, and at least one
-  failure/recovery path — not just smoke tests.
+  failure/recovery path — not just smoke tests. Each test acts as a real user:
+  selecting elements by accessible role or user-facing text (not brittle CSS/DOM
+  selectors) and driving the app through user-facing actions (click, type,
+  submit, navigate) asserted against what the user observes — never by firing
+  synthetic events, calling handlers directly, or mutating app state to skip the
+  UI.
 - [ ] **Boundaries enforced.** A clear server/client split holds, and all
   external input (requests, params, third-party responses) is validated at the
   trust boundary.
