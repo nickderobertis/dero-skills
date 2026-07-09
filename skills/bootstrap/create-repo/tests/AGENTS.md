@@ -5,7 +5,8 @@ Two tiers live here:
 - **Deterministic script tests** (`test_*.py` + `e2e/`) for the skill's PEP 723
   scripts (`compose_repo_plan`, `check_repo_baseline`, `setup_github_governance`).
   Fast, un-mocked, and part of the gate — they run under `just check` (and
-  `just test`). See the root `AGENTS.md` "Tests are context engineering".
+  `just test`), embodying the "Tests are context engineering" mandate: real
+  subprocesses over real temp files, never a mocked stand-in.
 - **The skill eval** (`test_create_repo_skilltest.py`), documented below.
 
 ## The skilltest skill eval

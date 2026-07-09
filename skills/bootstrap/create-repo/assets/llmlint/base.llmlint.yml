@@ -117,6 +117,22 @@ rules:
         - "**/CLAUDE.md"
         - "**/SKILL.md"
 
+  - name: no_redundant_instruction_pointers
+    description: |
+      true when an instruction file in the target files (AGENTS.md, CLAUDE.md) does not
+      redirect the reader to read, see, or consult another AGENTS.md or CLAUDE.md that
+      sits in its own directory or an ancestor of it — the agent harness already loads
+      every such colocated or containing instruction file automatically whenever this one
+      is in scope, so the pointer is dead weight that drifts out of date. false when it
+      defers content to, or tells the reader to go read, a colocated or containing
+      instruction file as if it were not already loaded. A pointer to an instruction file
+      in an unrelated subtree (not an ancestor, so not auto-loaded here) is fine, as is a
+      plain note about a file's role (e.g. that CLAUDE.md is a symlink of AGENTS.md).
+    files:
+      include:
+        - "**/AGENTS.md"
+        - "**/CLAUDE.md"
+
   - name: work_goes_through_command_surface
     description: |
       true when docs, CI workflows, and scripts invoke build, test, lint, format, or

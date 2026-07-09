@@ -240,6 +240,29 @@ def test_llmlint_config_wires_selected_fragments_as_pinned_plugins(tmp_path):
     assert "ongoing llmlint config" in result.stderr
 
 
+def test_llmlint_ongoing_monorepo_fragment_gated_by_flag(tmp_path):
+    # `instruction_layer_localized` is now an ONGOING rule: the monorepo fragment
+    # lands in the committed llmlint.yml (PR-checked), but only when --monorepo is
+    # selected, and never in a single-deliverable repo.
+    out = tmp_path / "llmlint.yml"
+    run("--shape", "library", "--language", "python", "--llmlint-config", str(out))
+    assert "/assets/llmlint/monorepo.llmlint.yml" not in out.read_text(encoding="utf-8")
+
+    run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--monorepo",
+        "--llmlint-config",
+        str(out),
+    )
+    cfg = out.read_text(encoding="utf-8")
+    assert "/assets/llmlint/monorepo.llmlint.yml@1" in cfg
+    # ...and it is ongoing, not the buildout copy
+    assert "/buildout/monorepo.llmlint.yml" not in cfg
+
+
 def test_llmlint_buildout_config_carries_only_buildout_fragments(tmp_path):
     out = tmp_path / "llmlint.buildout.yml"
     result = run(
