@@ -41,9 +41,15 @@ everything they already check, and reach for llmlint only for the judgment calls
   pipeline has no manual step, CI runs the real gate, the monorepo delegates to
   its orchestrator, one asset-naming contract, the production build validated).
   Every composed reference — `base`, each language, each shape, and the
-  cross-cutting pieces — contributes its buildout fragment. Run the buildout config
-  **once** during creation, resolve findings, then **delete it — do not commit
-  it**. Only the ongoing config stays and becomes the PR check. The easiest way to
+  cross-cutting pieces — contributes its buildout fragment. A reference can
+  contribute to **both** tiers: the composer maps it to an ongoing fragment at
+  `assets/llmlint/<ref>.llmlint.yml` and a buildout one at
+  `assets/llmlint/buildout/<ref>.llmlint.yml` independently, so put a rule that
+  should re-run on every PR in the ongoing fragment and a one-time wiring check in
+  the buildout one (`monorepo` does exactly this — an ongoing
+  `instruction_layer_localized` alongside its buildout orchestration checks). Run
+  the buildout config **once** during creation, resolve findings, then **delete it
+  — do not commit it**. Only the ongoing config stays and becomes the PR check. The easiest way to
   run it is `check_repo_baseline.py --buildout`, which composes the buildout config
   for the stack recorded in `AGENTS.md`, runs `llmlint`, and cleans up the temp
   config — so the compose/run/delete cycle isn't a manual dance to forget. It merges
