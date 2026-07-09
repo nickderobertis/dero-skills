@@ -119,19 +119,28 @@ rules:
 
   - name: no_redundant_instruction_pointers
     description: |
-      true when an instruction file in the target files (AGENTS.md, CLAUDE.md) does not
-      redirect the reader to read, see, or consult another AGENTS.md or CLAUDE.md that
-      sits in its own directory or an ancestor of it — the agent harness already loads
-      every such colocated or containing instruction file automatically whenever this one
-      is in scope, so the pointer is dead weight that drifts out of date. false when it
-      defers content to, or tells the reader to go read, a colocated or containing
-      instruction file as if it were not already loaded. A pointer to an instruction file
-      in an unrelated subtree (not an ancestor, so not auto-loaded here) is fine, as is a
-      plain note about a file's role (e.g. that CLAUDE.md is a symlink of AGENTS.md).
+      The agent harness auto-loads every AGENTS.md/CLAUDE.md colocated with or in an
+      ancestor of the files in scope, and any markdown doc reachable from one of those by
+      following reference links — directly, or nested through other docs — is thereby
+      surfaced to the reader as already available to load. This rule judges the files in
+      that set. true when the target file does not redirect the reader to read, see, or
+      consult another file already present in the same context — a colocated or containing
+      AGENTS.md/CLAUDE.md (auto-loaded up the tree), or a doc already loaded or already
+      advertised upstream on the reference path that reached this file (e.g. a referenced
+      doc pointing back at the parent that linked it). false when it defers content to, or
+      tells the reader to go read, such an already-present file as if it were not already
+      available: dead weight that silently rots when the target moves or is renamed.
+      Introducing a genuinely new resource — one not already reachable in the current
+      context — is fine, as is a plain note about a file's role (e.g. that CLAUDE.md is a
+      symlink of AGENTS.md).
     files:
       include:
-        - "**/AGENTS.md"
-        - "**/CLAUDE.md"
+        - "**/*.md"
+    relevance: |
+      the target file is an AGENTS.md/CLAUDE.md, or a markdown doc reachable from one by
+      following reference links (directly or nested through other docs) — i.e. a file the
+      agent already loads automatically or has been prompted it can load; skip markdown no
+      AGENTS.md reaches
 
   - name: work_goes_through_command_surface
     description: |

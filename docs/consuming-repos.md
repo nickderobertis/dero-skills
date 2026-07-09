@@ -1,8 +1,7 @@
 # Consuming repos
 
 How an application repo adopts skills from this canonical repo
-(`nickderobertis/dero-skills`). Maintainer-facing authoring docs are in
-[`authoring-skills.md`](./authoring-skills.md).
+(`nickderobertis/dero-skills`).
 
 ## Model
 

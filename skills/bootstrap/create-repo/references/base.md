@@ -9,13 +9,16 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - **Agent layer first.** `AGENTS.md` (terse, always-loaded context), `CLAUDE.md`
   symlinked to it, and a narrow `.claude/settings.json` allowlist — laid down
   before the rest so the build runs with fewer approval prompts.
-- **Don't point at instruction files that are already loaded.** The harness
-  auto-loads every `AGENTS.md`/`CLAUDE.md` colocated with, or in an ancestor of,
-  the files in scope. So a nested `AGENTS.md` telling the reader to "see the root
-  `AGENTS.md`", or any file deferring content to one that is already loaded up the
-  tree, is dead weight that drifts out of date — state the rule where it belongs
-  and let the layering do the rest. Pointing at a file in an *unrelated* subtree
-  (not auto-loaded here) is fine.
+- **Don't point at context that's already loaded.** The harness auto-loads every
+  `AGENTS.md`/`CLAUDE.md` colocated with, or in an ancestor of, the files in scope,
+  and every markdown doc reachable from one of those by reference (directly, or
+  nested through other docs) is thereby surfaced as available to load. Within that
+  set, don't redirect the reader to a file already present: a nested `AGENTS.md`
+  saying "see the root `AGENTS.md`", or a referenced doc pointing back at the parent
+  that linked it, is dead weight that rots when the target moves. State the rule
+  where it belongs and let the layering do the rest. Introducing a genuinely new
+  resource (not yet reachable here) is fine; so is a plain note about a file's role
+  (e.g. that `CLAUDE.md` is a symlink of `AGENTS.md`).
 - **One command surface.** A `just` recipe set (`bootstrap`, `check`, `test`,
   `lint`, `format`, `upgrade`) with real bodies; `just bootstrap` works from a
   clean clone and `just check` is the full gate.
