@@ -74,12 +74,15 @@ lint-llm *paths:
     llmlint {{paths}}
 
 # llmlint, scoped to the files this branch changed since it forked from main
-# (the merge-base diff, not a diff against main's current tip). This is the
-# blocking `llmlint` CI check; run it locally before pushing. BASE defaults to
-# origin/main. Uses the committed codex + gpt-5.5 harness unless ONEHARNESS_*
-# env overrides are set (the Claude Code SessionStart hook sets them).
-lint-llm-diff base="origin/main":
-    ./scripts/lint-llm-diff.sh {{base}}
+# (the `BASE...HEAD` merge-base range, not a diff against main's current tip).
+# llmlint restricts the target set to the changed files (skipping empty diffs)
+# and the judge to the changed lines, so a PR is judged on what it introduced.
+# This is the blocking `llmlint` CI check; run it locally before pushing. BASE
+# defaults to origin/main (fetch it first if your clone lacks it). Uses the
+# committed codex + gpt-5.5 harness unless ONEHARNESS_* env overrides are set
+# (the Claude Code SessionStart hook sets them).
+lint-llm-diff base="origin/main" *args:
+    llmlint --diff --diff-base "{{base}}...HEAD" {{args}}
 
 # Upgrade dependencies, then re-run the full gate.
 upgrade:

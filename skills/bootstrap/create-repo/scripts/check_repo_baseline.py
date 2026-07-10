@@ -892,8 +892,9 @@ def check_llmlint(repo: Path) -> list[Finding]:
             Finding(
                 "ERROR",
                 "no `lint-llm-diff` recipe in the justfile (the diff-scoped PR check)",
-                "add a `lint-llm-diff:` recipe running scripts/lint-llm-diff.sh so "
-                "CI judges only the lines the branch changed (see llmlint.md)",
+                "add a `lint-llm-diff:` recipe running "
+                '`llmlint --diff --diff-base "origin/main...HEAD"` so CI judges only '
+                "the lines the branch changed (see llmlint.md)",
             )
         )
 
@@ -953,8 +954,8 @@ REFERENCE_TOKEN_RE = re.compile(r"[\w./-]+\.md")
 # wrapped "References composed" bullet ends.
 LIST_ITEM_RE = re.compile(r"^\s{0,3}[-*+]\s")
 
-# llmlint exit codes (shared with lint-llm-diff.sh): 0 clean, 1 violations,
-# 2 config/harness error; 127 is our sentinel for "binary not found".
+# llmlint exit codes (the `lint-llm-diff` recipe surfaces these too): 0 clean,
+# 1 violations, 2 config/harness error; 127 is our sentinel for "binary not found".
 LLMLINT_MISSING = 127
 
 # Per-judge ceiling for the buildout run. Buildout rules judge whole-repo

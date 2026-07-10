@@ -395,11 +395,12 @@ guidance that motivates it, and editing one reference updates both.
   that bootstraps a clean checkout and runs the full gate on a platform matrix,
   plus a separate `llmlint` job (the diff-scoped LLM-judge check) that requires
   its harness credential and fails fast without it.
-- [`assets/setup-llmlint.sh.template`](./assets/setup-llmlint.sh.template) /
-  [`assets/lint-llm-diff.sh.template`](./assets/lint-llm-diff.sh.template) — drop
+- [`assets/setup-llmlint.sh.template`](./assets/setup-llmlint.sh.template) — drop
   at `scripts/setup-llmlint.sh` (idempotent toolchain install, wired into the
-  SessionStart hook) and `scripts/lint-llm-diff.sh` (the merge-base-scoped lint
-  the `llmlint` CI check runs). See [`references/llmlint.md`](./references/llmlint.md).
+  SessionStart hook). The merge-base-scoped lint the `llmlint` CI check runs needs
+  no wrapper script — the `lint-llm-diff` justfile recipe calls
+  `llmlint --diff --diff-base "origin/main...HEAD"` directly (llmlint >= 0.3.11
+  selects the changed files itself). See [`references/llmlint.md`](./references/llmlint.md).
 - [`assets/pull_request_template.md.template`](./assets/pull_request_template.md.template)
   — required GitHub PR template: terse **What** (the behavior change) and **Why**
   (its driver and impact), with an optional **Additional info** section. Drop it

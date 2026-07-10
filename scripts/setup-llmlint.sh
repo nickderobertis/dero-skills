@@ -29,10 +29,12 @@ set -uo pipefail
 # Version floor, as a PyPI constraint (the `llmlint-cli` package version tracks the
 # wrapped binary version). `uv tool install --upgrade` installs the newest release
 # satisfying it; oneharness comes along transitively at a compatible version.
-#   llmlint >= 0.3.7 — finds `oneharness` beside its own executable (so a lone
-#     `uv tool install llmlint-cli` works); also needs the whole-tree default (no
-#     `files.include`), `--diff`/`--diff-base`, and `check-ignores`.
-readonly LLMLINT_MIN="0.3.7"
+#   llmlint >= 0.3.11 — finds `oneharness` beside its own executable (so a lone
+#     `uv tool install llmlint-cli` works); needs the whole-tree default (no
+#     `files.include`) and `check-ignores`; and 0.3.11 restricts `--diff` to the
+#     changed files (skipping empty diffs), which `just lint-llm-diff` relies on
+#     to judge only the branch's changes without a caller-side changed-file list.
+readonly LLMLINT_MIN="0.3.11"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
