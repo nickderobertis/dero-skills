@@ -55,7 +55,6 @@
       "Bash(llmlint:*)",
       "Bash(oneharness list)",
       "Bash(./scripts/setup-llmlint.sh)",
-      "Bash(./scripts/lint-llm-diff.sh:*)",
       "Bash(git merge-base:*)",
       "Bash(./scripts/validate-skills.sh:*)",
       "Bash(uv run:*)",
