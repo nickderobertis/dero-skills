@@ -59,6 +59,9 @@ lint-llm:
 
 lint-llm-diff:
     @echo lint-llm-diff
+
+lint-llm-validate:
+    @echo lint-llm-validate
 """
 
 # A .claude/settings.json that wires the llmlint installer into a SessionStart
@@ -635,6 +638,16 @@ def test_missing_lint_llm_diff_recipe_is_error(tmp_path):
     findings = crb.audit(make_repo(tmp_path, justfile=no_diff))
     assert crb.has_errors(findings)
     assert any("lint-llm-diff" in m for m in levels(findings, "ERROR"))
+
+
+def test_missing_lint_llm_validate_recipe_is_error(tmp_path):
+    # The deterministic model-free gate has its own recipe; `lint-llm-diff` is not it.
+    no_validate = FULL_JUSTFILE.replace(
+        "\nlint-llm-validate:\n    @echo lint-llm-validate\n", "\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=no_validate))
+    assert crb.has_errors(findings)
+    assert any("lint-llm-validate" in m for m in levels(findings, "ERROR"))
 
 
 def test_missing_setup_llmlint_script_is_error(tmp_path):

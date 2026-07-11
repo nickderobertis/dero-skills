@@ -399,8 +399,10 @@ guidance that motivates it, and editing one reference updates both.
   at `scripts/setup-llmlint.sh` (idempotent toolchain install, wired into the
   SessionStart hook). The merge-base-scoped lint the `llmlint` CI check runs needs
   no wrapper script — the `lint-llm-diff` justfile recipe calls
-  `llmlint --diff --diff-base "origin/main...HEAD"` directly (llmlint >= 0.3.11
-  selects the changed files itself). See [`references/llmlint.md`](./references/llmlint.md).
+  `llmlint --diff --diff-base "origin/main"` directly (a plain ref is
+  three-dot/merge-base; llmlint >= 0.3.11 selects the changed files itself), and
+  the `lint-llm-validate` recipe runs the deterministic `validate` gate CI does
+  first. See [`references/llmlint.md`](./references/llmlint.md).
 - [`assets/pull_request_template.md.template`](./assets/pull_request_template.md.template)
   — required GitHub PR template: terse **What** (the behavior change) and **Why**
   (its driver and impact), with an optional **Additional info** section. Drop it

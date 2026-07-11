@@ -845,8 +845,10 @@ def check_llmlint(repo: Path) -> list[Finding]:
     llmlint runs OUTSIDE the deterministic ``just check`` gate (it drives a real
     harness, so it is non-deterministic and credentialed); this check never runs
     it. It verifies the tier is set up: a composed ``llmlint.yml`` declaring the
-    rule-fragment ``plugins``, a ``lint-llm`` recipe to run it on demand, and a CI
-    workflow that invokes it as the blocking PR check. Compose the config with
+    rule-fragment ``plugins``, a ``lint-llm`` recipe to run it on demand, a
+    ``lint-llm-diff`` recipe for the diff-scoped PR check, a ``lint-llm-validate``
+    recipe for the deterministic model-free gate, and a CI workflow that invokes
+    the tier as the blocking PR check. Compose the config with
     ``compose_repo_plan.py --llmlint-config`` rather than hand-rolling it.
     """
     problems: list[Finding] = []
@@ -896,6 +898,21 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 '`llmlint --diff --diff-base "origin/main"` (a plain ref is '
                 "three-dot/merge-base) so CI judges only the lines the branch "
                 "changed (see llmlint.md)",
+            )
+        )
+    # The deterministic, model-free `llmlint validate` gate (config structure +
+    # `llmlint: ignore` directives + fragment version bumps) runs in CI before the
+    # paid model tier, so a config/suppression/version-bump slip fails fast with no
+    # harness call. Its own recipe must exist.
+    if "lint-llm-validate" not in recipes:
+        problems.append(
+            Finding(
+                "ERROR",
+                "no `lint-llm-validate` recipe in the justfile (the deterministic "
+                "validate gate)",
+                "add a `lint-llm-validate:` recipe running `llmlint validate` so CI "
+                "can run the model-free config/ignore/version-bump checks before the "
+                "paid model tier (see llmlint.md)",
             )
         )
 
