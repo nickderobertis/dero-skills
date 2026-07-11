@@ -48,7 +48,7 @@ so the baseline checker runs against this very section):
   the create-repo checker); skill scripts are portable per-language (PEP 723
   Python, Node built-ins, Bash) and must not depend on this repo's toolchain.
 - **References composed:** `shapes/skills-repo.md` + `languages/python.md` +
-  `ci.md`, with Nx from `monorepo.md` as an *optional authoring accelerator*
+  `languages/bash.md` + `ci.md`, with Nx from `monorepo.md` as an *optional authoring accelerator*
   (the gate runs on uv alone; consumers never run Nx).
 - **Excluded, and why:** see "Excluded on purpose" below — `ty` and coverage
   (the tooling is small and stdlib-only), and direnv / `src` layout / pre-commit
@@ -104,97 +104,12 @@ check-versions` keeps every pin in lockstep with CI.
 
 ### Optional LLM lint (`llmlint`)
 
-`llmlint.yml` configures [`llmlint`](https://github.com/nickderobertis/llmlint),
-an LLM-as-judge linter for invariants ruff/pytest can't express. It combines two
-tiers (see the header in `llmlint.yml`):
-
-- **The create-repo skill's ongoing rule fragments**, wired in as `plugins`.
-  Because this repo *hosts* the fragments, it dogfoods them via **local in-tree
-  paths** (`skills/bootstrap/create-repo/assets/llmlint/...`) rather than the
-  `@version`-pinned hosted URLs the composer emits for a consuming repo — so a
-  fragment edit takes effect here immediately. We pull the fragments applicable
-  to this repo's stack (`base` + `shapes/skills-repo` + `languages/python` +
-  `languages/bash` + `ci`); the one-time `buildout/` fragments are excluded
-  because they don't persist.
-- **The repo's bespoke cross-language launch conventions**, defined inline:
-  **Python and Python packages run through `uv`** (`uv run`/`uv run --script`/
-  `uvx`/`uv add`), **TypeScript and npm packages run through `bun`** (`bun run`/
-  `bunx`/`bun add`), and the **anti-pattern of a Bash script that only wraps a
-  single-language program** instead of calling uv/bun directly. Each rule's
-  description carries its full uv/bun criteria, so all rules share the one
-  `default` agent — no domain-specific prompt is needed.
-
-It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
-driver (>= 0.3.0, for `llmlint`'s read-only mode, the `ONEHARNESS_<FIELD>` env
-overrides, and the `run_mode = "fallback"` harness-priority selection this repo
-relies on; `setup-llmlint.sh` pins the concrete floor via `llmlint-cli`, which
-pulls a compatible `oneharness-cli`).
-
-**Harness split — one fallback config, no env flip.** `oneharness.toml` is in
-**fallback mode** (`run_mode = "fallback"`, `harnesses = ["codex", "claude-code"]`,
-per-harness `[harness.<id>].model`): oneharness runs the harnesses in priority
-order and stops at the first that can actually run, falling through only those
-that cannot run at all — not installed, unspawnable, or rejected before any work
-(auth / no-credit quota); a real task failure or timeout does *not* fall through.
-So the single committed file works everywhere with no edit: a contributor with
-Codex authenticated runs the primary (**codex + gpt-5.5**; CI's model job supplies
-the `OPENAI_API_KEY` secret), and a Claude Code session — where `oneharness detect`
-reports codex `available: false` — falls through to the secondary (**claude-code +
-opus-4.8**), the only harness authenticated there. It works only because
-`llmlint.yml` deliberately does **not** pin a harness/model (a pin's
-`--harness`/`--model` flags would beat the config), while the per-harness `model`
-tables keep each harness on its own model (a top-level `ONEHARNESS_MODEL` would
-wrongly hit both).
-
-Inside a Claude Code session the `SessionStart` hook runs
-`scripts/session-setup.sh`, which provisions `just` and hands off to
-`scripts/setup-llmlint.sh` (also called directly by `just bootstrap` and CI, where
-`just` exists). `setup-llmlint.sh` installs llmlint (via `uv tool install
-llmlint-cli` — one PyPI resolution that also fetches `oneharness-cli`, no Rust
-toolchain or github.com reachability needed; llmlint >= 0.3.7 finds the
-`oneharness` binary beside its own in the tool venv, so no separate install) and
-persists only `PATH` — **no `ONEHARNESS_HARNESSES`/`ONEHARNESS_MODEL` override**,
-since the fallback already selects claude-code here and an override would only
-clobber it. `IS_SANDBOX` is injected into just the claude-code harness via
-`oneharness.toml` so it runs under root without `--dangerously-skip-permissions`
-refusing; that harness (the fallback order's first available entry) is also the
-default the bundled `config_lint` plugin needs.
-
-The **model tier** (`just lint-llm` / `just lint-llm-diff`) is **deliberately not
-in `just check`**: it drives a real harness, so it is non-deterministic and needs
-a harness token (in Claude Code the inherited session token; elsewhere
-`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or — for the codex default —
-`OPENAI_API_KEY`). The **deterministic `validate` tier** (`just lint-llm-validate`)
-IS a hard step of `just check` — model-free and token-free, so `bootstrap` installs
-the `llmlint` binary (via `uv tool`) and the gate runs it. Caveat: loading
-`llmlint.yml` resolves the hosted `config_lint@1` plugin, so a cold-cache run with
-no `raw.githubusercontent` reachability fails (CI and warm caches are fine). Run
-the model tier on demand with `just lint-llm`;
-`just setup-llmlint` is the manual install path for a terminal (the hook covers
-Claude Code sessions). Since the repo now runs all JS through bun (`bun install`,
-`bunx nx`), the bun rule no longer fires on the authoring toolchain.
-
-**Blocking CI check.** The `llmlint` job in `.github/workflows/ci.yml` runs two
-steps on every PR. First — cheaply, with no model call or credential — `just
-lint-llm-validate --diff-base origin/main` (`llmlint validate`, >= 0.3.17): the
-deterministic gate that the config parses, every `llmlint: ignore` directive names
-a real rule, and any edited versioned fragment bumped its `version:`. It fails
-fast (cents, not dollars) on a config/suppression/version-bump slip before the
-paid tier runs. Then the model tier: `just lint-llm-diff` — `llmlint --diff
---diff-base "origin/main"`, where a plain ref means three-dot/merge-base semantics
-(llmlint >= 0.3.15, so no explicit `...HEAD`) and llmlint scopes both the target
-set (only the changed files, skipping empty diffs) and the judge (only the *lines*
-the branch changed) to the branch's **merge-base with main** (the fork point, not
-main's current tip, so unrelated later commits on main are never linted, and the
-judge doesn't flag pre-existing code a change merely sits near). llmlint >= 0.3.11
-does the changed-file selection itself, so no wrapper script is needed. CI installs
-the committed Codex harness via bun and authenticates it with the `OPENAI_API_KEY`
-repo secret; without that secret the model step fails (the validate step needs no
-credential). It is a separate job (not folded into `check`) to keep the clean-clone
-gate uv-only. Its context (`llmlint`, the job id) **must** be a branch-protection
-required check, else auto-merge lands past a red run once `check`/`commitlint` go
-green; apply with `setup_github_governance.py check commitlint llmlint`, which now
-refuses to omit it.
+`llmlint.yml` dogfoods the create-repo ongoing fragments for this stack via local
+in-tree plugin paths, plus repo-specific uv/bun launch-convention rules. The
+deterministic validate tier (`just lint-llm-validate`) is part of `just check`;
+the model tier (`just lint-llm` / `just lint-llm-diff`) is optional locally but
+blocking in CI as the separate `llmlint` job. Harness fallback, CI, and rule
+details live in [`docs/llmlint.md`](docs/llmlint.md).
 
 ### Skill evals (`skilltest-pytest`)
 
@@ -210,7 +125,7 @@ skill through a real harness. They are slow and never in `just check`; run with
   and in CI by the `commitlint` job.
 - **Squash-merge only, via PR, with auto-merge.** `main` is protected: merge
   commits and rebase-merging are disabled, and a PR can only land once the
-  required `check` and `commitlint` status checks are green (admins may bypass).
+  required `check`, `commitlint`, and `llmlint` status checks are green (admins may bypass).
   `check` runs the full gate — including the e2e tests — so requiring it gates
   every merge on the same gate you run locally. Queue a PR with
   `gh pr merge --auto --squash` and it merges itself when the checks pass. The
