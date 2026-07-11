@@ -21,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 REFS = SKILL_DIR / "references"
@@ -265,6 +267,15 @@ def test_pin_range_keeps_major_only():
     assert crp.pin_range("1") == "1"
     assert crp.pin_range("1.1.0") == "1"
     assert crp.pin_range("2.3.4") == "2"
+
+
+def test_read_fragment_version_rejects_malformed_version(tmp_path):
+    # A version read from a config file is a boundary input: a malformed value
+    # must fail loudly, not flow into a broken `@...` pin.
+    frag = tmp_path / "bad.llmlint.yml"
+    frag.write_text("version: not-a-version\nrules: []\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not valid semver"):
+        crp.read_fragment_version(frag)
 
 
 def test_semver_fragment_still_pins_to_major(tmp_path):

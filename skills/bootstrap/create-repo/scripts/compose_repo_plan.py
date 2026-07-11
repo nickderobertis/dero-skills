@@ -92,6 +92,10 @@ LLMLINT_BASE_URL = (
     "skills/bootstrap/create-repo/assets/llmlint"
 )
 LLMLINT_VERSION_RE = re.compile(r"^version:\s*(\S+)", re.MULTILINE)
+# A fragment version is `MAJOR[.MINOR[.PATCH]]`, digits only — the shape the `@`
+# pin is built from. Validated at the read boundary so a malformed value fails
+# loudly instead of emitting a broken pin.
+FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
 
 
 # A shape can build on other shapes, composing their guidance first (base-most
@@ -372,9 +376,22 @@ def fragment_relpath(reference_relpath: str) -> str:
 
 
 def read_fragment_version(path: Path) -> str:
-    """Return a fragment's full published ``version`` (semver string); default ``1``."""
+    """Return a fragment's full published ``version`` (semver string); default ``1``.
+
+    The value is read from a config file, so validate its shape at the boundary:
+    a malformed version must fail loudly here, not silently produce a broken
+    ``@...`` pin downstream.
+    """
     match = LLMLINT_VERSION_RE.search(path.read_text(encoding="utf-8"))
-    return match.group(1).strip() if match else "1"
+    if match is None:
+        return "1"
+    version = match.group(1).strip()
+    if not FRAGMENT_VERSION_RE.fullmatch(version):
+        raise ValueError(
+            f"{path}: llmlint fragment version {version!r} is not valid semver "
+            "(expected MAJOR[.MINOR[.PATCH]], digits only)"
+        )
+    return version
 
 
 def pin_range(version: str) -> str:
@@ -383,7 +400,8 @@ def pin_range(version: str) -> str:
     llmlint reads ``@N`` as "any ``N.x``", so pinning the major lets a fragment
     ship non-breaking rule changes (minor/patch bumps) that flow to pinned
     consumers automatically, while a breaking change (major bump) is opt-in. A
-    bare version (``1``) is already its own major.
+    bare version (``1``) is already its own major. Expects a version already
+    validated by ``read_fragment_version``.
     """
     return version.split(".", 1)[0]
 
