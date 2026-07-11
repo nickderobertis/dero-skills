@@ -169,6 +169,86 @@ def test_normalize_contexts_rejects_empty():
         gov.normalize_contexts(["", "   "])
 
 
+# --- require_llmlint (the mandated blocking PR check) ----------------------
+
+
+def test_require_llmlint_passes_when_context_present():
+    # No raise: the canonical `llmlint` context satisfies the guard.
+    gov.require_llmlint(["check", "commitlint", "llmlint"], allow_missing=False)
+
+
+def test_require_llmlint_matches_case_and_suffix_insensitively():
+    # A repo that spells the job differently (e.g. `llmlint (changed files)` or
+    # `LLMLint`) still satisfies the guard — it matches the substring, any case.
+    gov.require_llmlint(["check", "llmlint (changed files)"], allow_missing=False)
+    gov.require_llmlint(["Check", "LLMLint"], allow_missing=False)
+
+
+def test_require_llmlint_raises_when_absent():
+    import pytest
+
+    with pytest.raises(gov.GhError) as exc:
+        gov.require_llmlint(["check", "commitlint"], allow_missing=False)
+    # The error names a concrete fix (add the context) and the escape hatch.
+    assert "llmlint" in exc.value.message
+    assert "--allow-missing-llmlint" in exc.value.fix
+
+
+def test_require_llmlint_waived_by_allow_missing():
+    # The escape hatch for a repo with no llmlint tier: no raise despite absence.
+    gov.require_llmlint(["check"], allow_missing=True)
+
+
+def test_main_refuses_to_apply_without_llmlint_check(capsys):
+    fake = FakeGh()
+    code = gov.main(
+        ["check", "commitlint", "--repo", "acme/w", "--branch", "main"], run=fake
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "llmlint" in err
+    assert "fix:" in err
+    # It bails at the guard, before issuing any mutation.
+    assert fake.api_calls() == []
+
+
+def test_main_allow_missing_llmlint_applies_without_it():
+    fake = FakeGh()
+    code = gov.main(
+        [
+            "check",
+            "commitlint",
+            "--repo",
+            "acme/w",
+            "--branch",
+            "main",
+            "--allow-missing-llmlint",
+        ],
+        run=fake,
+    )
+    assert code == 0
+    # The three mutations still run; only the llmlint guard was waived.
+    assert [route(a) for a, _ in fake.api_calls()] == [
+        "api:repo-settings",
+        "api:protection",
+        "api:fork-approval",
+    ]
+
+
+def test_main_verify_also_requires_llmlint(capsys):
+    # The guard runs in every mode: --verify refuses too, before reading live state.
+    fake = _verify_fake()
+    code = gov.main(
+        ["check", "commitlint", "--repo", "owner/name", "--branch", "main", "--verify"],
+        run=fake,
+    )
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "llmlint" in err
+    # Bailed before any read-back GET.
+    assert fake.api_calls() == []
+
+
 # --- plan ------------------------------------------------------------------
 
 
@@ -277,7 +357,7 @@ def test_execute_raises_on_first_failure_naming_the_call():
 
 def test_main_applies_and_is_quiet_on_success(capsys):
     fake = FakeGh()
-    assert gov.main(["check", "commitlint"], run=fake) == 0
+    assert gov.main(["check", "commitlint", "llmlint"], run=fake) == 0
     out = capsys.readouterr()
     assert out.err == ""
     lines = [ln for ln in out.out.splitlines() if ln.strip()]
@@ -296,7 +376,10 @@ def test_main_applies_and_is_quiet_on_success(capsys):
 
 def test_main_with_explicit_repo_and_branch_skips_resolution():
     fake = FakeGh()
-    assert gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake) == 0
+    assert (
+        gov.main(["check", "llmlint", "--repo", "acme/w", "--branch", "main"], run=fake)
+        == 0
+    )
     # No `repo view` calls — only the three mutations.
     assert all(a[0] == "api" for a, _ in fake.calls)
     assert len(fake.calls) == 3
@@ -305,7 +388,16 @@ def test_main_with_explicit_repo_and_branch_skips_resolution():
 def test_main_dry_run_offline_makes_no_gh_calls(capsys):
     fake = FakeGh()
     code = gov.main(
-        ["check", "commitlint", "--repo", "acme/w", "--branch", "main", "--dry-run"],
+        [
+            "check",
+            "commitlint",
+            "llmlint",
+            "--repo",
+            "acme/w",
+            "--branch",
+            "main",
+            "--dry-run",
+        ],
         run=fake,
     )
     assert code == 0
@@ -320,14 +412,17 @@ def test_main_dry_run_offline_makes_no_gh_calls(capsys):
 
 def test_main_dry_run_resolves_but_never_mutates():
     fake = FakeGh()
-    assert gov.main(["check", "--dry-run"], run=fake) == 0
+    assert gov.main(["check", "llmlint", "--dry-run"], run=fake) == 0
     # It may read (resolve repo/branch) but must not issue any api mutation.
     assert fake.api_calls() == []
 
 
 def test_main_failure_returns_one_with_actionable_fix(capsys):
     fake = FakeGh({"api:protection": gov.Result(1, "", "403 Forbidden")})
-    assert gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake) == 1
+    assert (
+        gov.main(["check", "llmlint", "--repo", "acme/w", "--branch", "main"], run=fake)
+        == 1
+    )
     err = capsys.readouterr().err
     assert "ERROR" in err
     assert "fix:" in err
@@ -336,7 +431,15 @@ def test_main_failure_returns_one_with_actionable_fix(capsys):
 def test_main_enforce_admins_flag_binds_admins():
     fake = FakeGh()
     code = gov.main(
-        ["check", "--repo", "acme/w", "--branch", "main", "--enforce-admins"],
+        [
+            "check",
+            "llmlint",
+            "--repo",
+            "acme/w",
+            "--branch",
+            "main",
+            "--enforce-admins",
+        ],
         run=fake,
     )
     assert code == 0
@@ -345,18 +448,30 @@ def test_main_enforce_admins_flag_binds_admins():
 
 def test_main_defaults_to_non_strict_and_strict_flag_opts_in():
     fake = FakeGh()
-    gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake)
+    gov.main(["check", "llmlint", "--repo", "acme/w", "--branch", "main"], run=fake)
     assert fake.body_for("api:protection")["required_status_checks"]["strict"] is False
 
     fake = FakeGh()
-    gov.main(["check", "--repo", "acme/w", "--branch", "main", "--strict"], run=fake)
+    gov.main(
+        ["check", "llmlint", "--repo", "acme/w", "--branch", "main", "--strict"],
+        run=fake,
+    )
     assert fake.body_for("api:protection")["required_status_checks"]["strict"] is True
 
 
 def test_main_approvals_flag_sets_review_count():
     fake = FakeGh()
     gov.main(
-        ["check", "--repo", "acme/w", "--branch", "main", "--approvals", "2"],
+        [
+            "check",
+            "llmlint",
+            "--repo",
+            "acme/w",
+            "--branch",
+            "main",
+            "--approvals",
+            "2",
+        ],
         run=fake,
     )
     reviews = fake.body_for("api:protection")["required_pull_request_reviews"]
@@ -365,7 +480,7 @@ def test_main_approvals_flag_sets_review_count():
 
 def test_main_defaults_fork_pr_approval_to_all_external():
     fake = FakeGh()
-    gov.main(["check", "--repo", "acme/w", "--branch", "main"], run=fake)
+    gov.main(["check", "llmlint", "--repo", "acme/w", "--branch", "main"], run=fake)
     assert fake.body_for("api:fork-approval") == {
         "approval_policy": "all_external_contributors"
     }
@@ -376,6 +491,7 @@ def test_main_fork_pr_approval_flag_overrides_policy():
     gov.main(
         [
             "check",
+            "llmlint",
             "--repo",
             "acme/w",
             "--branch",
@@ -427,7 +543,9 @@ def test_main_missing_gh_binary_errors(monkeypatch, capsys):
 def test_main_offline_dry_run_works_without_gh(monkeypatch, capsys):
     # --repo and --branch given + --dry-run needs no `gh`, even if it is absent.
     monkeypatch.setattr(gov.shutil, "which", lambda _: None)
-    code = gov.main(["check", "--repo", "acme/w", "--branch", "main", "--dry-run"])
+    code = gov.main(
+        ["check", "llmlint", "--repo", "acme/w", "--branch", "main", "--dry-run"]
+    )
     assert code == 0
     assert "DRY-RUN" in capsys.readouterr().out
 
@@ -626,9 +744,20 @@ def test_verify_reads_nested_enabled_and_checks_shape():
 
 
 def test_main_verify_passes_on_conformant_state(capsys):
-    fake = _verify_fake()
+    fake = _verify_fake(
+        protection=_live_protection(contexts=("check", "commitlint", "llmlint"))
+    )
     code = gov.main(
-        ["check", "commitlint", "--repo", "owner/name", "--branch", "main", "--verify"],
+        [
+            "check",
+            "commitlint",
+            "llmlint",
+            "--repo",
+            "owner/name",
+            "--branch",
+            "main",
+            "--verify",
+        ],
         run=fake,
     )
     assert code == 0
@@ -640,9 +769,22 @@ def test_main_verify_passes_on_conformant_state(capsys):
 
 
 def test_main_verify_fails_and_reports_drift(capsys):
-    fake = _verify_fake(protection=_live_protection(force_pushes=True))
+    fake = _verify_fake(
+        protection=_live_protection(
+            contexts=("check", "commitlint", "llmlint"), force_pushes=True
+        )
+    )
     code = gov.main(
-        ["check", "commitlint", "--repo", "owner/name", "--branch", "main", "--verify"],
+        [
+            "check",
+            "commitlint",
+            "llmlint",
+            "--repo",
+            "owner/name",
+            "--branch",
+            "main",
+            "--verify",
+        ],
         run=fake,
     )
     assert code == 1

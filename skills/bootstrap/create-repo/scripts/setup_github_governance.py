@@ -12,7 +12,10 @@ Usage:
 The positional ``CHECK`` arguments are the status-check contexts that must be
 green before a PR can merge. List *every* gating check by name — including the
 full-e2e gate job (the one that runs ``just check``); a check that is not
-required is only advisory, and a red one can still be merged past.
+required is only advisory, and a red one can still be merged past. One of these
+MUST be the llmlint job (the LLM-judge tier is a mandated blocking PR check),
+else auto-merge lands past a red llmlint run — pass --allow-missing-llmlint only
+for a repo that genuinely has no llmlint tier.
 
 What it sets (the model the create-repo skill prescribes — see references/ci.md):
   * Merge model: squash-merge only (merge commits and rebase-merging disabled),
@@ -62,11 +65,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+
+# The llmlint job's status-check context. The create-repo CI names the job so
+# its context is a bare ``llmlint``; match case-insensitively (and any suffix a
+# repo appends, e.g. ``llmlint (changed files)``) so the guard holds whatever the
+# repo calls the job. The LLM-judge tier is a mandated blocking PR check, so its
+# context must be among the required checks — otherwise auto-merge lands past a
+# red llmlint run (the failure mode this guard exists to prevent).
+LLMLINT_CONTEXT_RE = re.compile(r"llmlint", re.IGNORECASE)
 
 # Allowed GitHub values that make the squash commit subject/body follow the PR,
 # so the PR title is what lands (and what a Conventional-Commits / release
@@ -154,9 +166,29 @@ def normalize_contexts(contexts: Sequence[str]) -> list[str]:
     if not seen:
         raise GhError(
             "no required status checks given",
-            "pass at least one check context, e.g. `... check commitlint`",
+            "pass at least one check context, e.g. `... check commitlint llmlint`",
         )
     return seen
+
+
+def require_llmlint(contexts: Sequence[str], *, allow_missing: bool) -> None:
+    """Fail unless an llmlint check is among the required contexts.
+
+    The create-repo skill mandates the llmlint LLM-judge tier as a blocking PR
+    check: it runs outside ``just check`` (non-deterministic, credentialed), so
+    the only thing making a red llmlint run block a merge is its presence in the
+    required status checks. Leave it out and auto-merge lands past it — the exact
+    hole this guard closes. ``allow_missing`` (the --allow-missing-llmlint flag)
+    waives it for the rare repo with no llmlint tier.
+    """
+    if allow_missing or any(LLMLINT_CONTEXT_RE.search(c) for c in contexts):
+        return
+    raise GhError(
+        "no llmlint check among the required status checks",
+        "add the llmlint job's context (the create-repo CI names it `llmlint`) so "
+        "a red llmlint run blocks merge — the LLM-judge tier is a mandated blocking "
+        "PR check; pass --allow-missing-llmlint only if this repo has no llmlint tier",
+    )
 
 
 def repo_settings_payload() -> dict:
@@ -577,6 +609,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="also bind admins to the protection (default: admins can override)",
     )
     parser.add_argument(
+        "--allow-missing-llmlint",
+        action="store_true",
+        help="permit governance without an llmlint required check (default: the "
+        "llmlint LLM-judge tier is a mandated blocking PR check, so its context "
+        "must be among the required checks or auto-merge lands past a red run)",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="require branches be up to date before merging (default: off, to "
@@ -625,6 +664,7 @@ def main(argv: list[str], run: Runner | None = None) -> int:
 
     try:
         contexts = normalize_contexts(args.checks)
+        require_llmlint(contexts, allow_missing=args.allow_missing_llmlint)
         repo = resolve_repo(run, args.repo)
         branch = resolve_branch(run, repo, args.branch)
         if args.verify:

@@ -218,8 +218,12 @@ The `llmlint` context is the **LLM-judge tier** (see
 [`references/llmlint.md`](llmlint.md)) — a required PR check that runs *outside*
 the deterministic `just check` gate and requires its harness credential (fork
 PRs are gated by the repo's require-approval-for-fork-workflows setting, not a
-no-op). List it among the required contexts so a red llmlint run blocks merge,
-the same as the `check` gate.
+no-op). It **must** be among the required contexts so a red llmlint run blocks
+merge, the same as the `check` gate — otherwise auto-merge lands a PR the moment
+`check`/`commitlint` go green, past a still-running or failed llmlint. The setup
+script **enforces** this: it refuses to apply governance without an `llmlint`
+context unless you pass `--allow-missing-llmlint` (only for a repo with no
+llmlint tier).
 
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
@@ -242,8 +246,8 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   success.
 - [ ] **Repo governance configured.** The default branch is protected with
   squash-merge only, auto-merge on, head branches deleted on merge, and *every*
-  gating CI check (including the full-e2e gate job) required before merge, with
-  admins able to override. The model is recorded in the "Commits, releases, and
+  gating CI check (including the full-e2e gate job *and* the `llmlint` tier, which
+  the setup script enforces) required before merge, with admins able to override. The model is recorded in the "Commits, releases, and
   merging" section of `AGENTS.md`. The filesystem checker cannot see repo-side
   settings, so verify them against the live repo with
   `setup_github_governance.py --verify <every-required-check>` — it reads branch

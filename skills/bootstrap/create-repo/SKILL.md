@@ -426,4 +426,6 @@ guidance that motivates it, and editing one reference updates both.
   [`references/ci.md`](./references/ci.md) via `gh`. `--verify` reports where the
   live repo-side state — which the filesystem checker can't see — diverges from
   the desired one, closing the gap where a repo passes every file gate while its
-  checks aren't actually required to merge.
+  checks aren't actually required to merge. It refuses to apply (or verify)
+  governance that omits an `llmlint` required check — the mandated blocking
+  LLM-judge tier — unless `--allow-missing-llmlint` is passed.

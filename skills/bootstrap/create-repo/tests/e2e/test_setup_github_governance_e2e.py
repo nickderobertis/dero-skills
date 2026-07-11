@@ -30,7 +30,14 @@ def _run_script(*args: str) -> subprocess.CompletedProcess[str]:
 
 def test_e2e_dry_run_plans_all_three_mutations_including_fork_approval():
     result = _run_script(
-        "check", "commitlint", "--repo", "acme/w", "--branch", "main", "--dry-run"
+        "check",
+        "commitlint",
+        "llmlint",
+        "--repo",
+        "acme/w",
+        "--branch",
+        "main",
+        "--dry-run",
     )
     assert result.returncode == 0, result.stderr
     out = result.stdout
@@ -44,6 +51,7 @@ def test_e2e_dry_run_plans_all_three_mutations_including_fork_approval():
 def test_e2e_dry_run_honors_fork_pr_approval_flag():
     result = _run_script(
         "check",
+        "llmlint",
         "--repo",
         "acme/w",
         "--branch",
@@ -62,3 +70,14 @@ def test_e2e_rejects_unknown_fork_pr_approval_policy():
     )
     assert result.returncode != 0
     assert "invalid choice" in result.stderr
+
+
+def test_e2e_refuses_governance_without_llmlint_required_check():
+    # The mandated blocking PR check: without an `llmlint` context the script
+    # refuses (even in offline --dry-run), naming the fix and the escape hatch.
+    result = _run_script(
+        "check", "commitlint", "--repo", "acme/w", "--branch", "main", "--dry-run"
+    )
+    assert result.returncode == 1
+    assert "llmlint" in result.stderr
+    assert "--allow-missing-llmlint" in result.stderr
