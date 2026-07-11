@@ -134,6 +134,14 @@ jobs:
           ./scripts/setup-llmlint.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # Deterministic, model-free gate first: validate the config structure, that
+      # every `llmlint: ignore` directive names a real rule, and that any edited
+      # versioned fragment bumped its `version:`. No harness credential needed, so
+      # it runs before the paid model tier and fails fast (cents, not dollars) on a
+      # config/version-bump slip. Scoped to the branch's changes vs main.
+      - name: Validate llmlint config (no model)
+        run: just lint-llm-validate --diff-base origin/main
+
       - name: Lint changed files
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

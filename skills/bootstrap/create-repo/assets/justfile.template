@@ -63,14 +63,26 @@ lint-llm *paths:
     @command -v llmlint >/dev/null 2>&1 || { echo "llmlint not installed — run 'just setup-llmlint' (see references/llmlint.md)"; exit 1; }
     llmlint {{paths}}
 
-# llmlint scoped to the files this branch changed since it forked from main (the
-# `BASE...HEAD` merge-base range, not a diff against main's current tip). llmlint
-# restricts the target set to the changed files (skipping empty diffs) and the
-# judge to the changed lines, so a PR is judged on what it introduced. This is the
-# blocking `llmlint` PR check; run it locally before pushing. BASE defaults to
-# origin/main (fetch it first if your clone lacks it).
+# Fast, deterministic llmlint gate — NO model calls, no harness credential. Runs
+# every static check in one pass: config structure, `llmlint: ignore` directives
+# name real rules, and edited versioned fragments bumped their `version:`. This is
+# the cheap pre-flight CI runs before the model tier spends a harness call; run it
+# locally before pushing a config edit. Pass `--diff-base origin/main` to scope the
+# version-bump check to the branch's changes.
+lint-llm-validate *args:
+    @command -v llmlint >/dev/null 2>&1 || { echo "llmlint not installed — run 'just setup-llmlint' (see references/llmlint.md)"; exit 1; }
+    llmlint validate {{args}}
+
+# llmlint scoped to the files this branch changed since it forked from main. A
+# plain `--diff-base <ref>` uses three-dot/merge-base semantics (the `BASE...HEAD`
+# fork-point range, not a diff against main's current tip), so no explicit
+# `...HEAD` is needed. llmlint restricts the target set to the changed files
+# (skipping empty diffs) and the judge to the changed lines, so a PR is judged on
+# what it introduced. This is the blocking `llmlint` PR check; run it locally
+# before pushing. BASE defaults to origin/main (fetch it first if your clone lacks
+# it).
 lint-llm-diff base="origin/main" *args:
-    llmlint --diff --diff-base "{{base}}...HEAD" {{args}}
+    llmlint --diff --diff-base "{{base}}" {{args}}
 
 # Optional, but a common addition: a diagnostics recipe so `check` can stay
 # quiet on success. Push environment/version reporting here (toolchain versions,

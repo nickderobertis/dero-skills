@@ -73,16 +73,26 @@ setup-llmlint:
 lint-llm *paths:
     llmlint {{paths}}
 
-# llmlint, scoped to the files this branch changed since it forked from main
-# (the `BASE...HEAD` merge-base range, not a diff against main's current tip).
-# llmlint restricts the target set to the changed files (skipping empty diffs)
-# and the judge to the changed lines, so a PR is judged on what it introduced.
-# This is the blocking `llmlint` CI check; run it locally before pushing. BASE
-# defaults to origin/main (fetch it first if your clone lacks it). Uses the
-# committed codex + gpt-5.5 harness unless ONEHARNESS_* env overrides are set
-# (the Claude Code SessionStart hook sets them).
+# Fast, deterministic llmlint gate — NO model calls, no harness credential. Runs
+# every static check in one pass: config structure, `llmlint: ignore` directives
+# name real rules, and edited versioned fragments bumped their `version:`. This is
+# the cheap pre-flight CI runs (and you can run locally) before the model tier
+# spends a harness call. Pass `--diff-base origin/main` to scope the version-bump
+# check to the branch's changes, e.g. `just lint-llm-validate --diff-base origin/main`.
+lint-llm-validate *args:
+    llmlint validate {{args}}
+
+# llmlint, scoped to the files this branch changed since it forked from main.
+# A plain `--diff-base <ref>` uses three-dot/merge-base semantics (llmlint >=
+# 0.3.15) — the `BASE...HEAD` fork-point range, not a diff against main's current
+# tip — so no explicit `...HEAD` is needed. llmlint restricts the target set to
+# the changed files (skipping empty diffs) and the judge to the changed lines, so
+# a PR is judged on what it introduced. This is the blocking `llmlint` CI check;
+# run it locally before pushing. BASE defaults to origin/main (fetch it first if
+# your clone lacks it). Uses the committed codex + gpt-5.5 harness unless
+# ONEHARNESS_* env overrides are set (the Claude Code SessionStart hook sets them).
 lint-llm-diff base="origin/main" *args:
-    llmlint --diff --diff-base "{{base}}...HEAD" {{args}}
+    llmlint --diff --diff-base "{{base}}" {{args}}
 
 # Upgrade dependencies, then re-run the full gate.
 upgrade:

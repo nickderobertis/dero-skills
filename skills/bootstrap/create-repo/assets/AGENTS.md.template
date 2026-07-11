@@ -67,10 +67,12 @@ Use the `just` recipes; do not hand-roll equivalent commands.
   before any commit or PR.
 - `just test` / `just lint` / `just format` — individual gate steps.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
-- `just lint-llm` / `just lint-llm-diff` — the LLM-judge tier (llmlint),
-  separate from `check` and non-deterministic; config in `llmlint.yml`.
-  `lint-llm` runs on demand locally; `lint-llm-diff` is the blocking, diff-scoped
-  PR check. `just setup-llmlint` installs the toolchain.
+- `just lint-llm` / `just lint-llm-diff` / `just lint-llm-validate` — the
+  LLM-judge tier (llmlint), separate from `check` and non-deterministic; config in
+  `llmlint.yml`. `lint-llm` runs on demand locally; `lint-llm-diff` is the
+  blocking, diff-scoped PR check; `lint-llm-validate` is the deterministic,
+  model-free gate (config + ignore directives + version bumps) CI runs first.
+  `just setup-llmlint` installs the toolchain.
 
 ## Commits, releases, and merging
 
