@@ -60,29 +60,32 @@ so the baseline checker runs against this very section):
 
 Use the `just` recipes; do not hand-roll equivalents.
 
-- `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain;
-  also activates the husky `commit-msg` hook).
+- `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain +
+  the uv-installed `llmlint` binary the gate's `lint-llm-validate` step needs; also
+  activates the husky `commit-msg` hook).
 - `just check` — full quality gate: `ruff format --check`, `ruff check`, skill
-  validation + smoke, the `.tool-versions`/CI version-consistency check,
-  `pytest`, and the create-repo baseline self-check. Must pass before any commit
-  or PR.
+  validation + smoke, the `.tool-versions`/CI version-consistency check, `pytest`,
+  the create-repo baseline self-check, and the deterministic `llmlint validate`
+  gate (`lint-llm-validate`). Must pass before any commit or PR.
 - `just format` / `just lint` / `just validate` / `just check-versions` /
   `just test` — individual steps.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
-- `just lint-llm [paths]` — optional LLM-as-judge lint (`llmlint`). NOT in the
-  gate (see "Optional LLM lint" below).
 - `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
-  validate` gate (config structure + `llmlint: ignore` directives + fragment
-  version bumps). No harness call; NOT in the gate (needs the llmlint binary). CI
-  runs it before the model tier (see "Optional LLM lint").
+  validate` gate (config + `llmlint: ignore` directives + fragment version bumps).
+  No harness call, so — unlike the model tier — it IS a hard step of `just check`
+  (see "Optional LLM lint").
+- `just lint-llm [paths]` — optional LLM-as-judge *model* lint. NOT in the gate —
+  it drives a real harness (see "Optional LLM lint" below).
 - `just skilltest [args]` — run the `skilltest-pytest` natural-language skill
   evals. NOT in the gate (see "Skill evals" below); with no provider they skip.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
-The gate runs on uv alone, so it needs no Node. Nx/bun is an optional
-accelerator; `uv`, `node`, and `bun` are the clean-clone prerequisites for
-`just bootstrap` (bun is the package manager and script runner; node is the
-underlying runtime for the Nx/semantic-release tooling). The toolchain is
+The gate needs no Node — it runs on uv plus the `llmlint` binary that `bootstrap`
+installs via `uv tool` (so the gate is still uv-only, just with one uv-installed
+binary; the `lint-llm-validate` step is deterministic and needs no harness token).
+Nx/bun is an optional accelerator; `uv`, `node`, and `bun` are the clean-clone
+prerequisites for `just bootstrap` (bun is the package manager and script runner;
+node is the underlying runtime for the Nx/semantic-release tooling). The toolchain is
 pinned in `.tool-versions`: provision `just`/`uv`/`node`/`bun` with asdf (or a
 compatible manager such as mise) via `asdf install`, then run `just bootstrap`.
 The `python` pin records the
@@ -132,11 +135,16 @@ is injected into just the claude-code harness via `oneharness.toml` so it runs
 under root without `--dangerously-skip-permissions` refusing; `oneharness.toml`
 also supplies the default harness the bundled `config_lint` plugin needs.
 
-This is **deliberately not in `just check`**: the uv-only gate must stay
-reproducible from a clean clone, whereas `llmlint` needs the separately installed
-binaries and a harness token (in Claude Code the inherited session token;
-elsewhere `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or — for the codex
-default — `OPENAI_API_KEY`). Run it on demand with `just lint-llm`;
+The **model tier** (`just lint-llm` / `just lint-llm-diff`) is **deliberately not
+in `just check`**: it drives a real harness, so it is non-deterministic and needs
+a harness token (in Claude Code the inherited session token; elsewhere
+`CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or — for the codex default —
+`OPENAI_API_KEY`). The **deterministic `validate` tier** (`just lint-llm-validate`)
+IS a hard step of `just check` — model-free and token-free, so `bootstrap` installs
+the `llmlint` binary (via `uv tool`) and the gate runs it. Caveat: loading
+`llmlint.yml` resolves the hosted `config_lint@1` plugin, so a cold-cache run with
+no `raw.githubusercontent` reachability fails (CI and warm caches are fine). Run
+the model tier on demand with `just lint-llm`;
 `just setup-llmlint` is the manual install path for a terminal (the hook covers
 Claude Code sessions). Since the repo now runs all JS through bun (`bun install`,
 `bunx nx`), the bun rule no longer fires on the authoring toolchain.

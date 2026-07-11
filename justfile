@@ -8,13 +8,18 @@
 default:
     @just --list
 
-# Set up from a clean clone: Python (uv) and the Node/Nx authoring toolchain.
+# Set up from a clean clone: Python (uv), the Node/Nx authoring toolchain, and the
+# llmlint binary (uv-installed) that the gate's `lint-llm-validate` step needs.
 bootstrap:
     uv sync --locked
     bun install --frozen-lockfile
+    ./scripts/setup-llmlint.sh
 
-# Full quality gate. Must pass before every commit and in CI.
-check: format-check lint validate check-versions test baseline
+# Full quality gate. Must pass before every commit and in CI. `lint-llm-validate`
+# is the deterministic, model-free llmlint gate (config/ignores/version bumps); it
+# needs the uv-installed llmlint binary but no harness/token, so it belongs in the
+# gate. The non-deterministic model tier (lint-llm/lint-llm-diff) stays out.
+check: format-check lint validate check-versions test baseline lint-llm-validate
 
 # Format this repo's Python in place.
 format:
@@ -76,11 +81,14 @@ lint-llm *paths:
 # Fast, deterministic llmlint gate — NO model calls, no harness credential. Runs
 # every static check in one pass: config structure, `llmlint: ignore` directives
 # name real rules, and edited versioned fragments bumped their `version:`. This is
-# the cheap pre-flight CI runs (and you can run locally) before the model tier
-# spends a harness call. Pass `--diff-base origin/main` to scope the version-bump
-# check to the branch's changes, e.g. `just lint-llm-validate --diff-base origin/main`.
+# a hard step of `just check` (it's model-free, so unlike the model tier it belongs
+# in the gate) and the pre-flight CI runs before the model tier spends a harness
+# call. Pass `--diff-base origin/main` to scope the version-bump check to the
+# branch's changes, e.g. `just lint-llm-validate --diff-base origin/main`.
+# `~/.local/bin` (where `bootstrap`/`setup-llmlint.sh` install llmlint via uv tool)
+# is prepended so the gate resolves the binary even when it isn't already on PATH.
 lint-llm-validate *args:
-    llmlint validate {{args}}
+    PATH="$HOME/.local/bin:$PATH" llmlint validate {{args}}
 
 # llmlint, scoped to the files this branch changed since it forked from main.
 # A plain `--diff-base <ref>` uses three-dot/merge-base semantics (llmlint >=
