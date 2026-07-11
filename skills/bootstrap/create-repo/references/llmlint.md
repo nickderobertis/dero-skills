@@ -29,9 +29,18 @@ everything they already check, and reach for llmlint only for the judgment calls
   ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
   repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard
   base rule set plus the per-reference rule fragments in as `@version`-pinned
-  plugins. Bumping a hosted fragment's version pushes new rules to every repo that
-  pins it; a repo *tunes* a standard rule in place with `override: true` (inherits
+  plugins. A repo *tunes* a standard rule in place with `override: true` (inherits
   the rule, changes only the fields it sets) rather than forking it.
+- **Fragment versioning is semver; consumers pin the major.** Each fragment
+  carries a `version:` (`MAJOR.MINOR.PATCH`). Bump **minor** for an added or
+  tightened rule, **patch** for a wording fix, **major** only for a breaking
+  change — a removed or renamed rule, or one whose meaning flips such that
+  previously-passing code now fails or a consumer's `override` dangles. The
+  composer pins a consumer to the **major only** (`@1`), which llmlint reads as
+  "any `1.x`", so non-breaking bumps reach pinned repos on their next (cold-cache
+  or CI) run automatically while a major bump stays opt-in. Because the pin is
+  also llmlint's cache key, a warm-cached consumer forces a refetch with
+  `LLMLINT_PLUGIN_REFRESH=1` or by moving to the new major.
 - **Ongoing vs buildout — two configs.** The committed `llmlint.yml` carries the
   **ongoing** rules that judge code as it changes (e2e isn't mocked, inputs are
   validated at boundaries, no unjustified suppressions, ...). A second

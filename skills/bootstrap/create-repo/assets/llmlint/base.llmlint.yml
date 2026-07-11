@@ -4,9 +4,12 @@
 # These are the ONGOING judgment checks an LLM judge can make that deterministic
 # linters can't; keep using ruff/clippy/biome/shellcheck/tsc for what they cover.
 #
-# `version` is the published plugin version consumers pin with `@` (e.g. `@1`);
-# bump it (and the content) to push new rules to every repo that pins it.
-version: 1
+# `version` is the published plugin version consumers pin with `@` (e.g. `@1`).
+# Full semver: bump minor for an added or tightened rule, patch for a wording
+# fix, major only for a breaking change (a removed/renamed rule, or one whose
+# meaning flips). Consumers pin the major, so non-breaking bumps flow to them
+# automatically. See references/llmlint.md ("Fragment versioning").
+version: 1.1.0
 
 rules:
   - name: e2e_not_mocked
