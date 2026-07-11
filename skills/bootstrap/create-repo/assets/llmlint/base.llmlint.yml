@@ -9,7 +9,7 @@
 # fix, major only for a breaking change (a removed/renamed rule, or one whose
 # meaning flips). Consumers pin the major, so non-breaking bumps flow to them
 # automatically. See references/llmlint.md ("Fragment versioning").
-version: 1.3.0
+version: 1.4.0
 
 rules:
   - name: comments_earn_their_place
@@ -21,9 +21,12 @@ rules:
       (`# increment i`, `// loop over users`, `# return the result`), is a decorative
       section banner or divider that adds no information, is dead weight (commented-out
       code, a stale TODO with no owner or context, changelog or session notes left in
-      the source), or is verbose where a short phrase would do. A docstring or comment
-      that documents a public contract, an example, or a genuinely non-obvious rule is
-      NOT a violation even if longer.
+      the source), is verbose where a short phrase would do, or reproduces explanatory
+      content already covered by a reference it links (or that the file links elsewhere)
+      instead of keeping just the repo-specific "why" and deferring the rest to that
+      reference — a copy that both bloats the comment and silently drifts from its
+      source. A docstring or comment that documents a public contract, an example, or a
+      genuinely non-obvious rule is NOT a violation even if longer.
     relevance: the target files contain code comments
 
   - name: e2e_not_mocked
