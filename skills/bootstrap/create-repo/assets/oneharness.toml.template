@@ -16,8 +16,9 @@
 #   * A Claude Code web/cloud session, where codex is absent, falls through to the
 #     secondary — claude-code + opus-4.8 — the only harness authenticated there.
 #
-# This is why the SessionStart hook no longer needs to export ONEHARNESS_HARNESSES:
-# the fallback list already selects claude-code when codex can't run.
+# Because the fallback already selects claude-code when codex can't run, the
+# SessionStart hook needs no `ONEHARNESS_HARNESSES` override — an override would
+# only clobber this list.
 #
 # IS_SANDBOX is injected into just the claude-code harness so it may run under root
 # without `--dangerously-skip-permissions` refusing (harmless elsewhere).

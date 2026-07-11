@@ -19,12 +19,12 @@
 #      install is a complete setup; no separate oneharness install / PATH entry.
 #      `--upgrade` bumps an older cached tool rather than leaving it.
 #   2. Inside a Claude Code session, persists PATH so the freshly installed binary
-#      resolves in later Bash calls. It no longer exports ONEHARNESS_HARNESSES /
-#      ONEHARNESS_MODEL: oneharness.toml is now in fallback mode (codex + gpt-5.5
-#      primary, claude-code + opus-4.8 secondary), and codex is absent here, so the
-#      fallback selects claude-code on its own — an env override would only clobber
-#      the fallback list (forcing claude-code always and overriding codex's model).
-#      `IS_SANDBOX` for the claude-code harness comes from oneharness.toml, not here.
+#      resolves in later Bash calls — and nothing else. Harness selection comes from
+#      oneharness.toml's fallback mode (codex + gpt-5.5 primary, claude-code +
+#      opus-4.8 secondary): codex is absent here, so the fallback selects claude-code
+#      on its own, and an `ONEHARNESS_HARNESSES`/`ONEHARNESS_MODEL` override would
+#      only clobber that list. `IS_SANDBOX` for the claude-code harness likewise
+#      comes from oneharness.toml, not here.
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
