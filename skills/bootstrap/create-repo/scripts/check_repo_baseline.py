@@ -893,8 +893,9 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 "ERROR",
                 "no `lint-llm-diff` recipe in the justfile (the diff-scoped PR check)",
                 "add a `lint-llm-diff:` recipe running "
-                '`llmlint --diff --diff-base "origin/main...HEAD"` so CI judges only '
-                "the lines the branch changed (see llmlint.md)",
+                '`llmlint --diff --diff-base "origin/main"` (a plain ref is '
+                "three-dot/merge-base) so CI judges only the lines the branch "
+                "changed (see llmlint.md)",
             )
         )
 

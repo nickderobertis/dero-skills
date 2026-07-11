@@ -71,6 +71,10 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
 - `just lint-llm [paths]` — optional LLM-as-judge lint (`llmlint`). NOT in the
   gate (see "Optional LLM lint" below).
+- `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
+  validate` gate (config structure + `llmlint: ignore` directives + fragment
+  version bumps). No harness call; NOT in the gate (needs the llmlint binary). CI
+  runs it before the model tier (see "Optional LLM lint").
 - `just skilltest [args]` — run the `skilltest-pytest` natural-language skill
   evals. NOT in the gate (see "Skill evals" below); with no provider they skip.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
@@ -137,18 +141,25 @@ default — `OPENAI_API_KEY`). Run it on demand with `just lint-llm`;
 Claude Code sessions). Since the repo now runs all JS through bun (`bun install`,
 `bunx nx`), the bun rule no longer fires on the authoring toolchain.
 
-**Blocking CI check.** The `llmlint` job in `.github/workflows/ci.yml` runs
-`just lint-llm-diff` on every PR — `llmlint --diff --diff-base "origin/main...HEAD"`,
-where the three-dot range makes llmlint scope both the target set (only the
-changed files, skipping empty diffs) and the judge (only the *lines* the branch
-changed) to the branch's **merge-base with main** (the fork point, not main's
-current tip, so unrelated later commits on main are never linted, and the judge
-doesn't flag pre-existing code a change merely sits near). llmlint >= 0.3.11 does
-the changed-file selection itself, so no wrapper script is needed. CI
-installs the committed Codex harness via bun and authenticates it with the
-`OPENAI_API_KEY` repo secret; without that secret the job fails. It is a separate
-job (not folded into `check`) to keep the clean-clone gate uv-only — add it to
-the required status checks in branch protection to make it block merges.
+**Blocking CI check.** The `llmlint` job in `.github/workflows/ci.yml` runs two
+steps on every PR. First — cheaply, with no model call or credential — `just
+lint-llm-validate --diff-base origin/main` (`llmlint validate`, >= 0.3.17): the
+deterministic gate that the config parses, every `llmlint: ignore` directive names
+a real rule, and any edited versioned fragment bumped its `version:`. It fails
+fast (cents, not dollars) on a config/suppression/version-bump slip before the
+paid tier runs. Then the model tier: `just lint-llm-diff` — `llmlint --diff
+--diff-base "origin/main"`, where a plain ref means three-dot/merge-base semantics
+(llmlint >= 0.3.15, so no explicit `...HEAD`) and llmlint scopes both the target
+set (only the changed files, skipping empty diffs) and the judge (only the *lines*
+the branch changed) to the branch's **merge-base with main** (the fork point, not
+main's current tip, so unrelated later commits on main are never linted, and the
+judge doesn't flag pre-existing code a change merely sits near). llmlint >= 0.3.11
+does the changed-file selection itself, so no wrapper script is needed. CI installs
+the committed Codex harness via bun and authenticates it with the `OPENAI_API_KEY`
+repo secret; without that secret the model step fails (the validate step needs no
+credential). It is a separate job (not folded into `check`) to keep the clean-clone
+gate uv-only — add it to the required status checks in branch protection to make it
+block merges.
 
 ### Skill evals (`skilltest-pytest`)
 

@@ -29,12 +29,17 @@ set -uo pipefail
 # Version floor, as a PyPI constraint (the `llmlint-cli` package version tracks the
 # wrapped binary version). `uv tool install --upgrade` installs the newest release
 # satisfying it; oneharness comes along transitively at a compatible version.
-#   llmlint >= 0.3.11 — finds `oneharness` beside its own executable (so a lone
-#     `uv tool install llmlint-cli` works); needs the whole-tree default (no
-#     `files.include`) and `check-ignores`; and 0.3.11 restricts `--diff` to the
-#     changed files (skipping empty diffs), which `just lint-llm-diff` relies on
-#     to judge only the branch's changes without a caller-side changed-file list.
-readonly LLMLINT_MIN="0.3.11"
+#   llmlint >= 0.3.17 — the 0.3.11 baseline (finds `oneharness` beside its own
+#     executable, so a lone `uv tool install llmlint-cli` works; the whole-tree
+#     default the composed llmlint.yml relies on with no `files.include`; `--diff`
+#     scoped to the changed files, skipping empty diffs) plus the latest static
+#     checks and diff semantics `just lint-llm-*` now depends on: 0.3.15 makes a
+#     plain `--diff-base <ref>` mean three-dot/merge-base (so `lint-llm-diff`
+#     passes just `origin/main`, no explicit `...HEAD`), and 0.3.17 adds the
+#     `validate` subcommand — the deterministic, model-free gate (config structure
+#     + `llmlint: ignore` directives + fragment version bumps) that
+#     `just lint-llm-validate` and CI run before ever spending a harness call.
+readonly LLMLINT_MIN="0.3.17"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }

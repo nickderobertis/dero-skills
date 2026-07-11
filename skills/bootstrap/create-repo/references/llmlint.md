@@ -12,11 +12,13 @@ everything they already check, and reach for llmlint only for the judgment calls
   makes network calls — the opposite of the deterministic gate. Keep it out of the
   tight `just check` loop. It runs two ways: on demand over the configured set (or
   passed paths) with `just lint-llm`, and **diff-scoped** with `just lint-llm-diff`
-  — which runs `llmlint --diff --diff-base "origin/main...HEAD"`, so llmlint scopes
-  both the target set (only the changed files, skipping empty diffs) and the judge
-  (only the *lines* the branch changed) to the merge-base with main. A PR is judged
-  on what it introduced and the judge can't wander into untouched code. (llmlint >=
-  0.3.11 does the changed-file selection itself — no wrapper script needed.)
+  — which runs `llmlint --diff --diff-base "origin/main"`, so llmlint scopes both
+  the target set (only the changed files, skipping empty diffs) and the judge (only
+  the *lines* the branch changed) to the merge-base with main. A plain `--diff-base
+  <ref>` means three-dot/merge-base semantics (llmlint >= 0.3.15), so no explicit
+  `...HEAD` is needed. A PR is judged on what it introduced and the judge can't
+  wander into untouched code. (llmlint >= 0.3.11 does the changed-file selection
+  itself — no wrapper script needed.)
   The diff-scoped run is the **blocking PR check** in its own CI workflow (separate
   from the `check` gate). It **requires** the harness credential and fails fast with
   a clear message when it is absent — never no-ops to a green pass, which would
@@ -25,6 +27,16 @@ everything they already check, and reach for llmlint only for the judgment calls
   no-op branch in the workflow; secrets stay restricted on `pull_request` from
   forks even after approval. Scoping CI to the diff keeps each PR paying for its own
   changes rather than a full-repo sweep on every push.
+- **A deterministic gate runs first — `just lint-llm-validate`.** `llmlint
+  validate` (>= 0.3.17) runs every model-free check in one pass — the config
+  structure parses, each inline `llmlint: ignore` directive names a real configured
+  rule, and any edited versioned fragment bumped its `version:` — with no harness
+  call and no credential. Wire it as a `just lint-llm-validate` recipe (`llmlint
+  validate {{args}}`) and run it in the CI llmlint job **before** the model-based
+  `lint-llm-diff` step: it catches a broken config, a stale suppression, or a
+  forgotten fragment bump in milliseconds, so the paid model tier never runs
+  against a config that can't pass. Pass `--diff-base origin/main` to scope the
+  version-bump check to the branch's changes.
 - **Config is composed, not hand-written.** The composer
   ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
   repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard
@@ -98,8 +110,13 @@ everything they already check, and reach for llmlint only for the judgment calls
   `compose_repo_plan.py --llmlint-config`), and omits `files.include` so llmlint
   lints the whole tree (add `files.exclude` globs for committed noise).
 - [ ] **Recipes present, out of the gate.** A `just lint-llm` recipe runs llmlint
-  on demand and a `just lint-llm-diff` recipe lints the merge-base diff; neither is
-  wired into `just check` (the deterministic gate stays deterministic).
+  on demand, a `just lint-llm-diff` recipe lints the merge-base diff, and a `just
+  lint-llm-validate` recipe runs the deterministic `validate` gate; none is wired
+  into `just check` (the deterministic gate stays uv-only and credential-free).
+- [ ] **Deterministic gate runs first in CI.** The CI llmlint job runs `just
+  lint-llm-validate --diff-base origin/main` (no credential, no model) before the
+  model-based `lint-llm-diff` step, so a config/suppression/version-bump slip fails
+  fast without spending a harness call.
 - [ ] **Install automated.** `scripts/setup-llmlint.sh` exists (idempotent
   toolchain install), `just setup-llmlint` runs it, and the Claude Code
   `SessionStart` hook in `.claude/settings.json` invokes it.
