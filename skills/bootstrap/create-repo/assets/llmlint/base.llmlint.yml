@@ -175,3 +175,16 @@ rules:
         - "scripts/**"
         - "**/scripts/**"
     relevance: the target files run a build, test, lint, format, or setup step that a documented recipe already wraps
+
+  - name: contracts_have_one_source_or_a_drift_gate
+    description: |
+      A fact that must agree across a boundary — a version, a type or schema on
+      both sides of an API/DB/IPC seam, an enum or constant list mirrored in
+      another file or language — is kept in sync by one authoritative source the
+      others reference, by generated copies derived from it (codegen, with the
+      output checked in and its freshness gated), or by a reconciling check in
+      the quality gate that fails on drift. Restating the fact in several places
+      with nothing keeping them aligned is the violation.
+    relevance: |
+      the target files restate a value, type, schema, enum, or contract that must
+      match a declaration living elsewhere in the repo or across a boundary

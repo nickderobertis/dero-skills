@@ -45,18 +45,3 @@ rules:
       include:
         - ".github/workflows/**"
     relevance: the target files define a CI job that runs the quality gate
-
-  - name: version_pins_in_lockstep
-    description: |
-      true when a toolchain or dependency version declared in more than one place (e.g.
-      `.tool-versions`, a CI `setup-*` action or matrix entry, a `Dockerfile`, or docs)
-      holds the same value across all of them, or a single reconciling check keeps them
-      consistent. false when the same tool is pinned to divergent versions across files,
-      so local and CI can silently run different toolchains.
-    files:
-      include:
-        - ".tool-versions"
-        - ".github/workflows/**"
-        - "**/Dockerfile*"
-        - "**/*.md"
-    relevance: the target files pin a toolchain or dependency version that also appears elsewhere in the repo
