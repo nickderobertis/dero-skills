@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/setup-llmlint.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/session-setup.sh\"",
             "timeout": 180,
             "type": "command"
           }
@@ -22,10 +22,12 @@
       "Bash(just format)",
       "Bash(just upgrade)",
       "Bash(just setup-llmlint)",
+      "Bash(just session-setup)",
       "Bash(just lint-llm:*)",
       "Bash(just lint-llm-diff:*)",
       "Bash(llmlint:*)",
       "Bash(./scripts/setup-llmlint.sh)",
+      "Bash(./scripts/session-setup.sh)",
       "Bash(git status)",
       "Bash(git diff:*)",
       "Bash(git log:*)",

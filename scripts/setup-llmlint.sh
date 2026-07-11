@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Central, idempotent setup for the optional `llmlint` LLM-as-judge lint.
 #
-# Wired into Claude Code's SessionStart hook (.claude/settings.json) so web/cloud
-# sessions can run `just lint-llm` with no manual steps; also safe to run by hand
-# (`just setup-llmlint`) or from a terminal. Every step tolerates failure and the
-# script always exits 0 — a flaky install must never break session startup.
+# Run from Claude Code's SessionStart hook via session-setup.sh (which provisions
+# `just` first, then hands off here) so web/cloud sessions can run `just lint-llm`
+# with no manual steps; also safe to run by hand (`just setup-llmlint`) or from a
+# terminal, and still called directly by `just bootstrap` and CI. Every step
+# tolerates failure and the script always exits 0 — a flaky install must never
+# break session startup.
 #
 # What it does, and why:
 #   1. Installs the `llmlint` binary from PyPI via `uv tool`. `llmlint-cli` wraps

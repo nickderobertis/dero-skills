@@ -666,6 +666,79 @@ def test_setup_llmlint_not_wired_into_sessionstart_is_error(tmp_path):
     assert any("SessionStart" in m for m in levels(findings, "ERROR"))
 
 
+# --- session-setup provisioner ---------------------------------------------
+
+# A .claude/settings.json whose SessionStart hook runs the session provisioner
+# (session-setup.sh), the recommended layout that hands off to setup-llmlint.sh.
+SESSION_SETUP_SETTINGS = (
+    '{"hooks": {"SessionStart": [{"matcher": "startup|resume", "hooks": '
+    '[{"type": "command", "command": "bash scripts/session-setup.sh"}]}]}, '
+    '"permissions": {"allow": []}}'
+)
+# A session-setup.sh that provisions `just` (via the rust-just PyPI package).
+SESSION_SETUP_SCRIPT = (
+    "#!/usr/bin/env bash\n# provision just for the session\n"
+    'uv tool install --upgrade "rust-just>=1.51.0"\n'
+)
+# A session-setup.sh that never installs `just` — misconfigured.
+SESSION_SETUP_SCRIPT_NO_JUST = "#!/usr/bin/env bash\necho hello\n"
+
+
+def add_session_setup(repo, body=SESSION_SETUP_SCRIPT):
+    scripts = repo / "scripts"
+    scripts.mkdir(exist_ok=True)
+    (scripts / "session-setup.sh").write_text(body, encoding="utf-8")
+    return repo
+
+
+def test_session_setup_wired_and_provisions_just_is_ok(tmp_path):
+    repo = add_session_setup(make_repo(tmp_path, settings=SESSION_SETUP_SETTINGS))
+    findings = crb.check_session_setup(repo)
+    assert any("session-setup.sh provisions" in m for m in levels(findings, "OK"))
+    assert not levels(findings, "ERROR")
+
+
+def test_sessionstart_via_session_setup_satisfies_llmlint_wiring(tmp_path):
+    # The hook runs session-setup.sh (which hands off to setup-llmlint.sh); the
+    # llmlint tier's automated-install assertion is still satisfied.
+    repo = add_session_setup(make_repo(tmp_path, settings=SESSION_SETUP_SETTINGS))
+    findings = crb.audit(repo)
+    assert not any(
+        "llmlint setup is not wired" in m for m in levels(findings, "ERROR")
+    ), levels(findings, "ERROR")
+
+
+def test_session_setup_without_just_provisioning_is_error(tmp_path):
+    repo = add_session_setup(
+        make_repo(tmp_path, settings=SESSION_SETUP_SETTINGS),
+        body=SESSION_SETUP_SCRIPT_NO_JUST,
+    )
+    findings = crb.check_session_setup(repo)
+    assert any("does not provision `just`" in m for m in levels(findings, "ERROR"))
+
+
+def test_session_setup_wired_but_missing_script_is_error(tmp_path):
+    # The hook points at session-setup.sh but the script isn't there.
+    repo = make_repo(tmp_path, settings=SESSION_SETUP_SETTINGS)
+    findings = crb.check_session_setup(repo)
+    assert any("script is missing" in m for m in levels(findings, "ERROR"))
+
+
+def test_session_setup_present_but_not_wired_is_error(tmp_path):
+    # session-setup.sh exists and provisions just, but the hook wires only
+    # setup-llmlint.sh (CONFORMANT_SETTINGS), so the provisioner never runs.
+    repo = add_session_setup(make_repo(tmp_path))
+    findings = crb.check_session_setup(repo)
+    assert any(
+        "not wired into a SessionStart hook" in m for m in levels(findings, "ERROR")
+    )
+
+
+def test_session_setup_absent_and_unreferenced_is_silent(tmp_path):
+    # Optional provisioner: not shipped and not referenced by the hook — no finding.
+    assert crb.check_session_setup(make_repo(tmp_path)) == []
+
+
 # --- AGENTS.md length (advisory) -------------------------------------------
 
 

@@ -5,9 +5,28 @@
 # that every gate stage is wired or that the threshold actually fails the build).
 # The ongoing judgment rules live in the committed base.llmlint.yml; these do not
 # persist.
-version: 1
+version: 1.1.0
 
 rules:
+  - name: session_bootstrap_provisions_toolchain
+    description: |
+      true when the session bootstrap makes a fresh web/cloud session able to run
+      the `just` command surface with no manual step: a `SessionStart` hook in
+      `.claude/settings.json` runs an idempotent, non-blocking
+      `scripts/session-setup.sh` that ensures `just` itself — a cloud image often
+      ships the language runtime but not `just`, and there is no asdf there to read
+      `.tool-versions`, so the first `just ...` call would otherwise fail — before
+      handing off to any llmlint installer. false when the hook is absent, points
+      at a script that never provisions `just` (leaving the recipes unrunnable), or
+      the provisioner is not idempotent / does not skip when `CI` is set.
+    files:
+      include:
+        - ".claude/settings.json"
+        - "scripts/**"
+        - "justfile"
+        - "Justfile"
+        - ".justfile"
+    relevance: the repo automates session setup via a Claude Code SessionStart hook
   - name: gate_runs_every_stage
     description: |
       true when `just check` composes the FULL gate for this stack — format check,

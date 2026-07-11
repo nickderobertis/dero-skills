@@ -62,7 +62,8 @@ Use the `just` recipes; do not hand-roll equivalents.
 
 - `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain +
   the uv-installed `llmlint` binary the gate's `lint-llm-validate` step needs; also
-  activates the husky `commit-msg` hook).
+  activates the husky hooks — `commit-msg` (commitlint) and `pre-push`
+  (`lint-llm-validate`)).
 - `just check` — full quality gate: `ruff format --check`, `ruff check`, skill
   validation + smoke, the `.tool-versions`/CI version-consistency check, `pytest`,
   the create-repo baseline self-check, and the deterministic `llmlint validate`
@@ -73,11 +74,16 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
   validate` gate (config + `llmlint: ignore` directives + fragment version bumps).
   No harness call, so — unlike the model tier — it IS a hard step of `just check`
-  (see "Optional LLM lint").
+  (see "Optional LLM lint"), and also runs as the husky `pre-push` hook (a fast,
+  token-free local safety net; skips if llmlint isn't installed, bypass with
+  `git push --no-verify`).
 - `just lint-llm [paths]` — optional LLM-as-judge *model* lint. NOT in the gate —
   it drives a real harness (see "Optional LLM lint" below).
 - `just skilltest [args]` — run the `skilltest-pytest` natural-language skill
   evals. NOT in the gate (see "Skill evals" below); with no provider they skip.
+- `just session-setup` — provision a session's dev toolchain: ensure `just`, then
+  run `setup-llmlint`. Runs automatically via the `SessionStart` hook (see "Harness
+  split"); this is the manual entry point. Idempotent, no-ops in CI.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
 The gate needs no Node — it runs on uv plus the `llmlint` binary that `bootstrap`
@@ -88,6 +94,10 @@ prerequisites for `just bootstrap` (bun is the package manager and script runner
 node is the underlying runtime for the Nx/semantic-release tooling). The toolchain is
 pinned in `.tool-versions`: provision `just`/`uv`/`node`/`bun` with asdf (or a
 compatible manager such as mise) via `asdf install`, then run `just bootstrap`.
+In a Claude Code web/cloud session there is no asdf, and the image ships uv/node/bun
+but not `just`, so the `SessionStart` hook runs `scripts/session-setup.sh` to install
+`just` (via `uv tool install rust-just`, PyPI-only) before the very first `just ...`
+call — see "Harness split" below; `just session-setup` is the manual entry point.
 The `python` pin records the
 targeted version (uv supplies Python per `requires-python`); `just
 check-versions` keeps every pin in lockstep with CI.
@@ -121,8 +131,10 @@ overrides; `setup-llmlint.sh` pins the concrete floor).
 **Harness split — committed default vs. Claude Code.** The committed
 `oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
 running `llmlint` from a terminal gets). Inside a Claude Code session the
-`SessionStart` hook runs `scripts/setup-llmlint.sh`, which installs llmlint (via
-`uv tool install llmlint-cli` — one PyPI dependency resolution that also fetches
+`SessionStart` hook runs `scripts/session-setup.sh`, which provisions `just` and
+then hands off to `scripts/setup-llmlint.sh` (still called directly by `just
+bootstrap` and CI, where `just` already exists). `setup-llmlint.sh` installs llmlint
+(via `uv tool install llmlint-cli` — one PyPI dependency resolution that also fetches
 `oneharness-cli`, no Rust toolchain or github.com reachability needed; llmlint >=
 0.3.7 finds the `oneharness` binary beside its own in the tool venv, so no
 separate install) and exports `ONEHARNESS_HARNESSES=claude-code` +

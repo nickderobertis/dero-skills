@@ -36,7 +36,10 @@ everything they already check, and reach for llmlint only for the judgment calls
   `lint-llm-diff` step: it catches a broken config, a stale suppression, or a
   forgotten fragment bump in milliseconds, so the paid model tier never runs
   against a config that can't pass. Pass `--diff-base origin/main` to scope the
-  version-bump check to the branch's changes.
+  version-bump check to the branch's changes. Because it is fast and token-free, it
+  also makes a good `pre-push` hook (husky where JS exists) that skips without
+  blocking when the toolchain isn't installed — a local safety net before the
+  blocking CI check, not a slow model call on every push.
 - **Config is composed, not hand-written.** The composer
   ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
   repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard
@@ -89,10 +92,13 @@ everything they already check, and reach for llmlint only for the judgment calls
   deterministic check llmlint can't improve on.
 - **Install is automated.** llmlint needs `oneharness` and an authenticated
   harness (e.g. Claude Code). Bundle an idempotent `scripts/setup-llmlint.sh`
-  (from `assets/setup-llmlint.sh.template`) that installs both, wire it into the
-  Claude Code `SessionStart` hook in `.claude/settings.json` so web/cloud sessions
-  are ready with no manual steps, and expose it as `just setup-llmlint` for a plain
-  terminal. `llmlint doctor` confirms the harness is reachable; the `just lint-llm`
+  (from `assets/setup-llmlint.sh.template`) that installs both, and expose it as
+  `just setup-llmlint` for a plain terminal. Wire it into web/cloud sessions
+  through the `SessionStart` hook — point the hook at `scripts/session-setup.sh`
+  (Principle 1), which provisions `just` and then hands off to `setup-llmlint.sh`,
+  so one hook readies the whole session with no manual steps. (`setup-llmlint.sh`
+  is still called directly by `just bootstrap` and CI, where `just` already
+  exists.) `llmlint doctor` confirms the harness is reachable; the `just lint-llm`
   recipe stays quiet on success and, on a missing binary, points at
   `just setup-llmlint`.
 - **Suppress narrowly.** A one-off exception uses a strict inline directive in the
@@ -118,8 +124,10 @@ everything they already check, and reach for llmlint only for the judgment calls
   model-based `lint-llm-diff` step, so a config/suppression/version-bump slip fails
   fast without spending a harness call.
 - [ ] **Install automated.** `scripts/setup-llmlint.sh` exists (idempotent
-  toolchain install), `just setup-llmlint` runs it, and the Claude Code
-  `SessionStart` hook in `.claude/settings.json` invokes it.
+  toolchain install) and `just setup-llmlint` runs it. The Claude Code
+  `SessionStart` hook in `.claude/settings.json` invokes it — directly, or (the
+  recommended layout) via `scripts/session-setup.sh`, which provisions `just`
+  first, then hands off to `setup-llmlint.sh`.
 - [ ] **Blocking PR check.** A CI workflow runs `just lint-llm-diff` as its own
   job, separate from the `check` gate; it requires the harness credential and
   fails fast without it (fork PRs are gated by the repo's

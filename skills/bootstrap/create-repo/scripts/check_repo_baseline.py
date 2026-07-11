@@ -44,11 +44,16 @@ Checks:
     or the root/docs variants GitHub also renders) AND names both a What and a
     Why section — so every PR states the behavior change and its driver, not a
     walkthrough of the diff. An empty or unrelated file fails.
+  * The session provisioner, when present, is correct: `scripts/session-setup.sh`
+    provisions `just` (a cloud image often ships the language runtime but not
+    `just`, and has no version manager there to read `.tool-versions`) and is wired
+    into the SessionStart hook. Optional, so silent when neither shipped nor wired.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
     `lint-llm` recipe and the diff-scoped `lint-llm-diff` recipe (the blocking PR
     check), an automated install (`scripts/setup-llmlint.sh` wired into a
-    SessionStart hook), and a CI workflow that invokes it. The tier runs OUTSIDE
+    SessionStart hook — directly or via `session-setup.sh`), and a CI workflow
+    that invokes it. The tier runs OUTSIDE
     `just check` (it is non-deterministic) but is a required PR check.
     Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
     `--buildout` flag additionally composes and runs the one-time buildout tier —
@@ -804,27 +809,53 @@ def find_setup_llmlint_script(repo: Path) -> Path | None:
     return None
 
 
-def settings_sessionstart_runs_llmlint_setup(repo: Path) -> bool:
-    """True when a SessionStart hook in .claude/settings.json runs the llmlint setup.
+def find_session_setup_script(repo: Path) -> Path | None:
+    """Return the idempotent session/dev-toolchain provisioner, or None.
 
-    The install is automated by wiring ``setup-llmlint.sh`` into the Claude Code
-    ``SessionStart`` hook, so a web/cloud session is ready with no manual step. A
-    light structural read of the settings JSON, tolerant of malformed files (a
-    separate check reports invalid JSON).
+    The skill drops it at ``scripts/session-setup.sh`` (from
+    ``assets/session-setup.sh.template``); accept a couple of nearby spellings so
+    the check is about the automation existing, not the exact path.
+    """
+    for rel in (
+        "scripts/session-setup.sh",
+        "scripts/session_setup.sh",
+        "session-setup.sh",
+    ):
+        candidate = repo / rel
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+# A deterministic signal that session-setup.sh actually provisions ``just``: the
+# PyPI package that ships the binary, the template's install helper, or a ``just``
+# token next to an install verb (so an alternative installer still matches).
+SESSION_SETUP_PROVISIONS_JUST_RE = re.compile(
+    r"rust-just|ensure_just|install[^\n]*\bjust\b|\bjust\b[^\n]*install",
+    re.IGNORECASE,
+)
+
+
+def sessionstart_hook_commands(repo: Path) -> list[str]:
+    """Return every SessionStart hook command string in .claude/settings.json.
+
+    A light structural read of the settings JSON, tolerant of malformed files (a
+    separate check reports invalid JSON); returns ``[]`` when absent or malformed.
     """
     settings = repo / ".claude" / "settings.json"
     if not settings.is_file():
-        return False
+        return []
     try:
         data = json.loads(settings.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return False
+        return []
     hooks = data.get("hooks") if isinstance(data, dict) else None
     if not isinstance(hooks, dict):
-        return False
+        return []
     session_start = hooks.get("SessionStart")
     if not isinstance(session_start, list):
-        return False
+        return []
+    commands: list[str] = []
     for entry in session_start:
         if not isinstance(entry, dict):
             continue
@@ -832,11 +863,77 @@ def settings_sessionstart_runs_llmlint_setup(repo: Path) -> bool:
         if not isinstance(entry_hooks, list):
             continue
         for hook in entry_hooks:
-            if isinstance(hook, dict) and "setup-llmlint" in str(
-                hook.get("command", "")
-            ):
-                return True
-    return False
+            if isinstance(hook, dict):
+                commands.append(str(hook.get("command", "")))
+    return commands
+
+
+def settings_sessionstart_runs_setup(repo: Path) -> bool:
+    """True when a SessionStart hook runs the session provisioner.
+
+    The install is automated by wiring the Claude Code ``SessionStart`` hook at
+    ``scripts/session-setup.sh`` (which provisions ``just`` and hands off to
+    ``setup-llmlint.sh``) — or, in a llmlint-only layout, at ``setup-llmlint.sh``
+    directly. Either wiring readies a web/cloud session with no manual step.
+    """
+    return any(
+        "session-setup" in cmd or "setup-llmlint" in cmd
+        for cmd in sessionstart_hook_commands(repo)
+    )
+
+
+def check_session_setup(repo: Path) -> list[Finding]:
+    """Verify the session/dev-toolchain provisioner, when present.
+
+    ``scripts/session-setup.sh`` is the idempotent SessionStart provisioner that
+    makes a fresh web/cloud session able to run the ``just`` command surface: it
+    must ensure ``just`` itself, since a cloud image often ships the language
+    runtime but not ``just`` and has no version manager to read ``.tool-versions``,
+    so the first ``just ...`` call would otherwise fail. The script is optional (a
+    repo may rely on the image or a version manager alone), so this stays silent
+    when it is absent and unreferenced — but if the repo ships one or wires the
+    hook at it, it must be correct: provision ``just`` and be wired into the hook.
+    """
+    script = find_session_setup_script(repo)
+    wired = any("session-setup" in cmd for cmd in sessionstart_hook_commands(repo))
+
+    if script is None:
+        if wired:
+            return [
+                Finding(
+                    "ERROR",
+                    "SessionStart hook runs session-setup.sh but the script is missing",
+                    "add scripts/session-setup.sh from the skill's "
+                    "assets/session-setup.sh.template (it provisions `just`, then "
+                    "hands off to setup-llmlint.sh)",
+                )
+            ]
+        return []  # optional provisioner, not shipped or wired — nothing to verify
+
+    problems: list[Finding] = []
+    if not SESSION_SETUP_PROVISIONS_JUST_RE.search(script.read_text(encoding="utf-8")):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{script.name} does not provision `just` (the command-surface entry point)",
+                "install `just` in session-setup.sh (e.g. `uv tool install "
+                "rust-just`, which ships the binary on PyPI) so a cloud session "
+                "lacking it can run the `just` recipes",
+            )
+        )
+    if not wired:
+        problems.append(
+            Finding(
+                "ERROR",
+                "session-setup.sh exists but is not wired into a SessionStart hook",
+                "point the .claude/settings.json SessionStart hook at "
+                "scripts/session-setup.sh so sessions are provisioned with no "
+                "manual step",
+            )
+        )
+    return problems or [
+        Finding("OK", "session-setup.sh provisions the toolchain (`just`) and is wired")
+    ]
 
 
 def check_llmlint(repo: Path) -> list[Finding]:
@@ -927,13 +1024,15 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 "install) from the skill's assets/setup-llmlint.sh.template",
             )
         )
-    elif not settings_sessionstart_runs_llmlint_setup(repo):
+    elif not settings_sessionstart_runs_setup(repo):
         problems.append(
             Finding(
                 "ERROR",
-                "setup-llmlint.sh is not wired into a SessionStart hook",
+                "the llmlint setup is not wired into a SessionStart hook",
                 "add a SessionStart hook to .claude/settings.json that runs "
-                "scripts/setup-llmlint.sh so sessions are ready with no manual step",
+                "scripts/session-setup.sh (which hands off to setup-llmlint.sh) — "
+                "or setup-llmlint.sh directly — so sessions are ready with no "
+                "manual step",
             )
         )
 
@@ -1231,6 +1330,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_coverage(repo)
     findings += check_ci(repo)
     findings += check_pr_template(repo)
+    findings += check_session_setup(repo)
     findings += check_llmlint(repo)
     return findings
 
