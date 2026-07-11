@@ -1,6 +1,6 @@
 # CI buildout rules (plugin) — run ONCE during repo creation, then discarded.
 # These verify the CI was set up right; they are not an ongoing PR check.
-version: 1
+version: 1.1.0
 
 rules:
   - name: ci_runs_the_real_gate
@@ -9,6 +9,22 @@ rules:
       false when CI omits the gate or runs only a reduced subset of it.
     files:
       include: [".github/workflows/**", "justfile", "Justfile", ".justfile"]
+
+  - name: ci_llmlint_job_provisions_a_runnable_harness
+    description: |
+      true when the CI job running the llmlint tier installs a harness the repo's
+      `oneharness.toml` fallback list names (e.g. codex, or claude-code) onto PATH
+      before the lint step — `setup-llmlint.sh` installs `llmlint` + `oneharness`
+      but no harness. false when the job wires only the harness credential (e.g.
+      `CLAUDE_CODE_OAUTH_TOKEN`): oneharness then finds no harness, skips every file,
+      and the job passes while linting nothing.
+    files:
+      include:
+        - ".github/workflows/**"
+        - "oneharness.toml"
+        - ".oneharness.toml"
+        - "scripts/setup-llmlint.sh"
+    relevance: the repo runs the llmlint LLM-judge tier as a CI check
 
   - name: install_path_matches_docs
     description: |

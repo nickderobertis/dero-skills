@@ -85,6 +85,12 @@ jobs:
           ./scripts/setup-llmlint.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      # REQUIRED: setup-llmlint.sh installs llmlint + oneharness only, NOT a
+      # harness — so CI must install one your oneharness.toml fallback list names,
+      # else the lint step skips every file yet still passes. See references/llmlint.md.
+      - name: Install the coding harness (claude-code)
+        run: npm i -g @anthropic-ai/claude-code
+
       # Deterministic, model-free gate first: validate the config structure, that
       # every `llmlint: ignore` directive names a real rule, and that any edited
       # versioned fragment bumped its `version:`. No harness credential needed, so
@@ -93,14 +99,15 @@ jobs:
       - name: Validate llmlint config (no model)
         run: just lint-llm-validate --diff-base origin/main
 
-      # TODO: install + authenticate the coding harness oneharness drives (e.g.
-      # Claude Code), exporting its credential from secrets, then run the tier
-      # over only the changed files.
+      # The harness is installed above; here, authenticate it from secrets and run
+      # the tier over only the changed files. TODO: point HARNESS_KEY at the
+      # credential secret for the harness you installed.
       - name: Lint changed files
         env:
-          # TODO: your harness's credential secret (e.g. ANTHROPIC_API_KEY for
-          # Claude Code, OPENAI_API_KEY for Codex).
-          HARNESS_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # TODO: your harness's credential secret (e.g. CLAUDE_CODE_OAUTH_TOKEN
+          # for Claude Code — generate with `claude setup-token`; OPENAI_API_KEY
+          # for Codex).
+          HARNESS_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           # Fail with a clear, actionable message instead of an opaque harness
           # error (or a misleading green pass) when the credential is missing.
