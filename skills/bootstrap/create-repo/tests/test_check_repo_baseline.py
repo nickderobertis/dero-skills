@@ -655,6 +655,15 @@ def test_oneharness_single_harness_fallback_is_error(tmp_path):
     assert any("only one harness" in m for m in levels(findings, "ERROR"))
 
 
+def test_oneharness_fallback_without_claude_code_is_error(tmp_path):
+    # A two-harness fallback that omits claude-code breaks the Claude Code session
+    # path: with codex absent and no claude-code target, the tier can't run there.
+    no_cc = 'run_mode = "fallback"\nharnesses = ["codex", "goose"]\n'
+    findings = crb.audit(make_repo(tmp_path, oneharness=no_cc))
+    assert crb.has_errors(findings)
+    assert any("no `claude-code`" in m for m in levels(findings, "ERROR"))
+
+
 def test_missing_llmlint_recipe_is_error(tmp_path):
     no_recipe = FULL_JUSTFILE.replace("\nlint-llm:\n    @echo lint-llm\n", "\n")
     findings = crb.audit(make_repo(tmp_path, justfile=no_recipe))

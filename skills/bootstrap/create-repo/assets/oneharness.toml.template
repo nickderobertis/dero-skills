@@ -4,7 +4,8 @@
 # Drop this at the repo root as `oneharness.toml`. It is the single source of
 # truth for WHICH harness (and model) llmlint drives — the composed `llmlint.yml`
 # deliberately does not pin one, so this file (or an `ONEHARNESS_<FIELD>` env
-# override) decides.
+# override) decides. This template is the canonical source: the composer emits it
+# verbatim, and in the skills repo a drift gate pins the dogfooded root copy to it.
 #
 # Fallback mode: oneharness tries the harnesses in priority order and stops at the
 # first that can actually run — falling through only the candidates that cannot run

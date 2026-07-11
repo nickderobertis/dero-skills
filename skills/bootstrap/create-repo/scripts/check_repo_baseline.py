@@ -51,7 +51,7 @@ Checks:
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
     fallback-mode `oneharness.toml` selecting the harness the pinless config drives
-    (codex primary, claude-code secondary), a `lint-llm` recipe and the diff-scoped
+    (a primary plus a required `claude-code` fallback), a `lint-llm` recipe and the diff-scoped
     `lint-llm-diff` recipe (the blocking PR check), an automated install
     (`scripts/setup-llmlint.sh` wired into a SessionStart hook — directly or via
     `session-setup.sh`), and a CI workflow that invokes it. The tier runs OUTSIDE
@@ -978,7 +978,8 @@ def check_llmlint(repo: Path) -> list[Finding]:
     harness, so it is non-deterministic and credentialed); this check never runs
     it. It verifies the tier is set up: a composed ``llmlint.yml`` declaring the
     rule-fragment ``plugins``, a fallback-mode ``oneharness.toml`` selecting the
-    harness the pinless config drives (codex primary, claude-code secondary), a
+    harness the pinless config drives (a primary plus a required ``claude-code``
+    fallback; the template's default is codex primary), a
     ``lint-llm`` recipe to run it on demand, a ``lint-llm-diff`` recipe for the
     diff-scoped PR check, a ``lint-llm-validate`` recipe for the deterministic
     model-free gate, and a CI workflow that invokes the tier as the blocking PR
@@ -1009,10 +1010,11 @@ def check_llmlint(repo: Path) -> list[Finding]:
         )
 
     # The composed llmlint.yml pins no harness, so an oneharness.toml in fallback
-    # mode must select one — codex primary, claude-code secondary — so the same
-    # committed config runs the primary for a Codex-authenticated contributor and
-    # falls through to claude-code in a Claude Code session (codex absent). The
-    # composer emits it beside llmlint.yml; check its shape, not just presence.
+    # mode must select one. Validate the repo-owned config's shape: fallback mode,
+    # a primary plus a secondary, and — the load-bearing part — claude-code among
+    # them, so a Claude Code session (where the primary like codex is absent) still
+    # has a harness to fall through to. The template's default is codex primary +
+    # claude-code secondary; the primary is the repo's choice, the fallback is not.
     oh = find_oneharness_config(repo)
     if oh is None:
         problems.append(
@@ -1045,6 +1047,20 @@ def check_llmlint(repo: Path) -> list[Finding]:
                     "needs a secondary to fall through to",
                     'list at least two, e.g. harnesses = ["codex", "claude-code"], '
                     "so a session without the primary still runs the tier",
+                )
+            )
+        elif "claude-code" not in harnesses:
+            # The load-bearing invariant, validated on the repo-owned config: the
+            # fallback must include claude-code so a Claude Code web/cloud session —
+            # where the primary (e.g. codex) is absent — still has a harness it can
+            # run. The primary is the repo's choice; the claude-code fallback is not.
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{oh.name} fallback ({', '.join(harnesses)}) has no `claude-code` "
+                    "target; a Claude Code session couldn't run the tier",
+                    'include claude-code in harnesses, e.g. ["codex", "claude-code"], '
+                    "so a session without the primary falls through to it",
                 )
             )
 

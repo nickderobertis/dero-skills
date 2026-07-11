@@ -22,6 +22,10 @@
 # without `--dangerously-skip-permissions` refusing (harmless elsewhere). It also
 # supplies the default harness the bundled config_lint plugin needs (the fallback
 # order's first entry).
+#
+# This is a dogfooded copy of assets/oneharness.toml.template (its canonical
+# source); tools/test_oneharness_dogfood.py is the drift gate that keeps the two
+# in lockstep, so edit the template and this file together.
 run_mode = "fallback"
 harnesses = ["codex", "claude-code"]
 
