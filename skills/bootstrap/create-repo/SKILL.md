@@ -24,9 +24,15 @@ clone, run one command, and trust.
    nor cleanly scoped to one folder belongs in a reference doc linked from
    `AGENTS.md`, not inlined (see Principle 5). Optionally add a `SessionStart`
    hook in `.claude/settings.json` pointing at an idempotent, non-blocking
-   `scripts/session-setup.sh` that provisions the dev toolchain (and skips in
-   CI), plus a `PreToolUse` hook if you enforce the allowlist with a tool — both
-   stay quiet on success.
+   `scripts/session-setup.sh` (from
+   [`assets/session-setup.sh.template`](./assets/session-setup.sh.template)) that
+   provisions the dev toolchain — at minimum `just` itself, since a web/cloud
+   session's image often ships the language runtime but not `just` and has no
+   asdf to read `.tool-versions`, so the first `just ...` call would fail — and
+   skips in CI. It also hands off to `scripts/setup-llmlint.sh` when you bundle
+   the llmlint tier (see `references/llmlint.md`), so one hook readies the whole
+   session. Add a `PreToolUse` hook too if you enforce the allowlist with a tool
+   — both stay quiet on success.
 2. **Compose the plan for your stack.** Name the artifact (CLI, web app, library
    / service, asdf plugin, skills repo, ...) and the implementation language(s),
    then run the composer — it mixes and matches the references for *your* stack

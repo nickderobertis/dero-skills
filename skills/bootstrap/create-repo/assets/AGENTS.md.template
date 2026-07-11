@@ -72,7 +72,9 @@ Use the `just` recipes; do not hand-roll equivalent commands.
   `llmlint.yml`. `lint-llm` runs on demand locally; `lint-llm-diff` is the
   blocking, diff-scoped PR check; `lint-llm-validate` is the deterministic,
   model-free gate (config + ignore directives + version bumps) CI runs first.
-  `just setup-llmlint` installs the toolchain.
+  `just setup-llmlint` installs the llmlint toolchain; `just session-setup`
+  provisions the session's dev toolchain (ensures `just`, then runs setup-llmlint)
+  and is what the `SessionStart` hook runs so a fresh web/cloud session is ready.
 
 ## Commits, releases, and merging
 

@@ -48,9 +48,17 @@ upgrade:
     @echo "TODO: upgrade dependencies (e.g. uv lock --upgrade)"
     @just check
 
-# Install/refresh the llmlint toolchain (oneharness + llmlint). Idempotent. Runs
+# Provision the dev toolchain for a session: ensure `just` (via uv, so a cloud
+# session that ships the language runtime but not `just` can still run these
+# recipes), verify the rest of the toolchain, then run setup-llmlint. Runs
 # automatically via the Claude Code SessionStart hook; this is the manual entry
-# point for a plain terminal.
+# point. Idempotent, no-ops in CI.
+session-setup:
+    ./scripts/session-setup.sh
+
+# Install/refresh the llmlint toolchain (oneharness + llmlint). Idempotent. Runs
+# automatically via the SessionStart hook (through session-setup); this is the
+# manual entry point for a plain terminal.
 setup-llmlint:
     ./scripts/setup-llmlint.sh
 

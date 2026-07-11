@@ -62,9 +62,16 @@ baseline:
 nx:
     bunx nx run-many -t validate smoke test
 
+# Provision the dev toolchain for a session: ensure `just` (via uv, so a cloud
+# session that ships uv/node/bun but not `just` can still run these recipes),
+# verify uv/node/bun, then run setup-llmlint. Runs automatically via the Claude
+# Code SessionStart hook; this is the manual entry point. Idempotent, no-ops in CI.
+session-setup:
+    ./scripts/session-setup.sh
+
 # Install/refresh the optional llmlint toolchain (oneharness + llmlint). Runs
-# automatically via the Claude Code SessionStart hook; this is the manual entry
-# point for a plain terminal. Idempotent.
+# automatically via the Claude Code SessionStart hook (through session-setup); this
+# is the manual entry point for a plain terminal. Idempotent.
 setup-llmlint:
     ./scripts/setup-llmlint.sh
 
