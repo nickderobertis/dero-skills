@@ -229,15 +229,55 @@ def test_llmlint_config_wires_selected_fragments_as_pinned_plugins(tmp_path):
     assert "/assets/llmlint/shapes/cli.llmlint.yml@1" in cfg
     assert "/assets/llmlint/languages/python.llmlint.yml@1" in cfg
     assert "/assets/llmlint/ci.llmlint.yml@1" in cfg
-    # the default agent + schema modeline ship in the wrapper
-    assert "harness: claude-code" in cfg
+    # the schema modeline ships in the wrapper
     assert "llmlint.schema.json" in cfg
+    # the harness is NOT pinned here: oneharness.toml (composed alongside) selects
+    # it in fallback mode, so a Claude Code session can fall through to claude-code.
+    assert "harness:" not in cfg
+    assert "agents:" not in cfg
     # an unselected language's fragment is NOT pulled in
     assert "languages/typescript.llmlint.yml" not in cfg
     # the ongoing config carries no buildout-only fragments
     assert "/buildout/" not in cfg
     # stderr records the composition; the plan stays on stdout
     assert "ongoing llmlint config" in result.stderr
+
+
+def test_llmlint_config_emits_fallback_oneharness_alongside(tmp_path):
+    # The pinless llmlint.yml needs oneharness.toml to select a harness, so
+    # --llmlint-config emits the fallback config beside it: codex primary,
+    # claude-code secondary, per-harness models.
+    out = tmp_path / "llmlint.yml"
+    result = run("--shape", "cli", "--language", "python", "--llmlint-config", str(out))
+    assert result.returncode == 0
+    oh = tmp_path / "oneharness.toml"
+    assert oh.is_file(), "oneharness.toml should be emitted beside llmlint.yml"
+    toml = oh.read_text(encoding="utf-8")
+    assert 'run_mode = "fallback"' in toml
+    assert 'harnesses = ["codex", "claude-code"]' in toml
+    assert 'model = "gpt-5.5"' in toml
+    assert 'model = "claude-opus-4-8"' in toml
+    assert 'IS_SANDBOX = "1"' in toml
+    assert "oneharness fallback config" in result.stderr
+
+
+def test_oneharness_config_path_override(tmp_path):
+    # --oneharness-config relocates the emitted file.
+    out = tmp_path / "llmlint.yml"
+    oh = tmp_path / "custom-oneharness.toml"
+    run(
+        "--shape",
+        "cli",
+        "--language",
+        "python",
+        "--llmlint-config",
+        str(out),
+        "--oneharness-config",
+        str(oh),
+    )
+    assert oh.is_file()
+    assert not (tmp_path / "oneharness.toml").exists()
+    assert 'run_mode = "fallback"' in oh.read_text(encoding="utf-8")
 
 
 def test_llmlint_ongoing_monorepo_fragment_gated_by_flag(tmp_path):

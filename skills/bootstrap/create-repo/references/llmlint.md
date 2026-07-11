@@ -46,6 +46,27 @@ everything they already check, and reach for llmlint only for the judgment calls
   base rule set plus the per-reference rule fragments in as `@version`-pinned
   plugins. A repo *tunes* a standard rule in place with `override: true` (inherits
   the rule, changes only the fields it sets) rather than forking it.
+- **Harness selection is a fallback `oneharness.toml`, not a pin in `llmlint.yml`.**
+  The composed `llmlint.yml` deliberately pins **no** harness/model (no
+  `agents.default.harness`), so an `oneharness.toml` at the repo root decides which
+  harness llmlint drives. Compose it alongside the config — `--llmlint-config` also
+  writes `oneharness.toml` beside the config (override the path with
+  `--oneharness-config`), or copy `assets/oneharness.toml.template`. It runs
+  oneharness in **fallback mode**: `run_mode = "fallback"` with
+  `harnesses = ["codex", "claude-code"]` and a per-harness `[harness.<id>].model`
+  (`codex` → `gpt-5.5`, `claude-code` → `claude-opus-4-8`). oneharness tries the
+  harnesses in priority order and stops at the first that can actually run, falling
+  through only candidates that cannot run at all (not installed, unspawnable, or
+  rejected before any work — auth / no-credit quota; a real task failure or timeout
+  does *not* fall through). So the **one** committed file works everywhere with no
+  edit: a contributor with Codex authenticated runs the primary (codex + gpt-5.5),
+  and a Claude Code session — where `oneharness detect` reports codex
+  `available: false` — falls through to the secondary (claude-code + opus-4.8), the
+  only harness authenticated there. This is why `setup-llmlint.sh` no longer exports
+  an `ONEHARNESS_HARNESSES` override: the fallback already selects claude-code, and
+  an override would clobber the list and mis-apply a single model to both harnesses.
+  Inject `IS_SANDBOX = "1"` into the `[harness.claude-code]` `env` so it may run
+  under root without `--dangerously-skip-permissions` refusing.
 - **Fragment versioning is semver; consumers pin the major.** Each fragment
   carries a `version:` (`MAJOR.MINOR.PATCH`). Bump **minor** for an added or
   tightened rule, **patch** for a wording fix, **major** only for a breaking
@@ -115,6 +136,11 @@ everything they already check, and reach for llmlint only for the judgment calls
   per-reference rule fragments as `@version`-pinned plugins (composed via
   `compose_repo_plan.py --llmlint-config`), and omits `files.include` so llmlint
   lints the whole tree (add `files.exclude` globs for committed noise).
+- [ ] **Harness selection is a fallback `oneharness.toml`.** `oneharness.toml`
+  exists at the repo root in fallback mode (`run_mode = "fallback"`,
+  `harnesses = ["codex", "claude-code"]` with per-harness models), and `llmlint.yml`
+  pins no harness — so a Claude Code session falls through to claude-code with no
+  env override. Composed beside `llmlint.yml` by `--llmlint-config`.
 - [ ] **Recipes present, out of the gate.** A `just lint-llm` recipe runs llmlint
   on demand, a `just lint-llm-diff` recipe lints the merge-base diff, and a `just
   lint-llm-validate` recipe runs the deterministic `validate` gate; none is wired

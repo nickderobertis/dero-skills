@@ -50,10 +50,11 @@ Checks:
     into the SessionStart hook. Optional, so silent when neither shipped nor wired.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
-    `lint-llm` recipe and the diff-scoped `lint-llm-diff` recipe (the blocking PR
-    check), an automated install (`scripts/setup-llmlint.sh` wired into a
-    SessionStart hook — directly or via `session-setup.sh`), and a CI workflow
-    that invokes it. The tier runs OUTSIDE
+    fallback-mode `oneharness.toml` selecting the harness the pinless config drives
+    (codex primary, claude-code secondary), a `lint-llm` recipe and the diff-scoped
+    `lint-llm-diff` recipe (the blocking PR check), an automated install
+    (`scripts/setup-llmlint.sh` wired into a SessionStart hook — directly or via
+    `session-setup.sh`), and a CI workflow that invokes it. The tier runs OUTSIDE
     `just check` (it is non-deterministic) but is a required PR check.
     Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
     `--buildout` flag additionally composes and runs the one-time buildout tier —
@@ -122,6 +123,14 @@ LLMLINT_CONFIG_NAMES = (
     "llmlint.yaml",
     ".llmlint.yml",
     ".llmlint.yaml",
+)
+
+# oneharness config filenames (oneharness discovers `oneharness.toml` or the
+# dot-prefixed form, upward from the working directory). It selects the harness/
+# model llmlint drives, since the composed `llmlint.yml` pins none.
+ONEHARNESS_CONFIG_NAMES = (
+    "oneharness.toml",
+    ".oneharness.toml",
 )
 
 # Case-insensitive marker that a recipe body is still the unfilled template.
@@ -753,6 +762,32 @@ def find_llmlint_config(repo: Path) -> Path | None:
     return None
 
 
+def find_oneharness_config(repo: Path) -> Path | None:
+    for name in ONEHARNESS_CONFIG_NAMES:
+        candidate = repo / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def oneharness_fallback_harnesses(text: str) -> list[str] | None:
+    """Return the `harnesses` list when oneharness.toml is in fallback mode.
+
+    A light scan, not a full TOML parse (stdlib-only, no tomllib guarantee on the
+    consuming repo's runtime): find `run_mode = "fallback"` and read the inline
+    `harnesses = [...]` array. Returns the ordered harness ids, or ``None`` when
+    the config is not in fallback mode / declares no harness list — enough to tell
+    a composed fallback config from a hand-rolled single-harness one.
+    """
+    if not re.search(r'^\s*run_mode\s*=\s*["\']fallback["\']', text, re.MULTILINE):
+        return None
+    match = re.search(r"^\s*harnesses\s*=\s*\[([^\]]*)\]", text, re.MULTILINE)
+    if not match:
+        return None
+    ids = re.findall(r'["\']([^"\']+)["\']', match.group(1))
+    return ids or None
+
+
 def llmlint_config_has_plugins(text: str) -> bool:
     """True when an llmlint config declares at least one plugin.
 
@@ -942,11 +977,13 @@ def check_llmlint(repo: Path) -> list[Finding]:
     llmlint runs OUTSIDE the deterministic ``just check`` gate (it drives a real
     harness, so it is non-deterministic and credentialed); this check never runs
     it. It verifies the tier is set up: a composed ``llmlint.yml`` declaring the
-    rule-fragment ``plugins``, a ``lint-llm`` recipe to run it on demand, a
-    ``lint-llm-diff`` recipe for the diff-scoped PR check, a ``lint-llm-validate``
-    recipe for the deterministic model-free gate, and a CI workflow that invokes
-    the tier as the blocking PR check. Compose the config with
-    ``compose_repo_plan.py --llmlint-config`` rather than hand-rolling it.
+    rule-fragment ``plugins``, a fallback-mode ``oneharness.toml`` selecting the
+    harness the pinless config drives (codex primary, claude-code secondary), a
+    ``lint-llm`` recipe to run it on demand, a ``lint-llm-diff`` recipe for the
+    diff-scoped PR check, a ``lint-llm-validate`` recipe for the deterministic
+    model-free gate, and a CI workflow that invokes the tier as the blocking PR
+    check. Compose the config with ``compose_repo_plan.py --llmlint-config`` rather
+    than hand-rolling it.
     """
     problems: list[Finding] = []
 
@@ -970,6 +1007,46 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 "wires in the base + per-reference rule fragments",
             )
         )
+
+    # The composed llmlint.yml pins no harness, so an oneharness.toml in fallback
+    # mode must select one — codex primary, claude-code secondary — so the same
+    # committed config runs the primary for a Codex-authenticated contributor and
+    # falls through to claude-code in a Claude Code session (codex absent). The
+    # composer emits it beside llmlint.yml; check its shape, not just presence.
+    oh = find_oneharness_config(repo)
+    if oh is None:
+        problems.append(
+            Finding(
+                "ERROR",
+                "no oneharness.toml (the harness/model selection llmlint drives)",
+                "the composer emits it beside llmlint.yml — rerun "
+                "compose_repo_plan.py --llmlint-config, or copy the skill's "
+                "assets/oneharness.toml.template (fallback: codex primary, "
+                "claude-code secondary)",
+            )
+        )
+    else:
+        harnesses = oneharness_fallback_harnesses(oh.read_text(encoding="utf-8"))
+        if harnesses is None:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{oh.name} is not in fallback mode with a harness list",
+                    'set run_mode = "fallback" and harnesses = ["codex", '
+                    '"claude-code"] so the run falls through to claude-code when '
+                    "codex is unavailable (see references/llmlint.md)",
+                )
+            )
+        elif len(harnesses) < 2:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{oh.name} lists only one harness ({harnesses[0]}); fallback "
+                    "needs a secondary to fall through to",
+                    'list at least two, e.g. harnesses = ["codex", "claude-code"], '
+                    "so a session without the primary still runs the tier",
+                )
+            )
 
     justfile = find_justfile(repo)
     recipes = (
@@ -1048,7 +1125,11 @@ def check_llmlint(repo: Path) -> list[Finding]:
         )
 
     return problems or [
-        Finding("OK", "llmlint tier configured (config + recipes + install + CI)")
+        Finding(
+            "OK",
+            "llmlint tier configured (config + oneharness fallback + recipes + "
+            "install + CI)",
+        )
     ]
 
 
@@ -1165,9 +1246,9 @@ def _render_buildout_config(fragments: list[Path]) -> str:
         "  exclude:",
         '    - "**/.git/**"',
         "rationales: true",
-        "agents:",
-        "  default:",
-        "    harness: claude-code   # any id from `oneharness list`; env overrides win",
+        # No `agents` block: the harness/model come from the repo's oneharness.toml
+        # (fallback mode), same as the ongoing llmlint.yml — so a Claude Code session
+        # falls through to claude-code. Pinning one here would beat that fallback.
         "plugins:",
     ]
     lines += [f'  - "{frag.resolve().as_posix()}"' for frag in fragments]

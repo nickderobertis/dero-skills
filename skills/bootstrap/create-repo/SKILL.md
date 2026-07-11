@@ -390,6 +390,9 @@ guidance that motivates it, and editing one reference updates both.
   `--llmlint-buildout-config FILE` additionally compose the repo's `llmlint.yml`
   (the LLM-judge tier) by wiring the selected references' rule fragments in as
   `@version`-pinned plugins — see [`references/llmlint.md`](./references/llmlint.md).
+  Because the composed `llmlint.yml` pins no harness, `--llmlint-config` also emits
+  a fallback-mode `oneharness.toml` beside it (codex + gpt-5.5 primary, claude-code
+  + opus-4.8 secondary; override the path with `--oneharness-config`).
   Self-contained via PEP 723. Run `--list` to see the catalog.
 - [`assets/AGENTS.md.template`](./assets/AGENTS.md.template) — starter durable
   instruction layer.
@@ -401,6 +404,12 @@ guidance that motivates it, and editing one reference updates both.
   that bootstraps a clean checkout and runs the full gate on a platform matrix,
   plus a separate `llmlint` job (the diff-scoped LLM-judge check) that requires
   its harness credential and fails fast without it.
+- [`assets/oneharness.toml.template`](./assets/oneharness.toml.template) — drop at
+  the repo root as `oneharness.toml` (the composer emits it automatically with
+  `--llmlint-config`). Fallback-mode harness/model selection for llmlint: codex +
+  gpt-5.5 primary, claude-code + opus-4.8 secondary, so a Claude Code session falls
+  through to claude-code with no env override. See
+  [`references/llmlint.md`](./references/llmlint.md).
 - [`assets/setup-llmlint.sh.template`](./assets/setup-llmlint.sh.template) — drop
   at `scripts/setup-llmlint.sh` (idempotent toolchain install, wired into the
   SessionStart hook). The merge-base-scoped lint the `llmlint` CI check runs needs

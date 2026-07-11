@@ -2,7 +2,7 @@
 # llmlint config — LLM-as-judge checks for invariants ruff/pytest can't express.
 # Optional author-time check (not in `just check`): needs the oneharness + llmlint
 # binaries and a token. Run with `just lint-llm`. Docs: github.com/nickderobertis/llmlint
-version: 1
+version: 2
 
 # No `include`: llmlint 0.2.31+ lints the whole tree (exclude + .gitignore honored),
 # so a no-args run covers everything, including this config for config_lint. Exclude
@@ -30,7 +30,9 @@ plugins:
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
 
 # No `agents` block: all rules run on the default agent. Harness/model are left
-# unset so a Claude Code session's ONEHARNESS_* env overrides flip the run to Opus.
+# unset so `oneharness.toml`'s fallback mode selects them — codex + gpt-5.5 primary,
+# claude-code + opus-4.8 secondary — and a Claude Code session (no codex) falls
+# through to claude-code without any ONEHARNESS_* env override.
 
 rules:
   - name: python_launched_via_uv

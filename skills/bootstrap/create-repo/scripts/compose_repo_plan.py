@@ -8,7 +8,8 @@ Usage:
     uv run --script scripts/compose_repo_plan.py --shape SHAPE --language LANG \
         [--language LANG ...] [--releasing] [--monorepo] \
         [--intersection NAME ...] [-o OUT.md] \
-        [--llmlint-config FILE] [--llmlint-buildout-config FILE]
+        [--llmlint-config FILE] [--llmlint-buildout-config FILE] \
+        [--oneharness-config FILE]
     uv run --script scripts/compose_repo_plan.py --list
 
 You describe the repo with flags — its product shape, the language(s) it is
@@ -39,7 +40,11 @@ that runs *outside* ``just check``. ``--llmlint-config FILE`` writes the ongoing
 ``llmlint.yml`` (committed; the blocking PR check); ``--llmlint-buildout-config
 FILE`` writes a temporary buildout config (run once at creation, then deleted).
 Both wire the selected references' rule fragments in as ``@version``-pinned
-llmlint plugins; see ``references/llmlint.md``.
+llmlint plugins; see ``references/llmlint.md``. The ongoing ``llmlint.yml`` pins
+no harness, so ``--llmlint-config`` also writes an ``oneharness.toml`` beside it
+(override the path with ``--oneharness-config``) — the fallback harness/model
+selection (codex + gpt-5.5 primary, claude-code + opus-4.8 secondary) llmlint
+reads to pick a harness.
 
 The document goes to stdout (or ``-o FILE``); notes and errors go to stderr, so
 the two never mix. Self-contained via PEP 723 so it runs in any consuming repo
@@ -465,14 +470,30 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
         "  exclude:",
         '    - "**/.git/**"',
         "rationales: true",
-        "agents:",
-        "  default:",
-        "    harness: claude-code   # any id from `oneharness list`",
+        "# No `agents` block: the harness/model are NOT pinned here. `oneharness.toml`",
+        "# (composed alongside this file) selects them in fallback mode — codex + gpt-5.5",
+        "# primary, claude-code + opus-4.8 secondary — so a Claude Code session falls",
+        "# through to claude-code with no config edit. Leaving the harness unset is what",
+        "# lets that fallback (or an ONEHARNESS_<FIELD> env override) decide.",
         "plugins:",
         f'  - "{LLMLINT_CONFIG_LINT_URL}"',
     ]
     out += [f'  - "{url}"' for url in plugin_urls]
     return "\n".join(out) + "\n"
+
+
+def render_oneharness_config(skill_dir: Path) -> str:
+    """Return the oneharness.toml body: harness/model selection for llmlint.
+
+    Read verbatim from ``assets/oneharness.toml.template`` (the single source of
+    truth this repo also dogfoods) so the composed config never drifts from the
+    template. It puts oneharness in **fallback** mode — codex + gpt-5.5 primary,
+    claude-code + opus-4.8 secondary — so the same committed file runs the primary
+    for a contributor with Codex authenticated and falls through to claude-code in
+    a Claude Code session where codex is absent, with no env override.
+    """
+    template = skill_dir / "assets" / "oneharness.toml.template"
+    return template.read_text(encoding="utf-8")
 
 
 def build_parser(
@@ -525,6 +546,13 @@ def build_parser(
         metavar="FILE",
         help="also write the temporary llmlint buildout config (run once at "
         "creation, then delete) of the buildout-only structural rules for this stack",
+    )
+    parser.add_argument(
+        "--oneharness-config",
+        metavar="FILE",
+        help="path for the oneharness.toml emitted alongside --llmlint-config "
+        "(default: oneharness.toml beside the llmlint config) — the fallback "
+        "harness/model selection the pinless llmlint.yml relies on",
     )
     parser.add_argument(
         "--list",
@@ -625,6 +653,23 @@ def main(argv: list[str]) -> int:
         print(
             f"wrote {args.llmlint_config} (ongoing llmlint config; "
             f"{len(included)} rule fragment(s): {', '.join(included) or 'none'})",
+            file=sys.stderr,
+        )
+        # The ongoing llmlint.yml pins no harness, so it needs oneharness.toml to
+        # select one. Emit the two together (beside the config, or at --oneharness-
+        # config) so the pair can't drift: fallback mode, codex + gpt-5.5 primary /
+        # claude-code + opus-4.8 secondary.
+        oneharness_path = (
+            Path(args.oneharness_config)
+            if args.oneharness_config
+            else Path(args.llmlint_config).parent / "oneharness.toml"
+        )
+        oneharness_path.write_text(
+            render_oneharness_config(skill_dir), encoding="utf-8"
+        )
+        print(
+            f"wrote {oneharness_path} (oneharness fallback config: codex + gpt-5.5 "
+            "primary, claude-code + opus-4.8 secondary)",
             file=sys.stderr,
         )
     if args.llmlint_buildout_config:

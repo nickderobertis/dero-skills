@@ -18,10 +18,13 @@
 #      0.3.7 finds `oneharness` beside its own binary in the tool venv — so this one
 #      install is a complete setup; no separate oneharness install / PATH entry.
 #      `--upgrade` bumps an older cached tool rather than leaving it.
-#   2. Inside a Claude Code session, exports env that flips oneharness to the only
-#      harness authenticated here — claude-code + Opus — overriding the committed
-#      codex + gpt-5.5 default in oneharness.toml. `IS_SANDBOX` for that harness
-#      comes from oneharness.toml, not here.
+#   2. Inside a Claude Code session, persists PATH so the freshly installed binary
+#      resolves in later Bash calls. It no longer exports ONEHARNESS_HARNESSES /
+#      ONEHARNESS_MODEL: oneharness.toml is now in fallback mode (codex + gpt-5.5
+#      primary, claude-code + opus-4.8 secondary), and codex is absent here, so the
+#      fallback selects claude-code on its own — an env override would only clobber
+#      the fallback list (forcing claude-code always and overriding codex's model).
+#      `IS_SANDBOX` for the claude-code harness comes from oneharness.toml, not here.
 #
 # (Workspace trust is intentionally not touched: under the harness's bypass mode
 # the permission allowlist is moot, so an untrusted workspace runs fine — verified.)
@@ -62,16 +65,16 @@ ensure_toolchain() {
 }
 
 # Persist env for the rest of the session via CLAUDE_ENV_FILE (Claude Code sources
-# it into every later Bash call). PATH so the freshly installed binaries resolve;
-# ONEHARNESS_* so the run uses claude-code + Opus here. No-op outside a session.
+# it into every later Bash call). PATH so the freshly installed binaries resolve.
+# No ONEHARNESS_* overrides: oneharness.toml's fallback mode already selects
+# claude-code here (codex is absent), and an override would clobber that list.
+# No-op outside a session.
 persist_session_env() {
   [ -n "${CLAUDE_ENV_FILE:-}" ] || { log "no CLAUDE_ENV_FILE (not a session); skipping env"; return 0; }
   {
     case ":${PATH}:" in *":${BIN_DIR}:"*) ;; *) printf 'export PATH=%q\n' "${BIN_DIR}:${PATH}";; esac
-    printf 'export ONEHARNESS_HARNESSES=%q\n' "claude-code"
-    printf 'export ONEHARNESS_MODEL=%q\n' "claude-opus-4-8"
   } >> "$CLAUDE_ENV_FILE"
-  log "exported PATH + ONEHARNESS_HARNESSES=claude-code + ONEHARNESS_MODEL=claude-opus-4-8"
+  log "exported PATH (harness selection is oneharness.toml fallback, not env)"
 }
 
 export PATH="${BIN_DIR}:${PATH}"
