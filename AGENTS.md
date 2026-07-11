@@ -178,8 +178,10 @@ does the changed-file selection itself, so no wrapper script is needed. CI insta
 the committed Codex harness via bun and authenticates it with the `OPENAI_API_KEY`
 repo secret; without that secret the model step fails (the validate step needs no
 credential). It is a separate job (not folded into `check`) to keep the clean-clone
-gate uv-only — add it to the required status checks in branch protection to make it
-block merges.
+gate uv-only. Its context (`llmlint`, the job id) **must** be a branch-protection
+required check, else auto-merge lands past a red run once `check`/`commitlint` go
+green; apply with `setup_github_governance.py check commitlint llmlint`, which now
+refuses to omit it.
 
 ### Skill evals (`skilltest-pytest`)
 

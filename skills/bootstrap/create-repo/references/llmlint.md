@@ -132,7 +132,8 @@ everything they already check, and reach for llmlint only for the judgment calls
   job, separate from the `check` gate; it requires the harness credential and
   fails fast without it (fork PRs are gated by the repo's
   require-approval-for-fork-workflows setting, not a no-op), and `llmlint` is in
-  the branch-protection required-checks set.
+  the branch-protection required-checks set — `setup_github_governance.py`
+  enforces its presence, so auto-merge cannot land a PR past a red llmlint run.
 - [ ] **Buildout run once.** The buildout tier was run once during creation and
   its findings resolved — easiest via `check_repo_baseline.py --buildout` (it
   composes the buildout config for the recorded stack, runs `llmlint`, and cleans

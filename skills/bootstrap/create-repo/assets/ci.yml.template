@@ -62,10 +62,11 @@ jobs:
   # at the repo level, not here: Settings → Actions → General → Fork pull request
   # workflows → Require approval for all (or first-time) contributors, so a
   # maintainer approves before fork CI runs (secrets stay restricted on
-  # pull_request from forks). Add `llmlint` to the required status checks in
-  # branch protection. See references/llmlint.md and references/ci.md.
+  # pull_request from forks). This `llmlint` context MUST be a required status
+  # check in branch protection (setup_github_governance.py enforces it) — else
+  # auto-merge lands a PR past a red llmlint run. See references/llmlint.md and
+  # references/ci.md.
   llmlint:
-    name: llmlint (changed files)
     if: github.event_name == 'pull_request' && github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:

@@ -82,9 +82,9 @@ jobs:
     # Blocking LLM-as-judge lint of the cross-language launch conventions, scoped
     # to the files this PR changed (the merge-base diff with main). Uses the
     # committed harness — Codex + gpt-5.5 — so it needs an OpenAI key in repo
-    # secrets (OPENAI_API_KEY). Mark this job a required status check in branch
-    # protection to make it truly block merges (alongside `check`/`commitlint`).
-    name: llmlint (changed files)
+    # secrets (OPENAI_API_KEY). This `llmlint` context must be a required status
+    # check in branch protection to truly block merges (alongside
+    # `check`/`commitlint`) — else auto-merge lands a PR past a red run.
     if: github.event_name == 'pull_request' && github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
