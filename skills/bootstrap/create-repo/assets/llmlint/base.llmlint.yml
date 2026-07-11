@@ -9,7 +9,7 @@
 # fix, major only for a breaking change (a removed/renamed rule, or one whose
 # meaning flips). Consumers pin the major, so non-breaking bumps flow to them
 # automatically. See references/llmlint.md ("Fragment versioning").
-version: 1.1.0
+version: 1.2.0
 
 rules:
   - name: e2e_not_mocked
@@ -66,6 +66,17 @@ rules:
         - "**/*.spec.tsx"
         - "**/e2e/**"
     relevance: the target files define tests
+
+  - name: names_are_canonical
+    description: |
+      true when every name the target files declare — variable, function, command,
+      flag, file, type, module — describes what it actually is or does at the breadth
+      it claims: a broad name (`process`, `handle`, `data`, `utils`, `manager`,
+      `--all`) does everything it implies or is narrowed to its real job, and a
+      specific name does exactly that and no more. false when a name misleads — labels
+      one thing but does another, promises breadth it doesn't cover, hides a side
+      effect, contradicts its value, or is a vague catch-all where a precise word fits.
+    relevance: the target files declare a named variable, function, command, flag, type, or file
 
   - name: suppressions_justified
     description: |
