@@ -62,7 +62,8 @@ Use the `just` recipes; do not hand-roll equivalents.
 
 - `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain +
   the uv-installed `llmlint` binary the gate's `lint-llm-validate` step needs; also
-  activates the husky `commit-msg` hook).
+  activates the husky hooks — `commit-msg` (commitlint) and `pre-push`
+  (`lint-llm-validate`)).
 - `just check` — full quality gate: `ruff format --check`, `ruff check`, skill
   validation + smoke, the `.tool-versions`/CI version-consistency check, `pytest`,
   the create-repo baseline self-check, and the deterministic `llmlint validate`
@@ -73,7 +74,9 @@ Use the `just` recipes; do not hand-roll equivalents.
 - `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
   validate` gate (config + `llmlint: ignore` directives + fragment version bumps).
   No harness call, so — unlike the model tier — it IS a hard step of `just check`
-  (see "Optional LLM lint").
+  (see "Optional LLM lint"), and also runs as the husky `pre-push` hook (a fast,
+  token-free local safety net; skips if llmlint isn't installed, bypass with
+  `git push --no-verify`).
 - `just lint-llm [paths]` — optional LLM-as-judge *model* lint. NOT in the gate —
   it drives a real harness (see "Optional LLM lint" below).
 - `just skilltest [args]` — run the `skilltest-pytest` natural-language skill

@@ -36,7 +36,10 @@ everything they already check, and reach for llmlint only for the judgment calls
   `lint-llm-diff` step: it catches a broken config, a stale suppression, or a
   forgotten fragment bump in milliseconds, so the paid model tier never runs
   against a config that can't pass. Pass `--diff-base origin/main` to scope the
-  version-bump check to the branch's changes.
+  version-bump check to the branch's changes. Because it is fast and token-free, it
+  also makes a good `pre-push` hook (husky where JS exists) that skips without
+  blocking when the toolchain isn't installed — a local safety net before the
+  blocking CI check, not a slow model call on every push.
 - **Config is composed, not hand-written.** The composer
   ([`scripts/compose_repo_plan.py`](../scripts/compose_repo_plan.py)) emits the
   repo's `llmlint.yml` for your stack with `--llmlint-config`, wiring a standard

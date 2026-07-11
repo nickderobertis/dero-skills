@@ -1,0 +1,12 @@
+# Fast, deterministic llmlint gate before pushing: config structure, `llmlint:
+# ignore` directives naming real rules, and valid fragment versions — no model
+# call and no harness token, so it stays quick and offline (the model tier is the
+# blocking CI check, not a local push gate). Skips without blocking when the
+# toolchain isn't installed (CI enforces it regardless); bypass with
+# `git push --no-verify`.
+command -v just >/dev/null 2>&1 || exit 0
+if ! command -v llmlint >/dev/null 2>&1; then
+  echo "pre-push: llmlint not installed; skipping 'just lint-llm-validate' (run 'just setup-llmlint')" >&2
+  exit 0
+fi
+just lint-llm-validate
