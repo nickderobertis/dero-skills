@@ -219,6 +219,13 @@ a suggested fix.
      test too expensive for every run is a documented exception CI still executes
      (e.g. nightly), never silently excluded (no default `#[ignore]`, deselected
      marker, or check-skips-e2e wiring).
+   - **E2E gates the path to production, not just merge.** If the repo *deploys*
+     to a live environment (rather than only publishing a versioned artifact), no
+     code reaches production without passing realistic e2e: gate the deploy on the
+     same suite — run `just check` (or depend on the CI gate) before deploying, or
+     run a post-deploy smoke e2e against the deployed target and roll back on
+     failure. Merge-gating alone doesn't cover a deploy that fires straight from a
+     push. See `references/ci.md`.
 5. **`AGENTS.md` is the durable instruction layer — keep it terse.**
    - Root `AGENTS.md` is always-loaded context: every agent session reads it, so
      its length is a standing tax on the context budget. Use terse, pithy

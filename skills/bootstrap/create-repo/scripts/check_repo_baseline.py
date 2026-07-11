@@ -35,6 +35,13 @@ Checks:
   * E2E realism (advisory WARN only): e2e-tier tests that import a mocking
     library are flagged, since a mocked "e2e" proves the mock, not the product.
     Realism can't be verified stack-agnostically, so this is a nudge, not a gate.
+  * Deploy gating (advisory WARN only): when a live-environment deploy workflow
+    is present (deploy tooling in its body, or a deploy-named file) but shows no
+    gating signal (`just check`, a `needs:` dependency, a `workflow_run` trigger,
+    or a pre/post-deploy e2e/smoke step), it is flagged — code must not reach
+    production without passing realistic e2e. Conditional and not verifiable
+    stack-agnostically, so it never fails the run; silent when the repo doesn't
+    deploy (an artifact-only repo is covered by releasing.md, not this check).
   * A coverage signal exists: a coverage tool/flag in the justfile, a coverage
     threshold in a config file, or an explicit coverage statement in AGENTS.md
     (coverage is a default gate, so dropping it must be a documented decision).
@@ -167,6 +174,34 @@ SKIP_DIRS = frozenset(
         ".ruff_cache",
         ".pytest_cache",
     }
+)
+
+# Live-environment deploy signals. A workflow that runs one of these deploy
+# tools (or a deploy-named workflow file) ships code to a running site/service —
+# distinct from publishing a versioned artifact (releasing.md, which uses
+# `cargo publish`/`npm publish`/`twine`/`gh release`, deliberately absent here).
+# High-precision on purpose: this only drives an advisory WARN when the deploy
+# shows no e2e gate, so a missed exotic tool is cheaper than a false alarm.
+DEPLOY_RE = re.compile(
+    r"\bvercel\b|netlify\s+deploy|\bflyctl\b|\bfly\s+deploy\b|"
+    r"wrangler\s+(?:deploy|pages)|serverless\s+deploy|"
+    r"kubectl\s+(?:apply|rollout|set)|helm\s+(?:upgrade|install)|"
+    r"gcloud\s+(?:app|run|functions)\s+deploy|"
+    r"aws\s+(?:s3\s+sync|ecs\b|amplify|cloudformation\s+deploy)|"
+    r"railway\s+up|eas\s+(?:submit|update|build)|pulumi\s+up|"
+    r"terraform\s+apply|ansible-playbook|\bdokku\b|"
+    r"heroku\s+(?:container:release|deploy)|deployctl\s+deploy|deno\s+deploy",
+    re.IGNORECASE,
+)
+
+# Signals that a deploy workflow gates on the e2e suite before (or after)
+# shipping: it runs the gate inline (`just check`), depends on the gate job
+# (`needs:`), is triggered by a completed CI run (`workflow_run`), or runs a
+# pre/post-deploy e2e/smoke step. Any one is enough to clear the nudge — whether
+# the gate is *real* can't be judged from the file, so this stays advisory.
+DEPLOY_GATE_RE = re.compile(
+    r"just\s+check|^\s*needs:|workflow_run|\be2e\b|\bsmoke\b",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # A coverage signal: a coverage tool or threshold flag in the justfile / a
@@ -528,6 +563,64 @@ def check_e2e_realism(repo: Path) -> list[Finding]:
             "confirm these drive the real boundary (subprocess, real local "
             "server/DB, real temp files), not a mock of the layer under test; "
             "mock only a genuinely external third party, gated to the live tier",
+        )
+    ]
+
+
+def check_deploy_gate(repo: Path) -> list[Finding]:
+    """Advisory WARN when a live-environment deploy isn't visibly e2e-gated.
+
+    The skill gates *merge* on the e2e-inclusive `just check`, and `releasing.md`
+    automates publishing a versioned artifact — but neither covers a repo that
+    *deploys to a live environment* (a site/service pushed to staging/prod).
+    There, code can reach production without ever facing e2e if a deploy workflow
+    fires straight from a push or tag. This finds a deploy workflow (deploy
+    tooling in its body, or a deploy-named file) and, when one shows no gating
+    signal — `just check`, a `needs:` dependency, a `workflow_run` trigger, or a
+    pre/post-deploy e2e/smoke step — nudges the author to gate it (or document
+    the gate in AGENTS.md). Whether a gate is *real* can't be judged
+    stack-agnostically, so like e2e realism this never fails the run. Silent when
+    the repo has no deploy path (libraries, artifact-only repos, this
+    skills-repo): those are covered by releasing.md, not here.
+    """
+    workflows = repo / ".github" / "workflows"
+    if not workflows.is_dir():
+        return []
+    ungated: list[str] = []
+    for path in sorted(workflows.iterdir()):
+        if not path.is_file() or path.suffix not in (".yml", ".yaml"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        is_deploy = "deploy" in path.stem.lower() or bool(DEPLOY_RE.search(text))
+        if is_deploy and not DEPLOY_GATE_RE.search(text):
+            ungated.append(path.name)
+    if not ungated:
+        return []
+
+    # A documented deploy-gating decision in AGENTS.md silences the nudge — the
+    # same escape hatch the other stack-agnostic checks offer.
+    agents = repo / "AGENTS.md"
+    if agents.is_file():
+        atext = agents.read_text(encoding="utf-8").lower()
+        if "deploy" in atext and ("e2e" in atext or "smoke" in atext):
+            return []
+
+    ungated.sort()
+    shown = ", ".join(ungated[:5])
+    if len(ungated) > 5:
+        shown += f" (+{len(ungated) - 5} more)"
+    return [
+        Finding(
+            "WARN",
+            f"deploy workflow(s) show no e2e gating signal: {shown}",
+            "gate the deploy on realistic e2e so no code reaches production "
+            "unproven — run `just check` before the deploy step, `needs:` the "
+            "gate job, trigger on a `workflow_run` of CI, or run a post-deploy "
+            "smoke e2e against the deployed target and roll back on failure; or "
+            "document the deploy gate in AGENTS.md (see references/ci.md)",
         )
     ]
 
@@ -1424,6 +1517,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_justfile(repo)
     findings += check_e2e(repo)
     findings += check_e2e_realism(repo)
+    findings += check_deploy_gate(repo)
     findings += check_coverage(repo)
     findings += check_ci(repo)
     findings += check_pr_template(repo)
