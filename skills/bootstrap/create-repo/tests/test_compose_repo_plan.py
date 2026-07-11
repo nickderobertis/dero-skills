@@ -259,6 +259,27 @@ def test_react_llmlint_fragment_wired_when_composing_react(tmp_path):
     assert "/assets/llmlint/shapes/web-app.llmlint.yml@1" in cfg
 
 
+def test_pin_range_keeps_major_only():
+    # Consumers pin the major so non-breaking (minor/patch) fragment bumps flow
+    # to them; a bare version is already its own major.
+    assert crp.pin_range("1") == "1"
+    assert crp.pin_range("1.1.0") == "1"
+    assert crp.pin_range("2.3.4") == "2"
+
+
+def test_semver_fragment_still_pins_to_major(tmp_path):
+    # base is versioned past 1.0 (1.1.0); a consumer must still get `@1`, not a
+    # frozen `@1.1.0` exact pin, or non-breaking bumps would never reach them.
+    version = crp.read_fragment_version(LLMLINT_ASSETS / "base.llmlint.yml")
+    assert "." in version, "base should carry a full semver, exercising pin_range"
+    out = tmp_path / "llmlint.yml"
+    result = run("--shape", "cli", "--language", "python", "--llmlint-config", str(out))
+    assert result.returncode == 0
+    cfg = out.read_text(encoding="utf-8")
+    assert "/assets/llmlint/base.llmlint.yml@1" in cfg
+    assert f"/assets/llmlint/base.llmlint.yml@{version}" not in cfg
+
+
 def test_count_items_includes_closing_gates():
     relpaths, _ = crp.select_relpaths(REFS, "cli", ["python"], [], False, False, [])
     refs = [crp.load_reference(REFS, rel) for rel in relpaths]

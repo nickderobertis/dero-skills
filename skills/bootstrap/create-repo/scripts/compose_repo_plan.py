@@ -372,9 +372,20 @@ def fragment_relpath(reference_relpath: str) -> str:
 
 
 def read_fragment_version(path: Path) -> str:
-    """Return a fragment's published ``version`` (for the ``@`` URL pin); default 1."""
+    """Return a fragment's full published ``version`` (semver string); default ``1``."""
     match = LLMLINT_VERSION_RE.search(path.read_text(encoding="utf-8"))
     return match.group(1).strip() if match else "1"
+
+
+def pin_range(version: str) -> str:
+    """The ``@`` pin a consumer gets: the major component only.
+
+    llmlint reads ``@N`` as "any ``N.x``", so pinning the major lets a fragment
+    ship non-breaking rule changes (minor/patch bumps) that flow to pinned
+    consumers automatically, while a breaking change (major bump) is opt-in. A
+    bare version (``1``) is already its own major.
+    """
+    return version.split(".", 1)[0]
 
 
 def collect_llmlint_plugins(
@@ -399,7 +410,7 @@ def collect_llmlint_plugins(
         path = frag_dir / frag_rel
         if path.is_file():
             version = read_fragment_version(path)
-            urls.append(f"{url_prefix}/{frag_rel}@{version}")
+            urls.append(f"{url_prefix}/{frag_rel}@{pin_range(version)}")
             included.append(frag_rel)
     return urls, included
 
