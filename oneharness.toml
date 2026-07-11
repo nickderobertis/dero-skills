@@ -1,20 +1,37 @@
-# oneharness defaults for this repo. Docs: https://github.com/nickderobertis/oneharness
+# oneharness harness/model selection for this repo's llmlint (LLM-judge) tier.
+# Docs: https://github.com/nickderobertis/oneharness
 #
-# The committed default targets codex + gpt-5.5 — what a contributor running
-# `llmlint` from their own terminal gets, and the default harness for plugin
-# agents (e.g. config_lint) that don't pin their own.
+# Single source of truth for WHICH harness (and model) llmlint drives — the
+# composed `llmlint.yml` deliberately does not pin one, so this file decides.
 #
-# Inside a Claude Code session it is different: the SessionStart hook
-# (scripts/setup-llmlint.sh) exports ONEHARNESS_HARNESSES=claude-code and
-# ONEHARNESS_MODEL=claude-opus-4-8, and those `ONEHARNESS_<FIELD>` env overrides
-# win over this file (oneharness >= 0.3.0) — so the run uses the only harness
-# authenticated there (Claude Code + Opus) without editing any committed config.
-# IS_SANDBOX is injected only into the claude-code harness below so it may run
-# under root without `--dangerously-skip-permissions` refusing.
-harnesses = ["codex"]
+# Fallback mode: oneharness tries the harnesses in priority order and stops at the
+# first that can actually run — falling through only the candidates that cannot run
+# at all (not installed, unspawnable, or rejected before doing any work: auth /
+# no-credit quota). A real task failure or timeout does NOT fall through (it would
+# mask a real failure). So the SAME committed config works everywhere with no edit:
+#
+#   * A contributor with Codex authenticated runs the primary — codex + gpt-5.5
+#     (what a terminal `just lint-llm` and the CI model job get; CI authenticates
+#     codex via the OPENAI_API_KEY repo secret).
+#   * A Claude Code web/cloud session, where codex is absent, falls through to the
+#     secondary — claude-code + opus-4.8 — the only harness authenticated there.
+#     `oneharness detect` reports codex `available: false`, so the fallback picks
+#     claude-code with no ONEHARNESS_* env override needed.
+#
+# IS_SANDBOX is injected into just the claude-code harness so it may run under root
+# without `--dangerously-skip-permissions` refusing (harmless elsewhere). It also
+# supplies the default harness the bundled config_lint plugin needs (the fallback
+# order's first entry).
+#
+# This is a dogfooded copy of assets/oneharness.toml.template (its canonical
+# source); tools/test_oneharness_dogfood.py is the drift gate that keeps the two
+# in lockstep, so edit the template and this file together.
+run_mode = "fallback"
+harnesses = ["codex", "claude-code"]
 
 [harness.codex]
 model = "gpt-5.5"
 
 [harness.claude-code]
+model = "claude-opus-4-8"
 env = { IS_SANDBOX = "1" }

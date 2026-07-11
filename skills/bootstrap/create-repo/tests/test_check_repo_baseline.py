@@ -87,6 +87,16 @@ LLMLINT_CONFIG = (
     '  - "https://example.com/assets/llmlint/base.llmlint.yml@1"\n'
 )
 
+# A fallback-mode oneharness.toml: the harness/model selection the pinless
+# llmlint.yml relies on, as the oneharness invariant requires.
+ONEHARNESS_CONFIG = (
+    'run_mode = "fallback"\n'
+    'harnesses = ["codex", "claude-code"]\n'
+    '\n[harness.codex]\nmodel = "gpt-5.5"\n'
+    '\n[harness.claude-code]\nmodel = "claude-opus-4-8"\n'
+    'env = { IS_SANDBOX = "1" }\n'
+)
+
 # A conformant PR template: names both the What and Why sections the PR-template
 # invariant requires (Additional info is optional).
 CONFORMANT_PR_TEMPLATE = """\
@@ -124,6 +134,7 @@ def make_repo(
     ci=True,
     pr_template=True,
     llmlint=True,
+    oneharness=True,
 ) -> Path:
     """Build a repo fixture. With no overrides it is fully conformant.
 
@@ -136,7 +147,9 @@ def make_repo(
     AGENTS.md. ``pr_template`` is True (the conformant .github template), False
     (none), or a raw string written verbatim to .github/pull_request_template.md.
     ``llmlint`` is True (a composed llmlint.yml with plugins), False (none), or a
-    raw string written verbatim to llmlint.yml.
+    raw string written verbatim to llmlint.yml. ``oneharness`` is True (a
+    fallback-mode oneharness.toml), False (none), or a raw string written verbatim
+    to oneharness.toml.
     """
     repo = tmp_path
     if agents:
@@ -177,6 +190,9 @@ def make_repo(
         (scripts / "setup-llmlint.sh").write_text(
             "#!/usr/bin/env bash\n# idempotent llmlint install\n", encoding="utf-8"
         )
+    if oneharness is not False:
+        body = oneharness if isinstance(oneharness, str) else ONEHARNESS_CONFIG
+        (repo / "oneharness.toml").write_text(body, encoding="utf-8")
     return repo
 
 
@@ -613,6 +629,39 @@ def test_llmlint_inline_empty_plugins_is_error(tmp_path):
     findings = crb.audit(make_repo(tmp_path, llmlint="version: 1\nplugins: []\n"))
     assert crb.has_errors(findings)
     assert any("no plugins" in m for m in levels(findings, "ERROR"))
+
+
+def test_missing_oneharness_config_is_error(tmp_path):
+    # The pinless llmlint.yml needs oneharness.toml to select a harness.
+    findings = crb.audit(make_repo(tmp_path, oneharness=False))
+    assert crb.has_errors(findings)
+    assert any("oneharness.toml" in m for m in levels(findings, "ERROR"))
+
+
+def test_oneharness_not_fallback_mode_is_error(tmp_path):
+    # A parallel-mode (or hand-rolled single-harness) config isn't the fallback the
+    # composer emits — a Claude Code session couldn't fall through to claude-code.
+    parallel = 'harnesses = ["codex", "claude-code"]\n'
+    findings = crb.audit(make_repo(tmp_path, oneharness=parallel))
+    assert crb.has_errors(findings)
+    assert any("fallback mode" in m for m in levels(findings, "ERROR"))
+
+
+def test_oneharness_single_harness_fallback_is_error(tmp_path):
+    # Fallback mode with only one harness has nothing to fall through to.
+    solo = 'run_mode = "fallback"\nharnesses = ["claude-code"]\n'
+    findings = crb.audit(make_repo(tmp_path, oneharness=solo))
+    assert crb.has_errors(findings)
+    assert any("only one harness" in m for m in levels(findings, "ERROR"))
+
+
+def test_oneharness_fallback_without_claude_code_is_error(tmp_path):
+    # A two-harness fallback that omits claude-code breaks the Claude Code session
+    # path: with codex absent and no claude-code target, the tier can't run there.
+    no_cc = 'run_mode = "fallback"\nharnesses = ["codex", "goose"]\n'
+    findings = crb.audit(make_repo(tmp_path, oneharness=no_cc))
+    assert crb.has_errors(findings)
+    assert any("no `claude-code`" in m for m in levels(findings, "ERROR"))
 
 
 def test_missing_llmlint_recipe_is_error(tmp_path):

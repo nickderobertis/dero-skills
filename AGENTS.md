@@ -125,27 +125,40 @@ tiers (see the header in `llmlint.yml`):
   `default` agent — no domain-specific prompt is needed.
 
 It runs through the [`oneharness`](https://github.com/nickderobertis/oneharness)
-driver (>= 0.3.0, for `llmlint`'s read-only mode and the `ONEHARNESS_<FIELD>` env
-overrides; `setup-llmlint.sh` pins the concrete floor).
+driver (>= 0.3.0, for `llmlint`'s read-only mode, the `ONEHARNESS_<FIELD>` env
+overrides, and the `run_mode = "fallback"` harness-priority selection this repo
+relies on; `setup-llmlint.sh` pins the concrete floor via `llmlint-cli`, which
+pulls a compatible `oneharness-cli`).
 
-**Harness split — committed default vs. Claude Code.** The committed
-`oneharness.toml`/`llmlint.yml` target **codex + gpt-5.5** (what a contributor
-running `llmlint` from a terminal gets). Inside a Claude Code session the
-`SessionStart` hook runs `scripts/session-setup.sh`, which provisions `just` and
-then hands off to `scripts/setup-llmlint.sh` (still called directly by `just
-bootstrap` and CI, where `just` already exists). `setup-llmlint.sh` installs llmlint
-(via `uv tool install llmlint-cli` — one PyPI dependency resolution that also fetches
-`oneharness-cli`, no Rust toolchain or github.com reachability needed; llmlint >=
-0.3.7 finds the `oneharness` binary beside its own in the tool venv, so no
-separate install) and exports `ONEHARNESS_HARNESSES=claude-code` +
-`ONEHARNESS_MODEL=claude-opus-4-8`
-into the session — env overrides that beat the committed file, so the run uses
-the only harness authenticated there (Claude Code + Opus). The flip works only
-because the agents in `llmlint.yml` deliberately do **not** pin a harness/model
-(pinning would emit `--harness`/`--model` flags that beat the env). `IS_SANDBOX`
-is injected into just the claude-code harness via `oneharness.toml` so it runs
-under root without `--dangerously-skip-permissions` refusing; `oneharness.toml`
-also supplies the default harness the bundled `config_lint` plugin needs.
+**Harness split — one fallback config, no env flip.** `oneharness.toml` is in
+**fallback mode** (`run_mode = "fallback"`, `harnesses = ["codex", "claude-code"]`,
+per-harness `[harness.<id>].model`): oneharness runs the harnesses in priority
+order and stops at the first that can actually run, falling through only those
+that cannot run at all — not installed, unspawnable, or rejected before any work
+(auth / no-credit quota); a real task failure or timeout does *not* fall through.
+So the single committed file works everywhere with no edit: a contributor with
+Codex authenticated runs the primary (**codex + gpt-5.5**; CI's model job supplies
+the `OPENAI_API_KEY` secret), and a Claude Code session — where `oneharness detect`
+reports codex `available: false` — falls through to the secondary (**claude-code +
+opus-4.8**), the only harness authenticated there. It works only because
+`llmlint.yml` deliberately does **not** pin a harness/model (a pin's
+`--harness`/`--model` flags would beat the config), while the per-harness `model`
+tables keep each harness on its own model (a top-level `ONEHARNESS_MODEL` would
+wrongly hit both).
+
+Inside a Claude Code session the `SessionStart` hook runs
+`scripts/session-setup.sh`, which provisions `just` and hands off to
+`scripts/setup-llmlint.sh` (also called directly by `just bootstrap` and CI, where
+`just` exists). `setup-llmlint.sh` installs llmlint (via `uv tool install
+llmlint-cli` — one PyPI resolution that also fetches `oneharness-cli`, no Rust
+toolchain or github.com reachability needed; llmlint >= 0.3.7 finds the
+`oneharness` binary beside its own in the tool venv, so no separate install) and
+persists only `PATH` — **no `ONEHARNESS_HARNESSES`/`ONEHARNESS_MODEL` override**,
+since the fallback already selects claude-code here and an override would only
+clobber it. `IS_SANDBOX` is injected into just the claude-code harness via
+`oneharness.toml` so it runs under root without `--dangerously-skip-permissions`
+refusing; that harness (the fallback order's first available entry) is also the
+default the bundled `config_lint` plugin needs.
 
 The **model tier** (`just lint-llm` / `just lint-llm-diff`) is **deliberately not
 in `just check`**: it drives a real harness, so it is non-deterministic and needs
