@@ -9,9 +9,23 @@
 # fix, major only for a breaking change (a removed/renamed rule, or one whose
 # meaning flips). Consumers pin the major, so non-breaking bumps flow to them
 # automatically. See references/llmlint.md ("Fragment versioning").
-version: 1.2.1
+version: 1.3.0
 
 rules:
+  - name: comments_earn_their_place
+    description: |
+      true when every code comment in the target files earns its place: it explains
+      something the code does not make obvious — intent, a non-obvious constraint, a
+      tradeoff, a subtle "why" — and does so tersely. false when a comment restates
+      what the adjacent code plainly says or narrates mechanics a reader can see
+      (`# increment i`, `// loop over users`, `# return the result`), is a decorative
+      section banner or divider that adds no information, is dead weight (commented-out
+      code, a stale TODO with no owner or context, changelog or session notes left in
+      the source), or is verbose where a short phrase would do. A docstring or comment
+      that documents a public contract, an example, or a genuinely non-obvious rule is
+      NOT a violation even if longer.
+    relevance: the target files contain code comments
+
   - name: e2e_not_mocked
     description: |
       true when every end-to-end or integration test in the target files drives the
