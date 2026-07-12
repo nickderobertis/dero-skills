@@ -135,7 +135,10 @@ everything they already check, and reach for llmlint only for the judgment calls
   declares the bundled `config_lint` plugin plus the standard base and the
   per-reference rule fragments as `@version`-pinned plugins (composed via
   `compose_repo_plan.py --llmlint-config`), and omits `files.include` so llmlint
-  lints the whole tree (add `files.exclude` globs for committed noise).
+  lints the whole tree (add `files.exclude` globs for committed noise). It carries
+  **no top-level `version:`** — that field only means anything when a config is
+  itself consumed as a plugin; the consumer config is pinned by no one, so a
+  version there is inert and only forces a needless bump on every edit.
 - [ ] **Harness selection is a fallback `oneharness.toml`.** `oneharness.toml`
   exists at the repo root in fallback mode (`run_mode = "fallback"`,
   `harnesses = ["codex", "claude-code"]` with per-harness models), and `llmlint.yml`

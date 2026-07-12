@@ -463,7 +463,10 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
             "# `override: true`. Bump a plugin's `@version` pin to pull new rules.",
         ]
     out += [
-        "version: 1",
+        # No top-level `version:` — that field only means anything when a config is
+        # itself consumed as a plugin (a `@`-pinned URL). This is the repo's own
+        # consumer config, pinned by no one, so a version here would be inert noise
+        # that the validate gate still forces you to bump on every edit.
         "files:",
         "  # No `include`: llmlint lints the whole tree (exclude + .gitignore honored).",
         "  # List committed files that shouldn't be judged (lock files, generated output).",
