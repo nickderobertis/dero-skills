@@ -291,6 +291,29 @@ def test_semver_fragment_still_pins_to_major(tmp_path):
     assert f"/assets/llmlint/base.llmlint.yml@{version}" not in cfg
 
 
+def test_composed_config_has_no_top_level_version():
+    # A top-level `version:` only means anything when a config is itself consumed
+    # as a plugin (a `@`-pinned URL); the composed *consumer* config is pinned by
+    # no one, so a version there is inert AND makes the validate gate demand a bump
+    # on every edit. Guard both the ongoing and buildout variants — a subtle
+    # regression here stays green everywhere else, since the field is schema-valid.
+    for buildout in (False, True):
+        cfg = crp.render_llmlint_config(
+            ["https://example.test/base.llmlint.yml@1"], buildout=buildout
+        )
+        top_keys = {
+            m.group(1) for line in cfg.splitlines() if (m := _TOP_KEY_RE.match(line))
+        }
+        variant = "buildout" if buildout else "ongoing"
+        assert "version" not in top_keys, (
+            f"composed {variant} config carries an inert top-level version; "
+            f"keys={sorted(top_keys)}"
+        )
+        # ...but the plugin pins still carry `@version`, and the config is intact.
+        assert "plugins" in top_keys
+        assert "@1" in cfg
+
+
 def test_count_items_includes_closing_gates():
     relpaths, _ = crp.select_relpaths(REFS, "cli", ["python"], [], False, False, [])
     refs = [crp.load_reference(REFS, rel) for rel in relpaths]

@@ -2,7 +2,9 @@
 # llmlint config — LLM-as-judge checks for invariants ruff/pytest can't express.
 # Optional author-time check (not in `just check`): needs the oneharness + llmlint
 # binaries and a token. Run with `just lint-llm`. Docs: github.com/nickderobertis/llmlint
-version: 2
+# No top-level `version:`: that field only matters when a config is consumed as a
+# plugin (a `@`-pinned URL). This is our own consumer config, pinned by no one — a
+# version here would be inert and still force a bump on every edit.
 
 # No `include`: llmlint 0.2.31+ lints the whole tree (exclude + .gitignore honored),
 # so a no-args run covers everything, including this config for config_lint. Exclude
