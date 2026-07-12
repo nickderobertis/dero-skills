@@ -13,6 +13,7 @@ subprocess with a stubbed external ``llmlint`` — lives in
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -201,6 +202,23 @@ def levels(findings, level):
 
 
 # --- parse_just_recipes ----------------------------------------------------
+
+
+def test_buildout_config_has_no_top_level_version():
+    # The generated buildout config is never consumed as a plugin, so a top-level
+    # `version:` would be inert (see render_llmlint_config in compose_repo_plan).
+    # Guard against a regression that reintroduces it.
+    frag = Path("/tmp/x/base.llmlint.yml")
+    cfg = crb._render_buildout_config([frag])
+    top_keys = {
+        m.group(1)
+        for line in cfg.splitlines()
+        if (m := re.match(r"^([A-Za-z_][\w-]*):", line))
+    }
+    assert "version" not in top_keys, (
+        f"buildout config carries a top-level version; keys={sorted(top_keys)}"
+    )
+    assert "plugins" in top_keys  # didn't accidentally gut the config
 
 
 def test_parse_recipes_extracts_names_and_ignores_assignments_and_bodies():
