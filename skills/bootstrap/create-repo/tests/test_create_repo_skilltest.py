@@ -49,6 +49,7 @@ it can write in, so it `skipif`s when neither is present. Run it with
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -72,7 +73,23 @@ BASELINE_CHECKER = SKILL / "scripts" / "check_repo_baseline.py"
 ONEHARNESS = shutil.which("oneharness")
 
 _DEFAULT_REPO = "nickderobertis/create-repo-e2e-rust-cli"
-_REPO = os.environ.get("SKILLTEST_REPO", "").strip() or _DEFAULT_REPO
+
+# Validate the two operator-supplied env inputs at the trust boundary, at import,
+# before either flows into a filesystem path or the generated `gh` shell shim — a
+# stray metacharacter in the slug could otherwise alter that script, and a relative
+# out-dir could escape where the artifact is meant to land.
+_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _validated_repo_slug(value: str) -> str:
+    if not _SLUG_RE.match(value):
+        raise ValueError(f"SKILLTEST_REPO must be an owner/name slug, got {value!r}")
+    return value
+
+
+_REPO = _validated_repo_slug(
+    os.environ.get("SKILLTEST_REPO", "").strip() or _DEFAULT_REPO
+)
 
 # A short, natural user request — nothing that hints at a test/sandbox/mock, and
 # no coaching toward the checks below. The skill itself is what must drive the
@@ -84,8 +101,11 @@ _DEFAULT_PROMPT = (
 )
 _CUSTOM_PROMPT = os.environ.get("SKILLTEST_PROMPT", "").strip()
 # Captured at import — `_stealth_env` strips every `SKILLTEST_*` var before the
-# custom test reaches the point where it would persist the produced repo.
+# custom test reaches the point where it would persist the produced repo. Require an
+# absolute path so the artifact lands where intended, not relative to the harness cwd.
 _OUT_DIR = os.environ.get("SKILLTEST_OUT_DIR", "").strip()
+if _OUT_DIR and not os.path.isabs(_OUT_DIR):
+    raise ValueError(f"SKILLTEST_OUT_DIR must be an absolute path, got {_OUT_DIR!r}")
 
 
 def _gh_create_out(repo: str) -> str:
