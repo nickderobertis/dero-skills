@@ -5,7 +5,7 @@
 # that every gate stage is wired or that the threshold actually fails the build).
 # The ongoing judgment rules live in the committed base.llmlint.yml; these do not
 # persist.
-version: 1.1.0
+version: 1.2.0
 
 rules:
   - name: session_bootstrap_provisions_toolchain
@@ -65,6 +65,44 @@ rules:
       without re-running `check`, or no upgrade path exists at all.
     files:
       include: ["justfile", "Justfile", ".justfile"]
+
+  - name: dependencies_upgraded_to_latest
+    description: |
+      A freshly-created repo must LAND on current dependencies, not whatever was
+      scaffolded — the `upgrade` recipe existing (see `upgrade_refreshes_and_gates`)
+      is not proof it was actually run. Verify the outcome *behaviorally*: run the
+      stack-native staleness check from the repo root and read its output —
+        - Python (uv):  `uv lock --upgrade --dry-run`  (reports the packages a real
+                        upgrade would rewrite in the lock)
+        - Node (bun):   `bun outdated`                 (lists deps behind latest)
+        - Node (npm):   `npm outdated`                 (lists deps behind latest)
+        - Rust (cargo): `cargo update --dry-run`       (reports the upgrades it would make)
+      Each is read-only / dry-run and needs no write. A dependency is stale when the
+      check reports a newer version reachable WITHIN the repo's declared constraints
+      (so a deliberately pinned version whose pin is already the ceiling is not
+      stale). true when the check reports nothing to upgrade — the lock is on the
+      latest allowed versions. false when it reports any stale dependency AND no
+      committed file records why that dependency is deliberately held back (a
+      rationale in AGENTS.md, or a terse comment on the pin / lock entry). A stale
+      dependency with a documented reason is NOT a violation; a stale one with no
+      recorded rationale anywhere is.
+    files:
+      include:
+        - "justfile"
+        - "Justfile"
+        - ".justfile"
+        - "pyproject.toml"
+        - "uv.lock"
+        - "package.json"
+        - "bun.lock"
+        - "bun.lockb"
+        - "package-lock.json"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - "**/AGENTS.md"
+    relevance: |
+      the repo declares and locks third-party dependencies (a dependency manifest
+      plus a committed lockfile the staleness check can read)
 
   - name: no_secret_committed_in_tree
     description: |
