@@ -38,6 +38,19 @@ mechanics; the load-bearing rules:
   the report, which `run_skill` only returns on clean completion — so keep the
   ceiling high enough that the bootstrap finishes and those evals actually run.
 
+### Custom prompts
+
+Set `SKILLTEST_PROMPT` to drive the skill with an arbitrary request instead of the
+default Rust bootstrap. That activates `test_create_repo_with_custom_prompt`, which
+reuses the same stealth harness + remote mocks but asserts only that a repo was
+produced (a custom scenario may target another stack, or deliberately violate the
+baseline), then copies the produced repo to `SKILLTEST_OUT_DIR` (default: a
+persisted `/tmp` dir) and prints `PRODUCED_REPO=<path>` so a follow-up check can
+run against the real artifact — e.g. pointing a buildout llmlint rule at it to
+confirm it fires. `SKILLTEST_REPO` overrides the slug the mocked `gh`/push report.
+All three are read at import (before `_stealth_env` strips `SKILLTEST_*`). Setting
+`SKILLTEST_PROMPT` skips the default Rust test, so exactly one of the two runs.
+
 ### Running it
 
 Opt-in only — it drives a real ~20-30 min bootstrap and is never in `just check`:
