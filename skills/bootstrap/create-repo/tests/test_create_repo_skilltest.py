@@ -376,18 +376,14 @@ def test_create_repo_with_custom_prompt(neutral_tmp) -> None:
         )
     except SkilltestTimeoutError:
         pass
-    if report is not None:
-        assert report.passed, describe_failures(report)
-
     repo = _find_repo_root(workspace)
-    tree = _tree(repo)
-    assert (repo / "AGENTS.md").exists(), f"no repo produced (no AGENTS.md)\n{tree}"
 
-    # Persist the produced repo outside the auto-cleaned neutral_tmp so follow-up
-    # checks can inspect it. Default to a stable, printed /tmp location.
+    # Persist the produced repo FIRST — before any assertion — so an adversarial or
+    # partial scenario (which may skip AGENTS.md, the baseline, or a whole stack)
+    # still leaves an artifact for follow-up checks instead of being wiped by
+    # neutral_tmp's teardown. Default to a stable, printed /tmp location.
     out_dir = Path(
-        os.environ.get("SKILLTEST_OUT_DIR", "").strip()
-        or tempfile.mkdtemp(dir="/tmp", prefix="create-repo-custom-")
+        _OUT_DIR or tempfile.mkdtemp(dir="/tmp", prefix="create-repo-custom-")
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / repo.name
@@ -395,3 +391,10 @@ def test_create_repo_with_custom_prompt(neutral_tmp) -> None:
         shutil.rmtree(dest)
     shutil.copytree(repo, dest, symlinks=True)
     print(f"\nPRODUCED_REPO={dest}\n--- tree ---\n{_tree(dest)}")
+
+    if report is not None:
+        assert report.passed, describe_failures(report)
+    # Soft check only: the harness produced *something* beyond an empty git repo.
+    # What the artifact must contain is the follow-up check's job, not this test's.
+    produced = [p for p in repo.rglob("*") if ".git/" not in f"/{p.relative_to(repo)}/"]
+    assert produced, f"harness produced no files\n{_tree(repo)}"
