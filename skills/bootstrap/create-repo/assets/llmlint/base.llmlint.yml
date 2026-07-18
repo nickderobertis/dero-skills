@@ -9,7 +9,9 @@
 # fix, major only for a breaking change (a removed/renamed rule, or one whose
 # meaning flips). Consumers pin the major, so non-breaking bumps flow to them
 # automatically. See references/llmlint.md ("Fragment versioning").
-version: 1.5.0
+# llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
+# llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
+version: 1.6.0
 
 rules:
   - name: comments_earn_their_place
@@ -117,10 +119,16 @@ rules:
 
   - name: suppressions_justified
     description: |
-      when every linter or type-checker suppression directive in the target files
-      (`# noqa`, `eslint-disable`, `#[allow(...)]`, `# type: ignore`, `@ts-ignore`)
-      carries a brief reason for the suppression.
-    relevance: the target files contain a linter or type-checker suppression directive
+      when every comment-style linter or type-checker suppression directive and every
+      in-language type-system escape hatch in the target files carries a brief reason
+      why it is necessary. Such suppressions include Python `Any`, `cast`, and
+      `# type: ignore`; TypeScript `any`, `as`/`as any`, non-null `!`,
+      `@ts-ignore`, and `@ts-expect-error`; Go `interface{}`/`any` and unchecked type
+      assertions; and directives such as `# noqa`, `eslint-disable`, and Rust
+      `#[allow(...)]`. These examples are illustrative, not exhaustive: justified
+      uses at genuinely dynamic or deserialization boundaries comply, while
+      unjustified uses are findings.
+    relevance: the target files contain a linter or type-checker suppression directive or an in-language type-system escape hatch
 
   - name: boundary_inputs_validated
     description: |
