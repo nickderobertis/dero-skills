@@ -14,7 +14,8 @@ them for the repo in front of you.
    layers on `web-app.md`, and `nextjs.md` layers on `react.md` — pick the
    most specific one and the composer pulls in the shapes beneath it.
 2. **Pull in the language(s)** the repo is built in: `languages/python.md`,
-   `languages/typescript.md`, `languages/rust.md`, `languages/bash.md`. The
+   `languages/typescript.md`, `languages/rust.md`, `languages/bash.md`,
+   `languages/terraform.md`. The
    language reference carries the toolchain (formatter, linter, type checker,
    test runner) and boundary-validation conventions.
 3. **Always pull in `ci.md`** — it applies on top of every shape. When the repo
@@ -50,6 +51,9 @@ them for the repo in front of you.
   MSRV + toolchain pinning, the supply-chain gate job, and per-platform release
   archives on one asset-naming contract.
 - **An asdf plugin.** `shapes/asdf-plugin.md` + `languages/bash.md` + `ci.md`.
+- **An app with infrastructure.** Compose the app's shape and implementation
+  language, then add `languages/terraform.md` for its `infra/` subtree; the same
+  language reference also works with a standalone infrastructure repo shape.
 - **A multi-app / polyglot monorepo.** Compose each deliverable from its own
   shape + language as usual (e.g. a Next.js app via `shapes/nextjs.md` +
   `languages/typescript.md`, alongside a Python service via `languages/python.md`),
@@ -61,7 +65,7 @@ them for the repo in front of you.
 | Axis | References |
 | --- | --- |
 | Product shape | `shapes/cli.md`, `shapes/web-app.md`, `shapes/react.md`, `shapes/nextjs.md`, `shapes/library.md`, `shapes/skills-repo.md`, `shapes/asdf-plugin.md` |
-| Language | `languages/python.md`, `languages/typescript.md`, `languages/rust.md`, `languages/bash.md` |
+| Language | `languages/python.md`, `languages/typescript.md`, `languages/rust.md`, `languages/bash.md`, `languages/terraform.md` |
 | Cross-cutting | `ci.md` (always), `releasing.md` (when shipping a versioned artifact), `monorepo.md` (when >1 app/package/language) |
 | Intersection | `intersections/python-cli.md`, `intersections/rust-cli.md` |
 

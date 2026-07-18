@@ -40,6 +40,10 @@ clone, run one command, and trust.
    verification checklist assembled from the `## Verification` items that live
    with each reference.
 
+   Languages currently include Python, TypeScript, Rust, Bash, and Terraform /
+   Infrastructure as Code; the latter composes onto any shape, including an app
+   repo with an `infra/` subtree.
+
    ```bash
    uv run --script scripts/compose_repo_plan.py --shape cli --language python \
      [--releasing] [--monorepo] [--intersection <name>] -o REPO_PLAN.md

@@ -909,6 +909,26 @@ def test_run_buildout_wires_local_fragments_and_passes(tmp_path):
     assert seen["existed"]
 
 
+def test_run_buildout_wires_terraform_language_fragment(tmp_path):
+    repo = make_repo(
+        tmp_path,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: base.md, shapes/library.md, "
+            "languages/terraform.md, ci.md\n"
+        ),
+    )
+    seen = {}
+
+    def fake(cfgs, repo_):
+        seen["cfg"] = Path(cfgs[-1]).read_text(encoding="utf-8")
+        return (0, "clean", "")
+
+    findings = crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert "buildout/languages/terraform.llmlint.yml" in seen["cfg"]
+
+
 def test_run_buildout_passes_committed_config_before_the_temp_one(tmp_path):
     # llmlint preflight-validates inline ignore directives against the configured
     # rule set: without the committed (ongoing) config, a directive naming an

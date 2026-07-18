@@ -1,0 +1,39 @@
+# Terraform / IaC buildout rules (plugin) — run ONCE during repo creation, then discarded.
+# One-time structural checks for the native command surface, state policy, and
+# environment isolation; ongoing IaC judgment lives in languages/terraform.llmlint.yml.
+version: 1
+
+rules:
+  - name: iac_command_surface_wired
+    description: |
+      true when the standard recipes use the Terraform/OpenTofu-native lifecycle:
+      `bootstrap` initializes the backend; `check` runs format-check, validation,
+      tflint, and a security scan; and `upgrade` deliberately updates provider and
+      module constraints plus the lock file before re-running the gate and reviewing
+      a plan. false when the surface omits a stage, applies changes from the check
+      recipe, or updates dependencies without an explicit review step.
+    files:
+      include: ["justfile", "Justfile", ".justfile", ".github/workflows/**"]
+    relevance: the target files define or invoke the repository command surface for infrastructure work
+
+  - name: remote_state_policy_wired
+    description: |
+      true when the repository wires a remote state design with locking, encryption,
+      access control, recovery, and clear ownership appropriate to its platform,
+      while ignore policy excludes local state artifacts and `.terraform/`. false
+      when backend configuration is merely present but its concurrency, sensitivity,
+      recovery, or ownership model is incomplete or dependent on a developer machine.
+    files:
+      include: ["**/*.tf", "**/*.tf.json", ".gitignore", "AGENTS.md", "docs/**"]
+    relevance: the target files configure or document Terraform/OpenTofu state and repository artifact policy
+
+  - name: environments_isolated_by_design
+    description: |
+      true when materially different environments/accounts and independently
+      operated systems have separate state and deployment units whose boundaries
+      contain failure and access. false when one mutable workspace or shared state
+      is the primary isolation mechanism despite different lifecycles, privileges,
+      or blast-radius needs.
+    files:
+      include: ["**/*.tf", "**/*.tf.json", "**/*.ts", "**/*.py", "**/*.yaml", "**/*.yml", "AGENTS.md", "docs/**"]
+    relevance: the target files define or document multiple infrastructure environments, accounts, stacks, or deployment units

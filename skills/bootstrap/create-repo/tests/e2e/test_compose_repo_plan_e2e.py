@@ -97,6 +97,36 @@ def test_multiple_languages_each_appear():
     assert "### Language: TypeScript" in doc
 
 
+def test_terraform_composes_guidance_checklist_and_both_llmlint_tiers(tmp_path):
+    ongoing = tmp_path / "llmlint.yml"
+    buildout = tmp_path / "llmlint.buildout.yml"
+    result = run(
+        "--shape",
+        "library",
+        "--language",
+        "terraform",
+        "--llmlint-config",
+        str(ongoing),
+        "--llmlint-buildout-config",
+        str(buildout),
+    )
+    assert result.returncode == 0
+    doc = result.stdout
+    assert "### Language: Terraform / Infrastructure as Code" in doc
+    assert "languages/terraform.md" in doc
+    checklist = doc.split("## Verification checklist", 1)[1]
+    assert "Native gate wired" in checklist
+    assert "State protected" in checklist
+    assert "Declarations reconcile safely" in checklist
+    assert "/assets/llmlint/languages/terraform.llmlint.yml@1" in ongoing.read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "/assets/llmlint/buildout/languages/terraform.llmlint.yml@1"
+        in buildout.read_text(encoding="utf-8")
+    )
+
+
 def test_releasing_and_monorepo_flags_pull_references():
     doc = run(
         "--shape", "library", "--language", "python", "--releasing", "--monorepo"
