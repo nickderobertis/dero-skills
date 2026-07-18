@@ -216,6 +216,14 @@ def test_select_relpaths_order_and_dedup():
     assert any("python-cli" in n for n in notes)
 
 
+def test_select_relpaths_discovers_terraform_language():
+    relpaths, langs = crp.select_relpaths(
+        REFS, "library", ["terraform"], [], False, False, []
+    )
+    assert "languages/terraform.md" in relpaths
+    assert langs == ["terraform"]
+
+
 def test_select_relpaths_shape_build_on_chain():
     # nextjs builds on react builds on web-app; all assume TypeScript. The parent
     # shapes compose base-most first, then the concrete shape, then the language.
