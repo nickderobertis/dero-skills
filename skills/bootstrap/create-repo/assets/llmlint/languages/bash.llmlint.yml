@@ -1,22 +1,22 @@
 # Bash / shell judge-level rules (plugin). Pairs with languages/bash.md.
-version: 1
+# llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
+version: 1.1
 
 rules:
   - name: robust_shell
     description: |
-      true when every script in the target files sets `set -euo pipefail`, quotes its
-      expansions, and handles network and filesystem failures explicitly. false when
-      any script omits `set -euo pipefail`, leaves an expansion unquoted, or assumes
-      an operation succeeded.
+      true when `set -euo pipefail` is set, every expansion is quoted, and network
+      and filesystem failures are handled explicitly. false when `set -euo pipefail`
+      is omitted, an expansion is unquoted, or an operation is assumed to succeed.
     files:
       include: ["**/*.sh", "bin/**"]
-    relevance: the target files are shell scripts
+    require_line_attribution: true
 
   - name: portable_to_target_shell
     description: |
-      when every script in the target files stays within the declared target shell
-      and avoids non-portable constructs (`sort -V`, bashisms under POSIX `sh`) the
-      declared shell or platform does not support.
+      when every construct stays within the declared target shell and avoids
+      non-portable operations (`sort -V`, bashisms under POSIX `sh`) the declared
+      shell or platform does not support.
     files:
       include: ["**/*.sh", "bin/**"]
-    relevance: the target files are shell scripts
+    require_line_attribution: true

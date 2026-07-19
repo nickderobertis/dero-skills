@@ -1,7 +1,8 @@
 # CI judge-level rules (plugin). Pairs with ci.md. Always pulled in (ci.md is
 # always composed). Structural one-time CI checks are buildout-only — see
 # buildout/ci.llmlint.yml.
-version: 1
+# llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
+version: 1.1
 
 rules:
   - name: live_tier_compiles_and_requires_credential
@@ -17,6 +18,7 @@ rules:
         - "**/tests/live/**"
         - "**/*live*"
     relevance: the target files define a live or integration test tier
+    require_line_attribution: true
 
   - name: no_untrusted_interpolation_in_run
     description: |
@@ -31,6 +33,7 @@ rules:
       include:
         - ".github/workflows/**"
     relevance: the target files define a GitHub Actions workflow with a `run:` step
+    require_line_attribution: true
 
   - name: ci_invokes_gate_recipe_not_inline_stages
     description: |
@@ -45,3 +48,4 @@ rules:
       include:
         - ".github/workflows/**"
     relevance: the target files define a CI job that runs the quality gate
+    require_line_attribution: true

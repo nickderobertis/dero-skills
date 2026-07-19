@@ -1,5 +1,6 @@
 # Skills-repo judge-level rules (plugin). Pairs with shapes/skills-repo.md.
-version: 1
+# llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
+version: 1.1
 
 rules:
   - name: scripts_runtime_independent
@@ -14,9 +15,10 @@ rules:
         - "skills/**/*.js"
         - "skills/**/*.mjs"
         - "skills/**/scripts/**"
-    relevance: the target files are bundled skill scripts
+    require_line_attribution: true
 
   - name: determinism_vs_judgment
+    # Each deterministic procedure narrated in prose is line-localizable.
     description: |
       true when the deterministic steps described in the target files are implemented
       as scripts and prose is reserved for genuine judgment. false when a SKILL.md or
@@ -27,6 +29,7 @@ rules:
         - "**/AGENTS.md"
         - "**/CLAUDE.md"
     relevance: the target files describe procedural steps
+    require_line_attribution: true
 
   - name: skill_description_trigger_and_compatibility_needs
     description: |
@@ -36,3 +39,4 @@ rules:
       omits real runtime needs.
     files:
       include: ["**/SKILL.md"]
+    require_line_attribution: true
