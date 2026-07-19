@@ -34,7 +34,7 @@ set -uo pipefail
 # Version floor, as a PyPI constraint (the `llmlint-cli` package version tracks the
 # wrapped binary version). `uv tool install --upgrade` installs the newest release
 # satisfying it; oneharness comes along transitively at a compatible version.
-#   llmlint >= 0.3.17 — the 0.3.11 baseline (finds `oneharness` beside its own
+#   llmlint >= 0.3.23 — the 0.3.11 baseline (finds `oneharness` beside its own
 #     executable, so a lone `uv tool install llmlint-cli` works; the whole-tree
 #     default the composed llmlint.yml relies on with no `files.include`; `--diff`
 #     scoped to the changed files, skipping empty diffs) plus the latest static
@@ -43,8 +43,11 @@ set -uo pipefail
 #     passes just `origin/main`, no explicit `...HEAD`), and 0.3.17 adds the
 #     `validate` subcommand — the deterministic, model-free gate (config structure
 #     + `llmlint: ignore` directives + fragment version bumps) that
-#     `just lint-llm-validate` and CI run before ever spending a harness call.
-readonly LLMLINT_MIN="0.3.17"
+#     `just lint-llm-validate` and CI run before ever spending a harness call — and
+#     0.3.23 bundles config_lint v1.2, whose
+#     `line_localizable_rules_require_attribution` rule enforces attribution.
+# llmlint: ignore[changed_behavior_has_e2e] this dependency floor selects the validator release used by the existing real `just lint-llm-validate` gate; installer control flow and its user-visible contract are unchanged.
+readonly LLMLINT_MIN="0.3.23"
 readonly BIN_DIR="$HOME/.local/bin"
 
 log() { printf 'setup-llmlint: %s\n' "$*" >&2; }
