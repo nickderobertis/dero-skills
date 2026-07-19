@@ -11,7 +11,7 @@
 # automatically. See references/llmlint.md ("Fragment versioning").
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.6.0
+version: 1.7.0
 
 rules:
   - name: comments_earn_their_place
@@ -30,6 +30,7 @@ rules:
       source. A docstring or comment that documents a public contract, an example, or a
       genuinely non-obvious rule is NOT a violation even if longer.
     relevance: the target files contain code comments
+    require_line_attribution: true
 
   - name: e2e_not_mocked
     description: |
@@ -47,6 +48,7 @@ rules:
         - "**/integration/**"
         - "**/*.integration.*"
     relevance: the target files define an end-to-end or integration test
+    require_line_attribution: true
 
   - name: tests_mirror_real_usage
     description: |
@@ -66,6 +68,7 @@ rules:
         - "**/integration/**"
         - "**/*.integration.*"
     relevance: the target files define an end-to-end or integration test
+    require_line_attribution: true
 
   - name: changed_behavior_has_e2e
     description: |
@@ -87,6 +90,7 @@ rules:
       code path, output, exit status, or handled error. Skip test files themselves,
       and skip behavior-preserving edits (refactors, formatting, comments, docs,
       configuration, or type-only changes) that no user could observe.
+    # llmlint: ignore[line_localizable_rules_require_attribution] missing coverage is attributed to the changed production line whose behavior lacks an e2e test.
     require_line_attribution: true
 
   - name: tests_assert_real_behavior
@@ -107,6 +111,7 @@ rules:
         - "**/*.spec.tsx"
         - "**/e2e/**"
     relevance: the target files define tests
+    require_line_attribution: true
 
   - name: names_match_behavior
     description: |
@@ -116,6 +121,7 @@ rules:
       exactly that. false when a name overclaims its breadth, hides a side effect, or
       contradicts what its value or body does.
     relevance: the target files declare a named variable, function, command, flag, type, module, or file
+    require_line_attribution: true
 
   - name: suppressions_justified
     description: |
@@ -129,6 +135,7 @@ rules:
       uses at genuinely dynamic or deserialization boundaries comply, while
       unjustified uses are findings.
     relevance: the target files contain a linter or type-checker suppression directive or an in-language type-system escape hatch
+    require_line_attribution: true
 
   - name: boundary_inputs_validated
     description: |
@@ -136,6 +143,7 @@ rules:
       environment variables, config files, third-party responses, CLI arguments,
       stdin) is validated at the boundary before use.
     relevance: the target files read external or IO input
+    require_line_attribution: true
 
   - name: no_hardcoded_secrets
     description: |
@@ -143,6 +151,7 @@ rules:
       connection string, or private key — is read from an environment variable or a
       secret store by name rather than embedded as an inline literal.
     relevance: the target files handle credentials, connect to a service, or hold configuration
+    require_line_attribution: true
 
   - name: least_privilege_grants
     description: |
@@ -151,6 +160,7 @@ rules:
       the minimum the work needs — no write access where read suffices, no wildcard
       permission, no unbounded allowlist.
     relevance: the target files grant a permission, token scope, role, or command allowlist
+    require_line_attribution: true
 
   - name: diagnostics_error_or_absent
     description: |
@@ -164,6 +174,7 @@ rules:
         - ".justfile"
         - ".github/workflows/**"
     relevance: the target files configure a linter, type checker, or compiler
+    require_line_attribution: true
 
   - name: tool_output_is_signal
     description: |
@@ -181,8 +192,10 @@ rules:
         - "Justfile"
         - ".justfile"
     relevance: the target files define a script or command recipe
+    require_line_attribution: true
 
   - name: agents_md_durable_and_terse
+    # Each stale, verbose, or session-like passage is line-localizable.
     description: |
       true when each durable instruction file in the target files (AGENTS.md,
       CLAUDE.md, and a skill's SKILL.md) reads as durable, terse instructions —
@@ -194,6 +207,7 @@ rules:
         - "**/AGENTS.md"
         - "**/CLAUDE.md"
         - "**/SKILL.md"
+    require_line_attribution: true
 
   - name: no_redundant_instruction_pointers
     description: |
@@ -219,6 +233,7 @@ rules:
       following reference links (directly or nested through other docs) — i.e. a file the
       agent already loads automatically or has been prompted it can load; skip markdown no
       AGENTS.md reaches
+    require_line_attribution: true
 
   - name: work_goes_through_command_surface
     description: |
@@ -234,8 +249,10 @@ rules:
         - "scripts/**"
         - "**/scripts/**"
     relevance: the target files run a build, test, lint, format, or setup step that a documented recipe already wraps
+    require_line_attribution: true
 
   - name: contracts_have_one_source_or_a_drift_gate
+    # Agreement among contract copies is cross-cutting, so no single line owns a violation.
     description: |
       A fact that must agree across a boundary — a version, a type or schema on
       both sides of an API/DB/IPC seam, an enum or constant list mirrored in

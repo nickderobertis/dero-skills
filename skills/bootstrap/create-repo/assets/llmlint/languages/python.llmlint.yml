@@ -1,28 +1,29 @@
 # Python judge-level rules (plugin). Pulled in by the composer when the repo's
 # language includes python. Pairs with languages/python.md.
-version: 1
+# llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
+version: 1.1
 
 rules:
   - name: async_typed_clients_at_boundaries
     description: |
-      true when every client the target files use for an external network or IO
-      service is async and typed (an official typed client, or a small typed async
-      client written for the repo). false when any external network or IO call goes
-      through an untyped or synchronous ad-hoc client.
+      true when every external network or IO service uses an async, typed client (an
+      official typed client, or a small typed async client written for the repo).
+      false when any such call uses an untyped or synchronous ad-hoc client.
     files:
       include: ["**/*.py"]
     relevance: the target files call an external network or IO service
+    require_line_attribution: true
 
   - name: structural_pattern_matching
     description: |
-      true when multi-branch dispatch on the shape, type, or value of a single
-      subject uses `match`/`case` with destructuring where it reads more clearly than
-      an if/elif chain. false when an if/elif chain repeats `isinstance`, index, or
-      attribute checks on one subject across branches where `match`/`case` would
-      express it directly.
+      true when multi-branch dispatch on one subject's shape, type, or value uses
+      `match`/`case` with destructuring where that reads more clearly than an if/elif
+      chain. false when an if/elif chain repeats `isinstance`, index, or attribute
+      checks on that subject where `match`/`case` would express it directly.
     files:
       include: ["**/*.py"]
     relevance: the target files dispatch on the shape, type, or value of a subject
+    require_line_attribution: true
 
   - name: modern_domain_modeling
     description: |
@@ -34,6 +35,7 @@ rules:
     files:
       include: ["**/*.py"]
     relevance: the target files define or pass around structured domain data
+    require_line_attribution: true
 
   - name: protocol_based_seams
     description: |
@@ -44,6 +46,7 @@ rules:
     files:
       include: ["**/*.py"]
     relevance: the target files define a pluggable dependency or seam
+    require_line_attribution: true
 
   - name: no_injection_from_untrusted_input
     description: |
@@ -54,3 +57,4 @@ rules:
     files:
       include: ["**/*.py"]
     relevance: the target files run subprocesses, execute dynamic code, deserialize data, or build SQL or OS commands
+    require_line_attribution: true
