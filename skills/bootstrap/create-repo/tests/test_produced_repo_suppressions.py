@@ -26,6 +26,13 @@ What is proved here:
 
 from __future__ import annotations
 
+# llmlint: ignore-file[suppressions_justified] every suppression directive in this file is
+# test data, not a suppression of this repo's own checks: the planted `# noqa`/`# ruff: noqa`
+# are the *unjustified* directives the guard exists to catch, and their missing reason is the
+# assertion (`reason: <none given>`). Ruff's noqa syntax carries no reason field, so a
+# reason-less fixture is the only way to exercise that path. File-scoped because it is a
+# property of the whole fixture file, including planted directives added later.
+
 import shutil
 import subprocess
 from pathlib import Path
@@ -218,7 +225,17 @@ import shutil
 import sys
 from pathlib import Path
 
+# Validate at the boundary before anything is imported from an argument: `tests_dir`
+# becomes an import path, so a missing or relative one would silently import whatever
+# the cwd happens to hold rather than the suite under test.
+if len(sys.argv) != 4:
+    raise SystemExit(f"usage: {sys.argv[0]} TESTS_DIR REPO FAKE_BIN")
 tests_dir, repo, fake_bin = (Path(arg) for arg in sys.argv[1:4])
+for name, path in (("TESTS_DIR", tests_dir), ("REPO", repo), ("FAKE_BIN", fake_bin)):
+    if not path.is_absolute():
+        raise SystemExit(f"{name} must be an absolute path, got {str(path)!r}")
+    if not path.is_dir():
+        raise SystemExit(f"{name} is not an existing directory: {path}")
 sys.path.insert(0, str(tests_dir))
 import produced_repo_suppressions as guard
 import test_create_repo_skilltest as skilltest
