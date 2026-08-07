@@ -28,9 +28,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
+import produced_repo_suppressions as guard
 import pytest
 from produced_repo_suppressions import (
     ALLOWED,
@@ -43,6 +43,7 @@ from produced_repo_suppressions import (
 
 SKILL = Path(__file__).resolve().parents[1]
 ASSETS = SKILL / "assets"
+REPO_ROOT = SKILL.parents[2]
 
 # Assembled rather than spelled out: this repo's own `just lint-llm-validate` gate
 # parses every literal `llmlint` ignore directive in the tree — including one that
@@ -74,6 +75,18 @@ def produced_repo(tmp_path: Path) -> Path:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(ASSETS / template, destination)
     return repo
+
+
+def test_template_targets_covers_every_template_the_skill_ships() -> None:
+    """`assets/` is the source of truth for what a produced repo receives, so the
+    map above must not fall behind it — a template added without a target here
+    would silently escape the scan that derives `ALLOWED`."""
+    shipped = {path.name for path in ASSETS.glob("*.template")}
+    assert shipped == set(TEMPLATE_TARGETS), (
+        "TEMPLATE_TARGETS is out of step with assets/*.template — "
+        f"unmapped: {sorted(shipped - set(TEMPLATE_TARGETS))}, "
+        f"stale: {sorted(set(TEMPLATE_TARGETS) - shipped)}"
+    )
 
 
 def test_every_template_is_covered_by_the_allowlist(produced_repo: Path) -> None:
@@ -183,6 +196,19 @@ def test_report_describes_findings_without_raising(produced_repo: Path) -> None:
     assert "rules:  dead_code" in described
 
 
+def test_a_missing_notignored_binary_fails_loudly(
+    produced_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The one way this guard could fail *open*: no binary to scan with. It must
+    raise with the command that fixes it, never quietly report zero findings —
+    a silent pass here would read as "the agent suppressed nothing"."""
+    monkeypatch.setattr(guard, "_NOTIGNORED_BIN", None)
+
+    with pytest.raises(RuntimeError, match=r"uv sync --locked") as failure:
+        unexpected_suppressions(produced_repo)
+    assert "notignored-sdk" in str(failure.value)
+
+
 # Driven in a subprocess because `_stealth_env` mutates the *process* environment
 # (it deletes the `PYTEST_*` vars pytest itself relies on). This is the real
 # function the eval calls, not a re-implementation of it.
@@ -217,12 +243,15 @@ def test_the_guard_is_invisible_to_the_model_but_works_after_the_run(
 
     result = subprocess.run(
         [
-            sys.executable,
+            "uv",
+            "run",
+            "python",
             str(driver),
             str(SKILL / "tests"),
             str(produced_repo),
             str(tmp_path),
         ],
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
     )

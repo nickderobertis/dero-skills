@@ -60,7 +60,8 @@ must be proven to work without a 30-minute harness run).
   fails until `ALLOWED` is updated — and one that drops a directive fails the
   companion "every entry is earned" test, so the list can't quietly widen.
   **Empty is the ideal**: shrink it by fixing a template, never grow it to make a
-  run pass.
+  run pass. The map from template to target name is itself gated against
+  `assets/*.template`, so a new asset can't slip past the derivation unmapped.
 - **Subset, not equality.** An entry permits a *non-empty subset* of its named
   rules on its path glob: narrowing a template's rule list suppresses less and
   stays allowed; adding an unlisted rule, or dropping to a blanket directive that
