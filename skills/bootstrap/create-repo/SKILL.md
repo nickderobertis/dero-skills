@@ -180,6 +180,8 @@ a suggested fix.
 
 ## Principles
 
+<!-- llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] `references/base.md` restates these principles by design, to anchor its verification items. -->
+
 1. **Start from the project's actual product shape.**
    - Identify the artifact (Python package/service/CLI, TS app, Rust CLI,
      Bash/plugin, skills repo, etc.).
@@ -240,6 +242,18 @@ a suggested fix.
      loaded only when working there. Content that is **neither always relevant
      nor cleanly scoped to one folder** moves out into a reference doc (e.g.
      under `docs/`) linked from `AGENTS.md` and pulled in on demand — not inlined.
+   - **Capture the user's design decisions before the session ends.** A
+     direction the user states in conversation is unrecoverable once it's gone:
+     the code shows *what*, never the constraint that drove it. A *highly
+     important* constraint or direction goes in the `AGENTS.md` at its scope
+     (root when repo-wide, the subtree's when not); every other durable design
+     decision goes in a `DESIGN.md` nested at the scope that decision governs.
+     `DESIGN.md` takes only what a future reader needs, and only decisions
+     traceable to the user's own input — never the agent's own. That provenance
+     restriction is `DESIGN.md`'s alone: a record mixing the user's direction
+     with the agent's guesses is worse than none, because a future reader can't
+     tell them apart. The composition rationale in "Stack and composition" is
+     agent-authored by design and unaffected.
    - Always make `CLAUDE.md` a symlink to `AGENTS.md` so the two never drift.
    - Set up `.claude/settings.json` with a narrow allowlist among the first
      files, to require fewer approvals while the rest of the repo is built.
