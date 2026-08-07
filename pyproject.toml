@@ -10,6 +10,7 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "notignored-sdk>=0.1.5,<0.2",
     "pytest>=8.0",
     "ruff>=0.8",
     "skilltest-pytest>=0.8.0",

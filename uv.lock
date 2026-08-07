@@ -27,6 +27,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "notignored-sdk" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "skilltest-pytest" },
@@ -36,6 +37,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "notignored-sdk", specifier = ">=0.1.5,<0.2" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "skilltest-pytest", specifier = ">=0.8.0" },
@@ -48,6 +50,30 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
+]
+
+[[package]]
+name = "notignored-cli"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/9c/d7d1b635ab6884373f893a8d687a2bc16c03846477af6c61186580ddff65/notignored_cli-0.1.5-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:1f11ccd40525fd9e9f40f33f59d5a9aa6b2786957b304b7579c93e4bd323c601", size = 1032201, upload-time = "2026-08-07T15:19:12.913Z" },
+    { url = "https://files.pythonhosted.org/packages/36/df/23f08572cc66e3b1682d8120a6d16d6750e4f3e8ad9abb1cac43a0b6295f/notignored_cli-0.1.5-py3-none-macosx_11_0_arm64.whl", hash = "sha256:b72c9b49f8625fb577915358576e968d2baf0fa0553f1515e9a53ad3342be3b9", size = 955133, upload-time = "2026-08-07T15:19:14.289Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/e7/a168e3b67f810a5bbd4a2573185bd95869ed360ed82ed2b68c8d1e401888/notignored_cli-0.1.5-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:978ca4c83a38bddc10e9d85e3747c42d0e049578fe078afb0e0812b6f55684d4", size = 980770, upload-time = "2026-08-07T15:19:15.503Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/73/05bc2d33668bba8da38a9b0bd47d6f3d36b3211b38adf50ddcbe0fe6ae5a/notignored_cli-0.1.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3313ec556286a4df62d040c0b140b281b682bccc14afaa52807f3e55f2126a1f", size = 1067621, upload-time = "2026-08-07T15:19:17.028Z" },
+    { url = "https://files.pythonhosted.org/packages/31/a7/e00af8d29d2424c4e0f2bc60c7ca744e93834aeec67bb722dff6032242af/notignored_cli-0.1.5-py3-none-win_amd64.whl", hash = "sha256:8e48901bf2350d41fa601d5f09d95d44677d43b79a4dd1b7d3f1e66dbdc1b92f", size = 1035391, upload-time = "2026-08-07T15:19:18.285Z" },
+]
+
+[[package]]
+name = "notignored-sdk"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "notignored-cli" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/b0/d628f9892ac3c91d942d9a1c05c0e0a49ee48a7bc2d421329e04a220fcf7/notignored_sdk-0.1.5.tar.gz", hash = "sha256:7b2484c0f10d93ff31ad3f8ff75cc78398796bc2fac7e8fad50800b3203b7a79", size = 11145, upload-time = "2026-08-07T15:19:34.879Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/30/9a067659f56c8f8da794e9d081dc65c1bc5736f2b4065af4df1be6236e2f/notignored_sdk-0.1.5-py3-none-any.whl", hash = "sha256:5c6045f7b6f6ec8f085fab274e27cacb52638b9f2aed99fba96d25956b9f5968", size = 12844, upload-time = "2026-08-07T15:19:34.048Z" },
 ]
 
 [[package]]
