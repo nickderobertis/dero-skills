@@ -693,19 +693,57 @@ def test_notignored_without_a_pull_request_trigger_is_error(tmp_path):
 
 
 def test_notignored_trigger_survives_a_types_filter_and_the_inline_form(tmp_path):
-    # Both YAML spellings of the trigger count, and the fork guard's
-    # `github.event.pull_request...` expression must not be mistaken for one.
-    filtered = NOTIGNORED_WORKFLOW.replace(
-        "  pull_request:\n", "  pull_request:\n    types: [opened, synchronize]\n"
-    )
-    inline = NOTIGNORED_WORKFLOW.replace(
-        "on:\n  pull_request:\n", "on: [pull_request]\n"
-    )
-    for name, workflow in (("filtered", filtered), ("inline", inline)):
+    # Every YAML shape of the trigger counts: the block form with a `types:`
+    # filter, the inline list, the bare scalar, and the quoted `on` key GitHub
+    # accepts because YAML 1.1 reads a bare `on` as the boolean true.
+    workflows = {
+        "filtered": NOTIGNORED_WORKFLOW.replace(
+            "  pull_request:\n", "  pull_request:\n    types: [opened, synchronize]\n"
+        ),
+        "inline-list": NOTIGNORED_WORKFLOW.replace(
+            "on:\n  pull_request:\n", "on: [pull_request]\n"
+        ),
+        "scalar": NOTIGNORED_WORKFLOW.replace(
+            "on:\n  pull_request:\n", "on: pull_request\n"
+        ),
+        "quoted-key": NOTIGNORED_WORKFLOW.replace("on:\n", '"on":\n'),
+        "sibling-triggers": NOTIGNORED_WORKFLOW.replace(
+            "on:\n  pull_request:\n",
+            "on:\n  push:\n    branches: [main]\n  pull_request:\n",
+        ),
+    }
+    for name, workflow in workflows.items():
         repo = tmp_path / name
         repo.mkdir()
         findings = crb.audit(make_repo(repo, notignored=workflow))
         assert not crb.has_errors(findings), (name, levels(findings, "ERROR"))
+
+
+def test_a_pull_request_key_outside_the_on_block_is_not_a_trigger(tmp_path):
+    # The check is scoped to the top-level `on:` block, so neither the fork
+    # guard's `github.event.pull_request...` expression (kept here) nor a step
+    # input spelled `pull_request` stands in for the trigger the workflow lacks.
+    impostor = NOTIGNORED_WORKFLOW.replace(
+        "on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n"
+    ).replace(
+        "      - uses: nickderobertis/notignored@v0\n",
+        "      - uses: nickderobertis/notignored@v0\n"
+        "        with:\n          pull_request: true\n",
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=impostor))
+    assert crb.has_errors(findings)
+    assert any("`pull_request` trigger" in m for m in levels(findings, "ERROR"))
+
+
+def test_pull_request_target_alone_is_not_the_pull_request_trigger(tmp_path):
+    # A different, far riskier trigger: it must not satisfy the invariant by
+    # prefix match.
+    retargeted = NOTIGNORED_WORKFLOW.replace(
+        "  pull_request:\n", "  pull_request_target:\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=retargeted))
+    assert crb.has_errors(findings)
+    assert any("`pull_request` trigger" in m for m in levels(findings, "ERROR"))
 
 
 def test_notignored_without_comment_permission_is_error(tmp_path):

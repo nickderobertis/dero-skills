@@ -237,14 +237,6 @@ NOTIGNORED_ACTION_RE = re.compile(r"uses:\s*nickderobertis/notignored@")
 #     checkout omits, so without it the comment reports nothing;
 #   * the fork guard — a fork's read-only token cannot upsert, so the job skips
 #     there rather than failing on something the contributor cannot fix.
-# The trigger, in either YAML spelling: a `pull_request:` key under `on:` (the
-# block form the asset ships, with or without a `types:` filter) or the inline
-# `on: [pull_request]` list. Anchored to the start of a line so the fork guard's
-# `github.event.pull_request.head...` expression cannot masquerade as a trigger.
-NOTIGNORED_PR_TRIGGER_RE = re.compile(
-    r"^\s*pull_request:\s*(?:#.*)?$|^\s*on:\s*\[[^\]]*\bpull_request\b",
-    re.MULTILINE,
-)
 NOTIGNORED_COMMENT_PERM_RE = re.compile(r"pull-requests:\s*write")
 NOTIGNORED_FULL_HISTORY_RE = re.compile(r"fetch-depth:\s*0\b")
 NOTIGNORED_FORK_GUARD_RE = re.compile(
@@ -788,6 +780,47 @@ def check_pr_template(repo: Path) -> list[Finding]:
     return [Finding("OK", "GitHub PR template present with What/Why")]
 
 
+# The workflow's top-level trigger key. YAML 1.1 reads a bare ``on`` as the
+# boolean true, so GitHub accepts the quoted spellings and ``true:`` alongside it.
+WORKFLOW_ON_KEY_RE = re.compile(r"""^(?:on|["']on["']|true):(.*)$""")
+
+# ``pull_request`` as a whole word, so ``pull_request_target`` — a different, far
+# riskier trigger — is not mistaken for it.
+PULL_REQUEST_WORD_RE = re.compile(r"\bpull_request\b")
+
+
+def workflow_triggers_on_pull_request(text: str) -> bool:
+    """True when workflow ``text`` declares a ``pull_request`` trigger.
+
+    Scoped to the top-level ``on:`` block, so neither the fork guard's
+    ``github.event.pull_request.head...`` expression nor a step input that happens
+    to be spelled ``pull_request`` can pass for a trigger. Both YAML shapes count:
+    the inline ``on: [pull_request]`` / ``on: pull_request`` on the key's own line,
+    and the block form (the shape the asset ships), whose indented body may carry a
+    ``types:`` filter and sibling triggers. A light scan, not a YAML parse — the
+    same bar as the other checks here.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        match = WORKFLOW_ON_KEY_RE.match(line)
+        if not match:
+            continue
+        inline = match.group(1).split("#", 1)[0]
+        if inline.strip():
+            return bool(PULL_REQUEST_WORD_RE.search(inline))
+        # Block form: the indented body, up to the next top-level key.
+        for nxt in lines[i + 1 :]:
+            if not nxt.strip():
+                continue
+            if not nxt.startswith((" ", "\t")):
+                break
+            entry = nxt.strip().lstrip("-").strip()
+            if entry == "pull_request" or entry.startswith("pull_request:"):
+                return True
+        return False
+    return False
+
+
 def check_notignored(repo: Path) -> list[Finding]:
     """Require the suppressions review comment, wired so it actually reports.
 
@@ -826,7 +859,7 @@ def check_notignored(repo: Path) -> list[Finding]:
     rel = workflow.relative_to(repo).as_posix()
     text = workflow.read_text(encoding="utf-8")
     problems: list[Finding] = []
-    if not NOTIGNORED_PR_TRIGGER_RE.search(text):
+    if not workflow_triggers_on_pull_request(text):
         problems.append(
             Finding(
                 "ERROR",
