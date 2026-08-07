@@ -114,7 +114,14 @@ clone, run one command, and trust.
    (**What**) and its driver and impact (**Why**) in terse, pithy prose — not a
    walkthrough of the diff; a third **Additional info** section is optional and
    usually omitted. Because the squash body is taken from the PR description,
-   this is also what lands in history.
+   this is also what lands in history. Finally, add the suppressions review
+   comment
+   ([`assets/notignored.yml.template`](./assets/notignored.yml.template) →
+   `.github/workflows/notignored.yml`): it posts every lint/type-check
+   suppression a PR adds, with its reason, so a human reviewing agent-written
+   code at a high level sees the checks it switched off. It is deliberately
+   *not* a required check — see the "suppressions review comment" section of
+   [`references/ci.md`](./references/ci.md).
 8. **Run the gate yourself and iterate to green.** Do not declare the repo done
    from inspection. Actually run `just check` (which includes `test-e2e`) and
    iterate until it passes from a clean state.
@@ -440,9 +447,17 @@ guidance that motivates it, and editing one reference updates both.
   — required GitHub PR template: terse **What** (the behavior change) and **Why**
   (its driver and impact), with an optional **Additional info** section. Drop it
   at `.github/pull_request_template.md`.
+- [`assets/notignored.yml.template`](./assets/notignored.yml.template) — drop at
+  `.github/workflows/notignored.yml`. Posts one sticky PR comment naming every
+  lint/type-check suppression the change added, with its rules, its stated reason,
+  and a link to the line — the review artifact that makes a high-level review of
+  agent-written code possible. Drop-in (`uses: nickderobertis/notignored@v0`, no
+  config, nothing to install), skips fork PRs, and is deliberately not a required
+  check. See [`references/ci.md`](./references/ci.md).
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — the
   deterministic, stdlib-only audit. It checks the agent layer, recorded
-  composition, command surface, e2e/coverage signals, CI, the PR template, and the
+  composition, command surface, e2e/coverage signals, CI, the PR template, the
+  suppressions review comment, and the
   llmlint tier — going past presence (placeholder recipes, a `check` that skips
   `test`, a do-nothing CI file all fail). `--help` lists the checks; `--buildout`
   additionally *runs* the one-time llmlint buildout tier for the recorded stack

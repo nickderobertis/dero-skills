@@ -65,6 +65,7 @@ TEMPLATE_TARGETS = {
     "AGENTS.md.template": "AGENTS.md",
     "justfile.template": "justfile",
     "ci.yml.template": ".github/workflows/ci.yml",
+    "notignored.yml.template": ".github/workflows/notignored.yml",
     "pull_request_template.md.template": ".github/pull_request_template.md",
     "oneharness.toml.template": "oneharness.toml",
     "setup-llmlint.sh.template": "scripts/setup-llmlint.sh",

@@ -70,8 +70,13 @@ must be proven to work without a 30-minute harness run).
 - **Stealth.** The scan runs only after the harness has exited, against a
   `notignored` resolved at import (before `_stealth_env` strips this repo's venv
   from `PATH`) and handed over via `NOTIGNORED_BIN` for the duration of the scan
-  alone. Keep it that way: nothing notignored-related may be visible to the model
-  mid-run, or the check measures a model that knows it is being measured. That
+  alone. Keep it that way: nothing about the *scan* may be visible to the model
+  mid-run, or the check measures a model that knows it is being measured. The
+  skill's own `assets/notignored.yml.template` is the one exception and not a
+  leak: shipping that workflow is what the skill instructs, so seeing it tells the
+  model nothing about being scored — only that produced repos surface their
+  suppressions to reviewers. The binary, the SDK, and `NOTIGNORED_BIN` stay
+  hidden. That
   invariant has its own gate test, which drives the real `_stealth_env` in a
   subprocess and asserts the binary is unreachable *and* the guard still scans —
   so a lazy `PATH` lookup can't creep back in.
