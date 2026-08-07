@@ -6,6 +6,8 @@ reference first; its guidance restates the SKILL.md principles only enough to
 anchor the verification items below, which are the universal checks every
 composed plan carries before any shape/language/cross-cutting items are added.
 
+<!-- llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] restating the SKILL.md principles is this file's stated purpose above: it anchors the verification items. -->
+
 - **Agent layer first.** `AGENTS.md` (terse, always-loaded context), `CLAUDE.md`
   symlinked to it, and a narrow `.claude/settings.json` allowlist — laid down
   before the rest so the build runs with fewer approval prompts.
@@ -39,12 +41,10 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - **Compose deliberately and record it.** Build the repo up from the reference
   pieces and write the decision into the AGENTS.md "Stack and composition"
   section so it is auditable, not silently skipped.
-- **Record the user's design decisions at their scope.** A direction stated in
-  conversation is unrecoverable afterwards. A highly important constraint goes in
-  the `AGENTS.md` at its scope; every other durable design decision goes in a
-  `DESIGN.md` nested where the decision applies — carrying only what a future
-  reader needs, and only decisions traceable to the user's own input, never the
-  agent's own.
+- **Record the user's design decisions at their scope.** A highly important
+  constraint goes in the `AGENTS.md` at its scope; every other durable design
+  decision goes in a `DESIGN.md` nested where the decision applies — only what a
+  future reader needs, and only what came from the user, never the agent's own.
 - **Land on current dependencies.** Run `just upgrade` as one of the last steps
   so the repo starts life on the latest deps, with the gate re-run and lockfiles
   committed.
@@ -77,9 +77,8 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - [ ] **User design decisions recorded.** Every durable design decision the user
   stated lives at the scope it governs — the important ones in that scope's
   `AGENTS.md`, the rest in a `DESIGN.md` nested there, holding only
-  future-reader-relevant content and nothing the agent decided on its own. (A
-  placement rule, not a required artifact: no user-stated decisions means no
-  `DESIGN.md`.)
+  future-reader-relevant content and nothing the agent decided alone. A placement
+  rule, not a required artifact: no user-stated decisions means no `DESIGN.md`.
 - [ ] **Upgraded to latest, then gated.** `just upgrade` was run as one of the
   last steps, the refreshed lockfiles are committed, and the gate it re-runs
   passed.

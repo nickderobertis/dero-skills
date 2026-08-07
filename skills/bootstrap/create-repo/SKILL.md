@@ -180,6 +180,8 @@ a suggested fix.
 
 ## Principles
 
+<!-- llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] `references/base.md` restates these principles by design, to anchor its verification items. -->
+
 1. **Start from the project's actual product shape.**
    - Identify the artifact (Python package/service/CLI, TS app, Rust CLI,
      Bash/plugin, skills repo, etc.).
