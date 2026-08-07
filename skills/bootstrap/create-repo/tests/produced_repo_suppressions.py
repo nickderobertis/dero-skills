@@ -23,7 +23,9 @@ reading every line.
 model sees it, so `notignored` is deliberately unreachable mid-run. The binary is
 resolved *at import* (before that scrub) and handed to the SDK through
 `NOTIGNORED_BIN` only for the duration of a scan, which happens after the harness
-has exited. Nothing notignored-related is ever visible to the model.
+has exited. Nothing about the *scan* is ever visible to the model — the skill's own
+`assets/notignored.yml.template`, which a produced repo is meant to ship, is not a
+tell that the output is being scored.
 """
 
 from __future__ import annotations

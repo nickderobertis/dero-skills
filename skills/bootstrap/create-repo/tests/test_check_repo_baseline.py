@@ -81,6 +81,27 @@ GATE_WORKFLOW = (
     "  llmlint:\n    steps:\n      - run: just lint-llm-diff\n"
 )
 
+# The suppressions review comment: the notignored action on pull requests, with
+# the comment permission, a full-history checkout, and the fork-PR skip guard the
+# suppressions invariant requires. A separate workflow, as the asset ships it.
+NOTIGNORED_WORKFLOW = """\
+name: notignored
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  suppressions:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: nickderobertis/notignored@v0
+"""
+
 # A composed llmlint.yml: declares plugins (the rule fragments), as the llmlint
 # invariant requires.
 LLMLINT_CONFIG = (
@@ -133,6 +154,7 @@ def make_repo(
     settings=True,
     justfile=FULL_JUSTFILE,
     ci=True,
+    notignored=True,
     pr_template=True,
     llmlint=True,
     oneharness=True,
@@ -142,7 +164,9 @@ def make_repo(
     ``claude`` is "symlink", "file", or None; ``settings`` is True, False, or a
     raw string written verbatim to .claude/settings.json (to test bad JSON).
     ``ci`` is True (a gate-running workflow), False (none), or a raw string
-    written verbatim to .github/workflows/ci.yml. ``composition`` is True (the
+    written verbatim to .github/workflows/ci.yml. ``notignored`` is True (the
+    conformant suppressions-comment workflow), False (none), or a raw string
+    written verbatim to .github/workflows/notignored.yml. ``composition`` is True (the
     conformant AGENTS.md with a filled composition section), False (a bare
     AGENTS.md with no such section), or a raw string written verbatim as
     AGENTS.md. ``pr_template`` is True (the conformant .github template), False
@@ -173,9 +197,14 @@ def make_repo(
         (repo / "justfile").write_text(justfile, encoding="utf-8")
     if ci is not False:
         wf = repo / ".github" / "workflows"
-        wf.mkdir(parents=True)
+        wf.mkdir(parents=True, exist_ok=True)
         body = ci if isinstance(ci, str) else GATE_WORKFLOW
         (wf / "ci.yml").write_text(body, encoding="utf-8")
+    if notignored is not False:
+        wf = repo / ".github" / "workflows"
+        wf.mkdir(parents=True, exist_ok=True)
+        body = notignored if isinstance(notignored, str) else NOTIGNORED_WORKFLOW
+        (wf / "notignored.yml").write_text(body, encoding="utf-8")
     if pr_template is not False:
         gh = repo / ".github"
         gh.mkdir(exist_ok=True)
@@ -612,12 +641,168 @@ def test_every_error_carries_a_suggested_fix(tmp_path):
         settings=False,
         justfile=None,
         ci=False,
+        notignored=False,
         pr_template=False,
         llmlint=False,
     )
     errors = [f for f in crb.audit(repo) if f.level == "ERROR"]
     assert errors
     assert all(f.fix for f in errors)
+
+
+# llmlint: ignore[comments_earn_their_place] this module groups its tests behind section banners (`# --- helpers ---`, `# --- audit ---`, `# --- llmlint (LLM-judge tier) ---`); without this one the notignored tests read as part of the llmlint section below, so it names a boundary rather than decorating one.
+# --- notignored (the suppressions review comment) ---------------------------
+
+
+def test_conformant_repo_has_notignored_ok(tmp_path):
+    findings = crb.audit(make_repo(tmp_path))
+    assert any("suppressions review comment" in m for m in levels(findings, "OK")), (
+        levels(findings, "ERROR")
+    )
+
+
+def test_the_shipped_template_satisfies_the_notignored_invariant(tmp_path):
+    # The asset the skill actually drops into a produced repo, checked by the
+    # invariant it exists to satisfy — so the template and the checker cannot drift.
+    template = (SKILL_DIR / "assets" / "notignored.yml.template").read_text(
+        encoding="utf-8"
+    )
+    findings = crb.check_notignored(make_repo(tmp_path, notignored=template))
+    assert not [f for f in findings if f.level == "ERROR"], findings
+
+
+def test_missing_notignored_workflow_is_error(tmp_path):
+    # CI runs the gate, but no workflow posts the suppressions a PR adds.
+    findings = crb.audit(make_repo(tmp_path, notignored=False))
+    assert crb.has_errors(findings)
+    assert any("notignored" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_without_a_pull_request_trigger_is_error(tmp_path):
+    # The comment lives on a pull request, so a push-only workflow runs where
+    # there is nothing to comment on — green, and permanently silent.
+    push_only = NOTIGNORED_WORKFLOW.replace(
+        "on:\n  pull_request:\n", "on:\n  push:\n    branches: [main]\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=push_only))
+    assert crb.has_errors(findings)
+    assert any("`pull_request` trigger" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_trigger_survives_a_types_filter_and_the_inline_form(tmp_path):
+    # Every YAML shape of the trigger counts: the block form with a `types:`
+    # filter, the inline list, the bare scalar, and the quoted `on` key GitHub
+    # accepts because YAML 1.1 reads a bare `on` as the boolean true.
+    workflows = {
+        "filtered": NOTIGNORED_WORKFLOW.replace(
+            "  pull_request:\n", "  pull_request:\n    types: [opened, synchronize]\n"
+        ),
+        "inline-list": NOTIGNORED_WORKFLOW.replace(
+            "on:\n  pull_request:\n", "on: [pull_request]\n"
+        ),
+        "scalar": NOTIGNORED_WORKFLOW.replace(
+            "on:\n  pull_request:\n", "on: pull_request\n"
+        ),
+        "quoted-key": NOTIGNORED_WORKFLOW.replace("on:\n", '"on":\n'),
+        # YAML 1.1 reads a bare `on` as the boolean true, so a workflow written
+        # (or round-tripped by a formatter) with `true:` is still valid to GitHub.
+        "boolean-key": NOTIGNORED_WORKFLOW.replace("on:\n", "true:\n"),
+        "sibling-triggers": NOTIGNORED_WORKFLOW.replace(
+            "on:\n  pull_request:\n",
+            "on:\n  push:\n    branches: [main]\n  pull_request:\n",
+        ),
+    }
+    for name, workflow in workflows.items():
+        repo = tmp_path / name
+        repo.mkdir()
+        findings = crb.audit(make_repo(repo, notignored=workflow))
+        assert not crb.has_errors(findings), (name, levels(findings, "ERROR"))
+
+
+def test_a_pull_request_key_outside_the_on_block_is_not_a_trigger(tmp_path):
+    # The check is scoped to the top-level `on:` block, so neither the fork
+    # guard's `github.event.pull_request...` expression (kept here) nor a step
+    # input spelled `pull_request` stands in for the trigger the workflow lacks.
+    impostor = NOTIGNORED_WORKFLOW.replace(
+        "on:\n  pull_request:\n", "on:\n  workflow_dispatch:\n"
+    ).replace(
+        "      - uses: nickderobertis/notignored@v0\n",
+        "      - uses: nickderobertis/notignored@v0\n"
+        "        with:\n          pull_request: true\n",
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=impostor))
+    assert crb.has_errors(findings)
+    assert any("`pull_request` trigger" in m for m in levels(findings, "ERROR"))
+
+
+def test_pull_request_target_alone_is_not_the_pull_request_trigger(tmp_path):
+    # A different, far riskier trigger: it must not satisfy the invariant by
+    # prefix match.
+    retargeted = NOTIGNORED_WORKFLOW.replace(
+        "  pull_request:\n", "  pull_request_target:\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=retargeted))
+    assert crb.has_errors(findings)
+    assert any("`pull_request` trigger" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_without_comment_permission_is_error(tmp_path):
+    # The default read-only token cannot upsert the comment: the run goes green
+    # having posted nothing.
+    read_only = NOTIGNORED_WORKFLOW.replace("  pull-requests: write\n", "")
+    findings = crb.audit(make_repo(tmp_path, notignored=read_only))
+    assert crb.has_errors(findings)
+    assert any("pull-requests: write" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_with_shallow_checkout_is_error(tmp_path):
+    # Without full history there is no base branch to diff against, so the comment
+    # reports nothing — invisible in a green run, which is why it is checked.
+    shallow = NOTIGNORED_WORKFLOW.replace(
+        "        with:\n          fetch-depth: 0\n", ""
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=shallow))
+    assert crb.has_errors(findings)
+    assert any("shallowly" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_without_fork_guard_is_error(tmp_path):
+    # No guard means a fork PR fails on a token the contributor cannot fix — and
+    # the guard is what justifies leaving the workflow out of the required set.
+    unguarded = NOTIGNORED_WORKFLOW.replace(
+        "    if: github.event.pull_request.head.repo.full_name == github.repository\n",
+        "",
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=unguarded))
+    assert crb.has_errors(findings)
+    assert any("fork-PR skip guard" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_accepts_the_fork_guard_written_the_other_way_round(tmp_path):
+    # The comparison reads equally well from either side, and a repo that wrote it
+    # `github.repository == ...` has the same guard, not a missing one.
+    reversed_guard = NOTIGNORED_WORKFLOW.replace(
+        "    if: github.event.pull_request.head.repo.full_name == github.repository\n",
+        "    if: github.repository == github.event.pull_request.head.repo.full_name\n",
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=reversed_guard))
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+
+
+def test_notignored_accepts_an_exact_version_pin(tmp_path):
+    # The skill templates the floating `@v0` major tag, but a repo that pins an
+    # exact release for reproducibility is still wired correctly.
+    pinned = NOTIGNORED_WORKFLOW.replace("notignored@v0", "notignored@v0.1.11")
+    findings = crb.audit(make_repo(tmp_path, notignored=pinned))
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+
+
+def test_notignored_in_a_combined_workflow_is_accepted(tmp_path):
+    # The asset ships a standalone workflow, but the invariant is that *some*
+    # workflow runs the action correctly — a repo folding it into ci.yml passes.
+    combined = GATE_WORKFLOW + NOTIGNORED_WORKFLOW
+    findings = crb.audit(make_repo(tmp_path, ci=combined, notignored=False))
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
 
 
 # --- llmlint (LLM-judge tier) ----------------------------------------------

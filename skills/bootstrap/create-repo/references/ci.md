@@ -109,6 +109,44 @@ posting a single sticky PR comment (and degrading to an artifact + summary on
 forks, which can't comment). It lives outside `just check` so a noisy or slow
 benchmark can never block a correct change; the strict gate stays strict.
 
+## The suppressions review comment (notignored)
+
+The strict gate and the llmlint judge both decide *pass or fail*. Neither shows a
+reviewer the one thing a high-level review of agent-written code most needs: the
+checks the change **switched off**. A `# noqa`, an `#[allow(dead_code)]`, an
+`llmlint: ignore` each cost one line to add and scroll past unremarked — and
+silencing a rule is usually easier than fixing it, so that is where debt hides.
+
+[notignored](https://github.com/nickderobertis/notignored) closes it. Its GitHub
+Action posts one sticky comment listing the suppressions *this* pull request
+introduced — each with its tool, its silenced rules, its stated reason (or the
+conspicuous absence of one), a link to the line, and a collapsed block holding the
+code it silences. So a human reviewing at a high level sees every bypass and its
+justification without reading the diff line by line. Add it to every repo; start
+from [`assets/notignored.yml.template`](../assets/notignored.yml.template) →
+`.github/workflows/notignored.yml`.
+
+- **Drop-in, with defaults.** No config file and nothing to install — the action
+  fetches its own binary. `diff-base` defaults to the PR's base branch and `paths`
+  to the whole repo, so a repo wanting the default artifact passes no inputs.
+  Consume the **floating major tag** (`uses: nickderobertis/notignored@v0`), which
+  follows every `0.x` release and moves only once that release's artifacts have
+  published; pin exactly only where a reproducible build beats picking up fixes.
+- **Three things it needs.** A `pull_request` trigger (the comment lives on the
+  PR, so a push-only workflow has nothing to comment on),
+  `permissions: pull-requests: write` (plus `contents: read`) so the comment can
+  be upserted, and `fetch-depth: 0` on the checkout so the base branch exists to
+  diff against. Each failure is silent — the run goes green having posted
+  nothing — and a shallow checkout is the usual culprit.
+- **It is deliberately NOT a required check.** Skip it on fork pull requests
+  (`if: github.event.pull_request.head.repo.full_name == github.repository`),
+  whose read-only token cannot upsert a comment — and a required context that
+  never reports would block those PRs forever. So keep it out of the required set
+  above: it is a *review artifact*, not a gate. Adding a suppression is
+  legitimate; hiding it is not, and the comment is what makes hiding it hard.
+  (Gate on the count instead — the action's `count` output — only if the repo has
+  a real reason to forbid new suppressions outright.)
+
 ## Repository settings: merge model & branch protection
 
 CI only proves the artifact if the platform actually *blocks* a merge until the
@@ -264,3 +302,9 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
 - [ ] **PR template.** A GitHub pull-request template exists
   (`.github/pull_request_template.md`) with **What** and **Why** sections
   (**Additional info** optional).
+- [ ] **Suppressions review comment.** `.github/workflows/notignored.yml` exists
+  (from `assets/notignored.yml.template`), runs
+  `uses: nickderobertis/notignored@v0` on `pull_request` with
+  `pull-requests: write` and a `fetch-depth: 0` checkout, and skips fork PRs via
+  the `head.repo.full_name == github.repository` guard. It is **not** in the
+  required-checks set — it is a review artifact, not a gate.

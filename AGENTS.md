@@ -132,6 +132,11 @@ skill through a real harness. They are slow and never in `just check`; run with
   **PR title** becomes the squash commit subject, so it must be a valid
   Conventional Commit — that is what `commitlint` lints and what
   semantic-release reads. Merged branches auto-delete.
+- **Every PR gets a suppressions comment, and it is not a gate.** The
+  `notignored` workflow posts the lint/type-check suppressions the PR adds, so a
+  high-level review sees the checks it switched off. Deliberately **not** a
+  required check: it skips fork PRs (read-only token, no comment), and a required
+  context that never reports would block them forever.
 - **PRs follow the template.** `.github/pull_request_template.md` asks for a
   terse **What** (the behavior change) and **Why** (its driver and impact), with
   an optional **Additional info** section — describe the change and its driver,

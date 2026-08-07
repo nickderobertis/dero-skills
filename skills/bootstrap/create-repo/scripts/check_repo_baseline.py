@@ -48,6 +48,12 @@ Checks:
     provisions `just` (a cloud image often ships the language runtime but not
     `just`, and has no version manager there to read `.tool-versions`) and is wired
     into the SessionStart hook. Optional, so silent when neither shipped nor wired.
+  * The suppressions review comment is wired: a workflow under
+    .github/workflows/ uses the `nickderobertis/notignored` action, triggered on
+    `pull_request`, with the `pull-requests: write` permission and the
+    `fetch-depth: 0` checkout it needs to work, and the fork-PR skip guard that
+    keeps it off the required-checks set. It posts every suppression a PR adds,
+    so a high-level review sees the checks the change switched off.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
     fallback-mode `oneharness.toml` selecting the harness the pinless config drives
@@ -218,6 +224,25 @@ PR_TEMPLATE_STEM = "pull_request_template"
 # is deliberately not required.
 PR_WHAT_RE = re.compile(r"\bwhat\b", re.IGNORECASE)
 PR_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
+
+# The suppressions review comment: the notignored action, however it is pinned
+# (the floating `@v0` major tag the skill templates, or an exact `@v0.1.11`).
+NOTIGNORED_ACTION_RE = re.compile(r"uses:\s*nickderobertis/notignored@")
+
+# What the action needs to do its job, and what keeps it off the required set:
+#   * a `pull_request` trigger — the comment only exists on a pull request, so a
+#     workflow wired to `push` alone would never post one;
+#   * `pull-requests: write` — the token upserts the sticky comment;
+#   * `fetch-depth: 0` — the scan diffs against the base branch, which a shallow
+#     checkout omits, so without it the comment reports nothing;
+#   * the fork guard — a fork's read-only token cannot upsert, so the job skips
+#     there rather than failing on something the contributor cannot fix.
+NOTIGNORED_COMMENT_PERM_RE = re.compile(r"pull-requests:\s*write")
+NOTIGNORED_FULL_HISTORY_RE = re.compile(r"fetch-depth:\s*0\b")
+NOTIGNORED_FORK_GUARD_RE = re.compile(
+    r"head\.repo\.full_name\s*==\s*github\.repository"
+    r"|github\.repository\s*==\s*[^\n]*head\.repo\.full_name"
+)
 
 
 @dataclass
@@ -652,17 +677,18 @@ def check_composition(repo: Path) -> list[Finding]:
     return [Finding("OK", "AGENTS.md records the reference composition")]
 
 
-def check_ci(repo: Path) -> list[Finding]:
+def workflow_files(repo: Path) -> list[Path]:
+    """Every GitHub Actions workflow file in the repo, sorted for stable output."""
     workflows = repo / ".github" / "workflows"
-    files = (
-        [
-            p
-            for p in workflows.iterdir()
-            if p.is_file() and p.suffix in (".yml", ".yaml")
-        ]
-        if workflows.is_dir()
-        else []
+    if not workflows.is_dir():
+        return []
+    return sorted(
+        p for p in workflows.iterdir() if p.is_file() and p.suffix in (".yml", ".yaml")
     )
+
+
+def check_ci(repo: Path) -> list[Finding]:
+    files = workflow_files(repo)
     if not files:
         return [
             Finding(
@@ -754,6 +780,130 @@ def check_pr_template(repo: Path) -> list[Finding]:
     return [Finding("OK", "GitHub PR template present with What/Why")]
 
 
+# The workflow's top-level trigger key. YAML 1.1 reads a bare ``on`` as the
+# boolean true, so GitHub accepts the quoted spellings and ``true:`` alongside it.
+WORKFLOW_ON_KEY_RE = re.compile(r"""^(?:on|["']on["']|true):(.*)$""")
+
+# ``pull_request`` as a whole word, so ``pull_request_target`` — a different, far
+# riskier trigger — is not mistaken for it.
+PULL_REQUEST_WORD_RE = re.compile(r"\bpull_request\b")
+
+
+def workflow_triggers_on_pull_request(text: str) -> bool:
+    """True when workflow ``text`` declares a ``pull_request`` trigger.
+
+    Scoped to the top-level ``on:`` block, so neither the fork guard's
+    ``github.event.pull_request.head...`` expression nor a step input that happens
+    to be spelled ``pull_request`` can pass for a trigger. Both YAML shapes count:
+    the inline ``on: [pull_request]`` / ``on: pull_request`` on the key's own line,
+    and the block form (the shape the asset ships), whose indented body may carry a
+    ``types:`` filter and sibling triggers. A light scan, not a YAML parse — the
+    same bar as the other checks here.
+    """
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        match = WORKFLOW_ON_KEY_RE.match(line)
+        if not match:
+            continue
+        inline = match.group(1).split("#", 1)[0]
+        if inline.strip():
+            return bool(PULL_REQUEST_WORD_RE.search(inline))
+        # Block form: the indented body, up to the next top-level key.
+        for nxt in lines[i + 1 :]:
+            if not nxt.strip():
+                continue
+            if not nxt.startswith((" ", "\t")):
+                break
+            entry = nxt.strip().lstrip("-").strip()
+            if entry == "pull_request" or entry.startswith("pull_request:"):
+                return True
+        return False
+    return False
+
+
+def check_notignored(repo: Path) -> list[Finding]:
+    """Require the suppressions review comment, wired so it actually reports.
+
+    The gate and the llmlint judge both decide pass/fail; neither shows a reviewer
+    the checks a change *switched off*. The notignored action posts one sticky
+    comment naming every suppression the pull request added, with its rules and
+    stated reason — the artifact that makes a high-level review of agent-written
+    code possible. Like the other invariants this goes past presence, because the
+    ways it silently reports nothing are all invisible in a green run: no
+    `pull_request` trigger (nothing to comment on), a shallow checkout (no base
+    branch to diff against), or a token that cannot comment. The action's other
+    inputs all have working defaults, so those three are the whole contract. The
+    fork-PR skip guard is checked too — it is what justifies leaving
+    the workflow *out* of the required-checks set, since a fork's read-only token
+    can never upsert the comment.
+    """
+    workflow = next(
+        (
+            p
+            for p in workflow_files(repo)
+            if NOTIGNORED_ACTION_RE.search(p.read_text(encoding="utf-8"))
+        ),
+        None,
+    )
+    if workflow is None:
+        return [
+            Finding(
+                "ERROR",
+                "no workflow runs the notignored suppressions review comment",
+                "add .github/workflows/notignored.yml from the create-repo skill's "
+                "assets/notignored.yml.template (uses: nickderobertis/notignored@v0 "
+                "on pull_request) — see references/ci.md",
+            )
+        ]
+
+    rel = workflow.relative_to(repo).as_posix()
+    text = workflow.read_text(encoding="utf-8")
+    problems: list[Finding] = []
+    if not workflow_triggers_on_pull_request(text):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{rel} has no `pull_request` trigger, so it never runs where the "
+                "comment would go",
+                "trigger the workflow on `pull_request` (the comment lives on the "
+                "PR; a push-only workflow has nothing to comment on)",
+            )
+        )
+    if not NOTIGNORED_COMMENT_PERM_RE.search(text):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{rel} does not grant `pull-requests: write`, so the comment "
+                "cannot be posted",
+                "add `permissions:` with `contents: read` and "
+                "`pull-requests: write` (least privilege — nothing else)",
+            )
+        )
+    if not NOTIGNORED_FULL_HISTORY_RE.search(text):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{rel} checks out shallowly, so there is no base branch to diff "
+                "against and the comment reports nothing",
+                "pass `fetch-depth: 0` to actions/checkout in that workflow",
+            )
+        )
+    if not NOTIGNORED_FORK_GUARD_RE.search(text):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{rel} has no fork-PR skip guard; a fork's read-only token cannot "
+                "upsert the comment",
+                "guard the job with `if: github.event.pull_request.head.repo."
+                "full_name == github.repository`, and keep the workflow out of the "
+                "required-checks set (it is a review artifact, not a gate)",
+            )
+        )
+    return problems or [
+        Finding("OK", f"{rel} posts the suppressions review comment on pull requests")
+    ]
+
+
 def find_llmlint_config(repo: Path) -> Path | None:
     for name in LLMLINT_CONFIG_NAMES:
         candidate = repo / name
@@ -816,15 +966,7 @@ def llmlint_config_has_plugins(text: str) -> bool:
 
 def ci_references_llmlint(repo: Path) -> bool:
     """True when any CI workflow file mentions llmlint (the blocking PR check)."""
-    workflows = repo / ".github" / "workflows"
-    if not workflows.is_dir():
-        return False
-    return any(
-        p.is_file()
-        and p.suffix in (".yml", ".yaml")
-        and "llmlint" in p.read_text(encoding="utf-8")
-        for p in workflows.iterdir()
-    )
+    return any("llmlint" in p.read_text(encoding="utf-8") for p in workflow_files(repo))
 
 
 def find_setup_llmlint_script(repo: Path) -> Path | None:
@@ -1428,6 +1570,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_coverage(repo)
     findings += check_ci(repo)
     findings += check_pr_template(repo)
+    findings += check_notignored(repo)
     findings += check_session_setup(repo)
     findings += check_llmlint(repo)
     return findings
