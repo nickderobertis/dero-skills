@@ -27,11 +27,14 @@ What is proved here:
 from __future__ import annotations
 
 # llmlint: ignore-file[suppressions_justified] every suppression directive in this file is
-# test data, not a suppression of this repo's own checks: the planted `# noqa`/`# ruff: noqa`
-# are the *unjustified* directives the guard exists to catch, and their missing reason is the
-# assertion (`reason: <none given>`). Ruff's noqa syntax carries no reason field, so a
-# reason-less fixture is the only way to exercise that path. File-scoped because it is a
-# property of the whole fixture file, including planted directives added later.
+# test data, not a suppression of this repo's own checks: the planted line-scoped and
+# file-scoped ruff exemptions are the *unjustified* directives the guard exists to catch,
+# and their missing reason is the assertion (`reason: <none given>`). Ruff's noqa syntax
+# carries no reason field, so a reason-less fixture is the only way to exercise that path.
+# File-scoped because it is a property of the whole fixture file, including planted
+# directives added later. Those exemptions are named here without their leading hash on
+# purpose — ruff reads its own directives out of any comment, so spelling one in this
+# justification would either warn as malformed or, spelled well, blanket-silence the file.
 
 import shutil
 import subprocess
