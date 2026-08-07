@@ -650,6 +650,10 @@ def test_every_error_carries_a_suggested_fix(tmp_path):
     assert all(f.fix for f in errors)
 
 
+# llmlint: ignore[comments_earn_their_place] this module groups its tests behind
+# section banners (`# --- helpers ---`, `# --- audit ---`, `# --- llmlint (LLM-judge
+# tier) ---`); dropping this one would leave the notignored tests reading as part of
+# the llmlint section below it, so it names a boundary rather than decorating one.
 # --- notignored (the suppressions review comment) ---------------------------
 
 
