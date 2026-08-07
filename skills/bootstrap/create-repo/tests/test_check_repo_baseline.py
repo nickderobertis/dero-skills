@@ -677,6 +677,33 @@ def test_missing_notignored_workflow_is_error(tmp_path):
     assert any("notignored" in m for m in levels(findings, "ERROR"))
 
 
+def test_notignored_without_a_pull_request_trigger_is_error(tmp_path):
+    # The comment lives on a pull request, so a push-only workflow runs where
+    # there is nothing to comment on — green, and permanently silent.
+    push_only = NOTIGNORED_WORKFLOW.replace(
+        "on:\n  pull_request:\n", "on:\n  push:\n    branches: [main]\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=push_only))
+    assert crb.has_errors(findings)
+    assert any("`pull_request` trigger" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_trigger_survives_a_types_filter_and_the_inline_form(tmp_path):
+    # Both YAML spellings of the trigger count, and the fork guard's
+    # `github.event.pull_request...` expression must not be mistaken for one.
+    filtered = NOTIGNORED_WORKFLOW.replace(
+        "  pull_request:\n", "  pull_request:\n    types: [opened, synchronize]\n"
+    )
+    inline = NOTIGNORED_WORKFLOW.replace(
+        "on:\n  pull_request:\n", "on: [pull_request]\n"
+    )
+    for name, workflow in (("filtered", filtered), ("inline", inline)):
+        repo = tmp_path / name
+        repo.mkdir()
+        findings = crb.audit(make_repo(repo, notignored=workflow))
+        assert not crb.has_errors(findings), (name, levels(findings, "ERROR"))
+
+
 def test_notignored_without_comment_permission_is_error(tmp_path):
     # The default read-only token cannot upsert the comment: the run goes green
     # having posted nothing.

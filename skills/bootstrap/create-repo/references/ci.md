@@ -132,10 +132,12 @@ from [`assets/notignored.yml.template`](../assets/notignored.yml.template) →
   Consume the **floating major tag** (`uses: nickderobertis/notignored@v0`), which
   follows every `0.x` release and moves only once that release's artifacts have
   published; pin exactly only where a reproducible build beats picking up fixes.
-- **Two things it needs.** `permissions: pull-requests: write` (plus
-  `contents: read`) so the comment can be upserted, and `fetch-depth: 0` on the
-  checkout so the base branch exists to diff against. A shallow checkout is the
-  usual reason a run reports nothing.
+- **Three things it needs.** A `pull_request` trigger (the comment lives on the
+  PR, so a push-only workflow has nothing to comment on),
+  `permissions: pull-requests: write` (plus `contents: read`) so the comment can
+  be upserted, and `fetch-depth: 0` on the checkout so the base branch exists to
+  diff against. Each failure is silent — the run goes green having posted
+  nothing — and a shallow checkout is the usual culprit.
 - **It is deliberately NOT a required check.** Skip it on fork pull requests
   (`if: github.event.pull_request.head.repo.full_name == github.repository`),
   whose read-only token cannot upsert a comment — and a required context that

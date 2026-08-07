@@ -49,11 +49,11 @@ Checks:
     `just`, and has no version manager there to read `.tool-versions`) and is wired
     into the SessionStart hook. Optional, so silent when neither shipped nor wired.
   * The suppressions review comment is wired: a workflow under
-    .github/workflows/ uses the `nickderobertis/notignored` action on pull
-    requests, with the `pull-requests: write` permission and a `fetch-depth: 0`
-    checkout it needs to work, and the fork-PR skip guard that keeps it off the
-    required-checks set. It posts every suppression a PR adds, so a high-level
-    review sees the checks the change switched off.
+    .github/workflows/ uses the `nickderobertis/notignored` action, triggered on
+    `pull_request`, with the `pull-requests: write` permission and the
+    `fetch-depth: 0` checkout it needs to work, and the fork-PR skip guard that
+    keeps it off the required-checks set. It posts every suppression a PR adds,
+    so a high-level review sees the checks the change switched off.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
     fallback-mode `oneharness.toml` selecting the harness the pinless config drives
@@ -230,11 +230,21 @@ PR_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
 NOTIGNORED_ACTION_RE = re.compile(r"uses:\s*nickderobertis/notignored@")
 
 # What the action needs to do its job, and what keeps it off the required set:
+#   * a `pull_request` trigger — the comment only exists on a pull request, so a
+#     workflow wired to `push` alone would never post one;
 #   * `pull-requests: write` — the token upserts the sticky comment;
 #   * `fetch-depth: 0` — the scan diffs against the base branch, which a shallow
 #     checkout omits, so without it the comment reports nothing;
 #   * the fork guard — a fork's read-only token cannot upsert, so the job skips
 #     there rather than failing on something the contributor cannot fix.
+# The trigger, in either YAML spelling: a `pull_request:` key under `on:` (the
+# block form the asset ships, with or without a `types:` filter) or the inline
+# `on: [pull_request]` list. Anchored to the start of a line so the fork guard's
+# `github.event.pull_request.head...` expression cannot masquerade as a trigger.
+NOTIGNORED_PR_TRIGGER_RE = re.compile(
+    r"^\s*pull_request:\s*(?:#.*)?$|^\s*on:\s*\[[^\]]*\bpull_request\b",
+    re.MULTILINE,
+)
 NOTIGNORED_COMMENT_PERM_RE = re.compile(r"pull-requests:\s*write")
 NOTIGNORED_FULL_HISTORY_RE = re.compile(r"fetch-depth:\s*0\b")
 NOTIGNORED_FORK_GUARD_RE = re.compile(
@@ -786,9 +796,11 @@ def check_notignored(repo: Path) -> list[Finding]:
     comment naming every suppression the pull request added, with its rules and
     stated reason — the artifact that makes a high-level review of agent-written
     code possible. Like the other invariants this goes past presence, because the
-    two ways it silently reports nothing are both invisible in a green run: a
-    shallow checkout (no base branch to diff against) and a token that cannot
-    comment. The fork-PR skip guard is checked too — it is what justifies leaving
+    ways it silently reports nothing are all invisible in a green run: no
+    `pull_request` trigger (nothing to comment on), a shallow checkout (no base
+    branch to diff against), or a token that cannot comment. The action's other
+    inputs all have working defaults, so those three are the whole contract. The
+    fork-PR skip guard is checked too — it is what justifies leaving
     the workflow *out* of the required-checks set, since a fork's read-only token
     can never upsert the comment.
     """
@@ -814,6 +826,16 @@ def check_notignored(repo: Path) -> list[Finding]:
     rel = workflow.relative_to(repo).as_posix()
     text = workflow.read_text(encoding="utf-8")
     problems: list[Finding] = []
+    if not NOTIGNORED_PR_TRIGGER_RE.search(text):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{rel} has no `pull_request` trigger, so it never runs where the "
+                "comment would go",
+                "trigger the workflow on `pull_request` (the comment lives on the "
+                "PR; a push-only workflow has nothing to comment on)",
+            )
+        )
     if not NOTIGNORED_COMMENT_PERM_RE.search(text):
         problems.append(
             Finding(
