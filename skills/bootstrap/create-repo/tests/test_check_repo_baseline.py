@@ -650,10 +650,7 @@ def test_every_error_carries_a_suggested_fix(tmp_path):
     assert all(f.fix for f in errors)
 
 
-# llmlint: ignore[comments_earn_their_place] this module groups its tests behind
-# section banners (`# --- helpers ---`, `# --- audit ---`, `# --- llmlint (LLM-judge
-# tier) ---`); dropping this one would leave the notignored tests reading as part of
-# the llmlint section below it, so it names a boundary rather than decorating one.
+# llmlint: ignore[comments_earn_their_place] this module groups its tests behind section banners (`# --- helpers ---`, `# --- audit ---`, `# --- llmlint (LLM-judge tier) ---`); without this one the notignored tests read as part of the llmlint section below, so it names a boundary rather than decorating one.
 # --- notignored (the suppressions review comment) ---------------------------
 
 
@@ -707,6 +704,9 @@ def test_notignored_trigger_survives_a_types_filter_and_the_inline_form(tmp_path
             "on:\n  pull_request:\n", "on: pull_request\n"
         ),
         "quoted-key": NOTIGNORED_WORKFLOW.replace("on:\n", '"on":\n'),
+        # YAML 1.1 reads a bare `on` as the boolean true, so a workflow written
+        # (or round-tripped by a formatter) with `true:` is still valid to GitHub.
+        "boolean-key": NOTIGNORED_WORKFLOW.replace("on:\n", "true:\n"),
         "sibling-triggers": NOTIGNORED_WORKFLOW.replace(
             "on:\n  pull_request:\n",
             "on:\n  push:\n    branches: [main]\n  pull_request:\n",
@@ -776,6 +776,17 @@ def test_notignored_without_fork_guard_is_error(tmp_path):
     findings = crb.audit(make_repo(tmp_path, notignored=unguarded))
     assert crb.has_errors(findings)
     assert any("fork-PR skip guard" in m for m in levels(findings, "ERROR"))
+
+
+def test_notignored_accepts_the_fork_guard_written_the_other_way_round(tmp_path):
+    # The comparison reads equally well from either side, and a repo that wrote it
+    # `github.repository == ...` has the same guard, not a missing one.
+    reversed_guard = NOTIGNORED_WORKFLOW.replace(
+        "    if: github.event.pull_request.head.repo.full_name == github.repository\n",
+        "    if: github.repository == github.event.pull_request.head.repo.full_name\n",
+    )
+    findings = crb.audit(make_repo(tmp_path, notignored=reversed_guard))
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
 
 
 def test_notignored_accepts_an_exact_version_pin(tmp_path):
