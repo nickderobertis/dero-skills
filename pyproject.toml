@@ -10,7 +10,10 @@ dependencies = []
 
 [dependency-groups]
 dev = [
-    "notignored-sdk>=0.1.5,<0.2",
+    # Pinned exactly: the report envelope is a versioned wire contract and the SDK
+    # depends on the matching `notignored-cli` build, so the guard in
+    # skills/bootstrap/create-repo/tests/ is verified against one known contract.
+    "notignored-sdk==0.1.5",
     "pytest>=8.0",
     "ruff>=0.8",
     "skilltest-pytest>=0.8.0",
