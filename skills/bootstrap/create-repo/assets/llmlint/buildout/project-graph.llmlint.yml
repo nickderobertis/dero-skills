@@ -22,8 +22,7 @@ rules:
 
   - name: project_boundaries_enforced
     description: |
-      true when projects declare tags and an enforced allowed-dependency rule, and
-      target names are uniform across projects.
+      true when projects declare tags and an enforced allowed-dependency rule.
     files:
       include: ["nx.json", "**/project.json", "**/.eslintrc*", "eslint.config.*"]
 

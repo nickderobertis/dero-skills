@@ -448,7 +448,7 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
             "#",
             "# TEMPORARY buildout config — run ONCE during repo creation, then DELETE.",
             "# Do NOT commit it. It checks the repo was *set up* right (CI/release/",
-            "# monorepo wiring); the ongoing rules live in the committed llmlint.yml.",
+            "# project-graph wiring); the ongoing rules live in the committed llmlint.yml.",
             "#   llmlint -c llmlint.buildout.yml",
         ]
     else:

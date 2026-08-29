@@ -1,7 +1,7 @@
 ---
 name: create-repo
 description: Use when creating a new repository or bootstrapping an existing project's tooling, tests, AGENTS.md, and CI so the setup fits the actual product and enforces strict, deterministic quality gates.
-compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo.
+compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo. The repo it stands up needs Node and bun for its mandatory project graph, whatever it is written in.
 ---
 
 # Create repo
@@ -193,9 +193,8 @@ a suggested fix.
      Bash/plugin, skills repo, etc.).
    - Adapt tooling, tests, layout, docs, and CI to that artifact; don't blindly
      apply a generic template.
-   - One layout decision is fixed before the shape is: the repo's projects are
-     drawn as test/target boundaries, so what a change can reach is decided up
-     front rather than falling out of how the artifact happens to be packaged.
+   - The layout is not a per-repo choice: the project graph is fixed before the
+     shape is.
    - Explicitly state what guidance was excluded and why — but only optional
      tooling/layout qualifies. The non-negotiable invariants (strict gate,
      realistic un-mocked e2e of every real journey, CI proving the artifact) are
@@ -315,9 +314,8 @@ a suggested fix.
       When a CLI ships through several install surfaces, keep them all on one
       asset-naming contract (see `references/shapes/cli.md`).
 12. **Avoid unnecessary template baggage.**
-    - The Nx project graph (Principle 1) is outside this principle: it is a
-      mandatory invariant, so the Node/bun toolchain it needs is never the
-      baggage to trim, even in a repo with no other JavaScript.
+    - The project graph (Principle 1) is outside this principle: its toolchain
+      is a mandatory invariant, never baggage to trim.
     - Exclude tools and layouts that don't fit (asdf, direnv, `src` layout,
       heavyweight pre-commit frameworks, etc.) unless clearly justified. A *fast*
       pre-commit/pre-push hook that just calls the gate (lefthook, or husky where

@@ -13,8 +13,7 @@ rules:
   - name: project_graph_is_present
     description: |
       true when the repo declares an Nx project graph — an `nx.json` at the root
-      plus project definitions — and the root command surface runs its targets
-      through it.
+      plus project definitions covering its work.
     files:
       include:
         - "nx.json"
