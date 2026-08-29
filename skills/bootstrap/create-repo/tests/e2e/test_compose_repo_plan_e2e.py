@@ -139,8 +139,6 @@ def test_releasing_flag_pulls_reference():
 
 
 def test_project_graph_composes_for_a_single_deliverable_stack():
-    # The Nx project graph is mandatory in every repo, so it composes with no flag
-    # to pass — right behind base.md — and its verification items reach the plan.
     doc = run("--shape", "library", "--language", "python").stdout
     composed = next(line for line in doc.splitlines() if "References composed" in line)
     assert "base.md, project-graph.md," in composed
@@ -166,8 +164,6 @@ def test_project_graph_composes_for_a_single_deliverable_stack():
 
 
 def test_monorepo_flag_is_gone():
-    # The project graph is unconditional, so there is no flag to gate it — passing
-    # the removed one fails with the concrete fix, and it appears in no help text.
     result = run("--shape", "library", "--language", "python", "--monorepo")
     assert result.returncode == 2
     assert "unrecognized arguments: --monorepo" in result.stderr
@@ -353,9 +349,6 @@ def test_oneharness_config_path_override(tmp_path):
 
 
 def test_llmlint_ongoing_project_graph_fragment_is_unconditional(tmp_path):
-    # `instruction_layer_localized` is an ONGOING rule: the project-graph fragment
-    # lands in the committed llmlint.yml (PR-checked) for every repo, including a
-    # single-deliverable one, with no flag to select it.
     out = tmp_path / "llmlint.yml"
     run("--shape", "library", "--language", "python", "--llmlint-config", str(out))
     cfg = out.read_text(encoding="utf-8")

@@ -75,8 +75,7 @@ target ordering. **The language's own workspace primitive owns dependency
 resolution** — a uv workspace, a Cargo workspace, bun/pnpm workspaces — and
 keeps **one lockfile per ecosystem**, not one per project. Declare a project to
 both: to Nx so its targets can be run and skipped, to the language workspace so
-its dependencies resolve against the same lock. The per-language mechanics
-belong to the language reference.
+its dependencies resolve against the same lock.
 
 ## Running the graph
 
@@ -96,9 +95,8 @@ belong to the language reference.
   wall-clock.
 - **Cache target outputs.** Enable computation caching so unchanged inputs replay
   a cached result instead of recomputing. Share a remote cache between CI and
-  developers so a green target built once is never rebuilt elsewhere. Mirror
-  `ci.md`: cache for speed, never for correctness — a cache must never hide a
-  broken clean build.
+  developers so a green target built once is never rebuilt elsewhere. Cache for
+  speed, never for correctness — a cache must never hide a broken clean build.
 - **Declare the task graph.** Express cross-project order with task-pipeline
   dependencies (`dependsOn` — e.g. a project's `build` depends on its
   dependencies' `build`) so Nx parallelizes safely and correctly instead of you
