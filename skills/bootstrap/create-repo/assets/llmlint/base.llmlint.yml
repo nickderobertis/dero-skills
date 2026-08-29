@@ -256,7 +256,6 @@ rules:
         - "**/*.sh"
         - "**/*.tf"
     relevance: the change adds the file rather than editing one that already exists
-    require_line_attribution: true
 
   - name: work_goes_through_command_surface
     description: |

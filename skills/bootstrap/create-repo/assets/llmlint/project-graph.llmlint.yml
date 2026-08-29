@@ -43,4 +43,3 @@ rules:
     files:
       include: ["nx.json", "**/project.json"]
     relevance: the target files declare a project that did not exist before
-    require_line_attribution: true

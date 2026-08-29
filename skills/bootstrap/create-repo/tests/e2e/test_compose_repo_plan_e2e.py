@@ -167,11 +167,19 @@ def test_project_graph_composes_for_a_single_deliverable_stack():
 
 def test_monorepo_flag_is_gone():
     # The project graph is unconditional, so there is no flag to gate it — passing
-    # the removed one is an unknown-argument error, and it appears in no help text.
+    # the removed one fails with the concrete fix, and it appears in no help text.
     result = run("--shape", "library", "--language", "python", "--monorepo")
     assert result.returncode == 2
     assert "unrecognized arguments: --monorepo" in result.stderr
+    assert "fix: drop it" in result.stderr
     assert "--monorepo" not in run("--list").stdout
+
+
+def test_other_unknown_flags_still_fail_without_the_monorepo_hint():
+    result = run("--shape", "library", "--language", "python", "--frobnicate")
+    assert result.returncode == 2
+    assert "unrecognized arguments: --frobnicate" in result.stderr
+    assert "fix: drop it" not in result.stderr
 
 
 def test_releasing_omitted_by_default():

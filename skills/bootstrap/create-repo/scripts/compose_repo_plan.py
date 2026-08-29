@@ -574,7 +574,18 @@ def main(argv: list[str]) -> int:
     intersections = discover(refs_dir, "intersections")
 
     parser = build_parser(shapes, languages, intersections)
-    args = parser.parse_args(argv)
+    # `--monorepo` was removed rather than renamed, so an invocation carrying it
+    # fails. Parse leniently to name the concrete fix instead of leaving argparse
+    # to report only that the flag is unknown.
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        hint = ""
+        if "--monorepo" in unknown:
+            hint = (
+                "\n      fix: drop it — project-graph.md composes into every plan "
+                "now, so there is no flag to select it."
+            )
+        parser.error("unrecognized arguments: " + " ".join(unknown) + hint)
 
     if args.list:
         print("Available composition flags (from references/):")

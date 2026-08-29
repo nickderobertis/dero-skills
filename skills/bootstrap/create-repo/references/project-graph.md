@@ -119,10 +119,12 @@ belong to the language reference.
   each project running its own toolchain, each ecosystem keeping its one
   lockfile, and Nx caching across them uniformly.
 
-**CI.** PRs run `nx affected` against the merge base — derive the base/head SHAs
-explicitly (e.g. `nx-set-shas`) so detection is deterministic — for fast, scoped
-feedback. A full `nx run-many` on the main branch (and/or nightly) catches
-anything affected-detection or a stale cache could miss. Bundled skill *scripts*
+**CI.** PRs run the repo's gate recipe, which delegates to `nx affected` against
+the merge base — derive the base/head SHAs explicitly (e.g. `nx-set-shas`) so
+detection is deterministic — for fast, scoped feedback. The same recipe run as a
+full sweep on the main branch (and/or nightly) catches anything affected
+detection or a stale cache could miss. CI calls the command surface, never the
+orchestrator directly, so local and CI runs cannot drift. Bundled skill *scripts*
 still stay orchestrator-independent (PEP 723 / Node built-ins): Nx orchestrates
 targets, it is never a runtime dependency of the scripts themselves.
 
