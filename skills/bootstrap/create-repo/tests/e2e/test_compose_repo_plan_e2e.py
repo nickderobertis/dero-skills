@@ -12,9 +12,13 @@ The in-process unit and structural layers live beside this file's sibling,
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
+
+import pytest
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
 SCRIPT = SKILL_DIR / "scripts" / "compose_repo_plan.py"
@@ -542,39 +546,74 @@ def test_plan_without_releasing_keeps_ci_tiers_and_drops_the_release_half(tmp_pa
 
 # The emitted config is a thin wrapper: every rule reaches the repo through a
 # pinned plugin URL, so "what the config carries" is the union of the rules in
-# the fragments it wires. Resolve each URL the way llmlint does — the pin names
-# the raw-hosted copy of `assets/llmlint/<relpath>` — but off the filesystem,
-# since the gate is offline and harness-free by design. A fragment that stops
-# being wired, or a rule that stops being defined, both fail here.
+# the fragments it wires. Let llmlint answer that — `llmlint config` reports the
+# effective merged rule set, the same resolution a consumer's run performs — so
+# these tests never re-implement plugin resolution. The one thing they must
+# substitute is the fetch: the pins name the raw-hosted copy of
+# `assets/llmlint/<relpath>`, and the gate is offline and harness-free by
+# design, so each pin is repointed at the very in-tree file that gets published
+# there. A fragment that stops being wired, or a rule that stops being defined,
+# both fail here.
 
-_PLUGIN_URL_RE = re.compile(r'^\s*-\s+"(\S+)"\s*$')
-_RULE_NAME_RE = re.compile(r"^\s*-\s+name:\s*(\S+)\s*$")
-_FRAGMENT_ROOT = "/assets/llmlint/"
+LLMLINT = shutil.which("llmlint")
+requires_llmlint = pytest.mark.skipif(
+    LLMLINT is None,
+    reason="needs the `llmlint` binary that `just bootstrap` installs",
+)
+
+_PIN_PREFIX = (
+    "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/"
+    "skills/bootstrap/create-repo/assets/llmlint/"
+)
+_PINNED_FRAGMENT_RE = re.compile(re.escape(_PIN_PREFIX) + r"(\S+?)@\d+")
 
 
-def wired_rule_names(config_path: Path) -> set[str]:
+def _localize_pins(config_path: Path, tmp_path: Path) -> Path:
+    """Copy an emitted config with its fragment pins repointed in-tree.
+
+    The relative path comes out of the emitted URL, so validate it before it
+    becomes a filesystem path: only a plain path under the asset root is a
+    fragment this skill publishes, and anything else is a composer bug worth
+    failing on rather than a path to follow.
+    """
+    asset_root = SKILL_DIR / "assets" / "llmlint"
+
+    def repoint(match: re.Match[str]) -> str:
+        relpath = match.group(1)
+        segments = relpath.split("/")
+        assert not relpath.startswith("/"), f"pin is not relative: {relpath}"
+        assert ".." not in segments, f"pin escapes the asset root: {relpath}"
+        assert relpath.endswith(".yml"), f"pin is not a fragment: {relpath}"
+        fragment = asset_root.joinpath(*segments)
+        assert fragment.is_file(), f"config wires a missing fragment: {relpath}"
+        return str(fragment)
+
+    localized = tmp_path / f"{config_path.stem}.local.yml"
+    localized.write_text(
+        _PINNED_FRAGMENT_RE.sub(repoint, config_path.read_text(encoding="utf-8")),
+        encoding="utf-8",
+    )
+    return localized
+
+
+def wired_rule_names(config_path: Path, tmp_path: Path) -> set[str]:
     """Every judge rule an emitted llmlint config actually pulls in.
 
-    Reads the plugin URLs out of the emitted file and follows each to the
-    fragment it pins, so a rule counts as carried only when the config a
-    consumer runs would reach it.
+    Asks llmlint to merge the config, so a rule counts as carried only when the
+    config a consumer runs would reach it.
     """
-    names: set[str] = set()
-    for line in config_path.read_text(encoding="utf-8").splitlines():
-        match = _PLUGIN_URL_RE.match(line)
-        if match is None or _FRAGMENT_ROOT not in match.group(1):
-            continue  # the config-lint plugin ships with llmlint, not this skill
-        url = match.group(1).split("@")[0]
-        frag_rel = url.split(_FRAGMENT_ROOT, 1)[1]
-        fragment = SKILL_DIR / "assets" / "llmlint" / frag_rel
-        assert fragment.is_file(), f"config wires a missing fragment: {frag_rel}"
-        for frag_line in fragment.read_text(encoding="utf-8").splitlines():
-            rule = _RULE_NAME_RE.match(frag_line)
-            if rule is not None:
-                names.add(rule.group(1))
-    return names
+    merged = subprocess.run(
+        [LLMLINT, "config", "-c", str(_localize_pins(config_path, tmp_path))],
+        capture_output=True,
+        text=True,
+    )
+    assert merged.returncode == 0, (
+        f"llmlint could not merge the emitted config:\n{merged.stderr}"
+    )
+    return {rule["name"] for rule in json.loads(merged.stdout)["config"]["rules"]}
 
 
+@requires_llmlint
 def test_composed_configs_carry_the_staged_gate_rules(tmp_path):
     # The judge half of the staged model: the buildout tier checks the wiring
     # once at creation, the ongoing tier keeps later PRs from re-introducing a
@@ -594,13 +633,13 @@ def test_composed_configs_carry_the_staged_gate_rules(tmp_path):
     )
     assert result.returncode == 0
 
-    buildout_rules = wired_rule_names(buildout)
+    buildout_rules = wired_rule_names(buildout, tmp_path)
     assert "pr_gate_runs_the_affected_tier" in buildout_rules
     assert "broader_sweep_runs_at_exactly_one_lifecycle_point" in buildout_rules
     assert "required_checks_name_only_pr_context_jobs" in buildout_rules
     assert "broader_sweep_placement_matches_the_release_driver" in buildout_rules
 
-    ongoing_rules = wired_rule_names(ongoing)
+    ongoing_rules = wired_rule_names(ongoing, tmp_path)
     assert "external_service_suite_stays_out_of_the_affected_tier" in ongoing_rules
     assert "no_second_broader_sweep_over_an_already_gated_commit" in ongoing_rules
     assert "release_does_not_regate_an_already_swept_commit" in ongoing_rules
@@ -611,6 +650,7 @@ def test_composed_configs_carry_the_staged_gate_rules(tmp_path):
     assert "no_second_broader_sweep_over_an_already_gated_commit" not in buildout_rules
 
 
+@requires_llmlint
 def test_composed_configs_without_releasing_drop_the_release_sweep_rules(tmp_path):
     # The release-tied rules ride on the releasing fragments, so a repo that
     # ships no versioned artifact must not be judged against them — while the
@@ -629,10 +669,10 @@ def test_composed_configs_without_releasing_drop_the_release_sweep_rules(tmp_pat
     )
     assert result.returncode == 0
 
-    buildout_rules = wired_rule_names(buildout)
+    buildout_rules = wired_rule_names(buildout, tmp_path)
     assert "pr_gate_runs_the_affected_tier" in buildout_rules
     assert "broader_sweep_placement_matches_the_release_driver" not in buildout_rules
 
-    ongoing_rules = wired_rule_names(ongoing)
+    ongoing_rules = wired_rule_names(ongoing, tmp_path)
     assert "no_second_broader_sweep_over_an_already_gated_commit" in ongoing_rules
     assert "release_does_not_regate_an_already_swept_commit" not in ongoing_rules
