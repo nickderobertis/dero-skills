@@ -150,10 +150,11 @@ targets, it is never a runtime dependency of the scripts themselves.
   are present and the root command surface runs targets through them — including
   in a repo with a single deliverable, where the graph exists for the target/test
   split rather than for packaging.
-- [ ] **Split by test tier and by cost.** The fast unit tier, the integration
-  tier, and the e2e tier are separate projects, and every slow or
+- [ ] **Split by test tier and by cost.** The fast unit tier lives inside the
+  project whose code it covers; the integration and e2e tiers are projects of
+  their own depending on what they test, and every slow or
   external-service-touching suite is a project of its own rather than riding
-  along in the project it tests.
+  along inside a broadly-depended-on project.
 - [ ] **Expensive work sits behind an unreachable edge.** Each expensive project
   depends only on what it actually tests (no edge back to the core), so `nx
   affected` from an unrelated change does not reach it, and a boundary tag
