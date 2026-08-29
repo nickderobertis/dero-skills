@@ -167,7 +167,9 @@ def test_monorepo_flag_is_gone():
     result = run("--shape", "library", "--language", "python", "--monorepo")
     assert result.returncode == 2
     assert "unrecognized arguments: --monorepo" in result.stderr
-    assert "fix: drop it" in result.stderr
+    assert "fix: drop --monorepo" in result.stderr
+    # The removed flag alone needs no catalog lookup.
+    assert "fix: run --list" not in result.stderr
     assert "--monorepo" not in run("--list").stdout
 
 
@@ -176,7 +178,19 @@ def test_other_unknown_flags_still_fail_without_the_monorepo_hint():
     assert result.returncode == 2
     assert "unrecognized arguments: --frobnicate" in result.stderr
     assert "fix: run --list" in result.stderr
-    assert "fix: drop it" not in result.stderr
+    assert "fix: drop --monorepo" not in result.stderr
+
+
+def test_monorepo_mixed_with_another_unknown_flag_reports_both_fixes():
+    result = run(
+        "--shape", "library", "--language", "python", "--monorepo", "--frobnicate"
+    )
+    assert result.returncode == 2
+    # Both bad arguments are named ...
+    assert "unrecognized arguments: --monorepo --frobnicate" in result.stderr
+    # ... and each gets its own next action; neither displaces the other.
+    assert "fix: drop --monorepo" in result.stderr
+    assert "fix: run --list" in result.stderr
 
 
 def test_releasing_omitted_by_default():

@@ -579,13 +579,22 @@ def main(argv: list[str]) -> int:
     # to report only that the flag is unknown.
     args, unknown = parser.parse_known_args(argv)
     if unknown:
-        hint = "\n      fix: run --list to see the flags this reference set supports."
+        # Every unrecognized argument gets a next action: the removed flag its
+        # own concrete fix, anything else the generic one. A mixed invocation
+        # (`--monorepo --bogus`) gets both, so neither half goes unreported.
+        fixes: list[str] = []
         if "--monorepo" in unknown:
-            hint = (
-                "\n      fix: drop it — project-graph.md composes into every plan "
+            fixes.append(
+                "drop --monorepo — project-graph.md composes into every plan "
                 "now, so there is no flag to select it."
             )
-        parser.error("unrecognized arguments: " + " ".join(unknown) + hint)
+        if any(arg != "--monorepo" for arg in unknown):
+            fixes.append("run --list to see the flags this reference set supports.")
+        parser.error(
+            "unrecognized arguments: "
+            + " ".join(unknown)
+            + "".join(f"\n      fix: {fix}" for fix in fixes)
+        )
 
     if args.list:
         print("Available composition flags (from references/):")
