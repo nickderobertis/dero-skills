@@ -81,8 +81,8 @@ looping over projects, and each project declares what its own targets do.
   change (an upgrade, a shared config edit) reaches further than the affected set
   suggests.
 - `just test` / `just lint` / `just format` — individual gate steps.
-- `just test-e2e` — the e2e projects on their own (the gate already reaches them
-  through the graph).
+- `just test-e2e` — the e2e tier on its own, for iterating; `just check` runs it
+  last, at the same tier, so e2e is gated on every change.
 - `just upgrade` — upgrade dependencies, then re-run the gate as a full sweep.
 - `just lint-llm` / `just lint-llm-diff` / `just lint-llm-validate` — the
   LLM-judge tier (llmlint), separate from `check` and non-deterministic; config in

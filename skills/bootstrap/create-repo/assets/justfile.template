@@ -33,11 +33,12 @@ bootstrap:
 # releases on merge; release-prep when it batches releases). The tier is a flag
 # on this one command, never a second gate, so local and CI cannot drift.
 # Formatting and type checking are gated here through each project's own `lint`
-# and `typecheck` targets, and e2e through the `test` target of the e2e projects
-# — e2e is part of the gate, not an opt-in extra.
+# and `typecheck` targets; `test-e2e` runs last, at the same tier, so e2e is part
+# of the gate rather than an opt-in extra.
 check tier="affected":
     @[ "{{tier}}" = "affected" ] || [ "{{tier}}" = "all" ] || { echo "unknown tier '{{tier}}' — use 'affected' (the default) or 'all'"; exit 2; }
     if [ "{{tier}}" = "all" ]; then bunx nx run-many -t lint typecheck test build; else bunx nx affected -t lint typecheck test build --base="{{base}}"; fi
+    @just test-e2e {{tier}}
 
 # The test tier on its own, for iterating: the same `test` target the gate fans
 # out over, scoped to the projects this change can reach. Each project's `test`
@@ -47,15 +48,15 @@ test:
     bunx nx affected -t test --base="{{base}}"
 
 # Run the end-to-end suites, which exercise the built artifact the way users run
-# it. They are projects of their own that depend on what they test, so the gate
-# already reaches them through the graph; this narrows to that tier on demand.
-# Cover the primary happy path AND at least one meaningful failure/recovery path
-# — not just a smoke test.
-# TODO: match however you select the e2e projects (a `type:e2e` tag as below, a
-# name glob, ...). If e2e genuinely does not apply (e.g. a pure library), delete
-# this recipe and document why in AGENTS.md.
-test-e2e:
-    bunx nx run-many -t test -p "tag:type:e2e"
+# it. `check` runs this last, so e2e is gated on every change; run it alone while
+# you iterate on that tier. Each e2e suite is a project of its own declaring an
+# `e2e` target and depending only on what it tests, so the affected tier reaches
+# it exactly when a change can (references/project-graph.md). Cover the primary
+# happy path AND at least one meaningful failure/recovery path — not a smoke test.
+# If e2e genuinely does not apply (e.g. a pure library), delete this recipe, drop
+# the call from `check`, and document why in AGENTS.md.
+test-e2e tier="affected":
+    if [ "{{tier}}" = "all" ]; then bunx nx run-many -t e2e; else bunx nx affected -t e2e --base="{{base}}"; fi
 
 # Lint (and type check) the projects this change can reach; fail on findings.
 lint:

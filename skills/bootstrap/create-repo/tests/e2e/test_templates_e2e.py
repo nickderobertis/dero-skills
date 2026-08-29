@@ -66,17 +66,31 @@ def invocations(result: subprocess.CompletedProcess[str]) -> list[str]:
 
 
 def test_check_runs_the_affected_tier_by_default(command_surface):
+    # The gate's targets, then the e2e tier — both scoped to what this change can
+    # reach, so e2e is gated on every change without a second tier of its own.
     result = run_just(command_surface, "check")
     assert result.returncode == 0, result.stderr
     assert invocations(result) == [
-        f"bunx nx affected -t {GATE_TARGETS} --base=origin/main"
+        f"bunx nx affected -t {GATE_TARGETS} --base=origin/main",
+        "bunx nx affected -t e2e --base=origin/main",
     ]
 
 
 def test_check_all_runs_the_broader_sweep(command_surface):
     result = run_just(command_surface, "check", "all")
     assert result.returncode == 0, result.stderr
-    assert invocations(result) == [f"bunx nx run-many -t {GATE_TARGETS}"]
+    assert invocations(result) == [
+        f"bunx nx run-many -t {GATE_TARGETS}",
+        "bunx nx run-many -t e2e",
+    ]
+
+
+def test_an_unknown_tier_is_refused_rather_than_quietly_downgraded(command_surface):
+    # A typo must not buy the weaker tier while reporting success.
+    result = run_just(command_surface, "check", "affcted")
+    assert result.returncode != 0
+    assert "unknown tier" in result.stdout + result.stderr
+    assert invocations(result) == []
 
 
 def test_the_affected_tier_keys_off_the_explicitly_derived_merge_base(
@@ -86,7 +100,10 @@ def test_the_affected_tier_keys_off_the_explicitly_derived_merge_base(
     # orchestrator to its non-deterministic implicit default.
     result = run_just(command_surface, "check", NX_BASE="0ff1ce")
     assert result.returncode == 0, result.stderr
-    assert invocations(result) == [f"bunx nx affected -t {GATE_TARGETS} --base=0ff1ce"]
+    assert invocations(result) == [
+        f"bunx nx affected -t {GATE_TARGETS} --base=0ff1ce",
+        "bunx nx affected -t e2e --base=0ff1ce",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -95,7 +112,7 @@ def test_the_affected_tier_keys_off_the_explicitly_derived_merge_base(
         ("test", "bunx nx affected -t test --base=origin/main"),
         ("lint", "bunx nx affected -t lint typecheck --base=origin/main"),
         ("format", "bunx nx run-many -t format"),
-        ("test-e2e", "bunx nx run-many -t test -p tag:type:e2e"),
+        ("test-e2e", "bunx nx affected -t e2e --base=origin/main"),
     ],
 )
 def test_each_gate_recipe_delegates_to_the_orchestrator(
