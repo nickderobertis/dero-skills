@@ -32,7 +32,6 @@ rules:
       the target files add or change a test that is slow or reaches an external
       service (a live API, a container, a browser, a real database), or change the
       project definition that owns one
-    require_line_attribution: true
 
   - name: new_projects_keep_the_graph_uniform
     description: |
@@ -43,4 +42,3 @@ rules:
       omits a target it has work for, or is untagged where its layer is tag-enforced.
     files:
       include: ["nx.json", "**/project.json"]
-    relevance: the target files add or change an Nx project definition

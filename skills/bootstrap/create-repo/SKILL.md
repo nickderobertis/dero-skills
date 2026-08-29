@@ -193,10 +193,9 @@ a suggested fix.
      Bash/plugin, skills repo, etc.).
    - Adapt tooling, tests, layout, docs, and CI to that artifact; don't blindly
      apply a generic template.
-   - One layout decision is fixed before the shape is: **every repo is an
-     Nx-orchestrated project graph**, composed unconditionally — the splits, the
-     graph edges, and the toolchain that follows are in
-     `references/project-graph.md`.
+   - One layout decision is fixed before the shape is: the repo's projects are
+     drawn as test/target boundaries, so what a change can reach is decided up
+     front rather than falling out of how the artifact happens to be packaged.
    - Explicitly state what guidance was excluded and why — but only optional
      tooling/layout qualifies. The non-negotiable invariants (strict gate,
      realistic un-mocked e2e of every real journey, CI proving the artifact) are

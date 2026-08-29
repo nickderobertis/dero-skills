@@ -215,9 +215,6 @@ def select_relpaths(
     says to compose: base, the mandatory project graph, shape(s), language(s),
     intersection(s), then ci and the cross-cutting references.
     """
-    # The project graph is mandatory in every repo this skill stands up, so it
-    # composes unconditionally, right behind base.md — it is an always-applied
-    # invariant, not a cross-cutting concern a caller opts into.
     ordered: list[str] = ["base.md", "project-graph.md"]
 
     # A shape composes any shape(s) it builds on first (base-most first), then

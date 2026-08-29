@@ -14,8 +14,7 @@ rules:
     description: |
       true when the repo declares an Nx project graph — an `nx.json` at the root
       plus project definitions — and the root command surface runs its targets
-      through it. false when there is no project graph, so the gate runs the whole
-      repo as one undifferentiated unit and every change pays for every target.
+      through it.
     files:
       include:
         - "nx.json"

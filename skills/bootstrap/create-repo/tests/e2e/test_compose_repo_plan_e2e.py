@@ -134,7 +134,6 @@ def test_terraform_composes_guidance_checklist_and_both_llmlint_tiers(tmp_path):
 def test_releasing_flag_pulls_reference():
     doc = run("--shape", "library", "--language", "python", "--releasing").stdout
     assert "### Cross-cutting: Releases & versioning  (`releasing.md`)" in doc
-    # Its verification items land in the checklist too.
     checklist = doc.split("## Verification checklist", 1)[1]
     assert "PR-title lint is a required check" in checklist
 
@@ -352,7 +351,6 @@ def test_llmlint_ongoing_project_graph_fragment_is_unconditional(tmp_path):
     run("--shape", "library", "--language", "python", "--llmlint-config", str(out))
     cfg = out.read_text(encoding="utf-8")
     assert "/assets/llmlint/project-graph.llmlint.yml@1" in cfg
-    # ...and it is ongoing, not the buildout copy
     assert "/buildout/project-graph.llmlint.yml" not in cfg
 
 
@@ -405,7 +403,6 @@ def test_llmlint_buildout_releasing_gated_by_flag_project_graph_always(tmp_path)
     )
     bare = out.read_text(encoding="utf-8")
     assert "/buildout/releasing.llmlint.yml" not in bare
-    # The project graph is mandatory, so its buildout fragment needs no flag.
     assert "/buildout/project-graph.llmlint.yml@1" in bare
 
     run(

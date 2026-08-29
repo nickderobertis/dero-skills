@@ -11,20 +11,19 @@ rules:
       for-each-package loop instead of delegating to the orchestrator.
     files:
       include: ["justfile", "Justfile", ".justfile"]
+    require_line_attribution: true
 
   - name: affected_only_explicit_base
     description: |
       true when pull-request CI runs affected-only targets against an explicitly
-      derived merge base and a full sweep runs on the main branch or nightly. false
-      when pull-request CI rebuilds the whole tree or derives no explicit base.
+      derived merge base and a full sweep runs on the main branch or nightly.
     files:
       include: [".github/workflows/**"]
 
   - name: project_boundaries_enforced
     description: |
       true when projects declare tags and an enforced allowed-dependency rule, and
-      target names are uniform across projects. false when project boundaries are
-      unenforced or target names differ for the same logical task across projects.
+      target names are uniform across projects.
     files:
       include: ["nx.json", "**/project.json", "**/.eslintrc*", "eslint.config.*"]
 
@@ -32,8 +31,7 @@ rules:
     description: |
       true when every app/package in the repo has its own project definition
       declaring its local targets (`build`, `lint`, `test`, `typecheck`) that call
-      its own language-native tool. false when a deliverable has no project
-      definition, so the orchestrator cannot run or cache it as an affected unit.
+      its own language-native tool.
     files:
       include: ["nx.json", "**/project.json", "**/package.json", "**/Cargo.toml", "**/pyproject.toml"]
 
