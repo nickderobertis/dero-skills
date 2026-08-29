@@ -15,6 +15,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 SKILL_DIR = Path(__file__).resolve().parents[2]
 SCRIPT = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 
@@ -456,3 +458,106 @@ def test_plan_closes_with_both_llmlint_gates():
     doc = run("--shape", "cli", "--language", "python").stdout
     assert "llmlint (ongoing) passes once" in doc
     assert "llmlint (buildout) passes once" in doc
+
+
+# The Nx project graph is mandatory in every repo, so the per-language mapping
+# onto it has to reach a COMPOSED PLAN — not just sit in the reference file. Each
+# case is a real stack in a different language: the plan must carry that
+# language's workspace mapping, its test-split guidance, and the verification
+# items that keep coverage a gate after the split.
+_PROJECT_GRAPH_BY_LANGUAGE = {
+    "python": (
+        ("cli", "python"),
+        [
+            "[tool.uv.workspace]",
+            "single root `uv.lock`",
+            "uv run --project",
+            "coverage combine",
+        ],
+        [
+            "uv workspace under the graph",
+            "Suite split into projects",
+            "Coverage combined and still gating",
+            "Uniform target names",
+        ],
+    ),
+    "rust": (
+        ("cli", "rust"),
+        [
+            "[workspace] members",
+            "single root `Cargo.lock`",
+            "cargo nextest run -p",
+            "--no-report",
+        ],
+        [
+            "Cargo workspace under the graph",
+            "Suite split into projects",
+            "Coverage combined and still gating",
+            "Uniform target names",
+        ],
+    ),
+    "typescript": (
+        ("web-app", "typescript"),
+        ['"workspaces"', "single root lockfile", "workspace:*", "coverageThreshold"],
+        [
+            "Workspace under the graph",
+            "Suite split into projects",
+            "Coverage still gating after the split",
+            "Uniform target names",
+        ],
+    ),
+    "bash": (
+        ("asdf-plugin", "bash"),
+        ["no manifest, no dependency resolver", "implicitDependencies", "kcov --merge"],
+        [
+            "Projects without a workspace primitive",
+            "Suite split into projects",
+            "Coverage merged and still gating",
+            "Uniform target names",
+        ],
+    ),
+    "terraform": (
+        ("library", "terraform"),
+        ["root module", ".terraform.lock.hcl", "belongs to no project"],
+        [
+            "Root modules are projects",
+            "Lockfiles match the tool's unit of resolution",
+            "Cloud-touching work split out",
+            "The gate reaches every deployment unit",
+            "Uniform target names",
+        ],
+    ),
+}
+
+
+@pytest.mark.parametrize("language", sorted(_PROJECT_GRAPH_BY_LANGUAGE))
+def test_composed_plan_carries_the_language_project_graph_mapping(language):
+    (shape, lang), guidance_needles, checklist_items = _PROJECT_GRAPH_BY_LANGUAGE[
+        language
+    ]
+    result = run("--shape", shape, "--language", lang)
+    assert result.returncode == 0, result.stderr
+    doc = result.stdout
+
+    guidance, checklist = doc.split("## Verification checklist", 1)
+    for needle in guidance_needles:
+        assert needle in guidance, f"{language}: guidance missing {needle!r}"
+    for item in checklist_items:
+        assert item in checklist, f"{language}: checklist missing {item!r}"
+
+    # The graph mapping is a specialization of the always-composed cross-cutting
+    # reference, so both reach the same plan.
+    assert "(`project-graph.md`)" in doc
+    assert "Nx and the language workspace both wired" in checklist
+
+
+def test_two_language_plans_carry_different_project_graph_mappings():
+    # A Python plan must not be handed Rust's mapping, or vice versa: the point of
+    # the per-language work is that each author sees THEIR workspace primitive.
+    python_doc = run("--shape", "cli", "--language", "python").stdout
+    rust_doc = run("--shape", "cli", "--language", "rust").stdout
+
+    assert "[tool.uv.workspace]" in python_doc
+    assert "[tool.uv.workspace]" not in rust_doc
+    assert "[workspace] members" in rust_doc
+    assert "[workspace] members" not in python_doc

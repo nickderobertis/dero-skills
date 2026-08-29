@@ -37,12 +37,22 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
   smoke-test the publish-shape package with the dev escape-hatch unset so CI
   proves the shipped artifact, not `target/` (see the live/install tier in
   `ci.md`).
+- **The natural project split.** The CLI's own project holds the command
+  implementation and its fast unit tests; the suite that installs and drives the
+  built command lives in a separate `<cli>-e2e` project that depends on it, so
+  an unrelated change never spawns the binary and a change to that suite never
+  reruns the rest. Add a project per external system the command talks to — an
+  API client with its own live-service suite — so a change to argument parsing
+  does not go out to the network. A repo that ships several commands gives each
+  its own project rather than piling entry points into one package. The
+  language reference says where each project's manifest and targets live.
 - **Commands.** The CLI e2e suite runs in the default `just check` and in CI —
-  it is never opt-in or excluded by default. `just e2e` is only a convenience
-  for running the slow end-to-end journeys *in isolation*; it must not be the
-  one place they run. If a journey is genuinely too expensive for every gate
-  run, that is a deliberate, documented exception that CI still executes (e.g.
-  nightly) — not silent exclusion from the gate.
+  it is never opt-in or excluded by default; `just check` reaches it as the
+  e2e project's `test` target through the graph. `just e2e` is only a
+  convenience for running the slow end-to-end journeys *in isolation*; it must
+  not be the one place they run. If a journey is genuinely too expensive for
+  every gate run, that is a deliberate, documented exception that CI still
+  executes (e.g. nightly) — not silent exclusion from the gate.
 
 ## Verification
 
@@ -58,6 +68,11 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
   plus a suggested next action go to stderr; machine-readable output (e.g.
   `--json`) is stable and separate from human prose. Exit codes are distinct and
   documented (`0` only on success), and `--help` is accurate and complete.
+- [ ] **Project split matches the cost.** The command and its fast tests are one
+  project; the suite that installs and drives the built command is its own
+  `<cli>-e2e` project depending on it, with a further project per external
+  system the command talks to — so an unrelated change never spawns the binary
+  or reaches the network.
 - [ ] **One asset-naming contract across install surfaces.** Every surface that
   downloads a release asset constructs the same archive/`.sha256` name the
   release workflow produced, and CI exercises each surface (so an install path

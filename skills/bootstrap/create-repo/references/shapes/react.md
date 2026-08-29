@@ -7,16 +7,21 @@ also pull `shapes/nextjs.md`, which layers on top of this. The principles below
 track [bulletproof-react](https://github.com/alan2207/bulletproof-react); apply
 them, don't re-derive them.
 
-- **Feature-based structure.** Organize `src/` by feature, not by file type:
-  each feature owns its components, hooks, API calls, state, and types under
-  `src/features/<feature>/`. Truly shared building blocks live in top-level
-  `components/`, `hooks/`, `lib/`, `utils/`. Colocate; don't scatter one
-  feature across global `components/`, `hooks/`, `services/` folders.
+- **Feature-based structure.** Organize each app project's `src/` by feature,
+  not by file type: each feature owns its components, hooks, API calls, state,
+  and types under `<project>/src/features/<feature>/`. Building blocks shared
+  within one app live in that project's top-level `components/`, `hooks/`,
+  `lib/`, `utils/`; the moment a second app consumes them they graduate to a
+  `ui` project of their own rather than being imported across app boundaries.
+  Colocate; don't scatter one feature across global `components/`, `hooks/`,
+  `services/` folders.
 - **Unidirectional architecture, enforced by lint.** Dependencies flow one way —
   shared → features → app; a feature never reaches into another feature's
   internals (compose them at the routes/app layer instead). Enforce it in the
   linter (ESLint `import/no-restricted-paths`, or Biome `noRestrictedImports`),
-  not by convention — an unenforced boundary erodes.
+  not by convention — an unenforced boundary erodes. Inside a project that is
+  the linter's job; *between* projects it is the module-boundary tag rule's, and
+  both are on.
 - **Rules of Hooks, enforced.** Call hooks unconditionally at the top level.
   Turn on `eslint-plugin-react-hooks` (`rules-of-hooks` **and** `exhaustive-deps`)
   or Biome's equivalents (`useHookAtTopLevel`, `useExhaustiveDependencies`) so
@@ -64,9 +69,11 @@ them, don't re-derive them.
 
 ## Verification
 
-- [ ] **Feature-based structure.** `src/` is organized by feature
-  (`src/features/<feature>/` owning its components/hooks/api/state/types), with
-  only genuinely shared code in top-level `components/`/`hooks/`/`lib/`/`utils/`.
+- [ ] **Feature-based structure.** Each app project's `src/` is organized by
+  feature (`<project>/src/features/<feature>/` owning its
+  components/hooks/api/state/types), with only genuinely shared code in that
+  project's top-level `components/`/`hooks/`/`lib/`/`utils/` — and in a `ui`
+  project once a second app consumes it.
 - [ ] **Boundaries lint-enforced.** Unidirectional import rules
   (shared → features → app, no cross-feature internal imports) are enforced by
   the linter (`import/no-restricted-paths` or Biome `noRestrictedImports`), not

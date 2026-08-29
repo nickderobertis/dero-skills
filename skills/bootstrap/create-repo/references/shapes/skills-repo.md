@@ -20,7 +20,18 @@ worked reference implementation (and is where this skill itself lives).
   shape, a trigger-oriented `description`, a `compatibility` note on runtime
   needs) and forbidden runtime dependencies, and (b) *runs* every bundled script
   once (`uv run --script` / `node`) to catch an import or syntax error before a
-  consumer hits it. Wire both into `just check`.
+  consumer hits it. Both are targets on each skill's project, reached by `just
+  check` through the graph.
+- **The natural project split: one project per skill.** Each skill directory is
+  a project declaring the same target names as every other (`validate`, `smoke`,
+  `test`, plus the uniform `lint`/`format`), so `nx affected -t test` fans out by
+  name and editing one skill runs that skill's targets rather than the whole
+  catalog. The shared validation tooling is its own project that every skill
+  project depends on, so a change to it correctly reruns them all — and a skill
+  that grows an expensive eval (a suite driving a real harness) puts that eval in
+  its own project, since it is slow and external by nature. Those project edges
+  are for *authoring*: they never become runtime dependencies of the bundled
+  scripts, per the runtime-independence invariant above.
 - **Dogfood your own checks.** If the repo ships a repo-baseline or lint script,
   run it against this repo in the gate (`just baseline`) so the canonical example
   stays a passing example.
@@ -55,6 +66,12 @@ worked reference implementation (and is where this skill itself lives).
 - [ ] **Validate + smoke every skill in the gate.** Tooling checks each
   `SKILL.md` frontmatter and forbidden runtime deps, and *runs* every bundled
   script once; both are wired into `just check`.
+- [ ] **One project per skill.** Each skill directory is a project declaring the
+  same target names as the others (`validate`/`smoke`/`test` plus the uniform
+  `lint`/`format`), the shared validation tooling is its own project the skills
+  depend on, and an expensive harness-driving eval is a project of its own — so
+  editing one skill runs that skill's targets, not the catalog. Those edges are
+  authoring-only and never runtime dependencies of the bundled scripts.
 - [ ] **Own checks dogfooded.** Any repo-baseline/lint script the repo ships is
   run against this repo in the gate so the canonical example stays passing.
 - [ ] **Consumer install model.** A consumer-bootstrap path pulls skills from the
