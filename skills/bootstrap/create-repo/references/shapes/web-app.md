@@ -18,21 +18,36 @@ each builds on this shape and the composer pulls this one in beneath it.
   shadcn/ui) over bespoke one-off UI. Keep design tokens and patterns shared.
 - **Testing — part of the gate, not opt-in.** Unit/integration tests plus
   **E2E covering critical user journeys** — sign-in, the core happy path, and at
-  least one key failure/recovery path — not just smoke tests. Put e2e behind a
-  `test-e2e` recipe that `just check` runs; e2e is your main visibility into real
-  behavior. If a journey is too expensive for every run, document it and run it
-  in CI (e.g. nightly) — never silently drop it.
-- **Commands.** `just check` runs format/lint/typecheck/unit/e2e with minimal
-  success output.
+  least one key failure/recovery path — not just smoke tests. Keep e2e in its own
+  project whose `test` target `just check` reaches through the graph (a
+  `just test-e2e` recipe is a convenience for focused runs, not the only place it
+  runs); e2e is your main visibility into real behavior. If a journey is too
+  expensive for every run, document it and run it in CI (e.g. nightly) — never
+  silently drop it.
+- **The natural project split.** The app is one project holding its own routes,
+  components, and fast unit/component tests. The browser suite is the expensive
+  one, so `<app>-e2e` is a project of its own that depends on the app's build — a
+  change to a server route no page renders never starts a browser. Shared UI
+  graduates into a `ui` project the moment a second consumer exists, and each
+  backend service the app calls is its own project rather than a folder inside
+  it. Each project's `project.json` sits beside that project's own language
+  manifest.
+- **Commands.** `just check` runs format/lint/typecheck/unit/e2e across the
+  affected projects, with minimal success output.
 - **CI.** Bootstrap a clean checkout, then run the full gate (build + e2e) on
   every PR; validate the production build, not just the dev server. Start from
   `assets/ci.yml.template`.
 
 ## Verification
 
-- [ ] **E2E covers critical journeys.** A `test-e2e` recipe (run by `just check`
-  and CI) drives sign-in, the core happy path, and at least one
-  failure/recovery path — not just smoke tests.
+- [ ] **E2E covers critical journeys.** The e2e project's `test` target (reached
+  by `just check` and CI, exposed as a `test-e2e` recipe for focused runs) drives
+  sign-in, the core happy path, and at least one failure/recovery path — not just
+  smoke tests.
+- [ ] **Project split matches the cost.** The app and its fast unit/component
+  tests are one project; the browser suite is its own `<app>-e2e` project
+  depending on the app's build; shared UI is a `ui` project once a second
+  consumer exists; each backend service is its own project.
 - [ ] **Boundaries enforced.** A clear server/client split holds, and all
   external input (requests, params, third-party responses) is validated at the
   trust boundary.

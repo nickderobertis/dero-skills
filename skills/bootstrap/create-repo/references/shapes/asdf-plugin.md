@@ -97,11 +97,24 @@ relying on memory — script names and contracts drift).
   construction, checksum behavior, install-path behavior, unsupported-platform
   errors, and concise failure output. Cover every shared `lib/` helper if `lib/`
   exists (add helpers only when they cut duplication without hiding behavior).
-- **Commands.**
-  - `just check` -> `shfmt` format check + `shellcheck` + `actionlint` + `bats`
-    unit tests + `asdf plugin test` — quiet on success.
-  - `just plugin-test` / `just e2e` -> the host-tool integration in isolation;
-    it must also run inside the default gate, not only on demand.
+- **The natural project split.** asdf fixes the plugin's layout — `bin/` must sit
+  at the repo root — so the `plugin` project's root *is* the repo root, holding
+  the scripts, any shared `lib/`, and the offline `bats` tests as its `format`,
+  `lint`, and `test` targets. The host-tool integration is slow and reaches the
+  network, so `plugin-e2e` is a project of its own beside it (its own directory,
+  its own `project.json`) whose `test` target runs `asdf plugin test` and which
+  depends on `plugin` — editing a `bats` fixture then never installs a real tool
+  version. Shell has no manifest for a project definition to sit beside, so each
+  project's `project.json` is itself where its targets, inputs, and tags live.
+- **Commands.** The root recipes delegate to the orchestrator, which runs the
+  per-project targets.
+  - `just check` -> `nx affected -t format lint test` plus the repo-level
+    `coverage` target, so the `plugin` project's `shfmt` format check,
+    `shellcheck`, `actionlint`, and `bats` unit tests and the `plugin-e2e`
+    project's `asdf plugin test` all run — quiet on success.
+  - `just plugin-test` / `just e2e` -> `nx run plugin-e2e:test`, the host-tool
+    integration in isolation; it must also run inside the default gate, not only
+    on demand.
 - **CI.** Matrix across `ubuntu-latest` and `macos-latest`; run the gate and the
   current recommended `asdf-vm/actions/plugin-test`, validating the installed
   tool (`<tool> --version`). Support `GITHUB_API_TOKEN` for release-API calls but
@@ -125,3 +138,7 @@ relying on memory — script names and contracts drift).
   combinations; missing runtime libraries become an actionable install command.
 - [ ] **Real host-tool integration in CI.** `asdf plugin test` plus `bats` unit
   tests run in the gate, on an `ubuntu-latest` + `macos-latest` matrix.
+- [ ] **Project split matches the cost.** The `plugin` project is rooted at the
+  repo root (asdf fixes `bin/` there) with the scripts and offline `bats` tests;
+  the host-tool integration is its own `plugin-e2e` project depending on it, so
+  editing a fixture never installs a real tool version.

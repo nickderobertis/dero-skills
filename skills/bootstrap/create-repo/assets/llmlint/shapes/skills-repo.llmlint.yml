@@ -1,6 +1,6 @@
 # Skills-repo judge-level rules (plugin). Pairs with shapes/skills-repo.md.
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
-version: 1.1
+version: 1.2.1
 
 rules:
   - name: scripts_runtime_independent
@@ -40,3 +40,19 @@ rules:
     files:
       include: ["**/SKILL.md"]
     require_line_attribution: true
+
+  - name: each_skill_is_its_own_project
+    description: |
+      true when that directory has its own project definition, so `nx affected`
+      runs that skill's targets and leaves the rest of the catalog alone, and an
+      expensive harness-driving eval it ships sits in a project of its own.
+      false when a skill is added with no project definition — leaving it
+      outside the graph, so editing it either runs the whole catalog or nothing
+      — or when its slow eval is declared as another target of the skill's own
+      project, making every edit to that skill pay for a real harness run.
+    files:
+      include:
+        - "**/SKILL.md"
+        - "**/project.json"
+        - "nx.json"
+    relevance: the target files add, move, or restructure a skill directory
