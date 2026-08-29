@@ -34,11 +34,11 @@ SCRIPT_TEXT_SUFFIXES = {".py", ".mjs", ".cjs", ".js", ".ts", ".sh", ".bash"}
 _NX_RUNNER = r"(?:(?:bunx|npx|yarn|pnpm)(?:\s+(?:exec|dlx|run))?\s+)?"
 _NX_VERB = r"(?:affected|run-many|run|exec|reset|daemon|show|graph|watch)"
 NX_INVOCATION_RE = re.compile(
-    rf"""(?:^[^\S\n]*{_NX_RUNNER}nx\s+{_NX_VERB}\b)   # a command line of its own
+    rf"""(?:^[^\S\n]*{_NX_RUNNER}nx\s+{_NX_VERB}\b)     # a command line of its own
         |(?:(?<=["'])\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)  # a command string
         |(?:[;&|]\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)      # chained onto another command
-        |(?:\$\(\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)     # a command substitution
-        |(?:["\']nx["\'])                              # spawned as argv[0]
+        |(?:\$\(\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)      # a command substitution
+        |(?:["']nx["'])                                 # spawned as argv[0]
     """,
     re.IGNORECASE | re.MULTILINE | re.VERBOSE,
 )
