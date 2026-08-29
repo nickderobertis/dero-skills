@@ -579,7 +579,7 @@ def main(argv: list[str]) -> int:
     # to report only that the flag is unknown.
     args, unknown = parser.parse_known_args(argv)
     if unknown:
-        hint = ""
+        hint = "\n      fix: run --list to see the flags this reference set supports."
         if "--monorepo" in unknown:
             hint = (
                 "\n      fix: drop it — project-graph.md composes into every plan "

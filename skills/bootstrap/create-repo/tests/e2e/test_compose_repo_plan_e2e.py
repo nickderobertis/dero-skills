@@ -179,6 +179,7 @@ def test_other_unknown_flags_still_fail_without_the_monorepo_hint():
     result = run("--shape", "library", "--language", "python", "--frobnicate")
     assert result.returncode == 2
     assert "unrecognized arguments: --frobnicate" in result.stderr
+    assert "fix: run --list" in result.stderr
     assert "fix: drop it" not in result.stderr
 
 
