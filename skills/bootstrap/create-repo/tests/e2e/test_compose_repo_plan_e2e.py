@@ -491,11 +491,9 @@ def test_plan_carries_staged_gate_guidance_and_its_verification_items(tmp_path):
     for measured in ("cache hit rate", "affected rate", "p95"):
         assert measured in guidance
 
-    # releasing.md's half: where the release sits relative to the sweep.
     assert "## Where the release sits relative to the broader tier" in guidance
     assert "**A release re-gates nothing.**" in guidance
 
-    # Every verification item the staged model adds, lifted into the checklist.
     for item in (
         "**Two tiers, named and wired.**",
         "**The broader tier runs at exactly one lifecycle point.**",
@@ -509,11 +507,11 @@ def test_plan_carries_staged_gate_guidance_and_its_verification_items(tmp_path):
     ):
         assert f"- [ ] {item}" in checklist, item
 
-    # The pre-existing items the staged model reconciles with are still there.
+    # Additive: the staged model must not displace the checklist's older items.
     assert "**CI proves the artifact.**" in checklist
     assert "**Fully automated, no manual deploy step.**" in checklist
 
-    # The judge tier that enforces the same guidance is wired in as a plugin.
+    # Guidance ships with the judge rules that enforce it, never on its own.
     assert "/assets/llmlint/releasing.llmlint.yml@1" in out_cfg.read_text(
         encoding="utf-8"
     )
@@ -656,8 +654,6 @@ def test_composed_configs_carry_the_staged_gate_rules(tmp_path):
     assert "no_second_broader_sweep_over_an_already_gated_commit" in ongoing_rules
     assert "release_does_not_regate_an_already_swept_commit" in ongoing_rules
 
-    # The tiers are distinct: a one-time structural check never becomes an
-    # ongoing PR rule, and vice versa.
     assert "pr_gate_runs_the_affected_tier" not in ongoing_rules
     assert "no_second_broader_sweep_over_an_already_gated_commit" not in buildout_rules
 
