@@ -1,10 +1,12 @@
 # React buildout rules (plugin) — run ONCE during repo creation, then discarded.
-# One-time structural checks that the linter enforces React's Rules of Hooks and
-# the feature-import boundaries; the ongoing React code judgment (cross-feature
-# imports, server-state-in-global-store, unsanitized HTML) lives in
+# One-time structural checks that the linter enforces React's Rules of Hooks, and
+# that the feature-import boundaries are enforced at both scopes they span — the
+# in-project linter rule and the cross-project module-boundary tag rule; the
+# ongoing React code judgment (cross-feature imports,
+# server-state-in-global-store, unsanitized HTML) lives in
 # shapes/react.llmlint.yml, and the shared web-app buildout rule covers the
 # generic production-build case.
-version: 1.1
+version: 2.0.0
 
 rules:
   - name: react_hooks_lint_rules_enabled
@@ -23,7 +25,7 @@ rules:
         - "**/package.json"
     relevance: the target files configure the JS/TS linter
 
-  - name: feature_import_boundaries_enforced_by_lint
+  - name: feature_import_boundaries_enforced_at_both_scopes
     description: |
       true when the unidirectional feature-import architecture is enforced at both
       scopes it spans: inside an app project by the linter — an
