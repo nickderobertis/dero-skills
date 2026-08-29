@@ -59,6 +59,143 @@ to re-run a developer's warm local environment.
 - **Logs are context.** Keep logs minimal on success; emit detailed diagnostics
   only on failure, so a failed run points straight at the cause.
 
+## Staged gates: the affected tier and the broader tier
+
+The cost that matters is wall-clock from idea to production, and the way to cut
+it without proving less is to run each check at the one point in the lifecycle
+where it can still tell you something new. `project-graph.md` makes that
+possible — the mandatory project graph is what lets a change reach some targets
+and not others. This section names the two tiers that graph buys; every other
+reference, script, and `AGENTS.md` note restates them from here rather than
+re-deriving them.
+
+- **The affected tier** — what development and review run. The gate recipe
+  delegates to `nx affected -t lint test typecheck build` keyed off an
+  **explicitly derived merge base** (`nx-set-shas`, or an explicit
+  `--base=$(git merge-base origin/main HEAD)` — never Nx's implicit default,
+  which is not deterministic across a shallow CI checkout). A change pays for
+  the projects its diff can reach and nothing else. This is the **default**
+  tier: a target belongs to it unless a rule below promotes it out.
+- **The broader tier** — one full `nx run-many -t ...` sweep over every project,
+  plus every target promoted out of the affected tier (the live/integration
+  suites, and whatever the promotion rule below moved). It exists to catch what
+  affected detection or a stale cache could miss, and it runs at **exactly one**
+  point in the lifecycle — see "Where the broader tier runs" below.
+
+Both tiers run the same recipe surface (`just check`), so local and CI cannot
+drift: the tier is a *flag on the same command*, never a second implementation
+of the gate. The informational benchmark tier below is in neither — it is not a
+gate at all.
+
+### Gate a given commit once
+
+The rule is a property of a **commit**, not of a place in the pipeline: **each
+commit is gated once at each tier.** A commit that has already been swept must
+not be swept again later under another job's name — sweeping post-merge and then
+sweeping the same code again at release-prep pays twice for one answer.
+
+To find the duplicates in your own pipeline, list every job that runs targets
+and write down two things about each: the **commit it runs against** and the
+**tier it runs**. Then:
+
+- Two jobs running the same tier against the **same SHA** are gating that commit
+  twice. Delete the later one.
+- Two jobs running the same tier against **different SHAs over an identical
+  tree** — nothing landed between them, as with a tag build, a re-tag, or a
+  release-prep job that follows the merge that already swept it — are also
+  gating the same code twice. The tree is what gets proven; a fresh SHA over an
+  unchanged tree proves nothing new.
+- A squash-merge commit is **not** a duplicate of the PR head it came from: its
+  tree never existed before (the base moved under it), so the first run against
+  it is a first gating, not a second.
+- A build is not a gate. A tag-triggered workflow that compiles and publishes an
+  already-swept commit re-gates nothing; re-running that commit's lint,
+  type-check, or test targets does.
+
+### Where the broader tier runs, and what decides it
+
+Do not inherit a location — derive it from the repo's release model. The
+question to answer is: **between a commit landing on the default branch and the
+artifact shipping, can any other commit land?**
+
+- **No — the repo releases on merge** (the push-to-main driver `releasing.md`
+  teaches: `semantic-release`, or `release-please` in non-PR mode). The merged
+  commit *is* the released commit, so a later sweep would re-sweep the same
+  tree. **The broader tier runs at merge-to-main**, and release-prep, tagging,
+  and publishing re-run nothing.
+- **Yes — the repo batches releases** behind a release train, a release-PR gate
+  that accumulates several merges, or a manual cut. The commit that ships is not
+  a commit any merge job swept, so **the broader tier runs at release-prep** —
+  on the release PR or the pre-tag job — and **merge-to-main stays on the
+  affected tier**.
+
+When both readings are defensible (a release-PR gate merged immediately after
+every single change effectively releases per-commit), answer the question
+literally: if the release PR *can* accumulate more than one change, the repo is
+batched. Absent a reason to batch, prefer release-on-merge and sweep at merge —
+it puts the broader answer closest to the change that caused it. Record the
+choice in the "Commits, releases, and merging" section of `AGENTS.md`: it is the
+fact a later reader needs to tell a legitimate sweep from a duplicate.
+`releasing.md` carries the release half of this.
+
+### Measure, then derive your own threshold
+
+Which targets sit in which tier is a measurement, not a taste. Collect, per
+target, over a rolling window of recent CI runs:
+
+- **wall-clock on a cold cache** — p50 and p95, not an average;
+- **cache hit rate** — the share of runs replayed from cache instead of executed
+  (Nx reports it per run; a remote cache shared with developers raises it);
+- **affected rate** — how often the target is actually in the affected set for a
+  typical change.
+
+Compare targets on **expected cost per change = affected rate x (1 - cache hit
+rate) x p95 wall-clock**, never on raw runtime: a ten-minute suite affected by
+one change in twenty costs less per change than a one-minute suite affected by
+every one of them.
+
+**The promotion rule.** The affected tier must return its verdict inside the
+time a contributor will wait without switching context. That budget is the rule,
+and it is measured: when the affected tier's measured p95 exceeds it, promote
+the target with the largest expected cost per change into the broader tier, and
+repeat until the tier is back under budget. Before promoting anything, try the
+two fixes that cost nothing in what gets proven — **split the project** so the
+expensive part sits behind a graph edge unrelated changes cannot reach
+(`project-graph.md`), and **raise the cache hit rate** (stable inputs, a shared
+remote cache).
+
+**Starting defaults, and the rule that supersedes them.** Begin at **10 minutes
+p95 for the whole affected tier** and **5 minutes p95 for its lint/unit
+targets** — the ones a contributor watches before switching away. Those numbers
+are justified only by what a contributor will sit through; they are not measured
+facts about *your* repo. Re-derive them from the measurements above whenever the
+numbers move, and record the threshold you landed on, with the measurement
+behind it, in `AGENTS.md`. Where your measurement and these defaults disagree,
+the promotion rule wins and the defaults go.
+
+**Promotion never buys speed with coverage.** A target that covers the behavior
+a change alters stays in the affected tier however long it takes: you make it
+cheaper — split it, cache it, narrow its inputs — or you keep paying for it. No
+threshold above licenses promoting the suite that covers the diff in front of
+you, and cheaper is acceptable only where it does not weaken what the change
+proves.
+
+### External contact promotes unconditionally
+
+A suite that contacts an external service — a live third-party API, a hosted
+model harness, a registry, a payment sandbox — leaves the affected tier
+**because of what it touches, not because of how long it takes**. A *fast*
+external-hitting suite still moves. This is not a runtime judgment call and no
+measurement above applies to it: the reasons are non-determinism, a credential
+fork PRs cannot hold, somebody else's rate limit and bill, and an outage over
+there turning into a red PR over here.
+
+That tier is the one the next section describes from the other side. The staged
+model only says where it sits: out of the affected tier, into its own
+credential-gated workflow. Promotion is a change of *place*, never a relaxation
+— the live tier still requires its secret and still fails fast when it is
+absent.
+
 ## The live / integration test tier
 
 The deterministic e2e in `just check` must stay offline and reproducible — but
@@ -68,12 +205,16 @@ subprocess); mocking the layer under test to keep the gate fast proves the mock,
 not the product. Behavior that can only be proven against a *real* external
 service (a real API, harness, or credential store) is a tier **above** the gate,
 not a relaxation of it — the place where stubbing a third party is replaced by
-the genuine call. Structure it the way these repos do:
+the genuine call. It is the same tier the staged model promotes into, seen from
+the other side: "External contact promotes unconditionally" says *why* it leaves
+the affected tier; this section says how to build it. Structure it the way these
+repos do:
 
-- **Out of `just check`, in its own workflow.** Live tests never run in the
-  default gate (they would make it non-deterministic and credential-dependent).
-  They run in dedicated CI workflows — often **one workflow per integration** so
-  a flaky provider fails in isolation and its secrets stay scoped.
+- **Out of the affected tier, in its own workflow.** Live tests never run in the
+  gate a PR runs (they would make it non-deterministic and credential-dependent):
+  external contact promotes them unconditionally, per the section above. They run
+  in dedicated CI workflows — often **one workflow per integration** so a flaky
+  provider fails in isolation and its secrets stay scoped.
 - **Compile-but-skip — never `#[cfg]` it out.** The live test must still
   *compile and type-check* in the deterministic gate even when its secret/env is
   unset; keep the code in the build and skip it at *runtime* there (`#[ignore]` /
@@ -177,6 +318,18 @@ exact commands below are the ones this skill's own repo uses.
   advisory and a red one can still be merged past. Add the standard protections:
   require a PR before merging, linear history, no force-pushes, no branch
   deletion, and conversation resolution.
+- **Required checks are the PR-context jobs only.** Under the staged model the
+  jobs that report on a pull request are the affected-tier gate (`check`), the
+  PR-title lint (`commitlint`), and the llmlint judge (`llmlint`) — and those are
+  exactly the contexts listed below. The **broader-tier sweep runs after the PR
+  is gone** (at merge-to-main, or at release-prep), so it has no pull request to
+  report on and must never join the required set: a required context that never
+  reports blocks every PR forever, the same trap as `notignored` below. It gates
+  the *release* instead — make the release workflow depend on the sweep job so a
+  red sweep stops the release rather than a merge. If you rename the gate job
+  (say to `check-affected`) or add a PR-reporting job, the required contexts, the
+  `setup_github_governance.py` invocation, and `AGENTS.md` all move together —
+  re-apply, then `--verify`.
 - **Leave "up to date before merging" off (non-strict checks).** Don't require a
   PR to be rebased onto the latest default branch before it can merge (GitHub's
   `strict` flag) — it forces a re-sync and a full CI re-run every time the base
@@ -269,6 +422,37 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
 
 ## Verification
 
+- [ ] **Two tiers, named and wired.** Pull requests run the **affected tier** —
+  the gate recipe delegating to `nx affected` keyed off an explicitly derived
+  merge base — and one job runs the **broader tier**, a full `run-many` sweep.
+  Both go through the same recipe surface, so no tier is a second
+  implementation of the gate.
+- [ ] **The broader tier runs at exactly one lifecycle point.** Exactly one job
+  sweeps: merge-to-main for a repo that releases the merged commit, release-prep
+  for a repo that batches releases. The placement, and the release model it was
+  derived from, are recorded in the "Commits, releases, and merging" section of
+  `AGENTS.md`.
+- [ ] **No commit is gated twice.** Every job that runs targets is listed with
+  the commit it runs against and the tier it runs, and no two of them run the
+  same tier over the same SHA — or over an identical tree with nothing landed
+  between. The tag/build/publish workflow re-gates nothing.
+- [ ] **Thresholds are measured, not inherited.** Per-target cold-cache
+  wall-clock (p50/p95), cache hit rate, and affected rate are measured over
+  recent runs; promotion follows the highest expected cost per change; and the
+  threshold the repo settled on — with the measurement behind it — is written in
+  `AGENTS.md` rather than carried over from another repo's numbers.
+- [ ] **External contact promotes unconditionally.** Every suite that touches an
+  external service sits outside the affected tier because of what it touches,
+  not its runtime — a fast external-hitting suite too — and it still requires its
+  credential and fails fast (no skip to green).
+- [ ] **Promotion never weakened coverage.** No target was promoted out of the
+  affected tier to hit a time budget while it was the thing covering the changed
+  behavior; expensive targets were split, cached, or narrowed instead.
+- [ ] **Required set matches the PR-context jobs.** The required contexts name
+  the affected-tier gate, the PR-title lint, and the llmlint tier — the jobs that
+  report on a pull request — and the broader-tier sweep is not among them
+  (it blocks the release instead). Renaming a gate job updates the contexts, the
+  `setup_github_governance.py` invocation, and `AGENTS.md` together.
 - [ ] **CI proves the artifact.** A workflow runs `just bootstrap` then
   `just check` on a clean checkout, on the supported platform matrix.
 - [ ] **End-user install path.** If the repo ships an installable artifact, a CI
