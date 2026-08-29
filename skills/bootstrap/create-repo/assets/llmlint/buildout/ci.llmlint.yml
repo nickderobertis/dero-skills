@@ -1,5 +1,6 @@
 # CI buildout rules (plugin) — run ONCE during repo creation, then discarded.
 # These verify the CI was set up right; they are not an ongoing PR check.
+# llmlint: ignore-file[changed_behavior_has_e2e] every rule here is an LLM-judge config invariant with no in-gate runtime path — like the other buildout rules, its firing is exercised by the opt-in custom-prompt skilltest (skills/bootstrap/create-repo/tests/AGENTS.md), never by an in-gate e2e (this repo keeps real-harness evals out of the gate on purpose).
 version: 1.2.0
 
 rules:
