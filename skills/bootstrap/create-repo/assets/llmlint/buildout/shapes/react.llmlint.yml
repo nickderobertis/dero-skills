@@ -4,7 +4,7 @@
 # imports, server-state-in-global-store, unsanitized HTML) lives in
 # shapes/react.llmlint.yml, and the shared web-app buildout rule covers the
 # generic production-build case.
-version: 1
+version: 1.1
 
 rules:
   - name: react_hooks_lint_rules_enabled
@@ -25,15 +25,21 @@ rules:
 
   - name: feature_import_boundaries_enforced_by_lint
     description: |
-      true when the lint config enforces the unidirectional feature-import
-      architecture — an `import/no-restricted-paths` (ESLint) or `noRestrictedImports`
-      (Biome) rule that bans cross-feature internal imports and shared code
-      importing from features. false when no such rule exists, leaving the
-      shared → features → app boundary unenforced.
+      true when the unidirectional feature-import architecture is enforced at both
+      scopes it spans: inside an app project by the linter — an
+      `import/no-restricted-paths` (ESLint) or `noRestrictedImports` (Biome) rule
+      banning cross-feature internal imports and shared code importing from
+      features — and between projects by the orchestrator's module-boundary tag
+      rule, so a second app cannot reach into the first's `src/` instead of
+      depending on a shared UI project. false when either scope is unenforced,
+      leaving the shared → features → app boundary to convention where it is
+      easiest to cross.
     files:
       include:
         - "**/eslint.config.*"
         - "**/.eslintrc*"
         - "**/biome.json"
         - "**/biome.jsonc"
-    relevance: the target files configure the JS/TS linter's import rules
+        - "nx.json"
+        - "**/project.json"
+    relevance: the target files configure the JS/TS linter's import rules or the project boundary tags
