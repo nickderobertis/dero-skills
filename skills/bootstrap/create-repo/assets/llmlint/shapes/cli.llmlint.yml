@@ -1,5 +1,5 @@
 # CLI judge-level rules (plugin). Pairs with shapes/cli.md.
-version: 1.1
+version: 1.1.1
 
 rules:
   - name: cli_output_contract
@@ -12,12 +12,12 @@ rules:
 
   - name: new_command_or_client_gets_its_own_project
     description: |
-      true when a newly added command, or a client for an external system the tool
-      talks to, arrives as its own project — so `nx affected` can run it alone and
-      its live-service suite stays out of reach of unrelated changes. false when a
-      second command is folded into the existing CLI project as another entry
-      point, or an external-system client is added inside it, making every change
-      to argument parsing pay for that command's tests and its network calls.
+      true when it arrives as its own project — so `nx affected` can run it
+      alone and its live-service suite stays out of reach of unrelated changes.
+      false when a second command is folded into the existing CLI project as
+      another entry point, or an external-system client is added inside it,
+      making every change to argument parsing pay for that command's tests and
+      its network calls.
     files:
       include:
         - "**/project.json"

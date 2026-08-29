@@ -4,7 +4,7 @@
 # one-time hooks-lint/import-boundary setup checks are buildout-only
 # (buildout/shapes/react.llmlint.yml). This adds the ongoing React-code judgment
 # that ESLint/Biome can't express.
-version: 1.1
+version: 1.2.0
 
 rules:
   - name: features_do_not_cross_import
@@ -79,15 +79,16 @@ rules:
 
   - name: shared_ui_graduates_to_its_own_project
     description: |
-      true when a component, hook, or utility used by more than one app lives in a
-      shared UI project that each app depends on. false when a second app consumes
-      it by importing across app-project boundaries — a relative path into another
-      app's `src/`, or a deep import past a project's public entry point — instead
-      of graduating it into a project of its own, which couples the two apps
-      without an edge the graph or the module-boundary rule can see.
+      true when it lives in a shared UI project that each app depends on. false
+      when a second app consumes it by importing across app-project boundaries —
+      a relative path into another app's `src/`, or a deep import past a
+      project's public entry point — instead of graduating it into a project of
+      its own, which couples the two apps without an edge the graph or the
+      module-boundary rule can see.
     files:
       include:
         - "**/*.ts"
         - "**/*.tsx"
         - "**/project.json"
     relevance: the target files share a component, hook, or utility between two apps in this repo
+    require_line_attribution: true

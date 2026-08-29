@@ -1,5 +1,5 @@
 # Library / package / service judge-level rules (plugin). Pairs with shapes/library.md.
-version: 1.1
+version: 1.2.0
 
 rules:
   - name: stable_public_surface
@@ -12,12 +12,11 @@ rules:
 
   - name: shared_internals_are_a_project_not_a_reach_in
     description: |
-      true when code used by more than one package or service in the repo lives in
-      a project of its own that each consumer declares a dependency on. false when
-      one package reaches into another's internals — a relative path import across
-      package directories, or a re-export of a sibling's private module — so the
-      graph shows no edge where a real coupling exists and affected detection
-      cannot see it.
+      true when that code lives in a project of its own that each consumer
+      declares a dependency on. false when one package reaches into another's
+      internals — a relative path import across package directories, or a
+      re-export of a sibling's private module — so the graph shows no edge where
+      a real coupling exists and affected detection cannot see it.
     files:
       include:
         - "**/*.py"
@@ -26,3 +25,4 @@ rules:
         - "**/*.rs"
         - "**/project.json"
     relevance: the target files share implementation code between two packages or services in this repo
+    require_line_attribution: true

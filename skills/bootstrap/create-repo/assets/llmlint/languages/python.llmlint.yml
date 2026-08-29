@@ -1,7 +1,7 @@
 # Python judge-level rules (plugin). Pulled in by the composer when the repo's
 # language includes python. Pairs with languages/python.md.
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
-version: 1.2
+version: 1.3.0
 
 rules:
   - name: async_typed_clients_at_boundaries
@@ -81,14 +81,13 @@ rules:
 
   - name: test_tiers_split_by_project_not_by_marker
     description: |
-      true when a slow or external-service-touching pytest suite lives in its own
-      project whose `test` target runs it, so `nx affected` can skip it. false
-      when the tier is expressed as a pytest marker the default run deselects
-      (`-m "not slow"`, `addopts` with a deselecting `-m`, or a skip keyed off an
-      env var) while the tests stay inside the fast project — which hides the
-      cost instead of removing it. A guard that skips because a credential or
-      provider the suite genuinely requires is absent is a capability check, not
-      a tier, and is not a violation.
+      true when it lives in its own project whose `test` target runs it, so `nx
+      affected` can skip it. false when the tier is expressed as a pytest marker
+      the default run deselects (`-m "not slow"`, `addopts` with a deselecting
+      `-m`, or a skip keyed off an env var) while the tests stay inside the fast
+      project — which hides the cost instead of removing it. A guard that skips
+      because a credential or provider the suite genuinely requires is absent is
+      a capability check, not a tier, and is not a violation.
     files:
       include:
         - "**/pyproject.toml"
@@ -97,3 +96,4 @@ rules:
         - "**/test_*.py"
         - "**/*_test.py"
     relevance: the target files add or change a pytest suite that is slow or reaches an external service, or the marker configuration that selects one
+    require_line_attribution: true

@@ -1,6 +1,6 @@
 # Bash / shell judge-level rules (plugin). Pairs with languages/bash.md.
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
-version: 1.2
+version: 1.3.0
 
 rules:
   - name: robust_shell
@@ -23,15 +23,15 @@ rules:
 
   - name: shell_test_tiers_stay_split
     description: |
-      true when a `bats` suite lives in the project whose cost it matches — the
-      offline behaviour tests in the script project, and any suite that drives a
-      real host tool, installs a real version, or reaches the network in a
-      separate project depending only on the scripts it exercises. false when a
-      network- or host-tool-touching test is added to the offline project, so
-      every unrelated script edit pays for it, or when an env-var guard skips it
-      at runtime in place of moving it out of the fast project. A guard that
-      skips because a credential or host tool the suite genuinely requires is
-      absent is a capability check, not a tier, and is not a violation.
+      true when it lives in the project whose cost it matches — the offline
+      behaviour tests in the script project, and any suite that drives a real
+      host tool, installs a real version, or reaches the network in a separate
+      project depending only on the scripts it exercises. false when a network-
+      or host-tool-touching test is added to the offline project, so every
+      unrelated script edit pays for it, or when an env-var guard skips it at
+      runtime in place of moving it out of the fast project. A guard that skips
+      because a credential or host tool the suite genuinely requires is absent
+      is a capability check, not a tier, and is not a violation.
     files:
       include:
         - "**/*.bats"
@@ -39,3 +39,4 @@ rules:
         - "**/tests/**"
         - "**/project.json"
     relevance: the target files add or change a shell test suite, or the project definition that owns one
+    require_line_attribution: true
