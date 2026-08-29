@@ -27,8 +27,8 @@ or long-running service. Pair with the implementation language
   projects depending on what they exercise, so an unrelated change neither
   builds a wheel nor starts a server. Where several packages share internals,
   the shared code is a project the others depend on rather than a directory they
-  reach into. The language reference says where each project's manifest and
-  targets live.
+  reach into. Each project's `project.json` sits beside that project's own
+  language manifest.
 - **Docs.** Provide usage docs and a changelog written for consumers.
 
 ## Verification

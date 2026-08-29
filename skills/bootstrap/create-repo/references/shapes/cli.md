@@ -44,8 +44,8 @@ intersection reference exists (e.g. `intersections/python-cli.md`), prefer it.
   reruns the rest. Add a project per external system the command talks to — an
   API client with its own live-service suite — so a change to argument parsing
   does not go out to the network. A repo that ships several commands gives each
-  its own project rather than piling entry points into one package. The
-  language reference says where each project's manifest and targets live.
+  its own project rather than piling entry points into one package. Each
+  project's `project.json` sits beside that project's own language manifest.
 - **Commands.** The CLI e2e suite runs in the default `just check` and in CI —
   it is never opt-in or excluded by default; `just check` reaches it as the
   e2e project's `test` target through the graph. `just e2e` is only a

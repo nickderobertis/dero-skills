@@ -30,7 +30,8 @@ each builds on this shape and the composer pulls this one in beneath it.
   change to a server route no page renders never starts a browser. Shared UI
   graduates into a `ui` project the moment a second consumer exists, and each
   backend service the app calls is its own project rather than a folder inside
-  it. The language reference says where each project's manifest and targets live.
+  it. Each project's `project.json` sits beside that project's own language
+  manifest.
 - **Commands.** `just check` runs format/lint/typecheck/unit/e2e across the
   affected projects, with minimal success output.
 - **CI.** Bootstrap a clean checkout, then run the full gate (build + e2e) on
