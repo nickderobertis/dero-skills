@@ -138,7 +138,6 @@ batched. Absent a reason to batch, prefer release-on-merge and sweep at merge â€
 it puts the broader answer closest to the change that caused it. Record the
 choice in the "Commits, releases, and merging" section of `AGENTS.md`: it is the
 fact a later reader needs to tell a legitimate sweep from a duplicate.
-`releasing.md` carries the release half of this.
 
 ### Measure, then derive your own threshold
 
