@@ -7,10 +7,12 @@ to re-run a developer's warm local environment.
 - **Required, and it must run the gate.** A CI workflow is non-negotiable, and a
   workflow that doesn't invoke `just check` proves nothing. Start from
   [`assets/ci.yml.template`](../assets/ci.yml.template).
-- **Clean checkout -> bootstrap -> full gate.** Every run starts from a clean
-  checkout, runs `just bootstrap`, then `just check` (which includes e2e). If
-  bootstrap can't produce a working repo from scratch, that is the bug. The
-  baseline checker fails CI that never references `just check`.
+- **Clean checkout -> bootstrap -> the gate.** Every run starts from a clean
+  checkout, runs `just bootstrap`, then `just check` (which includes e2e) — at
+  the tier that run is for ("Staged gates" below: the affected tier on a pull
+  request, the broader sweep at its one lifecycle point). If bootstrap can't
+  produce a working repo from scratch, that is the bug. The baseline checker
+  fails CI that never references `just check`.
 - **Pins stay in lockstep.** A toolchain version pinned in more than one place
   (`.tool-versions`, a CI `setup-*` action or matrix entry, a `Dockerfile`, the
   docs) must hold the same value everywhere, or be reconciled by a single check —
