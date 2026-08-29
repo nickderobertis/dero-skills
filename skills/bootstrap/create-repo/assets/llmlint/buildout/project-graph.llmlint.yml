@@ -65,7 +65,3 @@ rules:
         - "bun.lock"
         - "pnpm-workspace.yaml"
     relevance: the repo declares third-party dependencies in a language ecosystem with a workspace primitive
-
-# `instruction_layer_localized` used to live here as a one-time check; it is now
-# an ONGOING rule (see ../project-graph.llmlint.yml) so a nested AGENTS.md that
-# drifts into root-level sprawl is caught on every PR, not just at creation.

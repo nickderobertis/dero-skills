@@ -42,3 +42,5 @@ rules:
       omits a target it has work for, or is untagged where its layer is tag-enforced.
     files:
       include: ["nx.json", "**/project.json"]
+    relevance: the target files declare a project that did not exist before
+    require_line_attribution: true

@@ -242,10 +242,10 @@ rules:
   - name: new_code_lands_in_a_project
     description: |
       Every repo is laid out as an Nx project graph, so nothing runs outside it.
-      true when the added file belongs to a project the graph already declares (the
-      nearest project definition covers its path), or the change declares the new
-      project itself. false when it lands at a path no project definition covers, so
-      Nx can neither run nor skip it and the work escapes `affected` entirely.
+      true when the file belongs to a project the graph already declares (the nearest
+      project definition covers its path), or the change declares that project
+      itself. false when it lands at a path no project definition covers, so Nx can
+      neither run nor skip it and the work escapes `affected` entirely.
     files:
       include:
         - "**/*.py"

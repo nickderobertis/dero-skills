@@ -381,18 +381,11 @@ a suggested fix.
 ## Composable references
 
 References mix and match instead of forming one monolithic template per stack.
-The composer (step 2) assembles them — pick **one product shape**, pass the
-**language(s)** it is built in, and it always pulls in `base.md`,
-`project-graph.md`, and `ci.md`, and prefers a focused intersection (for example
-`python-cli`) where one exists. Where
-you hit an intersection that has no reference yet, create one — adding the file
-extends the composer's `--intersection` choices automatically. See
-[`references/composing.md`](./references/composing.md) for the catalog and worked
-examples.
-
-Each reference carries its own `## Verification` section, and the composer lifts
-those items into the plan's single checklist — so a check lives next to the
-guidance that motivates it, and editing one reference updates both.
+Each carries its own `## Verification` section, and the composer lifts those
+items into the plan's single checklist — so a check lives next to the guidance
+that motivates it, and editing one reference updates both. Where you hit an
+intersection that has no reference yet, create one — adding the file extends the
+composer's `--intersection` choices automatically.
 
 - **Always applied** — `base.md` (the shape/language-agnostic invariants, first
   in every plan), `project-graph` (the mandatory Nx project graph, composed
