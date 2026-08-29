@@ -9,9 +9,8 @@ rules:
     description: |
       true when it only computes the version, writes the changelog and manifests,
       builds, and publishes — running no lint, type-check, or test target over a
-      commit the merge (or the release PR) already swept with the broader tier. false
-      when a release-triggered job re-runs the gate or the full sweep over that same
-      code. Compiling the artifact it ships is building, not gating, and is not a
+      commit the merge (or the release PR) already swept with the broader tier.
+      Compiling the artifact it ships is building, not gating, and is not a
       violation.
     files:
       include:

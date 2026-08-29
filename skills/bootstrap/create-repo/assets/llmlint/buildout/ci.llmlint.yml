@@ -54,8 +54,7 @@ rules:
       true when exactly one job runs the broader-tier full sweep, placed where the
       repo's release model puts it: at merge-to-main when the merged commit is the
       commit that ships, or at release-prep when releases are batched behind a release
-      PR or a manual cut. false when no job ever sweeps, or when two lifecycle points
-      sweep the same code (e.g. post-merge and again before release).
+      PR or a manual cut.
     files:
       include:
         - ".github/workflows/**"
