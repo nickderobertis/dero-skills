@@ -1,9 +1,23 @@
-# Prove the artifact from a clean checkout: bootstrap, then the full gate.
+# Prove the artifact from a clean checkout: bootstrap, then the gate — at the
+# tier that run is for.
 #
 # CI must reproduce what a future maintainer or user hits on a fresh machine —
-# not a developer's warm local environment. Keep this as the single required
-# gate: `just bootstrap` (clean install) then `just check` (format, lint, type
-# check, unit, and e2e). See references/ci.md.
+# not a developer's warm local environment. Both gate jobs below run the SAME
+# `just check` recipe, so local and CI cannot drift; the tier is a flag on it:
+#
+#   * pull requests run the AFFECTED tier — the projects the diff can reach,
+#     keyed off an explicitly derived merge base. Fast feedback, and the
+#     required status check.
+#   * the default branch runs the BROADER tier — one full sweep over every
+#     project, catching what affected detection or a stale cache could miss.
+#
+# Each commit is gated once at each tier, so nothing downstream re-runs these
+# targets: a tag/release workflow builds and publishes an already-swept commit,
+# it does not re-gate it. That placement assumes this repo RELEASES ON MERGE (the
+# merged commit is the released commit). If instead it batches releases behind a
+# release train or a release PR, move the sweep to release-prep and leave
+# merge-to-main on the affected tier — see "Staged gates" in references/ci.md,
+# and record which model you chose in AGENTS.md.
 #
 # Fill in the TODOs: drop the OS matrix to one runner unless the artifact is
 # genuinely cross-platform (CLIs, plugins, binaries), and install only the
@@ -28,7 +42,10 @@ permissions:
   contents: read
 
 jobs:
+  # The AFFECTED tier: what a pull request pays for. This is the required status
+  # check — branch protection gates merges on it.
   check:
+    if: github.event_name == 'pull_request'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -37,21 +54,52 @@ jobs:
         # cross-platform; test the versions you actually support.
         os: [ubuntu-latest]
     steps:
+      # Full history: affected detection resolves the merge base from it, and a
+      # shallow checkout would make that base non-deterministic.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Derive the base/head SHAs EXPLICITLY — this exports NX_BASE/NX_HEAD, which
+      # the justfile's `base` reads — rather than leaving the orchestrator to its
+      # implicit default. See references/project-graph.md.
+      - uses: nrwl/nx-set-shas@v4
 
       - name: Install just
         uses: extractions/setup-just@v2
 
       # TODO: install the toolchain `just bootstrap` needs, e.g.
-      #   - uses: astral-sh/setup-uv@v5        # Python (uv)
-      #   - uses: oven-sh/setup-bun@v2         # JavaScript/TypeScript (bun)
+      #   - uses: actions/setup-node@v4          # the runtime the orchestrator runs on
+      #   - uses: astral-sh/setup-uv@v5          # Python (uv)
+      #   - uses: oven-sh/setup-bun@v2           # JavaScript/TypeScript (bun)
       #   - uses: dtolnay/rust-toolchain@stable  # Rust
 
       - name: Bootstrap
         run: just bootstrap
 
-      - name: Check
+      - name: Check (affected tier)
         run: just check
+
+  # The BROADER tier: one full sweep over every project, at the single lifecycle
+  # point this repo's release model puts it (see the header). It catches what
+  # affected detection or a stale cache could miss. A squash commit's tree never
+  # existed before, so this is a first gating of it, not a re-run of the PR's.
+  check-all:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      # TODO: the same toolchain steps as the `check` job above.
+
+      - name: Bootstrap
+        run: just bootstrap
+
+      - name: Check (full sweep)
+        run: just check all
 
   # LLM-judge tier (llmlint) — a blocking PR check, SEPARATE from the `check`
   # gate. It is non-deterministic and needs an authenticated harness, so it never

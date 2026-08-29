@@ -18,7 +18,12 @@ import stat
 import subprocess
 from pathlib import Path
 
-from test_check_repo_baseline import SCRIPT, _buildout_repo
+from test_check_repo_baseline import (
+    NO_ORCHESTRATOR_JUSTFILE,
+    SCRIPT,
+    _buildout_repo,
+    make_repo,
+)
 
 
 def _write_stub_llmlint(dir_path: Path, exit_code: int) -> None:
@@ -69,3 +74,48 @@ def test_e2e_buildout_propagates_llmlint_violations(tmp_path):
     # The buildout per-judge ceiling rides the CLI flag — the only place it beats
     # the committed config's own `oneharness.timeout` under first-config-wins.
     assert "--timeout 900" in result.stderr
+
+
+def _run_script(repo: Path):
+    """Run the deterministic checks the way an author does: the real script, no flags."""
+    return subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), str(repo)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_e2e_repo_without_a_project_graph_warns_but_still_exits_zero(tmp_path):
+    # The gap the mandate cares about, seen exactly as an author sees it: the
+    # advisory lands on stdout, names the standard and the reference that teaches
+    # it, and the command still succeeds — an already-bootstrapped repo is guided,
+    # not broken.
+    repo = tmp_path / "no-graph"
+    repo.mkdir()
+    make_repo(repo, project_graph=False, justfile=NO_ORCHESTRATOR_JUSTFILE)
+    result = _run_script(repo)
+    assert result.returncode == 0, result.stderr
+    assert "FAIL" not in result.stderr
+    warning = [line for line in result.stdout.splitlines() if line.startswith("WARN")]
+    assert len(warning) == 1, result.stdout
+    assert "project graph" in warning[0]
+    assert "monorepo orchestrator" in warning[0]
+    assert "modularize" in warning[0]
+    assert "references/project-graph.md" in warning[0]
+    # Advisory findings still carry a concrete next action.
+    assert "fix:" in result.stdout
+    assert "1 advisory note(s)" in result.stdout
+
+
+def test_e2e_repo_with_a_project_graph_reports_nothing_to_fix(tmp_path):
+    # The same command over a repo that has the graph and delegates to it: no
+    # advisory at all, and the quiet single-line success the checker promises.
+    repo = tmp_path / "graph"
+    repo.mkdir()
+    make_repo(repo)
+    result = _run_script(repo)
+    assert result.returncode == 0, result.stderr
+    assert "project graph" not in result.stdout
+    assert [line for line in result.stdout.splitlines() if line.strip()] == [
+        f"OK    baseline invariants satisfied: {repo.resolve()}"
+    ]

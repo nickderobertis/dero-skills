@@ -68,9 +68,12 @@ clone, run one command, and trust.
    `check`, `test`, `lint`, `format`, `upgrade`, from
    [`assets/justfile.template`](./assets/justfile.template). `just bootstrap`
    must work from a clean clone; `just check` is the full gate and must run the
-   tests — including `test-e2e` — not just lint. Replace every `TODO`
-   placeholder body with the real, stack-specific command; a recipe left as an
-   `echo` placeholder is a gate that proves nothing.
+   tests — the e2e tier included, which it reaches through the e2e projects' own
+   `test` target — not just lint. Every recipe delegates to the project graph
+   (`nx affected` for what a change can reach, `nx run-many` for the full sweep)
+   rather than looping over projects. Replace every `TODO` placeholder body with
+   the real, stack-specific command; a recipe left as an `echo` placeholder is a
+   gate that proves nothing.
 4. **Make the gates strict and deterministic.** Formatting, linting, type
    checking, and tests fail on issues — no warnings-only mode. Tests run with
    coverage measured and the gate fails below the threshold; 95% line coverage
@@ -421,11 +424,14 @@ composer's `--intersection` choices automatically.
 - [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)
   — narrow `.claude/settings.json` allowlist for the `just` command surface.
 - [`assets/justfile.template`](./assets/justfile.template) — starter command
-  surface with the six required recipes plus `test-e2e` wired into `check`.
+  surface with the six required recipes plus `test-e2e`, each delegating to the
+  project graph; `just check` runs the affected tier, `just check all` the sweep.
 - [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
-  that bootstraps a clean checkout and runs the full gate on a platform matrix,
-  plus a separate `llmlint` job (the diff-scoped LLM-judge check) that requires
-  its harness credential and fails fast without it.
+  that bootstraps a clean checkout and runs the gate at the staged tiers
+  (`references/ci.md`): the affected tier on a pull request, keyed off an
+  explicitly derived merge base, and the full sweep on the default branch. Plus a
+  separate `llmlint` job (the diff-scoped LLM-judge check) that requires its
+  harness credential and fails fast without it.
 - [`assets/oneharness.toml.template`](./assets/oneharness.toml.template) — drop at
   the repo root as `oneharness.toml` (the composer emits it automatically with
   `--llmlint-config`). Fallback-mode harness/model selection for llmlint: codex +

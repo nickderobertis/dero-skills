@@ -26,10 +26,27 @@ REQUIRED_FRONTMATTER = ("name", "description", "compatibility")
 # Text extensions we scan inside scripts/ for forbidden runtime dependencies.
 SCRIPT_TEXT_SUFFIXES = {".py", ".mjs", ".cjs", ".js", ".ts", ".sh", ".bash"}
 
+# Invoking the monorepo orchestrator at runtime: `nx` in *command position* —
+# starting a shell line or a command string, reached through a package runner, or
+# spawned as argv[0]. The invariant is that a bundled script must not *depend on*
+# the orchestrator, so naming `nx.json` in a filename check, or `nx affected` in
+# prose or a diagnostic message, is a read of the repo and stays allowed.
+_NX_RUNNER = r"(?:(?:bunx|npx|yarn|pnpm)(?:\s+(?:exec|dlx|run))?\s+)?"
+_NX_VERB = r"(?:affected|run-many|run|exec|reset|daemon|show|graph|watch)"
+NX_INVOCATION_RE = re.compile(
+    rf"""(?:^[^\S\n]*{_NX_RUNNER}nx\s+{_NX_VERB}\b)   # a command line of its own
+        |(?:(?<=["'])\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)  # a command string
+        |(?:[;&|]\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)      # chained onto another command
+        |(?:\$\(\s*{_NX_RUNNER}nx\s+{_NX_VERB}\b)     # a command substitution
+        |(?:["\']nx["\'])                              # spawned as argv[0]
+    """,
+    re.IGNORECASE | re.MULTILINE | re.VERBOSE,
+)
+
 # Patterns that indicate a runtime script depends on repo-root / authoring-only
 # tooling. Each entry is (compiled_regex, human_message).
 FORBIDDEN_RUNTIME = [
-    (re.compile(r"\bnx\b", re.IGNORECASE), "references Nx (authoring/CI only)"),
+    (NX_INVOCATION_RE, "invokes Nx at runtime (the orchestrator is authoring/CI only)"),
     (re.compile(r"\basdf\b", re.IGNORECASE), "references asdf"),
     (re.compile(r"\bdirenv\b", re.IGNORECASE), "references direnv"),
     (

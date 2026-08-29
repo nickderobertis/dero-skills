@@ -25,6 +25,10 @@ Checks:
     pieces (a `stack`/`composition` section, filled in — not the template
     placeholder), so "build up from the component pieces" is a written,
     auditable decision rather than a step quietly skipped.
+  * The repo runs its targets through a monorepo orchestrator's project graph
+    (advisory WARN only): `nx.json` is present and the gate recipes delegate to
+    it. Every repo this skill stands up is a monorepo, but a repo bootstrapped
+    before that mandate is guided onto the path rather than broken by it.
   * A justfile is present and defines the core command surface:
     bootstrap, check, test, lint, format, upgrade.
   * Required recipes have real bodies (no leftover `TODO` template
@@ -121,6 +125,25 @@ GATE_COMMAND = "just check"
 RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
 
 JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
+
+# The monorepo orchestrator's project-graph manifest. Every repo this skill
+# stands up runs its targets through one, so a change pays only for the projects
+# it can reach (references/project-graph.md).
+PROJECT_GRAPH_FILES = ("nx.json",)
+
+# An invocation of that orchestrator: `nx` fanning targets out over the graph,
+# run directly or through a package runner (`bunx nx`, `npx nx`, ...).
+ORCHESTRATOR_RUN_RE = re.compile(r"\bnx\s+(?:affected|run-many|run)\b")
+
+# The `-t/--target(s)` list of such an invocation. Targets run to the next flag,
+# so a delegating `check` shows which targets it actually fans out over.
+ORCHESTRATOR_TARGETS_RE = re.compile(
+    r"\bnx\s+(?:affected|run-many|run)\b[^\n]*?(?:-t|--targets?)[=\s]\s*([^\n]*)"
+)
+
+# The recipes that make up the gate; the project-graph check asks whether any of
+# them (or a recipe it depends on) runs targets through the orchestrator.
+GATE_RECIPES = ("check", "test", "lint")
 
 # llmlint config filenames (llmlint discovers `llmlint.yml`/`.yaml`, plain or
 # dot-prefixed). The repo's root config is the composed LLM-judge tier.
@@ -302,6 +325,39 @@ def parse_just_recipe_details(text: str) -> dict[str, Recipe]:
     return recipes
 
 
+def recipe_lines(details: dict[str, Recipe], name: str) -> list[str]:
+    """``name``'s body lines plus, transitively, those of the recipes it depends on.
+
+    A gate recipe often delegates through a dependency (``check: lint test``), so
+    looking only at its own body would miss the command that does the work.
+    Dependency tokens can carry just's call syntax for arguments (``(gate tier)``),
+    so brackets are stripped and only tokens naming a real recipe are followed.
+    """
+    lines: list[str] = []
+    seen: set[str] = set()
+    pending = [name]
+    while pending:
+        current = pending.pop()
+        recipe = details.get(current)
+        if recipe is None or current in seen:
+            continue
+        seen.add(current)
+        lines += recipe.body
+        pending += [dep.strip("()[]{},'\"") for dep in recipe.deps]
+    return lines
+
+
+def orchestrator_targets(line: str) -> set[str]:
+    """The target names an orchestrator invocation in ``line`` fans out over."""
+    targets: set[str] = set()
+    for match in ORCHESTRATOR_TARGETS_RE.finditer(line):
+        for token in match.group(1).split():
+            if token.startswith("-"):
+                break  # the target list ends at the next flag
+            targets.add(token.strip("\"'"))
+    return targets
+
+
 def find_justfile(repo: Path) -> Path | None:
     for name in JUSTFILE_NAMES:
         candidate = repo / name
@@ -456,8 +512,13 @@ def check_justfile(repo: Path) -> list[Finding]:
     # as a dependency (`check: ... test`) or by invoking it in the body.
     check = details.get("check")
     if check is not None and "test" in details:
-        runs_test = "test" in check.deps or any(
-            "just test" in line for line in check.body
+        # Either directly (a dependency or `just test`) or by handing the
+        # `test` target to the orchestrator, which is how a delegating gate
+        # recipe runs the suite (references/project-graph.md).
+        runs_test = (
+            "test" in check.deps
+            or any("just test" in line for line in check.body)
+            or any("test" in orchestrator_targets(line) for line in check.body)
         )
         if not runs_test:
             findings.append(
@@ -469,6 +530,63 @@ def check_justfile(repo: Path) -> list[Finding]:
             )
 
     return findings
+
+
+def check_project_graph(repo: Path) -> list[Finding]:
+    """Advise (never fail) when the repo does not run its targets through a graph.
+
+    Every repo this skill stands up is a monorepo: laid out as a set of projects
+    with an orchestrator running their targets, so a change pays only for the
+    projects it can reach. This is deliberately a WARN — a repo bootstrapped
+    before that mandate should be guided onto the path, not broken by it — and it
+    is a single finding either way, because a missing graph and a root command
+    surface that bypasses it are one gap seen from two sides.
+    """
+    has_graph = any((repo / name).is_file() for name in PROJECT_GRAPH_FILES)
+    justfile = find_justfile(repo)
+    delegates = False
+    if justfile is not None:
+        details = parse_just_recipe_details(justfile.read_text(encoding="utf-8"))
+        delegates = any(
+            ORCHESTRATOR_RUN_RE.search(line)
+            for name in GATE_RECIPES
+            for line in recipe_lines(details, name)
+        )
+    if has_graph and delegates:
+        return [Finding("OK", "targets run through the orchestrator's project graph")]
+
+    # Name the half that is missing, and offer only the step that half needs: a
+    # repo that already has nx.json should not be told to add it.
+    add_graph = (
+        "add nx.json and a project definition per unit — splitting each slow or "
+        "external-service-touching test tier into a project of its own, so an "
+        "unrelated change skips it"
+    )
+    delegate = (
+        "point the root `just check`/`test`/`lint` recipes at `nx affected` (what "
+        "a change pays for) and `nx run-many` (the full sweep) instead of running "
+        "the whole tree by hand"
+    )
+    if not has_graph and not delegates:
+        gap = "no project graph (no nx.json) and no gate recipe that runs one"
+        fix = f"{add_graph}, then {delegate}"
+    elif not has_graph:
+        gap = "no project graph (no nx.json) for the gate recipes to run"
+        fix = add_graph
+    else:
+        gap = "the gate recipes bypass the project graph (none runs the orchestrator)"
+        fix = delegate
+    return [
+        Finding(
+            "WARN",
+            f"{gap} — this baseline expects every repo to be a monorepo: run its "
+            "targets through a monorepo orchestrator (Nx) and aggressively "
+            "modularize its tests and its code into projects behind it, so a "
+            "change pays only for the projects it can reach. The create-repo "
+            "skill's references/project-graph.md teaches the layout.",
+            fix,
+        )
+    ]
 
 
 def check_e2e(repo: Path) -> list[Finding]:
@@ -622,8 +740,8 @@ def check_composition(repo: Path) -> list[Finding]:
     """Require AGENTS.md to record how the repo was composed from the references.
 
     The create-repo skill builds a repo by *composing* component references — one
-    product shape, the language(s), `ci.md` always, and `monorepo.md` /
-    intersection references when they apply — and writing down what was excluded
+    product shape, the language(s), `ci.md` and `project-graph.md` always, and
+    the intersection references when they apply — and writing down what was excluded
     and why. That deliberate "build up from the pieces" step is the one most
     often skipped: an agent jumps straight to a justfile and misses the
     stack-specific gates the references prescribe. This makes the composition an
@@ -648,8 +766,8 @@ def check_composition(repo: Path) -> list[Finding]:
                 "skill's reference pieces",
                 "add a '## Stack and composition' section to AGENTS.md naming the "
                 "product shape, the language(s), the references you pulled in "
-                "(ci.md always; monorepo/intersection when they apply), and what "
-                "you excluded and why",
+                "(ci.md and project-graph.md always; the intersections when they "
+                "apply), and what you excluded and why",
             )
         ]
     content = [line for line in body if line.strip()]
@@ -1507,10 +1625,12 @@ def run_buildout(
             )
         ]
 
-    # base.md is always-applied (the universal invariants), so its buildout tier
-    # runs regardless of whether the composition line happens to spell it out.
-    if "base.md" not in refs:
-        refs = ["base.md", *refs]
+    # base.md (the universal invariants) and project-graph.md (the mandatory
+    # project graph) are composed into every plan, so their buildout tiers run
+    # whatever the recorded composition line happens to spell out.
+    for always in ("project-graph.md", "base.md"):
+        if always not in refs:
+            refs = [always, *refs]
 
     # Map each recorded reference token to its buildout fragment, validating that
     # the token stays *inside* the buildout tree. AGENTS.md is in-repo, but the
@@ -1565,6 +1685,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_claude_settings(repo)
     findings += check_composition(repo)
     findings += check_justfile(repo)
+    findings += check_project_graph(repo)
     findings += check_e2e(repo)
     findings += check_e2e_realism(repo)
     findings += check_coverage(repo)
