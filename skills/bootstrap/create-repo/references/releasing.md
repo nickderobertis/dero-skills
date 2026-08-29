@@ -92,7 +92,7 @@ When one logical version spans several manifests — `Cargo.toml`, `pyproject.to
 hand-edit one of N. Make a single `scripts/set-version.sh` the source of truth and
 have the release tool call it (`semantic-release`'s `exec` step, or `release-plz`).
 One script writes every manifest, every lockfile, and any cross-package version
-pins. See `monorepo.md`.
+pins.
 
 ## Secrets
 

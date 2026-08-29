@@ -93,7 +93,7 @@ everything they already check, and reach for llmlint only for the judgment calls
   `assets/llmlint/<ref>.llmlint.yml` and a buildout one at
   `assets/llmlint/buildout/<ref>.llmlint.yml` independently, so put a rule that
   should re-run on every PR in the ongoing fragment and a one-time wiring check in
-  the buildout one (`monorepo` does exactly this — an ongoing
+  the buildout one (`project-graph` does exactly this — an ongoing
   `instruction_layer_localized` alongside its buildout orchestration checks). Run
   the buildout config **once** during creation, resolve findings, then **delete it
   — do not commit it**. Only the ongoing config stays and becomes the PR check. The easiest way to

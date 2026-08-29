@@ -1,7 +1,7 @@
 ---
 name: create-repo
 description: Use when creating a new repository or bootstrapping an existing project's tooling, tests, AGENTS.md, and CI so the setup fits the actual product and enforces strict, deterministic quality gates.
-compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo.
+compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo. The repo it stands up needs Node and bun for its mandatory project graph, whatever it is written in.
 ---
 
 # Create repo
@@ -46,18 +46,17 @@ clone, run one command, and trust.
 
    ```bash
    uv run --script scripts/compose_repo_plan.py --shape cli --language python \
-     [--releasing] [--monorepo] [--intersection <name>] -o REPO_PLAN.md
+     [--releasing] [--intersection <name>] -o REPO_PLAN.md
    ```
 
-   It always pulls in `base.md` (the always-applied invariants) and `ci.md`, adds
-   the product shape and language(s), pulls in `releasing.md`/`monorepo.md` when
-   you pass `--releasing`/`--monorepo`, and auto-includes the right intersection
-   (e.g. `cli` + `python` → `python-cli`). Run `--list` to see the available
-   flags, or [`references/composing.md`](./references/composing.md) for the model
-   and worked examples. Pass `--monorepo` when the repo breaks into more than one
-   deliverable (multiple apps, packages, or languages): each project keeps its
-   own shape + language, the root command surface delegates to an orchestrator
-   (Nx), and CI runs only affected projects. **Record the composition** the plan
+   It always pulls in `base.md` (the always-applied invariants),
+   `project-graph.md` (the mandatory Nx project graph — there is no flag for it,
+   single-deliverable repos included), and `ci.md`, adds the product shape and
+   language(s), pulls in `releasing.md` when you pass `--releasing`, and
+   auto-includes the right intersection (e.g. `cli` + `python` → `python-cli`).
+   Run `--list` to see the available flags, or
+   [`references/composing.md`](./references/composing.md) for the model and
+   worked examples. **Record the composition** the plan
    prints — the shape, the language(s), the references composed, and which
    guidance you excluded and why — in the "Stack and composition" section of
    `AGENTS.md`; the baseline checker verifies it is filled in. Exclusions are for
@@ -194,6 +193,8 @@ a suggested fix.
      Bash/plugin, skills repo, etc.).
    - Adapt tooling, tests, layout, docs, and CI to that artifact; don't blindly
      apply a generic template.
+   - The layout is not a per-repo choice: the project graph is fixed before the
+     shape is.
    - Explicitly state what guidance was excluded and why — but only optional
      tooling/layout qualifies. The non-negotiable invariants (strict gate,
      realistic un-mocked e2e of every real journey, CI proving the artifact) are
@@ -313,6 +314,8 @@ a suggested fix.
       When a CLI ships through several install surfaces, keep them all on one
       asset-naming contract (see `references/shapes/cli.md`).
 12. **Avoid unnecessary template baggage.**
+    - The project graph (Principle 1) is outside this principle: its toolchain
+      is a mandatory invariant, never baggage to trim.
     - Exclude tools and layouts that don't fit (asdf, direnv, `src` layout,
       heavyweight pre-commit frameworks, etc.) unless clearly justified. A *fast*
       pre-commit/pre-push hook that just calls the gate (lefthook, or husky where
@@ -376,28 +379,22 @@ a suggested fix.
 ## Composable references
 
 References mix and match instead of forming one monolithic template per stack.
-The composer (step 2) assembles them — pick **one product shape**, pass the
-**language(s)** it is built in, and it always pulls in `base.md` and `ci.md` and
-prefers a focused intersection (for example `python-cli`) where one exists. Where
-you hit an intersection that has no reference yet, create one — adding the file
-extends the composer's `--intersection` choices automatically. See
-[`references/composing.md`](./references/composing.md) for the catalog and worked
-examples.
-
-Each reference carries its own `## Verification` section, and the composer lifts
-those items into the plan's single checklist — so a check lives next to the
-guidance that motivates it, and editing one reference updates both.
+Each carries its own `## Verification` section, and the composer lifts those
+items into the plan's single checklist — so a check lives next to the guidance
+that motivates it, and editing one reference updates both. Where you hit an
+intersection that has no reference yet, create one — adding the file extends the
+composer's `--intersection` choices automatically.
 
 - **Always applied** — `base.md` (the shape/language-agnostic invariants, first
-  in every plan) and `ci` (GitHub Actions, on top of every shape).
+  in every plan), `project-graph` (the mandatory Nx project graph, composed
+  right behind `base.md` with no flag to pass), and `ci` (GitHub Actions, on top
+  of every shape).
 - **Product shapes** — `cli`, `web-app`, `react`, `nextjs`, `library`,
   `skills-repo`, `asdf-plugin` (language-agnostic where possible; `react` builds
   on `web-app` and `nextjs` builds on `react`).
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
 - **Cross-cutting (flagged)** — `releasing` (Conventional Commits → automated
-  release), via `--releasing` when the repo ships a versioned artifact;
-  `monorepo` (Nx orchestration, affected-only jobs, output caching), via
-  `--monorepo` when the repo holds more than one app, package, or language.
+  release), via `--releasing` when the repo ships a versioned artifact.
 - **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
   needed where a shape and a language meet.
 
@@ -405,7 +402,7 @@ guidance that motivates it, and editing one reference updates both.
 
 - [`scripts/compose_repo_plan.py`](./scripts/compose_repo_plan.py) — the
   composer (step 2). Takes `--shape`, `--language` (repeatable), `--releasing`,
-  `--monorepo`, and `--intersection`, and emits one document for that stack: the
+  and `--intersection`, and emits one document for that stack: the
   composed guidance plus a single verification checklist assembled from each
   reference's `## Verification` items. Discovers the available flags by scanning
   `references/`, auto-derives intersections (`cli` + `python` → `python-cli`) and

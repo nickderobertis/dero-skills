@@ -1,0 +1,45 @@
+# Project-graph ongoing rules (plugin). Pairs with project-graph.md — the checks
+# that keep the project graph doing its job as the repo keeps changing, not just
+# at creation. Composed into every repo, since the Nx project graph is mandatory.
+version: 1.2.0
+
+rules:
+  - name: instruction_layer_localized
+    description: |
+      true when subtree rules live in a nested `AGENTS.md` inside each project and
+      `CODEOWNERS` routes reviews, leaving the root `AGENTS.md` to repo-wide
+      constraints only. false when project-specific rules are piled into the root
+      `AGENTS.md`, or there is no ownership routing.
+    files:
+      include: ["**/AGENTS.md", "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
+
+  - name: expensive_tests_stay_behind_their_own_edge
+    description: |
+      true when the test lives in a project whose graph edges reach only what it
+      actually tests, so an unrelated change cannot make it run. false when it sits
+      in a broadly-depended-on project, or its project depends on unrelated code
+      (an import, a `dependsOn`, or an implicit dependency), so every change in the
+      repo pays for it.
+    files:
+      include:
+        - "**/e2e/**"
+        - "**/*e2e*"
+        - "**/integration/**"
+        - "**/*.integration.*"
+        - "**/project.json"
+        - "nx.json"
+    relevance: |
+      the target files add or change a test that is slow or reaches an external
+      service (a live API, a container, a browser, a real database), or change the
+      project definition that owns one
+
+  - name: new_projects_keep_the_graph_uniform
+    description: |
+      true when the project declares the repo's standard target names for the work
+      it has (`build`, `lint`, `test`, `typecheck`) and the boundary tags its layer
+      requires, so `nx affected`/`run-many` fan out by name and the module-boundary
+      rule can judge it. false when it invents a target name the repo already names,
+      omits a target it has work for, or is untagged where its layer is tag-enforced.
+    files:
+      include: ["nx.json", "**/project.json"]
+    relevance: the target files declare a project that did not exist before

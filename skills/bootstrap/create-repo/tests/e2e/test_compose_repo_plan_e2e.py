@@ -54,6 +54,10 @@ def test_cli_python_composes_guidance_and_checklist():
 
     # Guidance from each composed reference is inlined.
     assert "### Base: always-applied invariants  (`base.md`)" in doc
+    assert (
+        "### Cross-cutting: Project graph & Nx orchestration  (`project-graph.md`)"
+        in doc
+    )
     assert "### Shape: CLI  (`shapes/cli.md`)" in doc
     assert "### Language: Python  (`languages/python.md`)" in doc
     assert "### Cross-cutting: GitHub Actions / CI  (`ci.md`)" in doc
@@ -71,8 +75,8 @@ def test_cli_python_composes_guidance_and_checklist():
     # The composition block records exactly what was composed (llmlint.md is
     # always pulled in on top of ci.md, like ci.md itself).
     assert (
-        "**References composed:** base.md, shapes/cli.md, languages/python.md, "
-        "intersections/python-cli.md, ci.md, llmlint.md" in doc
+        "**References composed:** base.md, project-graph.md, shapes/cli.md, "
+        "languages/python.md, intersections/python-cli.md, ci.md, llmlint.md" in doc
     )
 
 
@@ -127,16 +131,64 @@ def test_terraform_composes_guidance_checklist_and_both_llmlint_tiers(tmp_path):
     )
 
 
-def test_releasing_and_monorepo_flags_pull_references():
-    doc = run(
-        "--shape", "library", "--language", "python", "--releasing", "--monorepo"
-    ).stdout
+def test_releasing_flag_pulls_reference():
+    doc = run("--shape", "library", "--language", "python", "--releasing").stdout
     assert "### Cross-cutting: Releases & versioning  (`releasing.md`)" in doc
-    assert "### Cross-cutting: Monorepo orchestration  (`monorepo.md`)" in doc
-    # Their verification items land in the checklist too.
     checklist = doc.split("## Verification checklist", 1)[1]
     assert "PR-title lint is a required check" in checklist
-    assert "Each deliverable is its own project" in checklist
+
+
+def test_project_graph_composes_for_a_single_deliverable_stack():
+    doc = run("--shape", "library", "--language", "python").stdout
+    composed = next(line for line in doc.splitlines() if "References composed" in line)
+    assert "base.md, project-graph.md," in composed
+    assert (
+        "### Cross-cutting: Project graph & Nx orchestration  (`project-graph.md`)"
+        in doc
+    )
+    checklist = doc.split("## Verification checklist", 1)[1]
+    for item in (
+        "The repo has an Nx project graph",
+        "Split by test tier and by cost",
+        "Expensive work sits behind an unreachable edge",
+        "Each deliverable is its own project",
+        "Nx and the language workspace both wired",
+        "Root commands delegate",
+        "Affected-only in CI",
+        "Caching never hides a broken clean build",
+        "Project boundaries enforced",
+        "Instruction layer localized",
+        "Scripts stay orchestrator-independent",
+    ):
+        assert item in checklist, item
+
+
+def test_monorepo_flag_is_gone():
+    result = run("--shape", "library", "--language", "python", "--monorepo")
+    assert result.returncode == 2
+    assert "unrecognized arguments: --monorepo" in result.stderr
+    assert "fix: drop --monorepo" in result.stderr
+    # The removed flag alone needs no catalog lookup.
+    assert "fix: run --list" not in result.stderr
+    assert "--monorepo" not in run("--list").stdout
+
+
+def test_other_unknown_flags_still_fail_without_the_monorepo_hint():
+    result = run("--shape", "library", "--language", "python", "--frobnicate")
+    assert result.returncode == 2
+    assert "unrecognized arguments: --frobnicate" in result.stderr
+    assert "fix: run --list" in result.stderr
+    assert "fix: drop --monorepo" not in result.stderr
+
+
+def test_monorepo_mixed_with_another_unknown_flag_reports_both_fixes():
+    result = run(
+        "--shape", "library", "--language", "python", "--monorepo", "--frobnicate"
+    )
+    assert result.returncode == 2
+    assert "unrecognized arguments: --monorepo --frobnicate" in result.stderr
+    assert "fix: drop --monorepo" in result.stderr
+    assert "fix: run --list" in result.stderr
 
 
 def test_releasing_omitted_by_default():
@@ -145,9 +197,7 @@ def test_releasing_omitted_by_default():
     doc = run("--shape", "library", "--language", "python").stdout
     composed = next(line for line in doc.splitlines() if "References composed" in line)
     assert "releasing.md" not in composed
-    assert "monorepo.md" not in composed
     assert "(`releasing.md`)" not in doc
-    assert "(`monorepo.md`)" not in doc
 
 
 def test_react_pulls_webapp_and_assumes_typescript():
@@ -185,8 +235,8 @@ def test_nextjs_pulls_react_webapp_and_assumes_typescript():
     )
     # The composition line records the full chain in order.
     assert (
-        "base.md, shapes/web-app.md, shapes/react.md, shapes/nextjs.md, "
-        "languages/typescript.md" in doc
+        "base.md, project-graph.md, shapes/web-app.md, shapes/react.md, "
+        "shapes/nextjs.md, languages/typescript.md" in doc
     )
 
 
@@ -310,27 +360,12 @@ def test_oneharness_config_path_override(tmp_path):
     assert 'run_mode = "fallback"' in oh.read_text(encoding="utf-8")
 
 
-def test_llmlint_ongoing_monorepo_fragment_gated_by_flag(tmp_path):
-    # `instruction_layer_localized` is now an ONGOING rule: the monorepo fragment
-    # lands in the committed llmlint.yml (PR-checked), but only when --monorepo is
-    # selected, and never in a single-deliverable repo.
+def test_llmlint_ongoing_project_graph_fragment_is_unconditional(tmp_path):
     out = tmp_path / "llmlint.yml"
     run("--shape", "library", "--language", "python", "--llmlint-config", str(out))
-    assert "/assets/llmlint/monorepo.llmlint.yml" not in out.read_text(encoding="utf-8")
-
-    run(
-        "--shape",
-        "library",
-        "--language",
-        "python",
-        "--monorepo",
-        "--llmlint-config",
-        str(out),
-    )
     cfg = out.read_text(encoding="utf-8")
-    assert "/assets/llmlint/monorepo.llmlint.yml@1" in cfg
-    # ...and it is ongoing, not the buildout copy
-    assert "/buildout/monorepo.llmlint.yml" not in cfg
+    assert "/assets/llmlint/project-graph.llmlint.yml@1" in cfg
+    assert "/buildout/project-graph.llmlint.yml" not in cfg
 
 
 def test_llmlint_buildout_config_carries_only_buildout_fragments(tmp_path):
@@ -370,7 +405,7 @@ def test_llmlint_buildout_covers_base_language_and_shape(tmp_path):
     assert "/buildout/shapes/web-app.llmlint.yml@1" in cfg
 
 
-def test_llmlint_buildout_releasing_and_monorepo_gated_by_flags(tmp_path):
+def test_llmlint_buildout_releasing_gated_by_flag_project_graph_always(tmp_path):
     out = tmp_path / "b.yml"
     run(
         "--shape",
@@ -382,7 +417,7 @@ def test_llmlint_buildout_releasing_and_monorepo_gated_by_flags(tmp_path):
     )
     bare = out.read_text(encoding="utf-8")
     assert "/buildout/releasing.llmlint.yml" not in bare
-    assert "/buildout/monorepo.llmlint.yml" not in bare
+    assert "/buildout/project-graph.llmlint.yml@1" in bare
 
     run(
         "--shape",
@@ -390,13 +425,11 @@ def test_llmlint_buildout_releasing_and_monorepo_gated_by_flags(tmp_path):
         "--language",
         "python",
         "--releasing",
-        "--monorepo",
         "--llmlint-buildout-config",
         str(out),
     )
     flagged = out.read_text(encoding="utf-8")
     assert "/buildout/releasing.llmlint.yml@1" in flagged
-    assert "/buildout/monorepo.llmlint.yml@1" in flagged
 
 
 def test_llmlint_config_to_file_keeps_plan_stdout_clean(tmp_path):

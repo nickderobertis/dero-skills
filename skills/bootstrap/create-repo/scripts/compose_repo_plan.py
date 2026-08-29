@@ -6,7 +6,7 @@
 
 Usage:
     uv run --script scripts/compose_repo_plan.py --shape SHAPE --language LANG \
-        [--language LANG ...] [--releasing] [--monorepo] \
+        [--language LANG ...] [--releasing] \
         [--intersection NAME ...] [-o OUT.md] \
         [--llmlint-config FILE] [--llmlint-buildout-config FILE] \
         [--oneharness-config FILE]
@@ -20,10 +20,11 @@ selected reference, followed by one verification checklist assembled from the
 
 The reference catalog *is* the source of truth: shapes, languages, and
 intersections are discovered by scanning ``references/`` next to this script, so
-adding a reference file automatically extends the flags. ``ci.md`` is always
-included (it applies on top of every shape); ``base.md`` is always included
-first (the shape/language-agnostic invariants); ``releasing.md`` and
-``monorepo.md`` are pulled in by ``--releasing`` / ``--monorepo``.
+adding a reference file automatically extends the flags. ``base.md`` is always
+included first (the shape/language-agnostic invariants), immediately followed by
+``project-graph.md`` (the project graph is mandatory in every repo, so there is
+no flag for it); ``ci.md`` is always included too (it applies on top of every
+shape); ``releasing.md`` is pulled in by ``--releasing``.
 
 Convenience derivations, each announced on stderr so the composition stays
 auditable:
@@ -205,17 +206,16 @@ def select_relpaths(
     languages: list[str],
     intersections: list[str],
     releasing: bool,
-    monorepo: bool,
     notes: list[str],
 ) -> tuple[list[str], list[str]]:
     """Resolve the flags into an ordered, de-duplicated list of reference relpaths.
 
     Returns the relpaths plus the resolved language list (which may have grown,
     e.g. TypeScript auto-added for a Next.js shape). Order mirrors how the skill
-    says to compose: base, shape(s), language(s), intersection(s), then ci and
-    the cross-cutting references.
+    says to compose: base, the mandatory project graph, shape(s), language(s),
+    intersection(s), then ci and the cross-cutting references.
     """
-    ordered: list[str] = ["base.md"]
+    ordered: list[str] = ["base.md", "project-graph.md"]
 
     # A shape composes any shape(s) it builds on first (base-most first), then
     # itself: react builds on web-app; nextjs builds on react (and thus web-app).
@@ -251,8 +251,6 @@ def select_relpaths(
     ordered.append("llmlint.md")
     if releasing:
         ordered.append("releasing.md")
-    if monorepo:
-        ordered.append("monorepo.md")
 
     seen: set[str] = set()
     deduped = [r for r in ordered if not (r in seen or seen.add(r))]
@@ -450,7 +448,7 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
             "#",
             "# TEMPORARY buildout config — run ONCE during repo creation, then DELETE.",
             "# Do NOT commit it. It checks the repo was *set up* right (CI/release/",
-            "# monorepo wiring); the ongoing rules live in the committed llmlint.yml.",
+            "# project-graph wiring); the ongoing rules live in the committed llmlint.yml.",
             "#   llmlint -c llmlint.buildout.yml",
         ]
     else:
@@ -528,11 +526,6 @@ def build_parser(
         help="the repo ships a versioned artifact (pull in releasing.md)",
     )
     parser.add_argument(
-        "--monorepo",
-        action="store_true",
-        help="the repo holds more than one deliverable (pull in monorepo.md)",
-    )
-    parser.add_argument(
         "-o",
         "--output",
         metavar="FILE",
@@ -581,7 +574,27 @@ def main(argv: list[str]) -> int:
     intersections = discover(refs_dir, "intersections")
 
     parser = build_parser(shapes, languages, intersections)
-    args = parser.parse_args(argv)
+    # `--monorepo` was removed rather than renamed, so an invocation carrying it
+    # fails. Parse leniently to name the concrete fix instead of leaving argparse
+    # to report only that the flag is unknown.
+    args, unknown = parser.parse_known_args(argv)
+    if unknown:
+        # Every unrecognized argument gets a next action: the removed flag its
+        # own concrete fix, anything else the generic one. A mixed invocation
+        # (`--monorepo --bogus`) gets both, so neither half goes unreported.
+        fixes: list[str] = []
+        if "--monorepo" in unknown:
+            fixes.append(
+                "drop --monorepo — project-graph.md composes into every plan "
+                "now, so there is no flag to select it."
+            )
+        if any(arg != "--monorepo" for arg in unknown):
+            fixes.append("run --list to see the flags this reference set supports.")
+        parser.error(
+            "unrecognized arguments: "
+            + " ".join(unknown)
+            + "".join(f"\n      fix: {fix}" for fix in fixes)
+        )
 
     if args.list:
         print("Available composition flags (from references/):")
@@ -589,7 +602,6 @@ def main(argv: list[str]) -> int:
         print(f"  --language      {', '.join(languages)}")
         print(f"  --intersection  {', '.join(intersections) or '(none)'}")
         print("  --releasing     ships a versioned artifact (releasing.md)")
-        print("  --monorepo      more than one deliverable (monorepo.md)")
         return 0
 
     missing = [
@@ -607,7 +619,6 @@ def main(argv: list[str]) -> int:
         args.language,
         args.intersection,
         args.releasing,
-        args.monorepo,
         notes,
     )
 
@@ -627,8 +638,6 @@ def main(argv: list[str]) -> int:
     flags += [f"--intersection {name}" for name in args.intersection]
     if args.releasing:
         flags.append("--releasing")
-    if args.monorepo:
-        flags.append("--monorepo")
     invocation = "compose_repo_plan.py " + " ".join(flags)
 
     document = render_plan(args.shape, resolved_langs, refs, invocation)
