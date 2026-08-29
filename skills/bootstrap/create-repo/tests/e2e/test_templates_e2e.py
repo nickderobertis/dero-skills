@@ -15,6 +15,7 @@ least-privilege / no-injection rules `references/ci.md` requires of it.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -147,6 +148,34 @@ def test_the_template_surface_reads_as_delegating_to_the_graph(command_surface):
     (finding,) = crb.check_project_graph(command_surface)
     assert finding.level == "WARN"
     assert "bypass" not in finding.message
+
+
+# --- the durable instruction layer -----------------------------------------
+
+
+def test_the_agents_template_records_the_graph_and_the_staged_gate():
+    agents = (ASSETS / "AGENTS.md.template").read_text(encoding="utf-8")
+    composition = crb.find_heading_section(agents, crb.COMPOSITION_HEADING_RE)
+    assert composition is not None, "the checker must still find the section"
+    section = "\n".join(composition)
+    # The composition the composer prints, and the graph it always composes.
+    assert "References composed" in section
+    assert "project-graph.md" in section
+    assert "project graph" in section
+    # The command surface teaches both tiers of the staged gate.
+    assert "`just check all`" in agents
+    assert "affected tier" in agents and "broader tier" in agents
+
+
+def test_a_filled_in_agents_template_satisfies_the_composition_check(tmp_path):
+    # The template ships placeholders on purpose — the checker's job is to catch
+    # one left unfilled — so fill them the way a new repo does and confirm the
+    # section it leaves behind is what the checker accepts.
+    agents = (ASSETS / "AGENTS.md.template").read_text(encoding="utf-8")
+    filled = re.sub(r"<[^>]+>", "python cli, one deliverable", agents, flags=re.S)
+    (tmp_path / "AGENTS.md").write_text(filled, encoding="utf-8")
+    findings = crb.check_composition(tmp_path)
+    assert [f.level for f in findings] == ["OK"], [f.message for f in findings]
 
 
 # --- the CI workflow -------------------------------------------------------
