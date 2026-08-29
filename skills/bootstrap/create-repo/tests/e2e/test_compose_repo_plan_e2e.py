@@ -186,9 +186,7 @@ def test_monorepo_mixed_with_another_unknown_flag_reports_both_fixes():
         "--shape", "library", "--language", "python", "--monorepo", "--frobnicate"
     )
     assert result.returncode == 2
-    # Both bad arguments are named ...
     assert "unrecognized arguments: --monorepo --frobnicate" in result.stderr
-    # ... and each gets its own next action; neither displaces the other.
     assert "fix: drop --monorepo" in result.stderr
     assert "fix: run --list" in result.stderr
 
