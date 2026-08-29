@@ -2,7 +2,7 @@
 # always composed). Structural one-time CI checks are buildout-only — see
 # buildout/ci.llmlint.yml.
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
-version: 1.2
+version: 1.3
 
 rules:
   - name: live_tier_compiles_and_requires_credential
@@ -52,12 +52,11 @@ rules:
 
   - name: external_service_suite_stays_out_of_the_affected_tier
     description: |
-      true when every test suite that contacts an external service (a live third-party
-      API, a hosted model harness, a registry, a payment sandbox) runs from its own
-      credential-gated workflow or a target promoted out of the affected tier, rather
-      than from the affected-tier gate a pull request runs. false when a change wires an
-      external-service-hitting suite into the PR gate — including a fast one, since that
-      promotion is decided by what the suite touches, not by how long it takes. A suite
+      true when every such suite runs from its own credential-gated workflow or a
+      target promoted out of the affected tier, rather than from the affected-tier
+      gate a pull request runs. false when a change wires one into the PR gate —
+      including a fast one, since that promotion is decided by what the suite
+      touches, not by how long it takes. A suite
       touching only local resources (temp files, a local server or container the job
       starts itself, a real subprocess) belongs in the affected tier and is not a
       violation.

@@ -2,17 +2,17 @@
 # the repo ships a versioned artifact (`--releasing`). One-time structural checks
 # on the release wiring are buildout-only — see buildout/releasing.llmlint.yml.
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
-version: 1
+version: 1.1
 
 rules:
   - name: release_does_not_regate_an_already_swept_commit
     description: |
-      true when the release, tag, and publish workflows only compute the version, write
-      the changelog and manifests, build, and publish — running no lint, type-check, or
-      test target over a commit the merge (or the release PR) already swept with the
-      broader tier. false when a release-triggered job re-runs the gate or the full
-      sweep over that same code, paying twice for one answer. Compiling the artifact it
-      ships is building, not gating, and is not a violation.
+      true when it only computes the version, writes the changelog and manifests,
+      builds, and publishes — running no lint, type-check, or test target over a
+      commit the merge (or the release PR) already swept with the broader tier. false
+      when a release-triggered job re-runs the gate or the full sweep over that same
+      code. Compiling the artifact it ships is building, not gating, and is not a
+      violation.
     files:
       include:
         - ".github/workflows/**"

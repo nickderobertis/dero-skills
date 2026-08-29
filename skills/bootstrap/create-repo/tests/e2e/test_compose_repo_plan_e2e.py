@@ -543,13 +543,12 @@ def test_plan_without_releasing_keeps_ci_tiers_and_drops_the_release_half(tmp_pa
     )
 
 
-# --- e2e: the judge rules the composed configs pull in ----------------------
-#
 # The emitted config is a thin wrapper: every rule reaches the repo through a
-# pinned plugin URL. So "what the config carries" is the union of the rules in
-# the fragments it wires — resolve each URL back to the fragment it names and
-# read the rule names out of it. A fragment that stops being wired, or a rule
-# that stops being defined, both fail here.
+# pinned plugin URL, so "what the config carries" is the union of the rules in
+# the fragments it wires. Resolve each URL the way llmlint does — the pin names
+# the raw-hosted copy of `assets/llmlint/<relpath>` — but off the filesystem,
+# since the gate is offline and harness-free by design. A fragment that stops
+# being wired, or a rule that stops being defined, both fail here.
 
 _PLUGIN_URL_RE = re.compile(r'^\s*-\s+"(\S+)"\s*$')
 _RULE_NAME_RE = re.compile(r"^\s*-\s+name:\s*(\S+)\s*$")
@@ -557,7 +556,12 @@ _FRAGMENT_ROOT = "/assets/llmlint/"
 
 
 def wired_rule_names(config_path: Path) -> set[str]:
-    """Every judge rule an emitted llmlint config actually pulls in."""
+    """Every judge rule an emitted llmlint config actually pulls in.
+
+    Reads the plugin URLs out of the emitted file and follows each to the
+    fragment it pins, so a rule counts as carried only when the config a
+    consumer runs would reach it.
+    """
     names: set[str] = set()
     for line in config_path.read_text(encoding="utf-8").splitlines():
         match = _PLUGIN_URL_RE.match(line)

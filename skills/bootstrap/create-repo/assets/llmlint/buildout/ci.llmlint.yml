@@ -1,6 +1,6 @@
 # CI buildout rules (plugin) — run ONCE during repo creation, then discarded.
 # These verify the CI was set up right; they are not an ongoing PR check.
-version: 1.2.0
+version: 1.3.0
 
 rules:
   - name: ci_runs_the_real_gate
@@ -48,6 +48,7 @@ rules:
         - "Justfile"
         - ".justfile"
         - "nx.json"
+    require_line_attribution: true
 
   - name: broader_sweep_runs_at_exactly_one_lifecycle_point
     description: |
@@ -63,14 +64,14 @@ rules:
 
   - name: required_checks_name_only_pr_context_jobs
     description: |
-      true when the repo's recorded required status-check contexts name only jobs that
-      report on a pull request — the affected-tier gate, the PR-title lint, the llmlint
-      tier. false when the broader-tier sweep, or any other job that runs only after
-      merge or at release-prep, is listed as a required context: it never reports on a
-      pull request, so every PR waits on a check that cannot arrive.
+      true when every context named is a job that reports on a pull request — the
+      affected-tier gate, the PR-title lint, the llmlint tier. false when the
+      broader-tier sweep, or any other job that runs only after merge or at
+      release-prep, is named.
     files:
       include:
         - "AGENTS.md"
         - ".github/workflows/**"
         - "scripts/**"
     relevance: the target files record the repo's required status-check contexts
+    require_line_attribution: true
