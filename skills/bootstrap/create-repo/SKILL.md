@@ -46,18 +46,21 @@ clone, run one command, and trust.
 
    ```bash
    uv run --script scripts/compose_repo_plan.py --shape cli --language python \
-     [--releasing] [--monorepo] [--intersection <name>] -o REPO_PLAN.md
+     [--releasing] [--intersection <name>] -o REPO_PLAN.md
    ```
 
-   It always pulls in `base.md` (the always-applied invariants) and `ci.md`, adds
-   the product shape and language(s), pulls in `releasing.md`/`monorepo.md` when
-   you pass `--releasing`/`--monorepo`, and auto-includes the right intersection
-   (e.g. `cli` + `python` → `python-cli`). Run `--list` to see the available
-   flags, or [`references/composing.md`](./references/composing.md) for the model
-   and worked examples. Pass `--monorepo` when the repo breaks into more than one
-   deliverable (multiple apps, packages, or languages): each project keeps its
-   own shape + language, the root command surface delegates to an orchestrator
-   (Nx), and CI runs only affected projects. **Record the composition** the plan
+   It always pulls in `base.md` (the always-applied invariants), `ci.md`, and
+   `monorepo.md`, adds the product shape and language(s), pulls in
+   `releasing.md` when you pass `--releasing`, and auto-includes the right
+   intersection (e.g. `cli` + `python` → `python-cli`). Run `--list` to see the
+   available flags, or
+   [`references/composing.md`](./references/composing.md) for the model
+   and worked examples. There is **no `--monorepo` flag**: an Nx project graph is
+   mandatory in every repo, so `monorepo.md` composes unconditionally. Each
+   project keeps its own shape + language, the root command surface delegates to
+   Nx, and CI runs only affected projects — and in a repo with one deliverable the
+   projects come from splitting the test tiers and the expensive suites apart, not
+   from packaging. **Record the composition** the plan
    prints — the shape, the language(s), the references composed, and which
    guidance you excluded and why — in the "Stack and composition" section of
    `AGENTS.md`; the baseline checker verifies it is filled in. Exclusions are for
@@ -194,6 +197,13 @@ a suggested fix.
      Bash/plugin, skills repo, etc.).
    - Adapt tooling, tests, layout, docs, and CI to that artifact; don't blindly
      apply a generic template.
+   - One layout decision is fixed before the shape is: **every repo is an
+     Nx-orchestrated project graph.** A project is a unit of the target/test
+     graph, not necessarily a publishable package, so a one-deliverable repo has
+     one too — split by test tier and by cost, so a slow or external-service
+     suite sits behind a graph edge unrelated changes cannot reach. Nx is the
+     orchestrator with no native-workspace substitute; a pure Rust or pure Python
+     repo carries the Node/bun toolchain for it. See `references/monorepo.md`.
    - Explicitly state what guidance was excluded and why — but only optional
      tooling/layout qualifies. The non-negotiable invariants (strict gate,
      realistic un-mocked e2e of every real journey, CI proving the artifact) are
@@ -313,6 +323,9 @@ a suggested fix.
       When a CLI ships through several install surfaces, keep them all on one
       asset-naming contract (see `references/shapes/cli.md`).
 12. **Avoid unnecessary template baggage.**
+    - The Nx project graph (Principle 1) is outside this principle: it is a
+      mandatory invariant, so the Node/bun toolchain it needs is never the
+      baggage to trim, even in a repo with no other JavaScript.
     - Exclude tools and layouts that don't fit (asdf, direnv, `src` layout,
       heavyweight pre-commit frameworks, etc.) unless clearly justified. A *fast*
       pre-commit/pre-push hook that just calls the gate (lefthook, or husky where
@@ -389,15 +402,15 @@ those items into the plan's single checklist — so a check lives next to the
 guidance that motivates it, and editing one reference updates both.
 
 - **Always applied** — `base.md` (the shape/language-agnostic invariants, first
-  in every plan) and `ci` (GitHub Actions, on top of every shape).
+  in every plan), `ci` (GitHub Actions, on top of every shape), and `monorepo`
+  (the mandatory Nx project graph: affected-only jobs, output caching, and the
+  test-tier/cost splits every repo makes).
 - **Product shapes** — `cli`, `web-app`, `react`, `nextjs`, `library`,
   `skills-repo`, `asdf-plugin` (language-agnostic where possible; `react` builds
   on `web-app` and `nextjs` builds on `react`).
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
 - **Cross-cutting (flagged)** — `releasing` (Conventional Commits → automated
-  release), via `--releasing` when the repo ships a versioned artifact;
-  `monorepo` (Nx orchestration, affected-only jobs, output caching), via
-  `--monorepo` when the repo holds more than one app, package, or language.
+  release), via `--releasing` when the repo ships a versioned artifact.
 - **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
   needed where a shape and a language meet.
 
@@ -405,7 +418,7 @@ guidance that motivates it, and editing one reference updates both.
 
 - [`scripts/compose_repo_plan.py`](./scripts/compose_repo_plan.py) — the
   composer (step 2). Takes `--shape`, `--language` (repeatable), `--releasing`,
-  `--monorepo`, and `--intersection`, and emits one document for that stack: the
+  and `--intersection`, and emits one document for that stack: the
   composed guidance plus a single verification checklist assembled from each
   reference's `## Verification` items. Discovers the available flags by scanning
   `references/`, auto-derives intersections (`cli` + `python` → `python-cli`) and

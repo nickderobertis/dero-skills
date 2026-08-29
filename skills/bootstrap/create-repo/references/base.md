@@ -24,6 +24,12 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - **One command surface.** A `just` recipe set (`bootstrap`, `check`, `test`,
   `lint`, `format`, `upgrade`) with real bodies; `just bootstrap` works from a
   clean clone and `just check` is the full gate.
+- **An Nx project graph, in every repo.** The repo is laid out as projects and
+  the command surface runs targets through Nx — including when it ships one
+  deliverable, where the graph exists so the test tiers and the expensive suites
+  split apart and a change only pays for what it can reach. A project is a unit
+  of the target/test graph, not necessarily a publishable package; see
+  `monorepo.md` for the splits and the boundary tags that hold them.
 - **Strict, deterministic gate.** Format, lint, type check, and tests fail on
   issues — no warnings-only mode — with coverage measured and enforced.
 - **Realistic e2e is an invariant, not a preference.** The suite is the only QA
@@ -63,6 +69,10 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - [ ] **Command surface.** The `justfile` defines `bootstrap`, `check`, `test`,
   `lint`, `format`, `upgrade`, each with a real body (no placeholder recipe
   survives), and `just bootstrap` works from a clean clone.
+- [ ] **Project graph.** The repo declares an Nx project graph (`nx.json` plus
+  project definitions) and the command surface runs targets through it — present
+  even for a single-deliverable repo, where the projects come from the test-tier
+  and cost splits rather than from packaging.
 - [ ] **Strict gate.** `just check` runs format check + lint + type check + unit
   tests + e2e and fails on any issue (no warnings-only mode); `check` actually
   invokes `test` — confirm the wiring, don't assume it.

@@ -11,7 +11,7 @@
 # automatically. See references/llmlint.md ("Fragment versioning").
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.8.0
+version: 1.9.0
 
 rules:
   - name: comments_earn_their_place
@@ -237,6 +237,17 @@ rules:
       following reference links (directly or nested through other docs) — i.e. a file the
       agent already loads automatically or has been prompted it can load; skip markdown no
       AGENTS.md reaches
+    require_line_attribution: true
+
+  - name: new_code_lands_in_a_project
+    description: |
+      Every repo is laid out as an Nx project graph, so nothing runs outside it.
+      true when every source or test file the change adds belongs to a project the
+      graph already declares (the nearest project definition covers its path), or
+      the change declares the new project itself. false when the change adds a
+      module, package, or test suite at a path no project definition covers, so Nx
+      can neither run nor skip it and the work escapes `affected` entirely.
+    relevance: the target files add a source or test file to the repo
     require_line_attribution: true
 
   - name: work_goes_through_command_surface

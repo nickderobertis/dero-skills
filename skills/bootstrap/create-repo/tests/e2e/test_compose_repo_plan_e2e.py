@@ -132,7 +132,7 @@ def test_releasing_and_monorepo_flags_pull_references():
         "--shape", "library", "--language", "python", "--releasing", "--monorepo"
     ).stdout
     assert "### Cross-cutting: Releases & versioning  (`releasing.md`)" in doc
-    assert "### Cross-cutting: Monorepo orchestration  (`monorepo.md`)" in doc
+    assert "### Cross-cutting: Project graph & Nx orchestration  (`monorepo.md`)" in doc
     # Their verification items land in the checklist too.
     checklist = doc.split("## Verification checklist", 1)[1]
     assert "PR-title lint is a required check" in checklist

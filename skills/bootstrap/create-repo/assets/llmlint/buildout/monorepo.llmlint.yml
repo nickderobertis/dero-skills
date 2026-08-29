@@ -1,6 +1,7 @@
-# Monorepo buildout rules (plugin) — run ONCE during repo creation, then
-# discarded. They verify the orchestration was wired correctly at setup.
-version: 1
+# Project-graph buildout rules (plugin) — run ONCE during repo creation, then
+# discarded. They verify the mandatory Nx project graph was wired correctly at
+# setup.
+version: 1.1.0
 
 rules:
   - name: root_commands_delegate
@@ -29,12 +30,46 @@ rules:
 
   - name: each_deliverable_is_its_own_project
     description: |
-      true when every app/package under the monorepo has its own project definition
+      true when every app/package in the repo has its own project definition
       declaring its local targets (`build`, `lint`, `test`, `typecheck`) that call
       its own language-native tool. false when a deliverable has no project
       definition, so the orchestrator cannot run or cache it as an affected unit.
     files:
       include: ["nx.json", "**/project.json", "**/package.json", "**/Cargo.toml", "**/pyproject.toml"]
+
+  - name: graph_splits_by_tier_and_cost
+    description: |
+      true when the project graph splits the repo's work beyond its deliverables —
+      the fast unit tier, the integration tier, and the e2e tier are separate
+      projects, and every slow or external-service-touching suite (a live API, a
+      container, a browser, a real database) is a project of its own depending only
+      on what it tests. A project is a unit of the target/test graph, so a repo with
+      a single deliverable is held to this too. false when the whole repo is one
+      project, or an expensive suite rides along inside a broadly-depended-on
+      project so every change reruns it.
+    files:
+      include: ["nx.json", "**/project.json", "**/e2e/**", "**/integration/**"]
+
+  - name: language_workspace_resolves_dependencies
+    description: |
+      true when the repo's projects are declared to the language's own workspace
+      primitive as well as to Nx — a uv workspace, a Cargo workspace, or
+      bun/pnpm workspaces — with ONE lockfile per language ecosystem covering them
+      all. false when each project carries its own lockfile for the same ecosystem,
+      or dependency resolution is hand-wired per project because only Nx knows the
+      projects exist.
+    files:
+      include:
+        - "nx.json"
+        - "**/project.json"
+        - "pyproject.toml"
+        - "uv.lock"
+        - "Cargo.toml"
+        - "Cargo.lock"
+        - "package.json"
+        - "bun.lock"
+        - "pnpm-workspace.yaml"
+    relevance: the repo declares third-party dependencies in a language ecosystem with a workspace primitive
 
 # `instruction_layer_localized` used to live here as a one-time check; it is now an
 # ONGOING rule (see ../monorepo.llmlint.yml) so a nested AGENTS.md that drifts into

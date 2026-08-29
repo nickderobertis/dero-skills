@@ -7,9 +7,27 @@
 # persist.
 #
 # llmlint: ignore-file[changed_behavior_has_e2e] every rule here is an LLM-judge config invariant with no in-gate runtime path — like the other buildout rules, its firing is exercised by the opt-in custom-prompt skilltest (skills/bootstrap/create-repo/tests/AGENTS.md), never by an in-gate e2e (this repo keeps real-harness evals out of the gate on purpose).
-version: 1.2.1
+version: 1.3.0
 
 rules:
+  - name: project_graph_is_present
+    description: |
+      true when the repo declares an Nx project graph — an `nx.json` at the root
+      plus project definitions — and the root command surface runs its targets
+      through it. This holds for a repo with a single deliverable too: a project is
+      a unit of the target/test graph, not necessarily a publishable package (the
+      splits themselves are judged by the project-graph buildout fragment). false
+      when there is no project graph, so the gate runs the whole repo as one
+      undifferentiated unit and every change pays for every target.
+    files:
+      include:
+        - "nx.json"
+        - "**/project.json"
+        - "justfile"
+        - "Justfile"
+        - ".justfile"
+        - "package.json"
+
   - name: session_bootstrap_provisions_toolchain
     description: |
       true when the session bootstrap makes a fresh web/cloud session able to run
