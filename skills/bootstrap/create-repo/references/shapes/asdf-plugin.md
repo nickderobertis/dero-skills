@@ -104,8 +104,8 @@ relying on memory — script names and contracts drift).
   network, so `plugin-e2e` is a project of its own beside it (its own directory,
   its own `project.json`) whose `test` target runs `asdf plugin test` and which
   depends on `plugin` — editing a `bats` fixture then never installs a real tool
-  version. See `languages/bash.md` for how a shell project is declared when there
-  is no language manifest to sit beside.
+  version. Shell has no manifest for a project definition to sit beside, so each
+  project's `project.json` is itself where its targets, inputs, and tags live.
 - **Commands.** The root recipes delegate to the orchestrator, which runs the
   per-project targets.
   - `just check` -> `nx affected -t format lint test` plus the repo-level

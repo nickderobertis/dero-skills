@@ -39,8 +39,8 @@ shared guidance.
   `test` target. `just e2e` only isolates the slower install-and-run journeys for
   a focused run (`nx run <cli>-e2e:test`); it is not where they exclusively live.
   Don't gate e2e behind a pytest marker that the default run deselects — the
-  project split is what makes the tier skippable, a marker only makes it
-  invisible (see `languages/python.md`).
+  project split is what makes the tier skippable; a marker only makes it
+  invisible, leaving the slow tests collected by every run.
 
 ## Verification
 

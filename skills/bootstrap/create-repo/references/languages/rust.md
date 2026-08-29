@@ -102,7 +102,8 @@ the same projects and meet at the crate directory.
   container or a live service.
 - **`#[ignore]` is still not a tiering mechanism.** The split is what makes the
   slow tier skippable; `#[ignore]` only makes it invisible. Keep `#[ignore]` for
-  the live tier that genuinely needs credentials (see `intersections/rust-cli.md`).
+  the live tier that genuinely needs real services or credentials — it stays
+  compiled, and a dedicated workflow runs it.
 - **Coverage survives the split by combining, not by lowering.** A per-crate
   `cargo llvm-cov --fail-under-lines 95` starts failing the moment the binary's
   e2e tier moves into a sibling crate, because the binary crate's own run no

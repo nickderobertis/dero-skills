@@ -49,8 +49,7 @@ reference implementations of this intersection.
   across the OS matrix.
 - **Coverage:** `cargo llvm-cov` per project into the shared profile directory
   with `cargo llvm-cov report --fail-under-lines 95` on the aggregate — the
-  binary crate's own number cannot see the lines its e2e crate covers (see
-  `rust.md`).
+  binary crate's own number cannot see the lines its e2e crate covers.
 
 ## Distribution
 
