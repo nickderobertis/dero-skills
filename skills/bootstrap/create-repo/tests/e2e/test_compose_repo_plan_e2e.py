@@ -12,6 +12,7 @@ The in-process unit and structural layers live beside this file's sibling,
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -456,3 +457,181 @@ def test_plan_closes_with_both_llmlint_gates():
     doc = run("--shape", "cli", "--language", "python").stdout
     assert "llmlint (ongoing) passes once" in doc
     assert "llmlint (buildout) passes once" in doc
+
+
+# --- e2e: the staged-gate guidance reaches a composed plan ------------------
+
+
+def test_plan_carries_staged_gate_guidance_and_its_verification_items(tmp_path):
+    # The staged-gate guidance is only useful if it survives composition: an
+    # agent reads the plan, never the reference tree.
+    out_cfg = tmp_path / "llmlint.yml"
+    result = run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--releasing",
+        "--llmlint-config",
+        str(out_cfg),
+    )
+    assert result.returncode == 0
+    doc = result.stdout
+    guidance, checklist = doc.split("## Verification checklist", 1)
+
+    # ci.md's staged model: both tiers named, placement derived from the release
+    # model, the measurement inputs, and the unconditional external-contact rule.
+    assert "## Staged gates: the affected tier and the broader tier" in guidance
+    assert "### Gate a given commit once" in guidance
+    assert "### Where the broader tier runs, and what decides it" in guidance
+    assert "### Measure, then derive your own threshold" in guidance
+    assert "### External contact promotes unconditionally" in guidance
+    assert "nx affected" in guidance and "run-many" in guidance
+    for measured in ("cache hit rate", "affected rate", "p95"):
+        assert measured in guidance
+
+    # releasing.md's half: where the release sits relative to the sweep.
+    assert "## Where the release sits relative to the broader tier" in guidance
+    assert "**A release re-gates nothing.**" in guidance
+
+    # Every verification item the staged model adds, lifted into the checklist.
+    for item in (
+        "**Two tiers, named and wired.**",
+        "**The broader tier runs at exactly one lifecycle point.**",
+        "**No commit is gated twice.**",
+        "**Thresholds are measured, not inherited.**",
+        "**External contact promotes unconditionally.**",
+        "**Promotion never weakened coverage.**",
+        "**Required set matches the PR-context jobs.**",
+        "**The broader tier's placement matches the release driver.**",
+        "**The release re-gates nothing.**",
+    ):
+        assert f"- [ ] {item}" in checklist, item
+
+    # The pre-existing items the staged model reconciles with are still there.
+    assert "**CI proves the artifact.**" in checklist
+    assert "**Fully automated, no manual deploy step.**" in checklist
+
+    # The judge tier that enforces the same guidance is wired in as a plugin.
+    assert "/assets/llmlint/releasing.llmlint.yml@1" in out_cfg.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_plan_without_releasing_keeps_ci_tiers_and_drops_the_release_half(tmp_path):
+    # ci.md is always composed, so the tiers travel with every plan — but a repo
+    # that ships no versioned artifact must not be handed release-sweep items it
+    # has no pipeline for.
+    out_cfg = tmp_path / "llmlint.yml"
+    doc = run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--llmlint-config",
+        str(out_cfg),
+    ).stdout
+
+    assert "## Staged gates: the affected tier and the broader tier" in doc
+    assert "- [ ] **The broader tier runs at exactly one lifecycle point.**" in doc
+
+    assert "## Where the release sits relative to the broader tier" not in doc
+    assert "**The broader tier's placement matches the release driver.**" not in doc
+    assert "**The release re-gates nothing.**" not in doc
+    assert "/assets/llmlint/releasing.llmlint.yml" not in out_cfg.read_text(
+        encoding="utf-8"
+    )
+
+
+# --- e2e: the judge rules the composed configs pull in ----------------------
+#
+# The emitted config is a thin wrapper: every rule reaches the repo through a
+# pinned plugin URL. So "what the config carries" is the union of the rules in
+# the fragments it wires — resolve each URL back to the fragment it names and
+# read the rule names out of it. A fragment that stops being wired, or a rule
+# that stops being defined, both fail here.
+
+_PLUGIN_URL_RE = re.compile(r'^\s*-\s+"(\S+)"\s*$')
+_RULE_NAME_RE = re.compile(r"^\s*-\s+name:\s*(\S+)\s*$")
+_FRAGMENT_ROOT = "/assets/llmlint/"
+
+
+def wired_rule_names(config_path: Path) -> set[str]:
+    """Every judge rule an emitted llmlint config actually pulls in."""
+    names: set[str] = set()
+    for line in config_path.read_text(encoding="utf-8").splitlines():
+        match = _PLUGIN_URL_RE.match(line)
+        if match is None or _FRAGMENT_ROOT not in match.group(1):
+            continue  # the config-lint plugin ships with llmlint, not this skill
+        url = match.group(1).split("@")[0]
+        frag_rel = url.split(_FRAGMENT_ROOT, 1)[1]
+        fragment = SKILL_DIR / "assets" / "llmlint" / frag_rel
+        assert fragment.is_file(), f"config wires a missing fragment: {frag_rel}"
+        for frag_line in fragment.read_text(encoding="utf-8").splitlines():
+            rule = _RULE_NAME_RE.match(frag_line)
+            if rule is not None:
+                names.add(rule.group(1))
+    return names
+
+
+def test_composed_configs_carry_the_staged_gate_rules(tmp_path):
+    # The judge half of the staged model: the buildout tier checks the wiring
+    # once at creation, the ongoing tier keeps later PRs from re-introducing a
+    # second sweep.
+    ongoing = tmp_path / "llmlint.yml"
+    buildout = tmp_path / "llmlint.buildout.yml"
+    result = run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--releasing",
+        "--llmlint-config",
+        str(ongoing),
+        "--llmlint-buildout-config",
+        str(buildout),
+    )
+    assert result.returncode == 0
+
+    buildout_rules = wired_rule_names(buildout)
+    assert "pr_gate_runs_the_affected_tier" in buildout_rules
+    assert "broader_sweep_runs_at_exactly_one_lifecycle_point" in buildout_rules
+    assert "required_checks_name_only_pr_context_jobs" in buildout_rules
+    assert "broader_sweep_placement_matches_the_release_driver" in buildout_rules
+
+    ongoing_rules = wired_rule_names(ongoing)
+    assert "external_service_suite_stays_out_of_the_affected_tier" in ongoing_rules
+    assert "no_second_broader_sweep_over_an_already_gated_commit" in ongoing_rules
+    assert "release_does_not_regate_an_already_swept_commit" in ongoing_rules
+
+    # The tiers are distinct: a one-time structural check never becomes an
+    # ongoing PR rule, and vice versa.
+    assert "pr_gate_runs_the_affected_tier" not in ongoing_rules
+    assert "no_second_broader_sweep_over_an_already_gated_commit" not in buildout_rules
+
+
+def test_composed_configs_without_releasing_drop_the_release_sweep_rules(tmp_path):
+    # The release-tied rules ride on the releasing fragments, so a repo that
+    # ships no versioned artifact must not be judged against them — while the
+    # always-composed ci rules still travel.
+    ongoing = tmp_path / "llmlint.yml"
+    buildout = tmp_path / "llmlint.buildout.yml"
+    result = run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--llmlint-config",
+        str(ongoing),
+        "--llmlint-buildout-config",
+        str(buildout),
+    )
+    assert result.returncode == 0
+
+    buildout_rules = wired_rule_names(buildout)
+    assert "pr_gate_runs_the_affected_tier" in buildout_rules
+    assert "broader_sweep_placement_matches_the_release_driver" not in buildout_rules
+
+    ongoing_rules = wired_rule_names(ongoing)
+    assert "no_second_broader_sweep_over_an_already_gated_commit" in ongoing_rules
+    assert "release_does_not_regate_an_already_swept_commit" not in ongoing_rules
