@@ -200,11 +200,11 @@ def test_select_relpaths_order_and_dedup():
         languages=["python"],
         intersections=[],
         releasing=True,
-        monorepo=False,
         notes=notes,
     )
     assert relpaths == [
         "base.md",
+        "project-graph.md",
         "shapes/cli.md",
         "languages/python.md",
         "intersections/python-cli.md",
@@ -217,9 +217,7 @@ def test_select_relpaths_order_and_dedup():
 
 
 def test_select_relpaths_discovers_terraform_language():
-    relpaths, langs = crp.select_relpaths(
-        REFS, "library", ["terraform"], [], False, False, []
-    )
+    relpaths, langs = crp.select_relpaths(REFS, "library", ["terraform"], [], False, [])
     assert "languages/terraform.md" in relpaths
     assert langs == ["terraform"]
 
@@ -234,11 +232,11 @@ def test_select_relpaths_shape_build_on_chain():
         languages=[],
         intersections=[],
         releasing=False,
-        monorepo=False,
         notes=notes,
     )
-    assert relpaths[:5] == [
+    assert relpaths[:6] == [
         "base.md",
+        "project-graph.md",
         "shapes/web-app.md",
         "shapes/react.md",
         "shapes/nextjs.md",
@@ -247,9 +245,10 @@ def test_select_relpaths_shape_build_on_chain():
     assert langs == ["typescript"]
 
     # react alone pulls in web-app + typescript, nothing more.
-    relpaths, langs = crp.select_relpaths(REFS, "react", [], [], False, False, [])
-    assert relpaths[:4] == [
+    relpaths, langs = crp.select_relpaths(REFS, "react", [], [], False, [])
+    assert relpaths[:5] == [
         "base.md",
+        "project-graph.md",
         "shapes/web-app.md",
         "shapes/react.md",
         "languages/typescript.md",
@@ -323,7 +322,7 @@ def test_composed_config_has_no_top_level_version():
 
 
 def test_count_items_includes_closing_gates():
-    relpaths, _ = crp.select_relpaths(REFS, "cli", ["python"], [], False, False, [])
+    relpaths, _ = crp.select_relpaths(REFS, "cli", ["python"], [], False, [])
     refs = [crp.load_reference(REFS, rel) for rel in relpaths]
     # Two closing automated gates plus at least one item per reference.
     assert crp.count_items(refs) >= 2 + len(refs)

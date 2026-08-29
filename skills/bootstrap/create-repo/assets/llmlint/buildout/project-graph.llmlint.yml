@@ -1,7 +1,7 @@
 # Project-graph buildout rules (plugin) — run ONCE during repo creation, then
 # discarded. They verify the mandatory Nx project graph was wired correctly at
 # setup.
-version: 1.1.0
+version: 1.2.0
 
 rules:
   - name: root_commands_delegate
@@ -39,14 +39,11 @@ rules:
 
   - name: graph_splits_by_tier_and_cost
     description: |
-      true when the project graph splits the repo's work beyond its deliverables —
-      the fast unit tier, the integration tier, and the e2e tier are separate
-      projects, and every slow or external-service-touching suite (a live API, a
-      container, a browser, a real database) is a project of its own depending only
-      on what it tests. A project is a unit of the target/test graph, so a repo with
-      a single deliverable is held to this too. false when the whole repo is one
-      project, or an expensive suite rides along inside a broadly-depended-on
-      project so every change reruns it.
+      true when the project graph splits the repo's work beyond its deliverables:
+      the unit, integration, and e2e tiers are separate projects, and every slow or
+      external-service-touching suite is its own project depending only on what it
+      tests. false when the whole repo is one project, or an expensive suite rides
+      along inside a broadly-depended-on project.
     files:
       include: ["nx.json", "**/project.json", "**/e2e/**", "**/integration/**"]
 
@@ -71,6 +68,6 @@ rules:
         - "pnpm-workspace.yaml"
     relevance: the repo declares third-party dependencies in a language ecosystem with a workspace primitive
 
-# `instruction_layer_localized` used to live here as a one-time check; it is now an
-# ONGOING rule (see ../monorepo.llmlint.yml) so a nested AGENTS.md that drifts into
-# root-level sprawl is caught on every PR, not just at creation.
+# `instruction_layer_localized` used to live here as a one-time check; it is now
+# an ONGOING rule (see ../project-graph.llmlint.yml) so a nested AGENTS.md that
+# drifts into root-level sprawl is caught on every PR, not just at creation.

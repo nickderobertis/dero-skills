@@ -28,8 +28,7 @@ composed plan carries before any shape/language/cross-cutting items are added.
   the command surface runs targets through Nx — including when it ships one
   deliverable, where the graph exists so the test tiers and the expensive suites
   split apart and a change only pays for what it can reach. A project is a unit
-  of the target/test graph, not necessarily a publishable package; see
-  `monorepo.md` for the splits and the boundary tags that hold them.
+  of the target/test graph, not necessarily a publishable package.
 - **Strict, deterministic gate.** Format, lint, type check, and tests fail on
   issues — no warnings-only mode — with coverage measured and enforced.
 - **Realistic e2e is an invariant, not a preference.** The suite is the only QA
