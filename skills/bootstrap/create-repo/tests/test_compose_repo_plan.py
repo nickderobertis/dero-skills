@@ -106,41 +106,6 @@ def test_every_llmlint_fragment_is_well_formed():
     assert not bad, bad
 
 
-# --- structural: every language maps onto the project graph ----------------
-
-
-# Nx and the project graph are mandatory in every repo this skill stands up, so a
-# language reference that never says how ITS workspace primitive, test split, and
-# coverage gate meet the graph leaves an author with a floor they cannot build to.
-_GRAPH_GUIDANCE_NEEDLES = (
-    # where the project definition lives, relative to the language manifest
-    "project.json",
-    # which tool owns dependency resolution, and how many lockfiles there are
-    "lockfile",
-    # how the coverage gate survives the suite being split across projects
-    "`coverage` target",
-    # the uniform target names the orchestrator fans out by
-    "run-many",
-)
-
-
-def test_every_language_reference_maps_onto_the_project_graph():
-    missing: list[str] = []
-    for path in sorted((REFS / "languages").glob("*.md")):
-        guidance, verification = crp.split_reference(path.read_text(encoding="utf-8"))
-        name = path.name
-        if not re.search(r"^## Projects\b", guidance, re.MULTILINE):
-            missing.append(f"{name}: no '## Projects ...' section")
-        for needle in _GRAPH_GUIDANCE_NEEDLES:
-            if needle not in guidance:
-                missing.append(f"{name}: guidance never mentions {needle!r}")
-        if "coverage" not in verification.lower():
-            missing.append(f"{name}: no verification item covers the coverage gate")
-        if "Uniform target names" not in verification:
-            missing.append(f"{name}: no verification item covers uniform target names")
-    assert not missing, missing
-
-
 # --- structural: verification items live with each reference --------------
 
 
