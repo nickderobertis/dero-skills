@@ -608,18 +608,15 @@ def wired_rule_names(config_path: Path, tmp_path: Path) -> set[str]:
     assert merged.returncode == 0, (
         f"llmlint could not merge the emitted config:\n{merged.stderr}"
     )
-    # The merged report is another tool's output, so check its shape rather than
-    # indexing into it: a changed JSON layout should say so, not raise a KeyError.
-    payload = json.loads(merged.stdout)
-    config = payload.get("config") if isinstance(payload, dict) else None
-    rules = config.get("rules") if isinstance(config, dict) else None
-    assert isinstance(rules, list) and rules, (
-        f"`llmlint config` reported no rule list:\n{merged.stdout[:400]}"
-    )
-    names = {rule.get("name") for rule in rules if isinstance(rule, dict)}
-    assert names and all(isinstance(name, str) for name in names), (
-        f"`llmlint config` reported a rule with no string name:\n{merged.stdout[:400]}"
-    )
+    # The report is another tool's JSON, so a layout change should say so here
+    # rather than surface as an opaque KeyError inside somebody's assertion.
+    try:
+        names = {rule["name"] for rule in json.loads(merged.stdout)["config"]["rules"]}
+    except (KeyError, TypeError) as exc:
+        raise AssertionError(
+            f"`llmlint config` changed shape:\n{merged.stdout[:400]}"
+        ) from exc
+    assert names, f"`llmlint config` merged no rules:\n{merged.stdout[:400]}"
     return names
 
 
