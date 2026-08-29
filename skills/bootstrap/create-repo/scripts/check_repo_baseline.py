@@ -348,13 +348,17 @@ def recipe_lines(details: dict[str, Recipe], name: str) -> list[str]:
 
 
 def orchestrator_targets(line: str) -> set[str]:
-    """The target names an orchestrator invocation in ``line`` fans out over."""
+    """The target names an orchestrator invocation in ``line`` fans out over.
+
+    Both spellings Nx accepts are unpacked: the space-separated list (``-t lint
+    test``) and the comma-separated one (``--targets=lint,test``).
+    """
     targets: set[str] = set()
     for match in ORCHESTRATOR_TARGETS_RE.finditer(line):
         for token in match.group(1).split():
             if token.startswith("-"):
                 break  # the target list ends at the next flag
-            targets.add(token.strip("\"'"))
+            targets.update(part for part in token.strip("\"'").split(",") if part)
     return targets
 
 
@@ -541,6 +545,12 @@ def check_project_graph(repo: Path) -> list[Finding]:
     before that mandate should be guided onto the path, not broken by it — and it
     is a single finding either way, because a missing graph and a root command
     surface that bypasses it are one gap seen from two sides.
+
+    The bar here is a floor, not the reference's full rule: a graph plus *any one*
+    gate recipe reaching it clears the check. Whether every recipe delegates, and
+    whether the projects are split well, is a judgment the references teach and a
+    reviewer (or the llmlint tier) makes — not something this stack-agnostic,
+    advisory check can decide.
     """
     has_graph = any((repo / name).is_file() for name in PROJECT_GRAPH_FILES)
     justfile = find_justfile(repo)
@@ -553,7 +563,7 @@ def check_project_graph(repo: Path) -> list[Finding]:
             for line in recipe_lines(details, name)
         )
     if has_graph and delegates:
-        return [Finding("OK", "targets run through the orchestrator's project graph")]
+        return [Finding("OK", "project graph present and reached by the gate")]
 
     # Name the half that is missing, and offer only the step that half needs: a
     # repo that already has nx.json should not be told to add it.

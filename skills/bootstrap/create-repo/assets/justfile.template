@@ -36,6 +36,7 @@ bootstrap:
 # and `typecheck` targets, and e2e through the `test` target of the e2e projects
 # — e2e is part of the gate, not an opt-in extra.
 check tier="affected":
+    @[ "{{tier}}" = "affected" ] || [ "{{tier}}" = "all" ] || { echo "unknown tier '{{tier}}' — use 'affected' (the default) or 'all'"; exit 2; }
     if [ "{{tier}}" = "all" ]; then bunx nx run-many -t lint typecheck test build; else bunx nx affected -t lint typecheck test build --base="{{base}}"; fi
 
 # The test tier on its own, for iterating: the same `test` target the gate fans

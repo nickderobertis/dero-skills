@@ -22,7 +22,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from test_check_repo_baseline import crb
+from test_check_repo_baseline import SCRIPT, make_repo
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS = SKILL_DIR / "assets"
@@ -61,7 +61,8 @@ def invocations(result: subprocess.CompletedProcess[str]) -> list[str]:
     return [line for line in result.stdout.splitlines() if line.startswith("bunx nx ")]
 
 
-# --- the command surface ---------------------------------------------------
+# The command surface, driven end to end: what each recipe actually invokes is
+# read back from the stub's argv, so the tier is observed rather than matched.
 
 
 def test_check_runs_the_affected_tier_by_default(command_surface):
@@ -114,71 +115,83 @@ def test_placeholder_recipes_still_name_what_a_new_repo_must_fill_in(
     assert "TODO" in result.stdout
 
 
-def test_the_template_surface_satisfies_the_baseline_checker(command_surface):
-    # The checker is what audits a produced repo: it must find the whole command
-    # surface, and must read the delegating gate as running the test suite. The
+def repo_from_templates(root: Path, **overrides) -> Path:
+    """An otherwise-conformant repo whose command surface IS the shipped template."""
+    root.mkdir(parents=True, exist_ok=True)
+    justfile = (ASSETS / "justfile.template").read_text(encoding="utf-8")
+    return make_repo(root, justfile=justfile, **overrides)
+
+
+def run_baseline(repo: Path) -> subprocess.CompletedProcess[str]:
+    """Audit `repo` with the real checker, the way its docs tell an author to."""
+    return subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), str(repo)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_the_baseline_checker_accepts_the_template_command_surface(tmp_path):
+    # The checker is what audits a produced repo, so run it: it must find the
+    # whole surface and read the delegating gate as running the test suite. The
     # only thing left for it to report is the two stack-specific bodies the
     # template deliberately leaves for the new repo to fill in.
-    findings = crb.check_justfile(command_surface)
-    errors = [f.message for f in findings if f.level == "ERROR"]
-    assert errors == [
-        "justfile recipe(s) still hold template placeholders: bootstrap, upgrade"
+    result = run_baseline(repo_from_templates(tmp_path / "repo"))
+    assert result.returncode == 1, result.stdout
+    assert "still hold template placeholders: bootstrap, upgrade" in result.stderr
+    assert "1 invariant(s) failed" in result.stderr
+    assert "missing required recipe" not in result.stderr
+    assert "does not run `test`" not in result.stderr
+
+
+def test_the_checker_reads_the_template_surface_as_reaching_the_graph(tmp_path):
+    # With no nx.json, the advisory must be about the missing graph — never about
+    # recipes that bypass it, which these delegate through.
+    repo = repo_from_templates(tmp_path / "repo", project_graph=False)
+    result = run_baseline(repo)
+    (warning,) = [
+        line for line in result.stdout.splitlines() if line.startswith("WARN")
     ]
-    names = crb.parse_just_recipes(
-        (command_surface / "justfile").read_text(encoding="utf-8")
-    )
-    assert {
-        "bootstrap",
-        "check",
-        "test",
-        "test-e2e",
-        "lint",
-        "format",
-        "upgrade",
-        "lint-llm",
-        "lint-llm-diff",
-        "lint-llm-validate",
-    } <= names
+    assert "no project graph" in warning
+    assert "bypass" not in warning
 
 
-def test_the_template_surface_reads_as_delegating_to_the_graph(command_surface):
-    # No nx.json here (the template is a command surface, not a whole repo), so
-    # the project-graph check still advises — but about the missing graph only,
-    # never about recipes that bypass it.
-    (finding,) = crb.check_project_graph(command_surface)
-    assert finding.level == "WARN"
-    assert "bypass" not in finding.message
+# AGENTS.md is the file a produced repo is audited on, so the template has to
+# leave behind a section the checker accepts once it is filled in.
 
 
-# --- the durable instruction layer -----------------------------------------
+def agents_section(text: str, heading: str) -> str:
+    """The body under `heading`, up to the next section."""
+    body = text.split(f"\n{heading}\n", 1)[1]
+    return body.split("\n## ", 1)[0]
 
 
 def test_the_agents_template_records_the_graph_and_the_staged_gate():
     agents = (ASSETS / "AGENTS.md.template").read_text(encoding="utf-8")
-    composition = crb.find_heading_section(agents, crb.COMPOSITION_HEADING_RE)
-    assert composition is not None, "the checker must still find the section"
-    section = "\n".join(composition)
+    section = agents_section(agents, "## Stack and composition")
     # The composition the composer prints, and the graph it always composes.
     assert "References composed" in section
     assert "project-graph.md" in section
     assert "project graph" in section
     # The command surface teaches both tiers of the staged gate.
-    assert "`just check all`" in agents
-    assert "affected tier" in agents and "broader tier" in agents
+    surface = agents_section(agents, "## Command surface")
+    assert "`just check all`" in surface
+    assert "affected tier" in surface and "broader tier" in surface
 
 
-def test_a_filled_in_agents_template_satisfies_the_composition_check(tmp_path):
-    # The template ships placeholders on purpose — the checker's job is to catch
-    # one left unfilled — so fill them the way a new repo does and confirm the
-    # section it leaves behind is what the checker accepts.
+def test_a_filled_in_agents_template_passes_the_baseline_checker(tmp_path):
+    # The template ships placeholders on purpose — catching one left unfilled is
+    # the checker's job — so fill them the way a new repo does and run the real
+    # checker over the result: the composition it records must be accepted.
     agents = (ASSETS / "AGENTS.md.template").read_text(encoding="utf-8")
     filled = re.sub(r"<[^>]+>", "python cli, one deliverable", agents, flags=re.S)
-    (tmp_path / "AGENTS.md").write_text(filled, encoding="utf-8")
-    findings = crb.check_composition(tmp_path)
-    assert [f.level for f in findings] == ["OK"], [f.message for f in findings]
+    repo = repo_from_templates(tmp_path / "repo", composition=filled)
+    result = run_baseline(repo)
+    assert "composition" not in result.stderr, result.stderr
 
 
-# --- the CI workflow -------------------------------------------------------
+# GitHub runs the workflow, so it can't be executed here; it is read as the text
+# GitHub parses — the jobs, the tier each runs, and the safety rules ci.md sets.
 
 
 @pytest.fixture

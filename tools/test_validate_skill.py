@@ -8,7 +8,6 @@ exit code and the reported diagnostic are the real ones, not a stand-in's.
 from __future__ import annotations
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -40,8 +39,10 @@ def make_skill(root: Path, script: str, *, filename: str = "run.py") -> Path:
 
 
 def validate(skill_dir: Path) -> subprocess.CompletedProcess[str]:
+    """Run the validator the way scripts/validate-skills.sh and CI do."""
     return subprocess.run(
-        [sys.executable, str(VALIDATOR), str(skill_dir)],
+        ["uv", "run", "python", str(VALIDATOR), str(skill_dir)],
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
     )
@@ -50,8 +51,9 @@ def validate(skill_dir: Path) -> subprocess.CompletedProcess[str]:
 PEP723 = '# /// script\n# requires-python = ">=3.12"\n# dependencies = []\n# ///\n'
 
 
-# --- what a bundled script may say about the orchestrator ------------------
-
+# A bundled script may *read* the orchestrator's world; it may not *run* it.
+# These two tables are the line, and every case below is driven through the real
+# validator so the line is where the tool actually draws it.
 PERMITTED = {
     "names the graph manifest as a filename": (
         PEP723 + 'GRAPH_FILES = ("nx.json",)\nprint(GRAPH_FILES)\n'
@@ -125,7 +127,7 @@ def test_a_shell_script_that_shells_out_to_the_orchestrator_is_rejected(
     assert "invokes Nx at runtime" in result.stderr
 
 
-# --- the other runtime-dependency rules still hold -------------------------
+# Narrowing one rule must not have loosened the rest of the runtime invariant.
 
 
 def test_a_conformant_skill_passes(tmp_path):

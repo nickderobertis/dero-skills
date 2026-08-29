@@ -425,11 +425,9 @@ composer's `--intersection` choices automatically.
   — narrow `.claude/settings.json` allowlist for the `just` command surface.
 - [`assets/justfile.template`](./assets/justfile.template) — starter command
   surface with the six required recipes plus `test-e2e`, each delegating to the
-  project graph; `just check` runs the affected tier, `just check all` the sweep.
+  project graph.
 - [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
-  that bootstraps a clean checkout and runs the gate at the staged tiers
-  (`references/ci.md`): the affected tier on a pull request, keyed off an
-  explicitly derived merge base, and the full sweep on the default branch. Plus a
+  that bootstraps a clean checkout and runs the gate at its staged tiers, plus a
   separate `llmlint` job (the diff-scoped LLM-judge check) that requires its
   harness credential and fails fast without it.
 - [`assets/oneharness.toml.template`](./assets/oneharness.toml.template) — drop at
