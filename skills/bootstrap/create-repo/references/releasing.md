@@ -74,6 +74,36 @@ done** — that is the failure mode this section exists to prevent.
   publish **idempotent** — skip a version that is already live so a re-run after a
   partial failure is safe.
 
+## Where the release sits relative to the broader tier
+
+`ci.md` defines the two staged gate tiers — the **affected tier** that
+development and review run, and the single **broader tier** sweep — and the rule
+that a given commit is gated once. The release pipeline sits **after** the
+broader tier, never beside it, and the driver picked above is what decides where
+that sweep runs:
+
+- **Push-to-main driver** (`semantic-release`, `release-please` in non-PR mode):
+  the merged commit *is* the released commit, so the broader tier runs at
+  **merge-to-main**, and the version -> changelog -> tag -> build -> publish
+  chain runs on a commit it already swept.
+- **Release-PR gate** (`release-plz`, `release-please`): the release PR
+  accumulates several merges and ships its own commit, which no merge job swept.
+  The broader tier runs **on the release PR** — release-prep — and merge-to-main
+  stays on the affected tier.
+
+**A release re-gates nothing.** The tag-triggered `release.yml` / `publish.yml`
+compile and publish: building an artifact from an already-swept commit is
+building, not gating. Re-running lint, type-check, or test targets over a commit
+the merge (or the release PR) already swept is exactly the duplicate `ci.md`
+forbids — it buys no new information and pays for the sweep twice. If a release
+feels like it needs its own sweep to be safe, the fix is the *placement* — the
+sweep is at the wrong lifecycle point for this driver — not a second sweep
+bolted on at tag time.
+
+Record the driver and the placement it implies in the "Commits, releases, and
+merging" section of `AGENTS.md` alongside the bump policy: that pairing is what
+lets the next maintainer tell a legitimate sweep from a duplicate.
+
 ## The PAT gotcha — write this down
 
 A tag or release created by the default `GITHUB_TOKEN` **does not trigger other
@@ -110,6 +140,13 @@ when you apply branch protection (`ci.md`).
 
 ## Verification
 
+- [ ] **The broader tier's placement matches the release driver.** A
+  push-to-main driver sweeps at merge-to-main (the merged commit is the released
+  commit); a release-PR gate sweeps on the release PR. The sweep runs at exactly
+  one lifecycle point and the placement is recorded in `AGENTS.md`.
+- [ ] **The release re-gates nothing.** The tag-triggered release/publish
+  workflows build and publish only — they re-run no lint, type-check, or test
+  target over a commit the merge (or the release PR) already swept.
 - [ ] **Fully automated, no manual deploy step.** The only human action in a
   release is merging a PR — nobody hand-edits a version, hand-creates a tag, or
   hand-dispatches a publish workflow.

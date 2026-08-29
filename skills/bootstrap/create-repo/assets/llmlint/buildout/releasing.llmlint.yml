@@ -1,6 +1,6 @@
 # Releasing buildout rules (plugin) — run ONCE during repo creation, then
 # discarded. They verify the release pipeline was wired correctly at setup.
-version: 1
+version: 1.1
 
 rules:
   - name: no_manual_deploy_step
@@ -52,3 +52,20 @@ rules:
       the PR title.
     files:
       include: [".github/workflows/**", "commitlint.config.*", ".commitlintrc*"]
+
+  - name: broader_sweep_placement_matches_the_release_driver
+    description: |
+      true when the broader-tier sweep sits where the repo's release driver implies —
+      at merge-to-main for a push-to-main driver (`semantic-release`, `release-please`
+      in non-PR mode), where the merged commit is the released commit; on the release PR
+      for a release-PR gate (`release-plz`, `release-please`), where the commit that
+      ships is a new commit over a batch of merges. false when a push-to-main repo
+      sweeps again at release time after sweeping at merge, or a batched repo releases a
+      commit no job ever swept.
+    files:
+      include:
+        - ".github/workflows/**"
+        - "release-plz.toml"
+        - ".releaserc*"
+        - "release-please*"
+        - "AGENTS.md"
