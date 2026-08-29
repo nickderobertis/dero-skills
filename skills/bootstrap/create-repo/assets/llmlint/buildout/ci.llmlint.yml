@@ -48,7 +48,6 @@ rules:
         - "Justfile"
         - ".justfile"
         - "nx.json"
-    require_line_attribution: true
 
   - name: broader_sweep_runs_at_exactly_one_lifecycle_point
     description: |
