@@ -74,10 +74,12 @@ them, don't re-derive them.
   components/hooks/api/state/types), with only genuinely shared code in that
   project's top-level `components/`/`hooks/`/`lib/`/`utils/` — and in a `ui`
   project once a second app consumes it.
-- [ ] **Boundaries lint-enforced.** Unidirectional import rules
+- [ ] **Boundaries enforced at both scopes.** Unidirectional import rules
   (shared → features → app, no cross-feature internal imports) are enforced by
   the linter (`import/no-restricted-paths` or Biome `noRestrictedImports`), not
-  convention.
+  convention — and *between* app projects by the module-boundary tag rule, so a
+  second app depends on a shared `ui` project rather than reaching into the
+  first's `src/`. Both are on.
 - [ ] **Hooks rules in the gate.** `eslint-plugin-react-hooks`
   (`rules-of-hooks` + `exhaustive-deps`), or the Biome equivalents, run in
   `just check`; effects synchronize with external systems and clean up.
