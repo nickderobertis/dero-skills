@@ -99,6 +99,35 @@ the genuine call. Structure it the way these repos do:
   a `*_BIN` env var) so the test is forced through the artifact users get — not
   the one sitting in `target/`.
 
+## Deploying to a live environment
+
+Gating *merge* on the e2e-inclusive `just check` (above) keeps the default branch
+releasable, and `releasing.md` automates publishing a *versioned artifact*.
+Neither covers a repo that **deploys to a live environment** — a site or service
+pushed to staging/production. There the failure mode is a deploy workflow that
+fires straight from a push or tag and ships code that never faced the gate. Close
+it: no code reaches production without passing realistic e2e.
+
+- **Gate the deploy on the same e2e suite.** The deploy job runs *after* the
+  gate, not beside it — run `just check` as a step before the deploy step, make
+  the deploy job `needs:` the gate job, or trigger the deploy workflow from the CI
+  workflow's success (`workflow_run` on a completed, successful run). A deploy
+  that fires on `push` with no dependency on the gate can ship a red build.
+- **Or prove it post-deploy against the real target.** When a journey can only be
+  exercised against a deployed environment, run a **smoke e2e against the deployed
+  URL** right after the deploy and **roll back (or fail the release) on failure** —
+  driving the real target the way a user would, not a mocked stand-in. A
+  deploy-then-smoke with automatic rollback is a valid gate; a deploy with no
+  post-check is not.
+- **Promote what you tested.** Prefer promoting the exact artifact/commit that
+  passed e2e (build once, promote through staging → production) over rebuilding
+  per environment, so production runs the bytes the gate proved.
+
+Record the deploy-gating model in `AGENTS.md` next to the release model, so the
+"code can't reach prod unproven" decision is auditable. The filesystem checker
+flags a deploy workflow that shows no gating signal, but it can't confirm the gate
+is real — verify that against the live pipeline.
+
 ## Informational performance tier
 
 Performance-sensitive artifacts (CLIs, hot libraries) benefit from a benchmark
@@ -293,6 +322,12 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   divergence (a required check missing, force-pushes allowed, the wrong merge
   model), rather than trusting a by-hand read of the "Repository settings" section
   above.
+- [ ] **Deploy is e2e-gated (if the repo deploys).** A repo that deploys to a
+  live environment gates the deploy on the e2e suite — the deploy runs after
+  `just check` / `needs:` the gate job / a `workflow_run` on CI success, or a
+  post-deploy smoke e2e drives the deployed target and rolls back on failure — so
+  no code reaches production without passing realistic e2e. The model is recorded
+  in `AGENTS.md`.
 - [ ] **Live tier requires its credential.** Any live/integration workflow keeps
   the test compiling, requires its secret, and fails fast with a clear message
   when it is absent (no skip/no-op to green). Fork PRs are gated by the fork-PR

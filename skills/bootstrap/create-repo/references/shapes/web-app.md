@@ -27,6 +27,10 @@ each builds on this shape and the composer pulls this one in beneath it.
 - **CI.** Bootstrap a clean checkout, then run the full gate (build + e2e) on
   every PR; validate the production build, not just the dev server. Start from
   `assets/ci.yml.template`.
+- **Deploy behind the gate.** If CI deploys the app to a live environment, gate
+  the deploy on the e2e suite — deploy only after `just check` passes (or run a
+  post-deploy smoke e2e against the deployed URL and roll back on failure) — so
+  no code reaches production without passing realistic e2e. See `ci.md`.
 
 ## Verification
 
@@ -43,3 +47,6 @@ each builds on this shape and the composer pulls this one in beneath it.
   parsed and validated rather than trusted raw.
 - [ ] **Production build validated in CI.** CI validates the production build,
   not just the dev server.
+- [ ] **Deploy is e2e-gated (if it deploys).** Any deploy to a live environment
+  runs only after the e2e gate passes, or a post-deploy smoke e2e drives the
+  deployed URL and rolls back on failure — code never reaches production unproven.

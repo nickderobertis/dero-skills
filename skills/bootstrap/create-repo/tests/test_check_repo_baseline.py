@@ -548,6 +548,98 @@ def test_mock_in_unit_test_is_not_flagged(tmp_path):
     assert not any("mocking library" in m for m in levels(findings, "WARN"))
 
 
+# --- deploy gating (advisory) ----------------------------------------------
+
+
+def _add_workflow(repo: Path, name: str, body: str) -> None:
+    wf = repo / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / name).write_text(body, encoding="utf-8")
+
+
+# A deploy workflow that fires straight from a push with no gate in sight.
+UNGATED_DEPLOY = (
+    "name: deploy\non:\n  push:\n    branches: [main]\n"
+    "jobs:\n  ship:\n    steps:\n      - run: vercel deploy --prod\n"
+)
+
+
+def test_no_deploy_workflow_is_silent(tmp_path):
+    # The conformant repo has only a CI gate workflow — no deploy path to flag.
+    findings = crb.audit(make_repo(tmp_path))
+    assert not any("deploy" in m for m in levels(findings, "WARN"))
+
+
+def test_ungated_deploy_workflow_warns_but_does_not_error(tmp_path):
+    repo = make_repo(tmp_path)
+    _add_workflow(repo, "deploy.yml", UNGATED_DEPLOY)
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert any("no e2e gating signal" in m for m in levels(findings, "WARN"))
+
+
+def test_deploy_detected_by_filename_without_known_tool(tmp_path):
+    # A deploy-named workflow counts even when the tool isn't in DEPLOY_RE.
+    repo = make_repo(tmp_path)
+    _add_workflow(
+        repo,
+        "deploy.yml",
+        "name: deploy\non:\n  push:\njobs:\n  ship:\n    steps:\n      - run: ./ship.sh\n",
+    )
+    findings = crb.audit(repo)
+    assert any("no e2e gating signal" in m for m in levels(findings, "WARN"))
+
+
+def test_deploy_gated_by_needs_is_silent(tmp_path):
+    # The deploy job depends on the gate job: a real gate signal.
+    repo = make_repo(tmp_path)
+    _add_workflow(
+        repo,
+        "deploy.yml",
+        "name: deploy\non:\n  push:\njobs:\n"
+        "  ship:\n    needs: check\n    steps:\n      - run: vercel deploy --prod\n",
+    )
+    findings = crb.audit(repo)
+    assert not any("gating signal" in m for m in levels(findings, "WARN"))
+
+
+def test_deploy_gated_by_just_check_is_silent(tmp_path):
+    # The deploy workflow runs the full gate inline before shipping.
+    repo = make_repo(tmp_path)
+    _add_workflow(
+        repo,
+        "deploy.yml",
+        "name: deploy\non:\n  push:\njobs:\n  ship:\n    steps:\n"
+        "      - run: just check\n      - run: fly deploy\n",
+    )
+    findings = crb.audit(repo)
+    assert not any("gating signal" in m for m in levels(findings, "WARN"))
+
+
+def test_deploy_gated_by_post_deploy_smoke_e2e_is_silent(tmp_path):
+    # A post-deploy smoke e2e against the deployed target is a valid gate.
+    repo = make_repo(tmp_path)
+    _add_workflow(
+        repo,
+        "deploy.yml",
+        "name: deploy\non:\n  push:\njobs:\n  ship:\n    steps:\n"
+        "      - run: wrangler deploy\n      - run: npm run smoke\n",
+    )
+    findings = crb.audit(repo)
+    assert not any("gating signal" in m for m in levels(findings, "WARN"))
+
+
+def test_ungated_deploy_silenced_by_agents_doc(tmp_path):
+    # A documented deploy-gating decision in AGENTS.md silences the nudge.
+    repo = make_repo(tmp_path)
+    _add_workflow(repo, "deploy.yml", UNGATED_DEPLOY)
+    agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    agents += "\n## Deploy\n\nDeploy is gated on the e2e suite via a promotion step.\n"
+    (repo / "AGENTS.md").write_text(agents, encoding="utf-8")
+    findings = crb.audit(repo)
+    assert not any("gating signal" in m for m in levels(findings, "WARN"))
+
+
 # --- coverage --------------------------------------------------------------
 
 

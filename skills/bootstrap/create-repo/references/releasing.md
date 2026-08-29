@@ -2,8 +2,10 @@
 
 Applies whenever the repo ships a **versioned artifact** — a binary, a published
 package, a plugin, a container image. Skip it only for a repo that publishes
-nothing (a private app deployed by other means, or a demo/consumer repo that
-deploys a site instead of cutting versions). It layers on top of the product
+nothing — a private app or site deployed by other means rather than cutting
+versions; that case is instead governed by the deploy-to-a-live-environment
+guidance in `ci.md`, where the deploy must still be e2e-gated so no code reaches
+production unproven. It layers on top of the product
 shape, the language(s), and `ci.md`, and it is the other half of the squash-merge
 governance in `ci.md`: that section makes the **PR title** the one commit that
 lands; this section makes that commit *drive the release*.
