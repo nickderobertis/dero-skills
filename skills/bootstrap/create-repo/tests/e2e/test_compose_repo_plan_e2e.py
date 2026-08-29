@@ -459,9 +459,6 @@ def test_plan_closes_with_both_llmlint_gates():
     assert "llmlint (buildout) passes once" in doc
 
 
-# --- e2e: the staged-gate guidance reaches a composed plan ------------------
-
-
 def test_plan_carries_staged_gate_guidance_and_its_verification_items(tmp_path):
     # The staged-gate guidance is only useful if it survives composition: an
     # agent reads the plan, never the reference tree.
