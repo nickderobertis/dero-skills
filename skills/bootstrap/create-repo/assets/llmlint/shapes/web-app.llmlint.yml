@@ -1,6 +1,6 @@
 # Web app judge-level rules (plugin). Pairs with shapes/web-app.md. Applies to any
 # web app (including Next.js, which builds on this shape).
-version: 1
+version: 1.2.0
 
 rules:
   - name: secrets_stay_server_side
@@ -35,3 +35,21 @@ rules:
         - "**/*.spec.ts"
         - "**/*.spec.tsx"
     relevance: the target files define end-to-end tests that select page elements
+
+  - name: browser_journeys_run_against_the_built_app
+    description: |
+      true when the spec lives in the app's separate e2e project, whose `test`
+      target depends on the app's `build`, so the journey drives the production
+      bundle. false when a browser journey is added inside the app project
+      itself — where every unrelated change pays to start a browser — or when
+      the e2e project drives a development server instead of the built artifact,
+      so the bundle users receive is never the one exercised.
+    files:
+      include:
+        - "**/e2e/**"
+        - "**/*.spec.ts"
+        - "**/*.spec.tsx"
+        - "**/playwright.config.*"
+        - "**/project.json"
+    relevance: the target files add or change a browser-driven end-to-end journey, or the project definition that owns one
+    require_line_attribution: true

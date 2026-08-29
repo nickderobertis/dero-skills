@@ -1,7 +1,8 @@
 # CLI buildout rules (plugin) — run ONCE during repo creation, then discarded.
-# One-time structural check on the release-asset naming contract; the ongoing CLI
-# judgment (output/exit-code contract) lives in shapes/cli.llmlint.yml.
-version: 1
+# One-time structural checks on the project split and the release-asset naming
+# contract; the ongoing CLI judgment (output/exit-code contract, new commands and
+# clients joining the graph) lives in shapes/cli.llmlint.yml.
+version: 1.1
 
 rules:
   - name: asset_naming_contract_shared
@@ -19,3 +20,15 @@ rules:
         - "**/*.json"
         - "**/*formula*"
     relevance: the repo distributes downloadable release assets across more than one install surface
+
+  - name: cli_split_from_its_e2e_and_externals
+    description: |
+      true when the command and its fast unit tests are one project, the suite that
+      installs and drives the built command is a separate project depending on it,
+      and each external system the command talks to is its own project carrying its
+      own live-service suite. false when the subprocess-level suite sits inside the
+      CLI project — so every change spawns the binary — or when a client for an
+      external system has no project of its own, so a change to argument parsing
+      reaches the network.
+    files:
+      include: ["nx.json", "**/project.json", "**/e2e/**", "**/tests/**"]

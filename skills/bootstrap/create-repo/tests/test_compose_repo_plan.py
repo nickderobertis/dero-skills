@@ -326,3 +326,47 @@ def test_count_items_includes_closing_gates():
     refs = [crp.load_reference(REFS, rel) for rel in relpaths]
     # Two closing automated gates plus at least one item per reference.
     assert crp.count_items(refs) >= 2 + len(refs)
+
+
+def test_buildout_pins_track_each_fragment_current_major(tmp_path):
+    # The pin is what carries a fragment's rules to a new repo, so it must follow
+    # the fragment's *own* major: a fragment bumped to 2.x (a renamed rule, say)
+    # that still composed as `@1` would silently drop its rules from every repo
+    # created afterwards. Drive the real CLI, and read each expected major
+    # straight out of the fragment file rather than through the composer's own
+    # helper, so a composer that hard-codes a major fails here.
+    out = tmp_path / "llmlint.buildout.yml"
+    result = run(
+        "--shape",
+        "react",
+        "--language",
+        "typescript",
+        "--llmlint-buildout-config",
+        str(out),
+    )
+    assert result.returncode == 0, result.stderr
+    cfg = out.read_text(encoding="utf-8")
+
+    pinned = dict(
+        re.findall(r"/assets/llmlint/buildout/(\S+?\.llmlint\.yml)@([\w.]+)", cfg)
+    )
+    assert pinned, f"no buildout plugin pins in composed config:\n{cfg}"
+
+    def declared_major(rel: str) -> str:
+        text = (LLMLINT_ASSETS / "buildout" / rel).read_text(encoding="utf-8")
+        match = re.search(r"^version:\s*(\S+)", text, re.MULTILINE)
+        assert match, f"buildout/{rel} declares no version"
+        return match.group(1).split(".", 1)[0]
+
+    wrong = {
+        rel: (pin, declared_major(rel))
+        for rel, pin in pinned.items()
+        if pin != declared_major(rel)
+    }
+    assert not wrong, f"buildout pins that do not match the fragment's major: {wrong}"
+
+    # And the react buildout fragment is one of them, at whatever major it now
+    # carries — the stack selected it, so a dropped pin is a hole, not a pass.
+    assert pinned.get("shapes/react.llmlint.yml") == declared_major(
+        "shapes/react.llmlint.yml"
+    )
