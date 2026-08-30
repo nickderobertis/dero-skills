@@ -46,7 +46,12 @@ def command_surface(tmp_path: Path) -> Path:
 
 def run_just(repo: Path, *args: str, **env_overrides: str):
     """Run `just` for real in `repo`, optionally overriding environment input."""
-    env = {**os.environ, **env_overrides}
+    # NX_BASE is input to the template under test, so it comes from the test
+    # rather than from whatever exported it around us: this repo's own CI exports
+    # one (nx-set-shas), and inheriting it would make the cases that assert the
+    # template's *default* base read that value and fail only in CI.
+    ambient = {k: v for k, v in os.environ.items() if k != "NX_BASE"}
+    env = {**ambient, **env_overrides}
     return subprocess.run(
         ["just", *args], cwd=repo, capture_output=True, text=True, env=env
     )

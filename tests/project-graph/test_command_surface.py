@@ -36,13 +36,18 @@ pytestmark = pytest.mark.skipif(
 
 
 def run_just(*args: str, env: dict[str, str] | None = None):
+    # NX_BASE is *input* to the surface under test, so it comes from the test and
+    # never from the ambient environment: CI exports it (nx-set-shas), and a test
+    # asserting the fallback would otherwise read CI's SHA and fail there while
+    # passing locally. Tests that mean to supply one pass it in `env`.
+    ambient = {k: v for k, v in os.environ.items() if k != "NX_BASE"}
     return subprocess.run(
         ["just", *args],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         timeout=60,
-        env={**os.environ, **(env or {})},
+        env={**ambient, **(env or {})},
     )
 
 
