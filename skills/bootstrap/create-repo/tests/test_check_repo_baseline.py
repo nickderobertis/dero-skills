@@ -37,17 +37,18 @@ default:
 bootstrap:
     @echo hi
 
-check: lint test test-e2e
-    @echo gate
+check tier="affected":
+    bunx nx affected -t lint typecheck test build --base=origin/main
 
 test:
-    @echo "pytest --cov --cov-fail-under=95"
+    # each project's own `test` target enforces --cov-fail-under=95
+    bunx nx affected -t test --base=origin/main
 
 test-e2e:
-    @echo e2e
+    bunx nx run-many -t test -p "tag:type:e2e"
 
 lint:
-    @echo l
+    bunx nx affected -t lint --base=origin/main
 
 format:
     @echo f
@@ -64,6 +65,14 @@ lint-llm-diff:
 lint-llm-validate:
     @echo lint-llm-validate
 """
+
+# The same command surface with the coverage bar stripped out: no flag, no
+# threshold anywhere, so only a config file or an AGENTS.md statement can make
+# the coverage decision deliberate.
+NO_COVERAGE_JUSTFILE = FULL_JUSTFILE.replace(
+    "    # each project's own `test` target enforces --cov-fail-under=95\n", ""
+)
+assert "cov" not in NO_COVERAGE_JUSTFILE
 
 # A .claude/settings.json that wires the llmlint installer into a SessionStart
 # hook (the automated-install invariant), with a narrow allowlist.
@@ -153,6 +162,7 @@ def make_repo(
     claude="symlink",
     settings=True,
     justfile=FULL_JUSTFILE,
+    project_graph=True,
     ci=True,
     notignored=True,
     pr_template=True,
@@ -171,8 +181,9 @@ def make_repo(
     AGENTS.md with no such section), or a raw string written verbatim as
     AGENTS.md. ``pr_template`` is True (the conformant .github template), False
     (none), or a raw string written verbatim to .github/pull_request_template.md.
-    ``llmlint`` is True (a composed llmlint.yml with plugins), False (none), or a
-    raw string written verbatim to llmlint.yml. ``oneharness`` is True (a
+    ``project_graph`` writes the orchestrator's nx.json (the mandatory project
+    graph). ``llmlint`` is True (a composed llmlint.yml with plugins), False
+    (none), or a raw string written verbatim to llmlint.yml. ``oneharness`` is True (a
     fallback-mode oneharness.toml), False (none), or a raw string written verbatim
     to oneharness.toml.
     """
@@ -195,6 +206,11 @@ def make_repo(
         (repo / ".claude" / "settings.json").write_text(body, encoding="utf-8")
     if justfile is not None:
         (repo / "justfile").write_text(justfile, encoding="utf-8")
+    if project_graph:
+        (repo / "nx.json").write_text(
+            '{"targetDefaults": {"test": {"dependsOn": ["^build"]}}}\n',
+            encoding="utf-8",
+        )
     if ci is not False:
         wf = repo / ".github" / "workflows"
         wf.mkdir(parents=True, exist_ok=True)
@@ -548,32 +564,174 @@ def test_mock_in_unit_test_is_not_flagged(tmp_path):
     assert not any("mocking library" in m for m in levels(findings, "WARN"))
 
 
+# A command surface that runs its targets itself instead of through the graph.
+NO_ORCHESTRATOR_JUSTFILE = """\
+bootstrap:
+    @echo hi
+
+check: lint test test-e2e
+    @echo gate
+
+test:
+    @echo "pytest --cov --cov-fail-under=95"
+
+test-e2e:
+    @echo e2e
+
+lint:
+    @echo l
+
+format:
+    @echo f
+
+upgrade:
+    @just check
+
+lint-llm:
+    @echo lint-llm
+
+lint-llm-diff:
+    @echo lint-llm-diff
+
+lint-llm-validate:
+    @echo lint-llm-validate
+"""
+
+
+def project_graph_findings(findings):
+    """Every finding the project-graph check contributed (OK ones included)."""
+    return [f for f in findings if "project graph" in f.message]
+
+
+def test_missing_project_graph_warns_and_never_fails(tmp_path):
+    # A repo with no orchestrator at all: one advisory finding, no error, and the
+    # exit-code contract is unchanged (WARN so an already-bootstrapped repo is
+    # guided onto the path rather than broken by it).
+    findings = crb.audit(
+        make_repo(tmp_path, project_graph=False, justfile=NO_ORCHESTRATOR_JUSTFILE)
+    )
+    reported = project_graph_findings(findings)
+    assert len(reported) == 1, [f.message for f in reported]
+    assert reported[0].level == "WARN"
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+
+
+def test_project_graph_warning_is_actionable_on_its_own(tmp_path):
+    # The message has to teach a reader who has never seen this skill: the
+    # standard (a monorepo orchestrator), what to do about it (modularize tests
+    # and code into projects), and where it is written down.
+    findings = crb.audit(
+        make_repo(tmp_path, project_graph=False, justfile=NO_ORCHESTRATOR_JUSTFILE)
+    )
+    message = project_graph_findings(findings)[0].message.lower()
+    assert "monorepo orchestrator" in message
+    assert "modularize" in message
+    assert "tests" in message and "code" in message
+    assert "references/project-graph.md" in message
+
+
+def test_graph_present_but_command_surface_bypasses_it_warns(tmp_path):
+    # nx.json alone is not the invariant: the root recipes must actually run
+    # targets through the graph, or nothing is ever skipped.
+    findings = crb.audit(make_repo(tmp_path, justfile=NO_ORCHESTRATOR_JUSTFILE))
+    reported = project_graph_findings(findings)
+    assert len(reported) == 1, [f.message for f in reported]
+    assert reported[0].level == "WARN"
+    assert "bypass" in reported[0].message
+    # The fix offers only the half that is missing: nx.json is already there.
+    assert "add nx.json" not in reported[0].fix
+    assert "nx affected" in reported[0].fix
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+
+
+def test_project_graph_with_delegating_recipes_does_not_warn(tmp_path):
+    # The conformant fixture: nx.json plus gate recipes that delegate to it.
+    findings = crb.audit(make_repo(tmp_path))
+    assert not any(f.level == "WARN" for f in project_graph_findings(findings)), levels(
+        findings, "WARN"
+    )
+
+
+def test_delegation_through_a_dependency_counts(tmp_path):
+    # `check` delegates via the recipe it depends on; looking only at its own
+    # body would miss the command doing the work.
+    justfile = (
+        "bootstrap:\n    @echo hi\n"
+        "check: lint test\n    @echo gate\n"
+        "test:\n    bunx nx affected -t test --base=origin/main  # --cov-fail-under=95\n"
+        "test-e2e:\n    @echo e2e\n"
+        "lint:\n    @echo l\n"
+        "format:\n    @echo f\n"
+        "upgrade:\n    @just check\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=justfile))
+    assert not any(f.level == "WARN" for f in project_graph_findings(findings))
+
+
+def test_check_that_delegates_the_test_target_runs_test(tmp_path):
+    # A delegating gate names no `test` dependency and never says `just test`; it
+    # hands the `test` target to the orchestrator, and that is running the suite.
+    justfile = (
+        "bootstrap:\n    @echo hi\n"
+        'check tier="affected":\n'
+        "    bunx nx affected -t lint test build --base=origin/main\n"
+        "test:\n    bunx nx affected -t test  # --cov-fail-under=95\n"
+        "test-e2e:\n    @echo e2e\n"
+        "lint:\n    @echo l\n"
+        "format:\n    @echo f\n"
+        "upgrade:\n    @just check\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=justfile))
+    assert not any("does not run `test`" in m for m in levels(findings, "ERROR"))
+
+
+def test_check_delegating_without_the_test_target_still_errors(tmp_path):
+    # Delegation is not a free pass: a fan-out that omits `test` leaves the suite
+    # out of the gate exactly as a hand-rolled one would.
+    justfile = (
+        "bootstrap:\n    @echo hi\n"
+        'check tier="affected":\n'
+        "    bunx nx affected -t lint build --base=origin/main\n"
+        "test:\n    bunx nx affected -t test  # --cov-fail-under=95\n"
+        "test-e2e:\n    @echo e2e\n"
+        "lint:\n    @echo l\n"
+        "format:\n    @echo f\n"
+        "upgrade:\n    @just check\n"
+    )
+    findings = crb.audit(make_repo(tmp_path, justfile=justfile))
+    assert any("does not run `test`" in m for m in levels(findings, "ERROR"))
+
+
+def test_orchestrator_targets_stop_at_the_next_flag():
+    assert crb.orchestrator_targets(
+        "bunx nx affected -t lint test build --base=origin/main --parallel=3"
+    ) == {"lint", "test", "build"}
+    assert crb.orchestrator_targets("bunx nx run-many -t test -p tag:type:e2e") == {
+        "test"
+    }
+    assert crb.orchestrator_targets("uv run pytest") == set()
+
+
 # --- coverage --------------------------------------------------------------
 
 
 def test_missing_coverage_signal_is_error(tmp_path):
     # A justfile with no coverage flag, no coverage config, and an AGENTS.md
     # that never mentions coverage: dropping the default gate must be deliberate.
-    no_cov = FULL_JUSTFILE.replace(
-        '@echo "pytest --cov --cov-fail-under=95"', "@echo t"
-    )
-    findings = crb.audit(make_repo(tmp_path, justfile=no_cov))
+    findings = crb.audit(make_repo(tmp_path, justfile=NO_COVERAGE_JUSTFILE))
     assert crb.has_errors(findings)
     assert any("coverage signal" in m for m in levels(findings, "ERROR"))
 
 
 def test_coverage_satisfied_by_justfile_flag(tmp_path):
-    # The conformant fixture enforces coverage in its `test` recipe.
+    # The conformant fixture names the coverage bar in its `test` recipe.
     findings = crb.audit(make_repo(tmp_path))
     assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
 
 
 def test_coverage_satisfied_by_config_file(tmp_path):
     # A threshold declared in a config file counts even without a justfile flag.
-    no_cov = FULL_JUSTFILE.replace(
-        '@echo "pytest --cov --cov-fail-under=95"', "@echo t"
-    )
-    repo = make_repo(tmp_path, justfile=no_cov)
+    repo = make_repo(tmp_path, justfile=NO_COVERAGE_JUSTFILE)
     (repo / "pyproject.toml").write_text(
         "[tool.coverage.report]\nfail_under = 95\n", encoding="utf-8"
     )
@@ -583,14 +741,13 @@ def test_coverage_satisfied_by_config_file(tmp_path):
 
 def test_coverage_satisfied_by_agents_md_note(tmp_path):
     # An explicit documented decision in AGENTS.md counts as deliberate.
-    no_cov = FULL_JUSTFILE.replace(
-        '@echo "pytest --cov --cov-fail-under=95"', "@echo t"
-    )
     agents = (
         CONFORMANT_AGENTS
         + "\n## Excluded\n\nNo coverage gate: this is a tiny stdlib-only repo.\n"
     )
-    findings = crb.audit(make_repo(tmp_path, justfile=no_cov, composition=agents))
+    findings = crb.audit(
+        make_repo(tmp_path, justfile=NO_COVERAGE_JUSTFILE, composition=agents)
+    )
     assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
 
 
@@ -1112,6 +1269,50 @@ def test_run_buildout_wires_terraform_language_fragment(tmp_path):
     findings = crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
     assert not crb.has_errors(findings), levels(findings, "ERROR")
     assert "buildout/languages/terraform.llmlint.yml" in seen["cfg"]
+
+
+def test_run_buildout_always_wires_the_project_graph_fragment(tmp_path):
+    # The project graph is mandatory in every repo, so its one-time structural
+    # checks must run whatever stack the AGENTS.md composition line records —
+    # including one written before the reference existed.
+    repo = make_repo(
+        tmp_path,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: shapes/cli.md, languages/rust.md\n"
+        ),
+    )
+    seen = {}
+
+    def fake(cfgs, repo_):
+        seen["cfg"] = Path(cfgs[-1]).read_text(encoding="utf-8")
+        return (0, "clean", "")
+
+    findings = crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert "buildout/project-graph.llmlint.yml" in seen["cfg"]
+    # ...alongside the always-applied base tier and the recorded stack's own.
+    assert "buildout/base.llmlint.yml" in seen["cfg"]
+    assert "buildout/languages/rust.llmlint.yml" in seen["cfg"]
+
+
+def test_run_buildout_does_not_duplicate_a_recorded_project_graph(tmp_path):
+    # A composition that already names it must not wire the fragment in twice.
+    repo = make_repo(
+        tmp_path,
+        composition=(
+            "# AGENTS\n\n## Stack and composition\n\n"
+            "- References composed: base.md, project-graph.md, shapes/cli.md, ci.md\n"
+        ),
+    )
+    seen = {}
+
+    def fake(cfgs, repo_):
+        seen["cfg"] = Path(cfgs[-1]).read_text(encoding="utf-8")
+        return (0, "clean", "")
+
+    crb.run_buildout(repo, SKILL_DIR, llmlint_runner=fake)
+    assert seen["cfg"].count("buildout/project-graph.llmlint.yml") == 1
 
 
 def test_run_buildout_passes_committed_config_before_the_temp_one(tmp_path):

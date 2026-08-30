@@ -1,0 +1,12 @@
+{
+  "name": "project-graph-e2e",
+  "root": "tests/project-graph",
+  "projectType": "library",
+  "targets": {
+    "test": {
+      "command": "uv run pytest tests/project-graph",
+      "cache": true,
+      "inputs": ["default", "projectGraph"]
+    }
+  }
+}

@@ -58,7 +58,7 @@ skilltest *args:
 baseline:
     uv run --script skills/bootstrap/create-repo/scripts/check_repo_baseline.py .
 
-# Run the cached Nx authoring targets across all skills.
+# Run the cached Nx authoring targets across every project in the graph.
 nx:
     bunx nx run-many -t validate smoke test
 

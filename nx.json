@@ -5,6 +5,14 @@
     "tooling": [
       "{workspaceRoot}/tools/validate_skill.py",
       "{workspaceRoot}/tools/smoke_skill_scripts.py"
+    ],
+    "dogfoodedContracts": [
+      "{workspaceRoot}/oneharness.toml",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/oneharness.toml.template"
+    ],
+    "projectGraph": [
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/**/project.json"
     ]
   },
   "targetDefaults": {

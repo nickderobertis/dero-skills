@@ -1,0 +1,12 @@
+{
+  "name": "authoring-tools",
+  "root": "tools",
+  "projectType": "library",
+  "targets": {
+    "test": {
+      "command": "uv run pytest tools",
+      "cache": true,
+      "inputs": ["default", "dogfoodedContracts"]
+    }
+  }
+}

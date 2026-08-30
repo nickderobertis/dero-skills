@@ -2,51 +2,85 @@
 #
 # Keep this list small and memorable. `just bootstrap` must work from a clean
 # clone; `just check` is the full quality gate (it must fail on any issue, with
-# no warnings-only mode). Replace the placeholder bodies with the real,
-# stack-specific commands — see references/composing.md for the catalog, then
-# the matching references/languages/<lang>.md and references/shapes/<shape>.md
-# for per-stack tools. In a monorepo, each recipe delegates to the orchestrator
-# (e.g. `nx affected` / `nx run-many`) instead of looping over packages by hand
-# — see references/monorepo.md.
+# no warnings-only mode). Every repo this skill stands up has an Nx project
+# graph, so these recipes DELEGATE to the orchestrator — never a hand-rolled loop
+# over packages. What a target *does* stays with the project that declares it
+# (its own formatter, linter, test runner); the root only decides which projects
+# run it. Replace the placeholder bodies, and adjust the target names below to
+# the ones your projects declare — see references/project-graph.md and
+# references/ci.md, then the matching references/languages/<lang>.md and
+# references/shapes/<shape>.md for the per-stack tools.
+
+# The merge base the affected tier keys off, as it arrives from the environment.
+# Derive it EXPLICITLY: Nx's implicit default is not deterministic across a
+# shallow CI checkout. CI exports NX_BASE (e.g. with `nx-set-shas`); locally this
+# falls back to the fork point from main.
+_nx_base_input := env_var_or_default("NX_BASE", "origin/main")
+
+# Validate that environment input at the boundary, before anything interpolates
+# it into a command: a git ref or SHA is letters, digits and `. _ / -`, so a
+# value carrying a quote, a `;`, or a `$(...)` is refused here rather than handed
+# to a shell. Everything below uses `base`, never the raw input.
+base := if _nx_base_input =~ '^[A-Za-z0-9._/-]+$' { _nx_base_input } else { error("NX_BASE must be a plain git ref or SHA — letters, digits and . _ / - only; got: " + _nx_base_input) }
 
 # List available recipes.
 default:
     @just --list
 
-# Set up the project from a clean clone: install the toolchain and dependencies.
+# Set up the project from a clean clone: the Node toolchain Nx runs on, then each
+# ecosystem's own workspace install — one lockfile per ecosystem, not one per
+# project.
 bootstrap:
-    @echo "TODO: install toolchain + dependencies (e.g. uv sync / bun install)"
+    @echo "TODO: install toolchain + dependencies (e.g. bun install, then uv sync / cargo fetch)"
 
-# Full quality gate: format check, lint, type check, and tests (incl. e2e).
-# Fail on any issue. e2e is part of the gate, not an opt-in target.
-check: lint test test-e2e
-    @echo "TODO: add format --check and type checking to the gate"
+# Full quality gate. Defaults to the AFFECTED tier: every target that this change
+# can reach, and nothing else — the tier development and review run. `just check
+# all` runs the BROADER tier instead: one full sweep over every project, at the
+# single lifecycle point references/ci.md names (merge-to-main when the repo
+# releases on merge; release-prep when it batches releases). The tier is a flag
+# on this one command, never a second gate, so local and CI cannot drift.
+# Formatting and type checking are gated here through each project's own `lint`
+# and `typecheck` targets; the `&&` dependency runs `test-e2e` after the body at
+# the same tier, so e2e is part of the gate rather than an opt-in extra.
+#
+# just resolves the tier, rather than a shell `if`, for two reasons: `just -n
+# check` then prints the one command that will actually run, and a mistyped tier
+# aborts instead of quietly buying the weaker tier.
+check tier="affected": && (test-e2e tier)
+    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t lint typecheck test build
 
-# Run the fast test suite (unit + integration) with coverage enforced. 95% line
-# coverage is the default gate; fail below it. Lower the bar only with a
-# documented reason in AGENTS.md — don't leave coverage unmeasured.
+# The test tier on its own, for iterating: the same `test` target the gate fans
+# out over, scoped to the projects this change can reach. Each project's `test`
+# target enforces coverage (95% line coverage is the default bar); lower the bar
+# only with a documented reason in AGENTS.md — never leave it unmeasured.
 test:
-    @echo "TODO: run unit/integration tests with coverage enforced (e.g. pytest --cov --cov-fail-under=95 / vitest --coverage / cargo llvm-cov --fail-under-lines 95)"
+    bunx nx affected --base={{base}} -t test
 
-# Run end-to-end tests that exercise the built artifact the way users run it.
-# Cover the primary happy path AND at least one meaningful failure/recovery
-# path — not just a smoke test. If e2e genuinely does not apply (e.g. a pure
-# library), delete this recipe and document why in AGENTS.md.
-test-e2e:
-    @echo "TODO: run e2e (e.g. playwright test / the installed CLI / a real request)"
+# Run the end-to-end suites, which exercise the built artifact the way users run
+# it. `check` runs this last, so e2e is gated on every change; run it alone while
+# you iterate on that tier. Each e2e suite is a project of its own declaring an
+# `e2e` target and depending only on what it tests, so the affected tier reaches
+# it exactly when a change can (references/project-graph.md). Cover the primary
+# happy path AND at least one meaningful failure/recovery path — not a smoke test.
+# If e2e genuinely does not apply (e.g. a pure library), delete this recipe, drop
+# it from `check`'s dependencies, and document why in AGENTS.md.
+test-e2e tier="affected":
+    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t e2e
 
-# Lint the codebase; fail on findings.
+# Lint (and type check) the projects this change can reach; fail on findings.
 lint:
-    @echo "TODO: run linter (e.g. ruff / biome / clippy / shellcheck)"
+    bunx nx affected --base={{base}} -t lint typecheck
 
-# Format the codebase in place.
+# Format the whole tree in place — formatting is not a "what changed" question,
+# so this sweeps every project rather than the affected set.
 format:
-    @echo "TODO: run formatter (e.g. ruff format / biome / rustfmt / shfmt)"
+    bunx nx run-many -t format
 
-# Upgrade dependencies, then re-run the full gate.
+# Upgrade dependencies, then re-run the full gate as the broader tier: an upgrade
+# can reach any project, so the affected set would understate it.
 upgrade:
-    @echo "TODO: upgrade dependencies (e.g. uv lock --upgrade)"
-    @just check
+    @echo "TODO: upgrade each ecosystem's dependencies (e.g. bun update, uv lock --upgrade, cargo update)"
+    @just check all
 
 # Provision the dev toolchain for a session: ensure `just` (via uv, so a cloud
 # session that ships the language runtime but not `just` can still run these

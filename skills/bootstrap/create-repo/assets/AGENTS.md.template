@@ -53,20 +53,37 @@ the choice was made deliberately rather than skipped.
 - **Product shape:** <cli / web-app / nextjs / library / skills-repo /
   asdf-plugin / ...>
 - **Language(s):** <python / typescript / rust / bash / ...>
+- **References composed:** <the plan composer prints this line — e.g. `base.md,
+  project-graph.md, shapes/cli.md, languages/python.md, ci.md, llmlint.md`.
+  `base.md`, `project-graph.md`, `ci.md`, and `llmlint.md` are in every
+  composition; the shape, language(s), and intersections are this repo's.>
+- **Projects in the graph:** <the units the repo is split into and why — each
+  deliverable, plus the test tiers and the expensive/external-service suites that
+  are projects of their own so an unrelated change cannot reach them. Every repo
+  here is a monorepo with an Nx project graph, even with one deliverable.>
 - **Excluded, and why:** <optional tooling/layout that did not fit — asdf,
   direnv, `src` layout, a release pipeline — each with a one-line rationale.
   The non-negotiable invariants (strict gate, e2e of real journeys, CI that
-  proves the artifact) are never excluded.>
+  proves the artifact, the project graph) are never excluded.>
 
 ## Command surface
 
-Use the `just` recipes; do not hand-roll equivalent commands.
+Use the `just` recipes; do not hand-roll equivalent commands. Each one
+delegates to the Nx project graph (`nx affected` / `nx run-many`) rather than
+looping over projects, and each project declares what its own targets do.
 
 - `just bootstrap` — set up from a clean clone.
-- `just check` — full quality gate (format, lint, type check, tests). Must pass
-  before any commit or PR.
+- `just check` — full quality gate (format, lint, type check, tests incl. e2e),
+  run as the **affected tier**: the projects this change can reach, keyed off an
+  explicitly derived merge base. Must pass before any commit or PR.
+- `just check all` — the **broader tier**: one full sweep over every project. CI
+  runs it at the single lifecycle point recorded below; run it locally when a
+  change (an upgrade, a shared config edit) reaches further than the affected set
+  suggests.
 - `just test` / `just lint` / `just format` — individual gate steps.
-- `just upgrade` — upgrade dependencies, then re-run `just check`.
+- `just test-e2e` — the e2e tier on its own, for iterating; `just check` runs it
+  last, at the same tier, so e2e is gated on every change.
+- `just upgrade` — upgrade dependencies, then re-run the gate as a full sweep.
 - `just lint-llm` / `just lint-llm-diff` / `just lint-llm-validate` — the
   LLM-judge tier (llmlint), separate from `check` and non-deterministic; config in
   `llmlint.yml`. `lint-llm` runs on demand locally; `lint-llm-diff` is the
@@ -91,6 +108,11 @@ so it is auditable and re-appliable.
   check that gates correctness — including the full-e2e gate job (`just check`),
   the `llmlint` LLM-judge job (separate from `check`), and any others — plus
   linear history, conversation resolution, and no force-push / branch-deletion.
+- **The broader gate tier runs at <merge-to-main / release-prep>.** <Which one
+  follows from the release model: a repo that releases on merge sweeps at
+  merge-to-main and re-gates nothing afterwards; a repo that batches releases
+  sweeps at release-prep and leaves merge-to-main on the affected tier. Each
+  commit is gated once per tier. See the skill's `references/ci.md`.>
 - **PRs follow the template.** `.github/pull_request_template.md` asks for a
   terse **What** (the behavior change) and **Why** (its driver and impact), with
   an optional **Additional info** section — describe the change and its driver,

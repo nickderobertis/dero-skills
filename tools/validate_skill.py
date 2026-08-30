@@ -26,10 +26,35 @@ REQUIRED_FRONTMATTER = ("name", "description", "compatibility")
 # Text extensions we scan inside scripts/ for forbidden runtime dependencies.
 SCRIPT_TEXT_SUFFIXES = {".py", ".mjs", ".cjs", ".js", ".ts", ".sh", ".bash"}
 
+# Invoking the monorepo orchestrator at runtime: `nx` in *command position* —
+# opening a shell line or a quoted command string, reached through a package
+# runner, chained onto another command, or spawned as argv[0] — followed by
+# whatever target or subcommand it is being told to run (`nx affected -t test`,
+# `nx run-many`, `nx build app`). The invariant is that a bundled script must not
+# *depend on* the orchestrator, so reading its world stays allowed: `nx.json` as
+# a filename has no argument after `nx`, and prose or a diagnostic message about
+# the tool spells it `Nx`. Matching is case-SENSITIVE for exactly that reason —
+# the executable is `nx`, the tool is `Nx` — so the rule can accept any target
+# name rather than an allowlist of subcommands that a `nx build app` slips past.
+_NX_RUNNER = r"(?:(?:bunx|npx|yarn|pnpm)(?:\s+(?:exec|dlx|run))?\s+)?"
+_NX_CALL = rf"{_NX_RUNNER}nx\s+[-\w]"  # `nx` plus the target/subcommand it runs
+NX_IN_COMMAND_POSITION_RE = re.compile(
+    rf"""(?:^[^\S\n]*{_NX_CALL})     # opens a shell line
+        |(?:(?<=["'])\s*{_NX_CALL})  # opens a quoted command string
+        |(?:[;&|]\s*{_NX_CALL})      # chained onto another command
+        |(?:\$\(\s*{_NX_CALL})       # inside a command substitution
+        |(?:["']nx["'])              # spawned as argv[0]
+    """,
+    re.MULTILINE | re.VERBOSE,
+)
+
 # Patterns that indicate a runtime script depends on repo-root / authoring-only
 # tooling. Each entry is (compiled_regex, human_message).
 FORBIDDEN_RUNTIME = [
-    (re.compile(r"\bnx\b", re.IGNORECASE), "references Nx (authoring/CI only)"),
+    (
+        NX_IN_COMMAND_POSITION_RE,
+        "invokes Nx at runtime (the orchestrator is authoring/CI only)",
+    ),
     (re.compile(r"\basdf\b", re.IGNORECASE), "references asdf"),
     (re.compile(r"\bdirenv\b", re.IGNORECASE), "references direnv"),
     (
