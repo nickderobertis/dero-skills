@@ -164,10 +164,12 @@ exit 0
 """
 
 
-def _oneharness_on_path() -> bool:
-    # The only provider these evals can run through: `_prepare_run` writes a
-    # `kind: oneharness` config, and `_stealth_env` strips every `SKILLTEST_*`
-    # var before the harness starts, so nothing a caller sets can redirect it.
+def _provider_available() -> bool:
+    # A custom SKILLTEST_PROVIDER is a command string; treat it as usable only when
+    # its executable actually resolves on PATH. Otherwise fall back to oneharness.
+    provider = os.environ.get("SKILLTEST_PROVIDER", "").strip()
+    if provider:
+        return shutil.which(provider.split()[0]) is not None
     return ONEHARNESS is not None
 
 
@@ -281,8 +283,8 @@ def neutral_tmp():
 
 @pytest.mark.skilltest_e2e  # opt-in only (slow ~20-30min run); see conftest.py / tests/AGENTS.md
 @pytest.mark.skipif(
-    not _oneharness_on_path(),
-    reason="oneharness is not on PATH — run `just bootstrap`",
+    not _provider_available(),
+    reason="no skilltest provider available (set SKILLTEST_PROVIDER or put oneharness on PATH)",
 )
 @pytest.mark.skipif(
     bool(_CUSTOM_PROMPT),
@@ -377,8 +379,8 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
 
 @pytest.mark.skilltest_e2e  # opt-in only (slow real harness run); see conftest.py / tests/AGENTS.md
 @pytest.mark.skipif(
-    not _oneharness_on_path(),
-    reason="oneharness is not on PATH — run `just bootstrap`",
+    not _provider_available(),
+    reason="no skilltest provider available (set SKILLTEST_PROVIDER or put oneharness on PATH)",
 )
 @pytest.mark.skipif(
     not _CUSTOM_PROMPT,

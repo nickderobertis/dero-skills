@@ -125,8 +125,7 @@ anyone who sweeps the tree with a bare `pytest`. The guard is an environment
 variable rather than a `--skilltest-e2e` flag because `pytest_addoption` is only
 honoured in an *initial* conftest, and this one is no longer at the rootdir.
 
-It also needs `oneharness` on `PATH` — the one provider it can run through, since
-`_prepare_run` writes a `kind: oneharness` config — and a sandbox it can write in
-(it runs the harness in bypass mode). The opt-in lifts the marker skip but the
-provider skip still applies, so a plain `just skilltest` in a shell without
-oneharness is a no-op.
+It also needs a provider (`oneharness` on `PATH`, or a custom
+`SKILLTEST_PROVIDER`) and a sandbox it can write in (it runs the harness in
+bypass mode). The opt-in lifts the marker skip but the provider skip still
+applies, so a plain `just skilltest` in a provider-less shell is a no-op.

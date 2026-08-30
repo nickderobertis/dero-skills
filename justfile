@@ -96,8 +96,8 @@ baseline:
 # Run the opt-in skilltest skill evals. NOT part of `just check`: `skilltest` is a
 # target name no gate tier fans out over, because each eval drives a real
 # ~20-30min repo bootstrap through a harness — external contact promotes it out
-# of the affected tier unconditionally (references/ci.md). It needs `oneharness`
-# on PATH (`just bootstrap` installs it) plus a sandbox. Pass
+# of the affected tier unconditionally (references/ci.md). It needs a provider
+# (`oneharness` on PATH or a custom `SKILLTEST_PROVIDER`) plus a sandbox. Pass
 # extra pytest args to narrow, e.g. `just skilltest -x`.
 # llmlint: ignore[tool_output_is_signal] a developer-facing test runner — pytest's own pass/fail output is the signal you invoke it for, exactly as `just test`/`just check` do.
 skilltest *args:
