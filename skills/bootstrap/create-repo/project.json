@@ -23,7 +23,11 @@
       "command": "uv run python tools/smoke_skill_scripts.py skills/bootstrap/create-repo"
     },
     "test": {
-      "command": "uv run pytest skills/bootstrap/create-repo/tests --ignore skills/bootstrap/create-repo/tests/e2e --ignore skills/bootstrap/create-repo/tests/skilltest"
+      "command": "uv run pytest skills/bootstrap/create-repo/tests --ignore skills/bootstrap/create-repo/tests/e2e --ignore skills/bootstrap/create-repo/tests/skilltest",
+      "inputs": [
+        "default",
+        "skillEval"
+      ]
     }
   }
 }

@@ -27,13 +27,6 @@ import pytest
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
-def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line(
-        "markers",
-        "skilltest_e2e: opt-in, slow skilltest skill eval — needs SKILLTEST_E2E=1",
-    )
-
-
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:

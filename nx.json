@@ -1,7 +1,9 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*"],
+    "default": [
+      "{projectRoot}/**/*"
+    ],
     "tooling": [
       "{workspaceRoot}/tools/validate_skill.py",
       "{workspaceRoot}/tools/smoke_skill_scripts.py"
@@ -35,32 +37,49 @@
       "{workspaceRoot}/.husky/**/*",
       "{workspaceRoot}/.claude/settings.json",
       "{workspaceRoot}/**/project.json"
+    ],
+    "skillEval": [
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/skilltest/**/*"
     ]
   },
   "targetDefaults": {
     "format": {
       "cache": true,
-      "inputs": ["default"]
+      "inputs": [
+        "default"
+      ]
     },
     "format-check": {
       "cache": true,
-      "inputs": ["default"]
+      "inputs": [
+        "default"
+      ]
     },
     "lint": {
       "cache": true,
-      "inputs": ["default"]
+      "inputs": [
+        "default"
+      ]
     },
     "validate": {
       "cache": true,
-      "inputs": ["default", "tooling"]
+      "inputs": [
+        "default",
+        "tooling"
+      ]
     },
     "smoke": {
       "cache": true,
-      "inputs": ["default", "tooling"]
+      "inputs": [
+        "default",
+        "tooling"
+      ]
     },
     "test": {
       "cache": true,
-      "inputs": ["default"]
+      "inputs": [
+        "default"
+      ]
     },
     "skilltest": {
       "cache": false

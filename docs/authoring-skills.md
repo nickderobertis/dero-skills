@@ -128,14 +128,14 @@ Two stdlib-only tools enforce the rules above:
   bundled scripts without executing side effects.
 
 Run the whole quality gate (format, lint, skill validation, tests, and the
-repo's own baseline self-check) with `just check`. To run just the skill checks,
-name the project's targets — there is no per-skill loop to run, because `just`
-delegates the fan-out to Nx:
+repo's own baseline self-check) with `just check`; `just validate` runs the
+validation and smoke targets alone. There is no per-skill loop to run — `just`
+delegates the fan-out to Nx, which discovers the projects. Only when you want a
+*single* project does the command surface run out of vocabulary, and then name
+its target directly:
 
 ```bash
-just validate                             # the validate + smoke targets, affected-scoped
-bunx nx run-many -t validate smoke        # every skill in the graph
-bunx nx run bootstrap-create-repo:validate  # one skill
+bunx nx run bootstrap-create-repo:validate
 bunx nx run bootstrap-create-repo:test
 ```
 
@@ -148,7 +148,6 @@ bunx nx run bootstrap-create-repo:test
    `validate`, `smoke`, and `test` targets (omit `test` for a docs-only skill
    with no `tests/`), and give any expensive harness-driven eval its own nested
    project with a `skilltest` target the gate does not fan out over.
-5. Run `bunx nx run-many -t validate smoke test --projects=<scope>-<name>...`, or
-   just `just check` — the graph runs your new project without any edit to the
+5. Run `just check` — the graph picks the new project up with no edit to the
    command surface.
 6. Open a PR. CI runs the same validation.

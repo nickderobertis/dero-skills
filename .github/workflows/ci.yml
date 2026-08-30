@@ -175,6 +175,19 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
+      # Fail fast, with an actionable message, before anything tries to use the
+      # credential — the harness login below would otherwise fail opaquely.
+      - name: Require the harness credential
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::llmlint needs a Codex credential. Add an OPENAI_API_KEY repo secret" \
+                 "(Settings → Secrets and variables → Actions), or switch this job to a harness" \
+                 "you have a key for. See the 'Optional LLM lint' section in AGENTS.md." >&2
+            exit 1
+          fi
+
       - name: Install & authenticate Codex CLI (the committed harness)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -190,7 +203,7 @@ jobs:
 
       - name: Install llmlint toolchain (oneharness + llmlint)
         run: |
-          ./scripts/setup-llmlint.sh
+          just setup-llmlint
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       # The model-free half of the tier, scoped to the branch's changes. `just
@@ -205,16 +218,7 @@ jobs:
       - name: Lint changed files
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          # Fail with a clear, actionable message instead of an opaque
-          # "no JSON value could be extracted" when the harness has no credential.
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "::error::llmlint needs a Codex credential. Add an OPENAI_API_KEY repo secret" \
-                 "(Settings → Secrets and variables → Actions), or switch this job to a harness" \
-                 "you have a key for. See the 'Optional LLM lint' section in AGENTS.md." >&2
-            exit 1
-          fi
-          just lint-llm-diff origin/main
+        run: just lint-llm-diff origin/main
 
   release:
     # Automated release on main: derive the version from Conventional Commits

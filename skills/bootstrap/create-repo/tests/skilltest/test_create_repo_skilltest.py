@@ -79,7 +79,10 @@ from skilltest_pytest import (
     stub,
 )
 
-SKILL = Path(__file__).resolve().parents[1]
+# This eval is its own project, so it sits one level deeper than the fast tier:
+# tests/skilltest/<this file> -> tests -> the skill root. `test_eval_wiring.py`
+# in the fast tier is what fails if that depth ever silently changes again.
+SKILL = Path(__file__).resolve().parents[2]
 BASELINE_CHECKER = SKILL / "scripts" / "check_repo_baseline.py"
 ONEHARNESS = shutil.which("oneharness")
 

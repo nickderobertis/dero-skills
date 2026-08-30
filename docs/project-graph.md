@@ -16,6 +16,11 @@ split is by **test tier** and by **cost**, per the create-repo skill's
 | `llmlint-tier` | `tests/llmlint/` | `format` `format-check` `lint` `validate` `test` **`lint-llm`** |
 | `repo-baseline` | `tests/baseline/` | `format` `format-check` `lint` `test` |
 
+`project-graph-e2e` covers this seam from both sides: `test_project_graph.py`
+asserts what `nx affected` selects, and `test_command_surface.py` drives the real
+`just` to assert what the recipes ask Nx for (the tier, the merge base, and the
+boundary refusals).
+
 What is not obvious from the table:
 
 - **Target names are uniform, and that is what makes one root recipe cover the
@@ -44,6 +49,8 @@ What is not obvious from the table:
   `repoBaseline` attaches this repo's root configuration (justfile, workflows,
   `AGENTS.md`, every `project.json`) to the audit that reads it, and
   `llmlintTier` attaches `llmlint.yml` and the rule fragments to the tier they
-  configure. An input is the only thing keeping a cached pass from outliving an
+  configure, and `skillEval` attaches the harness-driven eval to the fast tier
+  that checks its path constants (`tests/test_eval_wiring.py` — the eval never
+  runs in the gate, so a broken constant inside it is otherwise invisible). An input is the only thing keeping a cached pass from outliving an
   edit to a file outside the project — add one whenever a target reads across a
   boundary.

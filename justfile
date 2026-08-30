@@ -150,8 +150,11 @@ lint-llm-validate *args:
 # run it locally before pushing. BASE defaults to origin/main (fetch it first if
 # your clone lacks it). Uses the committed codex + gpt-5.5 harness unless
 # ONEHARNESS_* env overrides are set (the Claude Code SessionStart hook sets them).
+# `base` is validated at the same boundary as NX_BASE above, and for the same
+# reason: it is interpolated into a shell command, so a value carrying a quote, a
+# `;` or a `$(...)` is refused here rather than handed to a shell.
 lint-llm-diff base="origin/main" *args:
-    PATH="$HOME/.local/bin:$PATH" llmlint --diff --diff-base "{{base}}" {{args}}
+    PATH="$HOME/.local/bin:$PATH" llmlint --diff --diff-base "{{ if base =~ '^[A-Za-z0-9._/-]+$' { base } else { error("--diff-base must be a plain git ref or SHA — letters, digits and . _ / - only; got: " + base) } }}" {{args}}
 
 # Upgrade dependencies, then re-run the gate as the BROADER tier: an upgrade can
 # reach any project, so the affected set would understate it.

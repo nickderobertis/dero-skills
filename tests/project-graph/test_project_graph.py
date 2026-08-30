@@ -183,9 +183,6 @@ def test_a_change_to_the_root_command_surface_reruns_the_baseline_audit():
     assert "repo-baseline" in affected_test_projects("justfile")
 
 
-# --- the expensive tiers, and the edges that keep them out of the gate --------
-
-
 def test_the_gate_never_fans_out_over_the_expensive_target_names():
     """`skilltest` and `lint-llm` are declared on projects, but on no gate tier.
 
@@ -238,6 +235,16 @@ def test_the_judged_llmlint_tier_runs_when_its_own_config_changes():
 def test_an_unrelated_change_never_runs_the_harness_driven_eval(unrelated):
     assert "bootstrap-create-repo-skilltest" not in affected_projects(
         ("skilltest",), unrelated
+    )
+
+
+def test_editing_the_eval_rechecks_the_wiring_the_fast_tier_asserts():
+    # The fast tier reads the eval's path constants across a project boundary
+    # (tests/test_eval_wiring.py), so `nx.json`'s `skillEval` input has to keep
+    # the eval in that project's graph — otherwise a cached pass outlives a move
+    # that breaks it, which is exactly how the constants broke once already.
+    assert "bootstrap-create-repo" in affected_test_projects(
+        "skills/bootstrap/create-repo/tests/skilltest/test_create_repo_skilltest.py"
     )
 
 
