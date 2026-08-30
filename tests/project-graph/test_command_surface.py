@@ -20,7 +20,9 @@ for.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -139,3 +141,148 @@ def test_bootstrap_installs_each_ecosystem_once() -> None:
     body = dry_run("bootstrap")
     for step in ("bun install", "uv sync", "shellcheck-py", "setup-llmlint.sh"):
         assert step in body, (step, body)
+
+
+def test_the_gate_target_list_has_exactly_one_source() -> None:
+    """The justfile owns the gate's targets; a second copy drifts in silence.
+
+    `package.json` used to restate them in a `check` script nothing invoked, so
+    adding a target to the gate left a stale list behind with no check to notice.
+    Nothing outside the justfile may name an orchestrator target list.
+    """
+    scripts = json.loads((REPO_ROOT / "package.json").read_text(encoding="utf-8")).get(
+        "scripts", {}
+    )
+    restated = {
+        name: body for name, body in scripts.items() if re.search(r"-t\s+[\w-]", body)
+    }
+    assert restated == {}, (
+        "package.json restates the orchestrator's target list, which the justfile "
+        f"owns — the two drift the moment the gate changes: {restated}"
+    )
+
+
+# --- the recipes, RUN ------------------------------------------------------
+#
+# The dry-run cases above read what a recipe *would* run. These execute it: real
+# `just`, the real committed justfile, and every third-party launcher a recipe
+# hands work off to replaced by a recording double. That is what makes `upgrade`
+# — which otherwise relocks both ecosystems and runs the whole gate — checkable
+# here, along with the multi-step recipes' ordering and their abort-on-failure
+# behaviour, none of which a dry run observes.
+
+STUB = """#!/bin/sh
+# Recording double for a launcher a recipe delegates to (`uv`, `bun`, `bunx`) or
+# for a script it shells out to. Logs the invocation, then succeeds — unless
+# STUB_FAIL globs it, which is how the failure path is driven.
+printf '%s %s\\n' "$(basename "$0")" "$*" >> "$STUB_LOG"
+case "$(basename "$0") $*" in
+  ${STUB_FAIL:-__never_matches__}) echo "stub: $(basename "$0") failed" >&2; exit 3 ;;
+esac
+exit 0
+"""
+
+
+@pytest.fixture
+def surface(tmp_path: Path) -> Path:
+    """The repo's own justfile, with everything it delegates to doubled.
+
+    The recipes are the layer under test, so `just` is real and the justfile is
+    the committed one, byte for byte. It runs in a directory of its own so a
+    recipe that would install, relock, or sweep the graph cannot touch this
+    checkout.
+    """
+    shutil.copy(REPO_ROOT / "justfile", tmp_path / "justfile")
+    for directory, names in (
+        ("bin", ("uv", "bun", "bunx")),
+        ("scripts", ("setup-llmlint.sh", "session-setup.sh")),
+    ):
+        (tmp_path / directory).mkdir()
+        for name in names:
+            double = tmp_path / directory / name
+            double.write_text(STUB, encoding="utf-8")
+            double.chmod(0o755)
+    return tmp_path
+
+
+def run_recipe(
+    surface: Path, *args: str, fail_pattern: str | None = None
+) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    """Run a recipe for real; return the result and what it actually invoked."""
+    log = surface / "invocations.log"
+    env = {k: v for k, v in os.environ.items() if k != "NX_BASE"}
+    env["PATH"] = f"{surface / 'bin'}{os.pathsep}{env['PATH']}"
+    env["STUB_LOG"] = str(log)
+    if fail_pattern is not None:
+        env["STUB_FAIL"] = fail_pattern
+    result = subprocess.run(
+        ["just", *args],
+        cwd=surface,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=env,
+    )
+    invoked = (
+        [line.strip() for line in log.read_text(encoding="utf-8").splitlines()]
+        if log.exists()
+        else []
+    )
+    return result, [line for line in invoked if line]
+
+
+GATE_SWEEP = f"bunx nx run-many {GATE_TARGETS}"
+
+
+def test_bootstrap_runs_one_install_per_ecosystem(surface) -> None:
+    result, invoked = run_recipe(surface, "bootstrap")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert invoked == [
+        "bun install --frozen-lockfile",
+        "uv sync --locked",
+        "uv tool install --quiet shellcheck-py",
+        "setup-llmlint.sh",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        (("check",), [f"bunx nx affected --base=origin/main {GATE_TARGETS}"]),
+        (("check", "all"), [GATE_SWEEP]),
+        (("test",), ["bunx nx affected --base=origin/main -t test"]),
+        (("lint",), ["bunx nx affected --base=origin/main -t lint"]),
+        (("format",), ["bunx nx run-many -t format"]),
+    ],
+)
+def test_each_gate_recipe_runs_exactly_one_orchestrator_command(
+    surface, args, expected
+) -> None:
+    result, invoked = run_recipe(surface, *args)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert invoked == expected
+
+
+def test_upgrade_relocks_both_ecosystems_then_sweeps_the_whole_graph(surface) -> None:
+    # The one recipe no dry run can vouch for on its own: its last line recurses
+    # into `just check all`, so what it finally asks the orchestrator for is only
+    # visible by running it.
+    result, invoked = run_recipe(surface, "upgrade")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert invoked == [
+        "uv lock --upgrade",
+        "uv sync",
+        "bun update",
+        GATE_SWEEP,
+    ]
+
+
+def test_upgrade_stops_at_a_failed_relock_instead_of_gating_a_stale_tree(
+    surface,
+) -> None:
+    # If the relock fails, the sweep that follows would report on the OLD
+    # dependencies — a pass that means nothing. The recipe must abort first.
+    result, invoked = run_recipe(surface, "upgrade", fail_pattern="uv lock*")
+    assert result.returncode != 0
+    assert invoked == ["uv lock --upgrade"]
+    assert GATE_SWEEP not in invoked

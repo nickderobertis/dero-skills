@@ -49,7 +49,9 @@ What is not obvious from the table:
   `repoBaseline` attaches this repo's root configuration (justfile, workflows,
   `AGENTS.md`, every `project.json`) to the audit that reads it, and
   `llmlintTier` attaches `llmlint.yml` and the rule fragments to the tier they
-  configure, and `skillEval` attaches the harness-driven eval to the fast tier
+  configure, `commandSurface` attaches the root `justfile` and `package.json` to
+  the suite that drives the recipes and guards the gate's one target list, and
+  `skillEval` attaches the harness-driven eval to the fast tier
   that checks its path constants (`tests/test_eval_wiring.py` — the eval never
   runs in the gate, so a broken constant inside it is otherwise invisible). An input is the only thing keeping a cached pass from outliving an
   edit to a file outside the project — add one whenever a target reads across a

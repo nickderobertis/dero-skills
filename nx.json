@@ -16,6 +16,10 @@
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/**/project.json"
     ],
+    "commandSurface": [
+      "{workspaceRoot}/justfile",
+      "{workspaceRoot}/package.json"
+    ],
     "toolchainPins": [
       "{workspaceRoot}/.tool-versions",
       "{workspaceRoot}/.github/workflows/**/*"
