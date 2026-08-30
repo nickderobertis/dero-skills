@@ -19,10 +19,26 @@ import subprocess
 from pathlib import Path
 
 from test_check_repo_baseline import (
+    FULL_JUSTFILE,
     NO_ORCHESTRATOR_JUSTFILE,
     SCRIPT,
     _buildout_repo,
     make_repo,
+)
+
+# The gate delegating with Nx's comma-separated target list (`--targets=a,b`)
+# rather than the spaced `-t a b` of FULL_JUSTFILE. Both spellings reach the
+# checker from a real justfile, so both have to resolve to the same targets.
+COMMA_TARGETS_JUSTFILE = FULL_JUSTFILE.replace(
+    "bunx nx affected -t lint typecheck test build --base=origin/main",
+    "bunx nx affected --targets=lint,typecheck,test,build --base=origin/main",
+)
+assert "--targets=lint,typecheck,test,build" in COMMA_TARGETS_JUSTFILE
+
+# The same spelling with `test` dropped from the list: the suite is out of the
+# gate, which the checker has to keep catching through the comma form too.
+COMMA_TARGETS_WITHOUT_TEST_JUSTFILE = COMMA_TARGETS_JUSTFILE.replace(
+    "--targets=lint,typecheck,test,build", "--targets=lint,typecheck,build"
 )
 
 
@@ -119,3 +135,32 @@ def test_e2e_repo_with_a_project_graph_reports_nothing_to_fix(tmp_path):
     assert [line for line in result.stdout.splitlines() if line.strip()] == [
         f"OK    baseline invariants satisfied: {repo.resolve()}"
     ]
+
+
+def test_e2e_comma_separated_targets_count_as_running_the_suite(tmp_path):
+    # A gate that hands `test` to the orchestrator in Nx's comma-separated
+    # spelling runs the suite just as the spaced one does. Parsed as a single
+    # token, `test` would be invisible and the checker would wrongly fail the
+    # repo, so this is the command-line proof that the list is split on commas.
+    repo = tmp_path / "comma"
+    repo.mkdir()
+    make_repo(repo, justfile=COMMA_TARGETS_JUSTFILE)
+    result = _run_script(repo)
+    assert result.returncode == 0, result.stderr
+    assert "does not run `test`" not in result.stderr
+    assert [line for line in result.stdout.splitlines() if line.strip()] == [
+        f"OK    baseline invariants satisfied: {repo.resolve()}"
+    ]
+
+
+def test_e2e_comma_separated_targets_without_test_still_fail_the_gate(tmp_path):
+    # The other half of that proof: splitting on commas must not turn into
+    # accepting any list that merely contains the substring. Drop `test` from the
+    # same comma-separated fan-out and the author sees the error and exit 1.
+    repo = tmp_path / "comma-no-test"
+    repo.mkdir()
+    make_repo(repo, justfile=COMMA_TARGETS_WITHOUT_TEST_JUSTFILE)
+    result = _run_script(repo)
+    assert result.returncode == 1
+    assert "does not run `test`" in result.stderr
+    assert "make `check` depend on `test`" in result.stderr

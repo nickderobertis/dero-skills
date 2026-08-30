@@ -564,8 +564,6 @@ def test_mock_in_unit_test_is_not_flagged(tmp_path):
     assert not any("mocking library" in m for m in levels(findings, "WARN"))
 
 
-# --- project graph ---------------------------------------------------------
-
 # A command surface that runs its targets itself instead of through the graph.
 NO_ORCHESTRATOR_JUSTFILE = """\
 bootstrap:
