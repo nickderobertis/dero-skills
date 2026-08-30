@@ -1,15 +1,22 @@
-"""End-to-end tests for the assets a produced repo starts from.
+"""End-to-end tests for the command surface a produced repo starts from.
 
-The justfile template is driven the way a contributor drives it: materialised
-under its real name and run with the *real* `just`, with only the genuinely
-external orchestrator stubbed (a `bunx` on PATH that echoes its argv), so the
-tier each recipe invokes is observed from the command that actually ran — not
-matched out of the file. The materialised command surface is then handed to the
-real baseline checker, which is what a produced repo is audited by.
+Nothing here is stubbed. The justfile template is materialised under its real
+name and driven with the *real* `just`, the way a contributor drives it:
 
-The CI template can't be executed locally (GitHub runs it), so it is read as the
-text GitHub parses: the jobs it defines, the tier each runs, and the
-least-privilege / no-injection rules `references/ci.md` requires of it.
+* `just --dry-run <recipe>` is a real user-facing flag — it is how you ask a
+  justfile what a recipe will run — and because the template resolves the tier in
+  just rather than in a shell `if`, its output IS the one orchestrator command
+  that would execute. That is what these tests read the tier off, so the tier is
+  observed from `just` itself rather than matched out of the file.
+* The paths that must fail before anything runs — a mistyped tier, an NX_BASE
+  that is not a git ref — are driven as ordinary `just` runs and asserted on the
+  real exit code and message.
+
+The materialised repo is then handed to the real baseline checker as a
+subprocess, which is the interface a produced repo is actually audited by.
+
+Static assertions about the shipped assets that no command exercises (the
+AGENTS.md prose, the GitHub-run CI workflow) live in ``../test_templates.py``.
 """
 
 from __future__ import annotations
@@ -17,7 +24,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import stat
 import subprocess
 from pathlib import Path
 
@@ -33,53 +39,42 @@ GATE_TARGETS = "lint typecheck test build"
 
 @pytest.fixture
 def command_surface(tmp_path: Path) -> Path:
-    """The justfile template under its real name, with a stub orchestrator on PATH."""
+    """The justfile template under its real name, in a directory of its own."""
     shutil.copy(ASSETS / "justfile.template", tmp_path / "justfile")
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    stub = bin_dir / "bunx"
-    stub.write_text('#!/usr/bin/env bash\necho "bunx $*"\n', encoding="utf-8")
-    stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return tmp_path
 
 
 def run_just(repo: Path, *args: str, **env_overrides: str):
-    """Run a recipe with the real `just`, resolving `bunx` to the stub."""
-    env = {**os.environ, "PATH": f"{repo / 'bin'}:{os.environ['PATH']}"}
-    env.update(env_overrides)
+    """Run `just` for real in `repo`, optionally overriding environment input."""
+    env = {**os.environ, **env_overrides}
     return subprocess.run(
-        ["just", *args],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        env=env,
+        ["just", *args], cwd=repo, capture_output=True, text=True, env=env
     )
 
 
-def invocations(result: subprocess.CompletedProcess[str]) -> list[str]:
-    """The orchestrator invocations the recipe actually made (via the stub)."""
-    return [line for line in result.stdout.splitlines() if line.startswith("bunx nx ")]
+def planned(repo: Path, *args: str, **env_overrides: str) -> list[str]:
+    """The commands `just` reports it will run for `args` (`just --dry-run`)."""
+    result = run_just(repo, "--dry-run", *args, **env_overrides)
+    assert result.returncode == 0, result.stderr
+    # --dry-run prints each resolved recipe line to stderr.
+    return [line.strip() for line in result.stderr.splitlines() if line.strip()]
 
 
-# The command surface, driven end to end: what each recipe actually invokes is
-# read back from the stub's argv, so the tier is observed rather than matched.
+# The command surface, driven end to end: what each recipe runs is read back from
+# `just`, so the tier is observed rather than matched.
 
 
 def test_check_runs_the_affected_tier_by_default(command_surface):
     # The gate's targets, then the e2e tier — both scoped to what this change can
     # reach, so e2e is gated on every change without a second tier of its own.
-    result = run_just(command_surface, "check")
-    assert result.returncode == 0, result.stderr
-    assert invocations(result) == [
-        f"bunx nx affected -t {GATE_TARGETS} --base=origin/main",
-        "bunx nx affected -t e2e --base=origin/main",
+    assert planned(command_surface, "check") == [
+        f"bunx nx affected --base=origin/main -t {GATE_TARGETS}",
+        "bunx nx affected --base=origin/main -t e2e",
     ]
 
 
 def test_check_all_runs_the_broader_sweep(command_surface):
-    result = run_just(command_surface, "check", "all")
-    assert result.returncode == 0, result.stderr
-    assert invocations(result) == [
+    assert planned(command_surface, "check", "all") == [
         f"bunx nx run-many -t {GATE_TARGETS}",
         "bunx nx run-many -t e2e",
     ]
@@ -89,44 +84,55 @@ def test_an_unknown_tier_is_refused_rather_than_quietly_downgraded(command_surfa
     # A typo must not buy the weaker tier while reporting success.
     result = run_just(command_surface, "check", "affcted")
     assert result.returncode != 0
-    assert "unknown tier" in result.stdout + result.stderr
-    assert invocations(result) == []
+    output = result.stdout + result.stderr
+    assert "unknown tier 'affcted'" in output
+    assert "bunx nx" not in result.stdout
 
 
-def test_the_affected_tier_keys_off_the_explicitly_derived_merge_base(
-    command_surface,
-):
+def test_the_affected_tier_keys_off_the_explicitly_derived_merge_base(command_surface):
     # CI derives the base (nx-set-shas exports NX_BASE) instead of leaving the
     # orchestrator to its non-deterministic implicit default.
-    result = run_just(command_surface, "check", NX_BASE="0ff1ce")
-    assert result.returncode == 0, result.stderr
-    assert invocations(result) == [
-        f"bunx nx affected -t {GATE_TARGETS} --base=0ff1ce",
-        "bunx nx affected -t e2e --base=0ff1ce",
+    assert planned(command_surface, "check", NX_BASE="0ff1ce") == [
+        f"bunx nx affected --base=0ff1ce -t {GATE_TARGETS}",
+        "bunx nx affected --base=0ff1ce -t e2e",
     ]
+
+
+@pytest.mark.parametrize(
+    "hostile_base",
+    ['origin/main"; rm -rf /; echo "', "$(id)", "main; touch pwned"],
+    ids=["quote-and-chain", "command substitution", "trailing command"],
+)
+def test_an_nx_base_that_is_not_a_git_ref_is_refused_at_the_boundary(
+    command_surface, hostile_base
+):
+    # NX_BASE is environment input that ends up inside a command, so the recipes
+    # must never see a value that is not a plain ref/SHA — and the run must stop
+    # there rather than pass it on.
+    result = run_just(command_surface, "check", NX_BASE=hostile_base)
+    assert result.returncode != 0
+    assert "NX_BASE must be a plain git ref or SHA" in result.stderr
+    assert not (command_surface / "pwned").exists()
 
 
 @pytest.mark.parametrize(
     ("recipe", "expected"),
     [
-        ("test", "bunx nx affected -t test --base=origin/main"),
-        ("lint", "bunx nx affected -t lint typecheck --base=origin/main"),
+        ("test", "bunx nx affected --base=origin/main -t test"),
+        ("lint", "bunx nx affected --base=origin/main -t lint typecheck"),
         ("format", "bunx nx run-many -t format"),
-        ("test-e2e", "bunx nx affected -t e2e --base=origin/main"),
+        ("test-e2e", "bunx nx affected --base=origin/main -t e2e"),
     ],
 )
 def test_each_gate_recipe_delegates_to_the_orchestrator(
     command_surface, recipe, expected
 ):
-    result = run_just(command_surface, recipe)
-    assert result.returncode == 0, result.stderr
-    assert invocations(result) == [expected]
+    assert planned(command_surface, recipe) == [expected]
 
 
-def test_placeholder_recipes_still_name_what_a_new_repo_must_fill_in(
-    command_surface,
-):
-    # bootstrap and upgrade are the stack-specific ones the template can't write.
+def test_placeholder_recipes_still_name_what_a_new_repo_must_fill_in(command_surface):
+    # bootstrap is the stack-specific one the template can't write, so it runs for
+    # real and says so.
     result = run_just(command_surface, "bootstrap")
     assert result.returncode == 0, result.stderr
     assert "TODO" in result.stdout
@@ -173,27 +179,22 @@ def test_the_checker_reads_the_template_surface_as_reaching_the_graph(tmp_path):
     assert "bypass" not in warning
 
 
-# AGENTS.md is the file a produced repo is audited on, so the template has to
-# leave behind a section the checker accepts once it is filled in.
+def test_the_checker_accepts_the_shipped_ci_workflow(tmp_path):
+    # GitHub is the only thing that can run the workflow, but the checker audits
+    # it in every produced repo — so the shipped template must satisfy it. The
+    # second half is the control: the same repo with a workflow that never runs
+    # the gate does fail, so the first half is not passing vacuously.
+    workflow = (ASSETS / "ci.yml.template").read_text(encoding="utf-8")
+    shipped = run_baseline(repo_from_templates(tmp_path / "shipped", ci=workflow))
+    assert "CI workflow" not in shipped.stderr, shipped.stderr
 
-
-def agents_section(text: str, heading: str) -> str:
-    """The body under `heading`, up to the next section."""
-    body = text.split(f"\n{heading}\n", 1)[1]
-    return body.split("\n## ", 1)[0]
-
-
-def test_the_agents_template_records_the_graph_and_the_staged_gate():
-    agents = (ASSETS / "AGENTS.md.template").read_text(encoding="utf-8")
-    section = agents_section(agents, "## Stack and composition")
-    # The composition the composer prints, and the graph it always composes.
-    assert "References composed" in section
-    assert "project-graph.md" in section
-    assert "project graph" in section
-    # The command surface teaches both tiers of the staged gate.
-    surface = agents_section(agents, "## Command surface")
-    assert "`just check all`" in surface
-    assert "affected tier" in surface and "broader tier" in surface
+    ungated = run_baseline(
+        repo_from_templates(
+            tmp_path / "ungated",
+            ci="name: ci\non: [push]\njobs:\n  noop:\n    runs-on: ubuntu-latest\n",
+        )
+    )
+    assert "CI workflow(s) never run the gate" in ungated.stderr
 
 
 def test_a_filled_in_agents_template_passes_the_baseline_checker(tmp_path):
@@ -205,93 +206,3 @@ def test_a_filled_in_agents_template_passes_the_baseline_checker(tmp_path):
     repo = repo_from_templates(tmp_path / "repo", composition=filled)
     result = run_baseline(repo)
     assert "composition" not in result.stderr, result.stderr
-
-
-# GitHub runs the workflow, so it can't be executed here; it is read as the text
-# GitHub parses — the jobs, the tier each runs, and the safety rules ci.md sets.
-
-
-@pytest.fixture
-def ci_workflow() -> str:
-    return (ASSETS / "ci.yml.template").read_text(encoding="utf-8")
-
-
-def job_block(workflow: str, name: str) -> str:
-    """The lines of one job, from its `  <name>:` header to the next job header."""
-    lines = workflow.splitlines()
-    start = lines.index(f"  {name}:")
-    body: list[str] = []
-    for line in lines[start + 1 :]:
-        if line.startswith("  ") and not line.startswith("   ") and line.endswith(":"):
-            break
-        body.append(line)
-    return "\n".join(body)
-
-
-def test_pull_requests_run_the_affected_tier_with_a_derived_merge_base(ci_workflow):
-    job = job_block(ci_workflow, "check")
-    assert "github.event_name == 'pull_request'" in job
-    # Affected detection needs the history the merge base is derived from...
-    assert "fetch-depth: 0" in job
-    # ...and the base derived explicitly, not left to the implicit default.
-    assert "nrwl/nx-set-shas@" in job
-    assert "run: just check" in job
-    assert "just check all" not in job
-
-
-def test_the_broader_sweep_runs_at_one_lifecycle_point(ci_workflow):
-    job = job_block(ci_workflow, "check-all")
-    assert "github.event_name == 'push'" in job
-    assert "run: just check all" in job
-    # One sweep, at merge-to-main: nothing downstream re-gates the same tree.
-    assert ci_workflow.count("just check all") == 1
-
-
-def test_both_tiers_run_the_same_recipe_surface(ci_workflow):
-    # The tier is a flag on `just check`, never a second gate implementation, so
-    # local and CI cannot drift.
-    assert "nx affected" not in ci_workflow
-    assert "nx run-many" not in ci_workflow
-
-
-def test_the_llmlint_tier_survives_alongside_the_staged_gate(ci_workflow):
-    job = job_block(ci_workflow, "llmlint")
-    assert "just lint-llm-validate --diff-base origin/main" in job
-    assert "just lint-llm-diff origin/main" in job
-
-
-def test_the_workflow_is_least_privilege(ci_workflow):
-    # A read-only default token, widened per job only where one needs it.
-    assert "\npermissions:\n  contents: read\n" in ci_workflow
-
-
-def test_no_untrusted_event_data_is_interpolated_into_a_shell(ci_workflow):
-    # `${{ github.event.* }}` in a `run:` is a command-injection vector; event
-    # data may only reach a step through an action input or `env:`.
-    offenders = [
-        line
-        for line in run_step_lines(ci_workflow)
-        if "${{ github.event" in line or "${{ inputs" in line
-    ]
-    assert offenders == []
-
-
-def run_step_lines(workflow: str) -> list[str]:
-    """Every line that is part of a `run:` step (inline or a block scalar)."""
-    lines = workflow.splitlines()
-    collected: list[str] = []
-    block_indent: int | None = None
-    for line in lines:
-        stripped = line.strip()
-        if block_indent is not None:
-            indent = len(line) - len(line.lstrip())
-            if stripped and indent <= block_indent:
-                block_indent = None
-            else:
-                collected.append(line)
-                continue
-        if stripped.startswith("run:"):
-            collected.append(line)
-            if stripped in ("run: |", "run: >"):
-                block_indent = len(line) - len(line.lstrip())
-    return collected

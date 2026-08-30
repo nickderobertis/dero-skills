@@ -11,10 +11,17 @@
 # references/ci.md, then the matching references/languages/<lang>.md and
 # references/shapes/<shape>.md for the per-stack tools.
 
-# The merge base the affected tier keys off. Derive it EXPLICITLY: Nx's implicit
-# default is not deterministic across a shallow CI checkout. CI exports NX_BASE
-# (e.g. with `nx-set-shas`); locally this falls back to the fork point from main.
-base := env_var_or_default("NX_BASE", "origin/main")
+# The merge base the affected tier keys off, as it arrives from the environment.
+# Derive it EXPLICITLY: Nx's implicit default is not deterministic across a
+# shallow CI checkout. CI exports NX_BASE (e.g. with `nx-set-shas`); locally this
+# falls back to the fork point from main.
+_nx_base_input := env_var_or_default("NX_BASE", "origin/main")
+
+# Validate that environment input at the boundary, before anything interpolates
+# it into a command: a git ref or SHA is letters, digits and `. _ / -`, so a
+# value carrying a quote, a `;`, or a `$(...)` is refused here rather than handed
+# to a shell. Everything below uses `base`, never the raw input.
+base := if _nx_base_input =~ '^[A-Za-z0-9._/-]+$' { _nx_base_input } else { error("NX_BASE must be a plain git ref or SHA — letters, digits and . _ / - only; got: " + _nx_base_input) }
 
 # List available recipes.
 default:
@@ -33,19 +40,21 @@ bootstrap:
 # releases on merge; release-prep when it batches releases). The tier is a flag
 # on this one command, never a second gate, so local and CI cannot drift.
 # Formatting and type checking are gated here through each project's own `lint`
-# and `typecheck` targets; `test-e2e` runs last, at the same tier, so e2e is part
-# of the gate rather than an opt-in extra.
-check tier="affected":
-    @[ "{{tier}}" = "affected" ] || [ "{{tier}}" = "all" ] || { echo "unknown tier '{{tier}}' — use 'affected' (the default) or 'all'"; exit 2; }
-    if [ "{{tier}}" = "all" ]; then bunx nx run-many -t lint typecheck test build; else bunx nx affected -t lint typecheck test build --base="{{base}}"; fi
-    @just test-e2e {{tier}}
+# and `typecheck` targets; the `&&` dependency runs `test-e2e` after the body at
+# the same tier, so e2e is part of the gate rather than an opt-in extra.
+#
+# just resolves the tier, rather than a shell `if`, for two reasons: `just -n
+# check` then prints the one command that will actually run, and a mistyped tier
+# aborts instead of quietly buying the weaker tier.
+check tier="affected": && (test-e2e tier)
+    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t lint typecheck test build
 
 # The test tier on its own, for iterating: the same `test` target the gate fans
 # out over, scoped to the projects this change can reach. Each project's `test`
 # target enforces coverage (95% line coverage is the default bar); lower the bar
 # only with a documented reason in AGENTS.md — never leave it unmeasured.
 test:
-    bunx nx affected -t test --base="{{base}}"
+    bunx nx affected --base={{base}} -t test
 
 # Run the end-to-end suites, which exercise the built artifact the way users run
 # it. `check` runs this last, so e2e is gated on every change; run it alone while
@@ -54,13 +63,13 @@ test:
 # it exactly when a change can (references/project-graph.md). Cover the primary
 # happy path AND at least one meaningful failure/recovery path — not a smoke test.
 # If e2e genuinely does not apply (e.g. a pure library), delete this recipe, drop
-# the call from `check`, and document why in AGENTS.md.
+# it from `check`'s dependencies, and document why in AGENTS.md.
 test-e2e tier="affected":
-    if [ "{{tier}}" = "all" ]; then bunx nx run-many -t e2e; else bunx nx affected -t e2e --base="{{base}}"; fi
+    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t e2e
 
 # Lint (and type check) the projects this change can reach; fail on findings.
 lint:
-    bunx nx affected -t lint typecheck --base="{{base}}"
+    bunx nx affected --base={{base}} -t lint typecheck
 
 # Format the whole tree in place — formatting is not a "what changed" question,
 # so this sweeps every project rather than the affected set.

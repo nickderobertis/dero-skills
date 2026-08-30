@@ -71,6 +71,13 @@ PERMITTED = {
         + '"""Audit the repo layout.\n\nNx runs the targets; this script only reads\n'
         'the files it left behind.\n"""\nprint("ok")\n'
     ),
+    # The tool is `Nx`; only the executable is `nx`. Prose that opens a line with
+    # the tool's name is a mention, not a call.
+    "opens a prose line with the tool's name": (
+        PEP723
+        + '"""Report on the graph.\n\nNx build targets are declared per project;\n'
+        'this script only reads them.\n"""\nprint("ok")\n'
+    ),
 }
 
 FORBIDDEN = {
@@ -92,6 +99,14 @@ FORBIDDEN = {
     ),
     "spawns the orchestrator executable": (
         PEP723 + 'import subprocess\nsubprocess.run(["nx", "build", "app"])\n'
+    ),
+    # No subcommand allowlist: `nx <target>` is how a project's own target is
+    # run, and it is a runtime dependency exactly like `nx run` is.
+    "runs a project target by its shorthand": (
+        PEP723 + 'import subprocess\nsubprocess.run("nx build app", shell=True)\n'
+    ),
+    "runs a shorthand target through a package runner": (
+        PEP723 + 'import os\nos.system("bunx nx typecheck web")\n'
     ),
 }
 
@@ -116,8 +131,13 @@ def test_invoking_the_orchestrator_is_rejected(tmp_path, script):
     [
         "#!/usr/bin/env bash\nset -euo pipefail\nbunx nx run-many -t test\n",
         '#!/usr/bin/env bash\nprojects="$(bunx nx show projects)"\necho "$projects"\n',
+        "#!/usr/bin/env bash\ncd repo && nx build app\n",
     ],
-    ids=["runs a sweep", "captures output in a command substitution"],
+    ids=[
+        "runs a sweep",
+        "captures output in a command substitution",
+        "chains a shorthand target onto another command",
+    ],
 )
 def test_a_shell_script_that_shells_out_to_the_orchestrator_is_rejected(
     tmp_path, script
@@ -132,6 +152,22 @@ def test_a_shell_script_that_shells_out_to_the_orchestrator_is_rejected(
 
 def test_a_conformant_skill_passes(tmp_path):
     result = validate(make_skill(tmp_path, PEP723 + 'print("hello")\n'))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.startswith("OK")
+
+
+def test_a_script_that_only_reads_the_graph_manifest_still_passes(tmp_path):
+    # The whole point of narrowing the rule: a checker that looks for nx.json and
+    # reports on it in prose is a *read*, and must survive alongside the rejections.
+    script = (
+        PEP723
+        + "from pathlib import Path\n"
+        + 'if Path("nx.json").is_file():\n'
+        + '    print("OK project graph present")\n'
+        + "else:\n"
+        + '    print("WARN no project graph — Nx would run the targets")\n'
+    )
+    result = validate(make_skill(tmp_path, script))
     assert result.returncode == 0, result.stdout + result.stderr
     assert result.stdout.startswith("OK")
 
