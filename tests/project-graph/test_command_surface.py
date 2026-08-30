@@ -320,12 +320,19 @@ def test_an_expensive_recipe_delegates_and_forwards_what_narrows_it(
     assert invoked == [delegated, f"{delegated} {' '.join(args)}"]
 
 
+@pytest.mark.parametrize(
+    ("recipe", "project_target"),
+    [
+        ("skilltest", "bootstrap-create-repo-skilltest:skilltest"),
+        ("lint-llm", "llmlint-tier:lint-llm"),
+    ],
+)
 def test_an_expensive_recipe_reports_the_failure_of_what_it_delegated_to(
-    surface,
+    surface, recipe: str, project_target: str
 ) -> None:
     # These two are the recipes a human runs by hand and reads the exit code of,
     # with no gate behind them to catch a swallowed status: a failed eval that
     # exits 0 reads as a passing one.
-    result, invoked = run_recipe(surface, "skilltest", fail_pattern="bunx nx run*")
+    result, invoked = run_recipe(surface, recipe, fail_pattern="bunx nx run*")
     assert result.returncode != 0
-    assert invoked == ["bunx nx run bootstrap-create-repo-skilltest:skilltest"]
+    assert invoked == [f"bunx nx run {project_target}"]
