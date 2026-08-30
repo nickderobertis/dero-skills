@@ -11,7 +11,7 @@
 # automatically. See references/llmlint.md ("Fragment versioning").
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.11.0
+version: 1.11.1
 
 rules:
   - name: comments_earn_their_place
@@ -185,19 +185,17 @@ rules:
     # orchestrator does not own that tool's stdout, and references/project-graph.md
     # *requires* those recipes to delegate.
     description: |
-      This judges the output the repository's OWN code produces — the lines its
-      scripts, functions, and recipe bodies print themselves.
-      true when every such script or command recipe in the target files is quiet on
-      success (a single line or nothing) and, on failure, prints the exact error plus
-      a concrete next action. false when any is noisy on success or fails with a
-      message that omits the cause or the fix.
-      A script or recipe whose body delegates to a third-party build orchestrator,
-      task runner, package manager, or test runner (`nx affected`, `bun install`,
-      `uv sync`, `cargo build`, `pytest`, ...) is NOT a violation for that tool's
-      own output: the repo does not control it, and silencing it would hide the
-      progress and failures the invoker ran the command to see. Judge a delegation
-      only on what the repo adds around it — its own echoes and banners, and how it
-      reports the delegated command's failure.
+      Judges the output a repository's OWN code produces — the lines its scripts,
+      functions, and recipe bodies print themselves.
+      true when every script or command recipe in the target files is quiet on
+      success (a single line or nothing) and, on failure, prints the exact error
+      plus a concrete next action; a body that only hands work to a build
+      orchestrator, task runner, package manager, or test runner (`nx affected`,
+      `uv sync`, `pytest`) is true whatever that tool prints, which the repo
+      neither owns nor should silence.
+      false when a script's or recipe's own output is noisy on success, or when it
+      fails with a message that omits the cause or the fix — including a delegated
+      command's failure that it swallows or reports without either.
     files:
       include:
         - "scripts/**"

@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TypedDict
 
 import pytest
 
@@ -594,7 +595,18 @@ def _localize_pins(config_path: Path, tmp_path: Path) -> Path:
     return localized
 
 
-def wired_rules(config_path: Path, tmp_path: Path) -> dict[str, dict]:
+class MergedRule(TypedDict):
+    """One rule as `llmlint config` reports it — what the judge is handed.
+
+    Only the fields these tests read; llmlint reports more per rule.
+    """
+
+    name: str
+    description: str
+    relevance: str | None
+
+
+def wired_rules(config_path: Path, tmp_path: Path) -> dict[str, MergedRule]:
     """Every judge rule an emitted llmlint config pulls in, by name.
 
     Asks llmlint to merge the config, so a rule counts as carried only when the
@@ -707,13 +719,13 @@ NARROWED_RULES = (
     pytest.param(
         "tool_output_is_signal",
         (
-            "the output the repository's OWN code produces",
-            "delegates to a third-party build orchestrator",
-            "is NOT a violation for that tool's own output",
+            "Judges the output a repository's OWN code produces",
+            "only hands work to a build orchestrator",
+            "is true whatever that tool prints",
         ),
         (
-            "quiet on success",
-            "false when any is noisy on success or fails with a message that "
+            "quiet on success (a single line or nothing)",
+            "false when a script's or recipe's own output is noisy on success",
             "omits the cause or the fix",
         ),
         id="tool_output_is_signal",
@@ -721,9 +733,9 @@ NARROWED_RULES = (
     pytest.param(
         "projects_stay_in_one_uv_workspace",
         (
-            "This judges Python *distributions*",
-            "does NOT judge a build-graph project",
-            "needs no `pyproject.toml` of its own",
+            "a unit that owns Python source together with its own dependency set",
+            "not a build-graph project that only declares targets run over source "
+            "rooted elsewhere",
         ),
         (
             "member of the root uv workspace",
@@ -753,17 +765,20 @@ def test_narrowed_rules_keep_both_sides_of_their_line(
 
     rules = wired_rules(ongoing, tmp_path)
     assert rule in rules, sorted(rules)
-    # The judge reads the description as prose, so line wrapping is not part of
-    # the claim — compare on normalised whitespace.
-    description = " ".join(rules[rule]["description"].split())
+    # A rule states its scope across `description` and `relevance` — the judge
+    # reads both — and it reads them as prose, so line wrapping is not part of the
+    # claim: compare on normalised whitespace over the pair.
+    stated = " ".join(
+        f"{rules[rule]['description']} {rules[rule].get('relevance') or ''}".split()
+    )
 
     for clause in carve_outs:
-        assert clause in description, (
+        assert clause in stated, (
             f"{rule} lost the carve-out {clause!r} — it is broad again, and now "
             "contradicts the project-graph guidance this skill ships"
         )
     for clause in still_catches:
-        assert clause in description, (
+        assert clause in stated, (
             f"{rule} lost {clause!r} — narrowed until it no longer catches what "
             "it was written for, which is worse than the contradiction"
         )
