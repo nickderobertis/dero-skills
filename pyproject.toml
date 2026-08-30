@@ -33,4 +33,4 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["skills", "tools"]
+testpaths = ["skills", "tools", "tests"]

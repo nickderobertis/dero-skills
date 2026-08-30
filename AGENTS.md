@@ -70,7 +70,8 @@ Use the `just` recipes; do not hand-roll equivalents.
   gate (`lint-llm-validate`). Must pass before any commit or PR.
 - `just format` / `just lint` / `just validate` / `just check-versions` /
   `just test` — individual steps.
-- `just nx` — cached Nx authoring targets (validate/smoke/test) across skills.
+- `just nx` — cached Nx authoring targets (validate/smoke/test) across every
+  project in the graph.
 - `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
   validate` gate (config + `llmlint: ignore` directives + fragment version bumps).
   No harness call, so — unlike the model tier — it IS a hard step of `just check`
