@@ -103,14 +103,19 @@ How to satisfy this:
   bun run <script>
   ```
 
-## Nx is for authoring and CI only
+## Nx orchestrates authoring and CI, and never ships
 
-Each maintained skill with scripts, references, assets, tests, or
-security-sensitive behavior should be an Nx project (`project.json`). Nx caches
-and runs `validate`, `smoke`, and `test` targets here and in CI.
+This repo is laid out as an Nx project graph and `just check` runs through it, so
+every maintained skill is a project (`project.json`) declaring the repo-uniform
+targets — `validate`, `smoke`, `test`, plus `format`/`format-check`/`lint`. A
+skill that grows an expensive, harness-driven eval puts that eval in a project of
+its own, because a suite that contacts an external service leaves the gate's
+affected tier unconditionally.
 
-Agents consuming installed skills must **never** need to run Nx. See the example
-`project.json` in any skill; the target naming convention is `<scope>-<name>`.
+Agents consuming installed skills must **never** need to run Nx, and no bundled
+skill script may invoke it: Nx orchestrates targets, it is never a runtime
+dependency. See the example `project.json` in any skill; the naming convention is
+`<scope>-<name>`.
 
 ## Validation tooling
 
@@ -123,19 +128,15 @@ Two stdlib-only tools enforce the rules above:
   bundled scripts without executing side effects.
 
 Run the whole quality gate (format, lint, skill validation, tests, and the
-repo's own baseline self-check) with `just check`. To run just the skill checks:
-
-```bash
-./scripts/validate-skills.sh            # validate + smoke every skill
-./scripts/validate-skills.sh --no-smoke # validate only
-```
-
-Or via Nx per skill (Nx is a dev/CI tool here, run through bun):
+repo's own baseline self-check) with `just check`; `just validate` runs the
+validation and smoke targets alone. There is no per-skill loop to run — `just`
+delegates the fan-out to Nx, which discovers the projects. Only when you want a
+*single* project does the command surface run out of vocabulary, and then name
+its target directly:
 
 ```bash
 bunx nx run bootstrap-create-repo:validate
 bunx nx run bootstrap-create-repo:test
-bunx nx run-many -t validate smoke test
 ```
 
 ## Checklist for a new skill
@@ -143,7 +144,10 @@ bunx nx run-many -t validate smoke test
 1. Create `skills/<scope>/<skill-name>/SKILL.md` with valid frontmatter.
 2. Add `references/`, `scripts/`, `assets/`, `tests/` as needed.
 3. Make scripts self-contained (PEP 723 for Python, built-ins for Node).
-4. Add `project.json` with `validate`, `smoke`, and `test` targets.
-5. Run `./scripts/validate-skills.sh` and `uv run pytest skills/<scope>/<skill-name>/tests`
-   (omit the `pytest` step for a docs-only skill with no `tests/`).
+4. Add `project.json` with the uniform `format`, `format-check`, `lint`,
+   `validate`, `smoke`, and `test` targets (omit `test` for a docs-only skill
+   with no `tests/`), and give any expensive harness-driven eval its own nested
+   project with a `skilltest` target the gate does not fan out over.
+5. Run `just check` — the graph picks the new project up with no edit to the
+   command surface.
 6. Open a PR. CI runs the same validation.

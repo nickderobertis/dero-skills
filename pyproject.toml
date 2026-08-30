@@ -34,3 +34,9 @@ target-version = "py312"
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["skills", "tools", "tests"]
+# Registered repo-wide, not in the eval project's own conftest: the fast tier
+# imports that module to check its path constants (tests/test_eval_wiring.py),
+# and a marker registered only beside the eval would warn on every such import.
+markers = [
+    "skilltest_e2e: opt-in, slow skilltest skill eval — needs SKILLTEST_E2E=1",
+]

@@ -2,18 +2,32 @@
   "name": "bootstrap-create-repo",
   "root": "skills/bootstrap/create-repo",
   "projectType": "library",
+  "tags": [
+    "type:skill",
+    "lang:python"
+  ],
   "targets": {
+    "format": {
+      "command": "uv run ruff format skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest"
+    },
+    "lint": {
+      "command": "uv run ruff check skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest"
+    },
     "validate": {
-      "command": "uv run python tools/validate_skill.py skills/bootstrap/create-repo",
-      "cache": true
+      "command": "uv run python tools/validate_skill.py skills/bootstrap/create-repo"
     },
     "smoke": {
-      "command": "uv run python tools/smoke_skill_scripts.py skills/bootstrap/create-repo",
-      "cache": true
+      "command": "uv run python tools/smoke_skill_scripts.py skills/bootstrap/create-repo"
     },
     "test": {
-      "command": "uv run pytest skills/bootstrap/create-repo/tests",
-      "cache": true
+      "command": "uv run pytest skills/bootstrap/create-repo/tests --ignore skills/bootstrap/create-repo/tests/e2e --ignore skills/bootstrap/create-repo/tests/skilltest",
+      "inputs": [
+        "default",
+        "skillEval"
+      ]
     }
   }
 }

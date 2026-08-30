@@ -1,0 +1,27 @@
+{
+  "name": "repo-baseline",
+  "root": "tests/baseline",
+  "projectType": "library",
+  "tags": [
+    "type:dogfood",
+    "lang:python"
+  ],
+  "targets": {
+    "format": {
+      "command": "uv run ruff format tests/baseline"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check tests/baseline"
+    },
+    "lint": {
+      "command": "uv run ruff check tests/baseline"
+    },
+    "test": {
+      "command": "uv run pytest tests/baseline",
+      "inputs": [
+        "default",
+        "repoBaseline"
+      ]
+    }
+  }
+}

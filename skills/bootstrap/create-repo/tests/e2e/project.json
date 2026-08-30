@@ -1,0 +1,21 @@
+{
+  "name": "bootstrap-create-repo-e2e",
+  "root": "skills/bootstrap/create-repo/tests/e2e",
+  "projectType": "library",
+  "tags": ["type:e2e", "lang:python"],
+  "implicitDependencies": ["bootstrap-create-repo"],
+  "targets": {
+    "format": {
+      "command": "uv run ruff format skills/bootstrap/create-repo/tests/e2e"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check skills/bootstrap/create-repo/tests/e2e"
+    },
+    "lint": {
+      "command": "uv run ruff check skills/bootstrap/create-repo/tests/e2e"
+    },
+    "test": {
+      "command": "uv run pytest skills/bootstrap/create-repo/tests/e2e"
+    }
+  }
+}

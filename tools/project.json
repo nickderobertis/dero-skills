@@ -2,10 +2,23 @@
   "name": "authoring-tools",
   "root": "tools",
   "projectType": "library",
+  "tags": ["type:tooling", "lang:python"],
   "targets": {
+    "format": {
+      "command": "uv run ruff format tools"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check tools"
+    },
+    "lint": {
+      "command": "uv run ruff check tools"
+    },
+    "validate": {
+      "command": "uv run python tools/check_tool_versions.py .",
+      "inputs": ["default", "toolchainPins"]
+    },
     "test": {
       "command": "uv run pytest tools",
-      "cache": true,
       "inputs": ["default", "dogfoodedContracts"]
     }
   }

@@ -240,7 +240,10 @@ for name, path in (("TESTS_DIR", tests_dir), ("REPO", repo), ("FAKE_BIN", fake_b
         raise SystemExit(f"{name} must be an absolute path, got {str(path)!r}")
     if not path.is_dir():
         raise SystemExit(f"{name} is not an existing directory: {path}")
+# The eval lives in its own project (tests/skilltest/) so the gate can never
+# reach it; the guard stays in tests/. Both directories go on the path.
 sys.path.insert(0, str(tests_dir))
+sys.path.insert(0, str(tests_dir / "skilltest"))
 import produced_repo_suppressions as guard
 import test_create_repo_skilltest as skilltest
 

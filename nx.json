@@ -1,7 +1,9 @@
 {
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "namedInputs": {
-    "default": ["{projectRoot}/**/*"],
+    "default": [
+      "{projectRoot}/**/*"
+    ],
     "tooling": [
       "{workspaceRoot}/tools/validate_skill.py",
       "{workspaceRoot}/tools/smoke_skill_scripts.py"
@@ -13,20 +15,81 @@
     "projectGraph": [
       "{workspaceRoot}/nx.json",
       "{workspaceRoot}/**/project.json"
+    ],
+    "commandSurface": [
+      "{workspaceRoot}/justfile",
+      "{workspaceRoot}/package.json"
+    ],
+    "toolchainPins": [
+      "{workspaceRoot}/.tool-versions",
+      "{workspaceRoot}/.github/workflows/**/*"
+    ],
+    "llmlintTier": [
+      "{workspaceRoot}/llmlint.yml",
+      "{workspaceRoot}/oneharness.toml",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/llmlint/**/*"
+    ],
+    "repoBaseline": [
+      "{workspaceRoot}/skills/bootstrap/create-repo/scripts/check_repo_baseline.py",
+      "{workspaceRoot}/justfile",
+      "{workspaceRoot}/*.md",
+      "{workspaceRoot}/*.toml",
+      "{workspaceRoot}/*.json",
+      "{workspaceRoot}/.tool-versions",
+      "{workspaceRoot}/llmlint.yml",
+      "{workspaceRoot}/.github/**/*",
+      "{workspaceRoot}/.husky/**/*",
+      "{workspaceRoot}/.claude/settings.json",
+      "{workspaceRoot}/**/project.json"
+    ],
+    "skillEval": [
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/skilltest/**/*"
     ]
   },
   "targetDefaults": {
+    "format": {
+      "cache": true,
+      "inputs": [
+        "default"
+      ]
+    },
+    "format-check": {
+      "cache": true,
+      "inputs": [
+        "default"
+      ]
+    },
+    "lint": {
+      "cache": true,
+      "inputs": [
+        "default"
+      ]
+    },
     "validate": {
       "cache": true,
-      "inputs": ["default", "tooling"]
+      "inputs": [
+        "default",
+        "tooling"
+      ]
     },
     "smoke": {
       "cache": true,
-      "inputs": ["default", "tooling"]
+      "inputs": [
+        "default",
+        "tooling"
+      ]
     },
     "test": {
       "cache": true,
-      "inputs": ["default"]
+      "inputs": [
+        "default"
+      ]
+    },
+    "skilltest": {
+      "cache": false
+    },
+    "lint-llm": {
+      "cache": false
     }
   }
 }

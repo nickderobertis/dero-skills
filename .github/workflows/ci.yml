@@ -1,18 +1,32 @@
 name: ci
 
+# Prove the artifact from a clean checkout: bootstrap, then the gate — at the
+# tier that run is for. Both gate jobs run the SAME `just check` recipe, so local
+# and CI cannot drift; the tier is a flag on it:
+#
+#   * pull requests run the AFFECTED tier — the projects the diff can reach,
+#     keyed off an explicitly derived merge base. This is the required check.
+#   * pushes to main run the BROADER tier — one full sweep over every project,
+#     catching what affected detection or a stale cache could miss.
+#
+# This repo RELEASES ON MERGE (semantic-release on push to main), so the merged
+# commit is the released commit and the sweep belongs at merge-to-main; the
+# release job that follows publishes an already-swept commit and re-gates
+# nothing. Each commit is therefore gated once at each tier. See "Staged gates"
+# in the create-repo skill's references/ci.md.
 on:
   push:
     branches: [main]
   pull_request:
-    # `edited` re-runs commitlint when a PR title is fixed; the heavy `check`
-    # job skips that action (the title edit doesn't change the head SHA).
+    # `edited` re-runs commitlint when a PR title is fixed; the heavy gate jobs
+    # skip that action (the title edit doesn't change the head SHA).
     types: [opened, edited, reopened, synchronize]
 
 # husky's `prepare` script must not configure local git hooks inside CI.
 env:
   HUSKY: "0"
 
-# Least privilege by default: the check/commitlint/llmlint jobs only read the
+# Least privilege by default: the gate/commitlint/llmlint jobs only read the
 # repo, so the workflow-level token is read-only. The release job re-grants the
 # writes it needs in its own `permissions:` block, which overrides this default.
 permissions:
@@ -20,17 +34,28 @@ permissions:
 
 jobs:
   check:
-    if: github.event.action != 'edited'
+    # The AFFECTED tier: what a pull request pays for, and the required status
+    # check branch protection gates merges on.
+    if: github.event_name == 'pull_request' && github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
+      # Full history: affected detection resolves the merge base from it, and a
+      # shallow checkout would make that base non-deterministic.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Derive the base/head SHAs EXPLICITLY — this exports NX_BASE/NX_HEAD,
+      # which the justfile's `base` reads — rather than leaving Nx to its
+      # implicit default.
+      - uses: nrwl/nx-set-shas@v4
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Set up Node (for the Nx authoring toolchain)
+      - name: Set up Node (the runtime Nx runs on)
         uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -43,14 +68,45 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
-      # Prove the artifact from a clean checkout: bootstrap, then the full gate
-      # (format check, lint, skill validation, version consistency, tests, and
-      # the baseline self-check).
       - name: Bootstrap
         run: just bootstrap
 
-      - name: Check
+      - name: Check (affected tier)
         run: just check
+
+  check-all:
+    # The BROADER tier: one full sweep over every project, at the single
+    # lifecycle point this repo's release model puts it. A squash commit's tree
+    # never existed before, so this is a first gating of it, not a re-run of the
+    # PR's.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node (the runtime Nx runs on)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.11"
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Bootstrap
+        run: just bootstrap
+
+      - name: Check (full sweep)
+        run: just check all
 
   commitlint:
     # Conventional-Commits gate for PRs. With squash-merge the PR title becomes
@@ -79,12 +135,15 @@ jobs:
         run: echo "$PR_TITLE" | bunx commitlint
 
   llmlint:
-    # Blocking LLM-as-judge lint of the cross-language launch conventions, scoped
-    # to the files this PR changed (the merge-base diff with main). Uses the
-    # committed harness — Codex + gpt-5.5 — so it needs an OpenAI key in repo
-    # secrets (OPENAI_API_KEY). This `llmlint` context must be a required status
-    # check in branch protection to truly block merges (alongside
-    # `check`/`commitlint`) — else auto-merge lands a PR past a red run.
+    # The LLM-judge tier — a blocking PR check, SEPARATE from the `check` gate.
+    # It is non-deterministic and needs an authenticated harness, so external
+    # contact promotes it out of the affected tier unconditionally and it never
+    # runs inside `just check`. Scoped to the files this PR changed (the
+    # merge-base diff with main). Uses the committed harness — Codex + gpt-5.5 —
+    # so it needs an OpenAI key in repo secrets (OPENAI_API_KEY). This `llmlint`
+    # context must be a required status check in branch protection to truly block
+    # merges (alongside `check`/`commitlint`) — else auto-merge lands a PR past a
+    # red run.
     if: github.event_name == 'pull_request' && github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
@@ -116,6 +175,19 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
+      # Fail fast, with an actionable message, before anything tries to use the
+      # credential — the harness login below would otherwise fail opaquely.
+      - name: Require the harness credential
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::llmlint needs a Codex credential. Add an OPENAI_API_KEY repo secret" \
+                 "(Settings → Secrets and variables → Actions), or switch this job to a harness" \
+                 "you have a key for. See the 'Optional LLM lint' section in AGENTS.md." >&2
+            exit 1
+          fi
+
       - name: Install & authenticate Codex CLI (the committed harness)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -131,36 +203,29 @@ jobs:
 
       - name: Install llmlint toolchain (oneharness + llmlint)
         run: |
-          ./scripts/setup-llmlint.sh
+          just setup-llmlint
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      # Deterministic, model-free gate first: validate the config structure, that
-      # every `llmlint: ignore` directive names a real rule, and that any edited
-      # versioned fragment bumped its `version:`. No harness credential needed, so
-      # it runs before the paid model tier and fails fast (cents, not dollars) on a
-      # config/version-bump slip. Scoped to the branch's changes vs main.
-      - name: Validate llmlint config (no model)
+      # The model-free half of the tier, scoped to the branch's changes. `just
+      # check` runs the unscoped `llmlint validate` through the `llmlint-tier`
+      # project; this `--diff-base` form adds what that cannot know — whether an
+      # edited versioned fragment bumped its `version:` relative to main. It needs
+      # no harness credential, so it runs before the paid model tier and fails
+      # fast (cents, not dollars) on a config/version-bump slip.
+      - name: Validate llmlint config against the branch's diff (no model)
         run: just lint-llm-validate --diff-base origin/main
 
       - name: Lint changed files
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          # Fail with a clear, actionable message instead of an opaque
-          # "no JSON value could be extracted" when the harness has no credential.
-          if [ -z "${OPENAI_API_KEY:-}" ]; then
-            echo "::error::llmlint needs a Codex credential. Add an OPENAI_API_KEY repo secret" \
-                 "(Settings → Secrets and variables → Actions), or switch this job to a harness" \
-                 "you have a key for. See the 'Optional LLM lint' section in AGENTS.md." >&2
-            exit 1
-          fi
-          just lint-llm-diff origin/main
+        run: just lint-llm-diff origin/main
 
   release:
     # Automated release on main: derive the version from Conventional Commits
-    # and publish a GitHub Release + tag. Runs only after the gate passes.
+    # and publish a GitHub Release + tag. Runs only after the broader sweep
+    # passes, and re-gates nothing itself.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: check
+    needs: check-all
     runs-on: ubuntu-latest
     permissions:
       contents: write

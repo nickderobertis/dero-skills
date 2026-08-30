@@ -18,7 +18,7 @@ Supported consuming platforms: **Cursor**, **Claude Code**, and
 ```text
 skills/<scope>/<skill-name>/   # self-contained Agent Skills
 tools/                         # stdlib-only validation + smoke tooling
-scripts/                       # repo-wide helpers (validate-skills.sh)
+scripts/                       # repo-wide dev-environment helpers
 consumer-bootstrap/            # files application repos copy in
 docs/                          # authoring, consuming, and platform docs
 ```
@@ -27,15 +27,16 @@ docs/                          # authoring, consuming, and platform docs
 
 This repo uses a `just` command surface and dogfoods its own
 `bootstrap/create-repo` skill (`just check` audits the repo against the skill's
-baseline invariants). Prerequisites: [uv](https://astral.sh/uv), Node, and
-[bun](https://bun.sh) (for the Nx authoring tools).
+baseline invariants). The repo is an Nx project graph and every recipe below
+delegates to it, so all three of [uv](https://astral.sh/uv), Node, and
+[bun](https://bun.sh) are prerequisites.
 
 ```bash
-just bootstrap   # one-time: uv sync + bun install
-just check       # full gate: format, lint, skill validation, tests, baseline
-just validate    # validate + smoke every skill
-just test        # pytest
-just nx          # cached Nx authoring targets (validate/smoke/test)
+just bootstrap   # one-time: bun install + uv sync + the uv-installed gate binaries
+just check       # the gate, affected tier: format, lint, validation, tests, baseline
+just check all   # the same gate as one full sweep over every project
+just validate    # the validate + smoke targets
+just test        # every affected project's pytest
 ```
 
 See [`docs/authoring-skills.md`](./docs/authoring-skills.md) and

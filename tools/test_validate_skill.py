@@ -1,7 +1,7 @@
 """Tests for the skill validator's runtime-dependency rules.
 
 Each case builds a real skill folder on disk and runs `validate_skill.py` as a
-subprocess — the same way `scripts/validate-skills.sh` and CI invoke it — so the
+subprocess — the same way each skill project's `validate` target invokes it — so the
 exit code and the reported diagnostic are the real ones, not a stand-in's.
 """
 
@@ -39,7 +39,7 @@ def make_skill(root: Path, script: str, *, filename: str = "run.py") -> Path:
 
 
 def validate(skill_dir: Path) -> subprocess.CompletedProcess[str]:
-    """Run the validator the way scripts/validate-skills.sh and CI do."""
+    """Run the validator the way a skill project's `validate` target does."""
     return subprocess.run(
         ["uv", "run", "python", str(VALIDATOR), str(skill_dir)],
         cwd=REPO_ROOT,

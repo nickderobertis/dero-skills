@@ -44,80 +44,89 @@ How this repo composes the create-repo reference pieces (it dogfoods the skill,
 so the baseline checker runs against this very section):
 
 - **Product shape:** `skills-repo` — it authors and validates Agent Skills.
-- **Language(s):** Python for the stdlib authoring tooling (`tools/`, `scripts/`,
-  the create-repo checker); skill scripts are portable per-language (PEP 723
-  Python, Node built-ins, Bash) and must not depend on this repo's toolchain.
+- **Language(s):** Python for the stdlib authoring tooling (`tools/`, the
+  create-repo checker) and Bash for `scripts/`; skill scripts are portable
+  per-language (PEP 723 Python, Node built-ins, Bash) and must not depend on
+  this repo's toolchain.
 - **References composed:** `shapes/skills-repo.md` + `languages/python.md` +
-  `languages/bash.md` + `ci.md`, with Nx from `monorepo.md` as an *optional authoring accelerator*
-  (the gate runs on uv alone; consumers never run Nx).
+  `languages/bash.md` + `ci.md` + `project-graph.md`. Nx is **mandatory**, not an
+  accelerator: the repo is a project graph and every root recipe delegates to it,
+  so the gate needs bun/node as well as uv. Consumers still never run Nx.
+- **Project graph:** nine projects split by test tier and by cost (see "Project
+  graph" below). Fast tiers live with the code they cover; the two expensive ones
+  — the judged llmlint tier and the `skilltest` eval — sit behind graph edges an
+  unrelated change cannot reach.
+- **Staged gate:** `just check` runs the **affected** tier, `just check all` the
+  **broader** sweep — which, since this repo releases on merge, runs once at
+  merge-to-main per `ci.md`.
 - **Excluded, and why:** see "Excluded on purpose" below — `ty` and coverage
-  (the tooling is small and stdlib-only), and direnv / `src` layout / pre-commit
-  (anti-baggage, consistent with the skill's own guidance). The non-negotiable
+  (the tooling is small and stdlib-only), per-project `pyproject.toml`s, and
+  direnv / `src` layout / pre-commit (anti-baggage, consistent with the skill's
+  own guidance). The non-negotiable
   invariants (strict gate, e2e of real journeys, CI proving the artifact) are
   kept.
 
 ## Command surface
 
-Use the `just` recipes; do not hand-roll equivalents.
+Use the `just` recipes; do not hand-roll equivalents. Every one delegates to Nx
+— the root decides *which* projects run a target, each `project.json` decides
+*what* it does. There is no hand-rolled loop over projects, and adding one is the
+thing the graph exists to prevent.
 
-- `just bootstrap` — set up from a clean clone (uv + the Nx authoring toolchain +
-  the uv-installed `llmlint` binary the gate's `lint-llm-validate` step needs; also
-  activates the husky hooks — `commit-msg` (commitlint) and `pre-push`
-  (`lint-llm-validate`)).
-- `just check` — full quality gate: `ruff format --check`, `ruff check`, skill
-  validation + smoke, the `.tool-versions`/CI version-consistency check, `pytest`,
-  the create-repo baseline self-check, and the deterministic `llmlint validate`
-  gate (`lint-llm-validate`). Must pass before any commit or PR.
-- `just format` / `just lint` / `just validate` / `just check-versions` /
-  `just test` — individual steps.
-- `just nx` — cached Nx authoring targets (validate/smoke/test) across every
-  project in the graph.
+- `just bootstrap` — set up from a clean clone: one install per ecosystem, never
+  one per project (`bun install`, `uv sync` against the single root `uv.lock`,
+  plus the uv-installed `llmlint` + `shellcheck` the gate's targets shell out to).
+  Also activates the husky hooks — `commit-msg` and `pre-push`.
+- `just check` — the gate at the **affected** tier: `nx affected` over
+  `format-check lint validate smoke test`, which is the whole of the previous flat
+  gate declared per project (ruff format/check, shellcheck, skill validation +
+  smoke, the `.tool-versions`/CI pin check, `llmlint validate`, every project's
+  pytest, and the create-repo baseline audit of this repo). Must pass before any
+  commit or PR. `just check all` is the same gate as the **broader** tier — one
+  `nx run-many` sweep, which CI runs at merge-to-main.
+- `just format` / `just format-check` / `just lint` / `just validate` /
+  `just test` — the individual targets, affected-scoped (`format` sweeps
+  everything: formatting is not a "what changed" question). `just check-versions`
+  and `just baseline` are focused entry points onto `authoring-tools:validate`
+  and `repo-baseline:test`, which `check` already runs.
 - `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
   validate` gate (config + `llmlint: ignore` directives + fragment version bumps).
-  No harness call, so — unlike the model tier — it IS a hard step of `just check`
-  (see "Optional LLM lint"), and also runs as the husky `pre-push` hook (a fast,
-  token-free local safety net; skips if llmlint isn't installed, bypass with
-  `git push --no-verify`).
-- `just lint-llm [paths]` — optional LLM-as-judge *model* lint. NOT in the gate —
-  it drives a real harness (see "Optional LLM lint" below).
-- `just skilltest [args]` — run the `skilltest-pytest` natural-language skill
-  evals. NOT in the gate (see "Skill evals" below); with no provider they skip.
+  No harness call, so it IS in `just check`; it also runs as the husky `pre-push`
+  hook (skips if llmlint isn't installed; bypass with `git push --no-verify`).
+- `just lint-llm [paths]` — the LLM-as-judge *model* lint. NOT in the gate — it
+  drives a real harness (see "Optional LLM lint" below).
+- `just skilltest [args]` — the `skilltest-pytest` skill evals. NOT in the gate
+  (see "Skill evals" below); with no provider they skip.
 - `just session-setup` — provision a session's dev toolchain: ensure `just`, then
-  run `setup-llmlint`. Runs automatically via the `SessionStart` hook (see "Harness
+  `setup-llmlint`. Runs automatically via the `SessionStart` hook (see "Harness
   split"); this is the manual entry point. Idempotent, no-ops in CI.
 - `just upgrade` — upgrade dependencies, then re-run `just check`.
 
-The gate needs no Node — it runs on uv plus the `llmlint` binary that `bootstrap`
-installs via `uv tool` (so the gate is still uv-only, just with one uv-installed
-binary; the `lint-llm-validate` step is deterministic and needs no harness token).
-Nx/bun is an optional accelerator; `uv`, `node`, and `bun` are the clean-clone
-prerequisites for `just bootstrap` (bun is the package manager and script runner;
-node is the underlying runtime for the Nx/semantic-release tooling). The toolchain is
-pinned in `.tool-versions`: provision `just`/`uv`/`node`/`bun` with asdf (or a
-compatible manager such as mise) via `asdf install`, then run `just bootstrap`.
-In a Claude Code web/cloud session there is no asdf, and the image ships uv/node/bun
-but not `just`, so the `SessionStart` hook runs `scripts/session-setup.sh` to install
-`just` (via `uv tool install rust-just`, PyPI-only) before the very first `just ...`
-call — see "Harness split" below; `just session-setup` is the manual entry point.
-The `python` pin records the
-targeted version (uv supplies Python per `requires-python`); `just
-check-versions` keeps every pin in lockstep with CI.
+The gate runs **through Nx**, so `uv`, `node` and `bun` are all clean-clone
+prerequisites, alongside the `uv tool` binaries `bootstrap` installs (`llmlint`,
+`shellcheck`). Pins live in `.tool-versions`, kept in lockstep with CI by `just
+check-versions`; how to provision them, and why a cloud session needs
+`session-setup`, is in
+[`docs/dev-toolchain.md`](docs/dev-toolchain.md).
 
 ### Optional LLM lint (`llmlint`)
 
 `llmlint.yml` dogfoods the create-repo ongoing fragments for this stack via local
 in-tree plugin paths, plus repo-specific uv/bun launch-convention rules. The
-deterministic validate tier (`just lint-llm-validate`) is part of `just check`;
-the model tier (`just lint-llm` / `just lint-llm-diff`) is optional locally but
-blocking in CI as the separate `llmlint` job. Harness fallback, CI, and rule
-details live in [`docs/llmlint.md`](docs/llmlint.md).
+deterministic validate tier is in `just check` (the `llmlint-tier` project's
+`validate` target); the model tier is optional locally but blocking in CI as the
+separate `llmlint` job. Details: [`docs/llmlint.md`](docs/llmlint.md).
 
 ### Skill evals (`skilltest-pytest`)
 
-Skills have opt-in end-to-end evals (`skilltest-pytest`, a dev dep) that drive the
-skill through a real harness. They are slow and never in `just check`; run with
-`just skilltest`. `create-repo`'s is documented in
+Skills have opt-in end-to-end evals (`skilltest-pytest`, a dev dep) driving the
+skill through a real harness. Each is a project of its own declaring a `skilltest`
+target — a name no gate tier fans out over — so `just check` cannot collect it.
+`just skilltest` runs one and is what sets `SKILLTEST_E2E=1`; without that the
+cases skip even under a bare repo-wide `pytest`. `create-repo`'s is documented in
 [`skills/bootstrap/create-repo/tests/AGENTS.md`](skills/bootstrap/create-repo/tests/AGENTS.md).
+
+## Commits, releases, and merging
 
 - **Conventional Commits are required.** The type drives releases: `feat:` →
   minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types
@@ -126,9 +135,13 @@ skill through a real harness. They are slow and never in `just check`; run with
   and in CI by the `commitlint` job.
 - **Squash-merge only, via PR, with auto-merge.** `main` is protected: merge
   commits and rebase-merging are disabled, and a PR can only land once the
-  required `check`, `commitlint`, and `llmlint` status checks are green (admins may bypass).
-  `check` runs the full gate — including the e2e tests — so requiring it gates
-  every merge on the same gate you run locally. Queue a PR with
+  required status checks are green (admins may bypass). **The required set is
+  exactly `check`, `commitlint`, `llmlint`** — the three contexts `ci.yml` reports
+  on a `pull_request`, and the record whoever applies repository settings works
+  from. `check-all` is deliberately *not* in it: it runs only on `push` to main,
+  so a required context would never report on a PR and would block every one
+  forever. `check` runs the gate at the affected tier, e2e tiers included as
+  projects of their own. Queue a PR with
   `gh pr merge --auto --squash` and it merges itself when the checks pass. The
   **PR title** becomes the squash commit subject, so it must be a valid
   Conventional Commit — that is what `commitlint` lints and what
@@ -142,10 +155,25 @@ skill through a real harness. They are slow and never in `just check`; run with
   terse **What** (the behavior change) and **Why** (its driver and impact), with
   an optional **Additional info** section — describe the change and its driver,
   not a walkthrough of the diff. It becomes the squash commit body.
-- **Releases are automated.** On push to `main`, semantic-release analyses the
-  commits since the last tag and, when warranted, publishes a GitHub Release +
-  tag with generated notes (`.releaserc.json`). It does not commit back to
-  `main`, so it needs no bypass token — the changelog lives in the Release.
+- **Releases are automated, and the repo releases *on merge*.** On push to
+  `main`, semantic-release analyses the commits since the last tag and, when
+  warranted, publishes a GitHub Release + tag (`.releaserc.json`). It does not
+  commit back to `main`, so it needs no bypass token. Nothing batches behind a
+  release train, so the merged commit *is* the released commit: per `ci.md`'s
+  rule the broader sweep runs at **merge-to-main** (`check-all`, which `release`
+  depends on) and no later job re-gates that tree — the fact a later reader needs
+  to tell a legitimate sweep from a duplicate.
+
+## Project graph
+
+The map, the uniform target names, the promoted tiers and the named inputs
+holding cross-project edges in place are in
+[`docs/project-graph.md`](docs/project-graph.md). Two rules belong here because
+breaking either is silent: **`just check` fans out over `format-check lint
+validate smoke test` and nothing else** (the expensive tiers use their own names,
+`skilltest` and `lint-llm`, so the gate cannot reach them — `tests/project-graph/`
+catches an addition), and **a target reading a file outside its project needs a
+named input in `nx.json`**, or a cached pass outlives an edit to that file.
 
 ## Invariants (non-negotiable)
 
@@ -163,8 +191,9 @@ skill through a real harness. They are slow and never in `just check`; run with
   `description` is trigger-oriented ("Use when ...").
 - **Strict gate, no warnings-only.** A diagnostic is an error or is suppressed
   with a documented, tracked rationale.
-- **Nx is authoring/CI only.** Consumers never run Nx; keep its naming
-  `<scope>-<name>`.
+- **Nx orchestrates, and never ships.** The graph is mandatory and the gate runs
+  through it, but no script under `skills/**/scripts/` may invoke Nx — consumers
+  of a skill never run it. Keep skill project naming `<scope>-<name>`.
 - Never commit secrets, credentials, PHI, PII, or customer data.
 
 ## Scripts and output are context
@@ -186,8 +215,11 @@ whether things work. A rule, not a preference.
 - **Complete, not minimal.** Cover every journey — happy path *and*
   failure/recovery — not one smoke test. A feature isn't done until a real e2e
   journey exercises it. Coverage is a floor, not the target.
-- The baseline checker is dogfooded: `just check` runs it against this repo, so
-  the repo stays a working example of the `create-repo` skill.
+- The baseline checker is dogfooded by the `repo-baseline` project, which fails
+  on an **advisory** as well as an error — this is where those rules are written,
+  so an advisory means the canonical example has fallen behind its own guidance.
+- Graph assertions belong in `tests/project-graph/`, which drives the real `nx`
+  binary: a `project.json` read back to itself proves nothing.
 
 ## Keeping the allowlist current
 
@@ -201,9 +233,13 @@ whether things work. A rule, not a preference.
 
 - `ty` (type checking) and coverage are not in the gate: the authoring code is
   small and stdlib-only, so ruff + pytest + skill validation is the right bar.
+- **No per-project `pyproject.toml` / uv workspace members.** Nothing for uv to
+  resolve — one stdlib-only dependency set, `package = false`, one root
+  `uv.lock`, self-contained skill scripts — so extra manifests would be the
+  packages-invented-to-have-projects `project-graph.md` says the mandate does not
+  ask for. Revisit when a project needs a dependency the others must not.
 - No direnv/`src` layout/pre-commit and no install profiles by default —
-  consistent with the skill's own anti-baggage guidance. The dev toolchain is
-  pinned in `.tool-versions` (provisioned via asdf or a compatible manager).
+  consistent with the skill's own anti-baggage guidance.
 
 ## After the main task: refine and hand off
 

@@ -59,8 +59,9 @@ in `just check`**: it drives a real harness, so it is non-deterministic and need
 a harness token (in Claude Code the inherited session token; elsewhere
 `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY`, or — for the codex default —
 `OPENAI_API_KEY`). The **deterministic `validate` tier** (`just lint-llm-validate`)
-IS a hard step of `just check` — model-free and token-free, so `bootstrap` installs
-the `llmlint` binary (via `uv tool`) and the gate runs it. Caveat: loading
+IS a hard step of `just check`, as the `llmlint-tier` project's `validate` target
+— model-free and token-free, so `bootstrap` installs the `llmlint` binary (via `uv
+tool`) and the gate runs it. Caveat: loading
 `llmlint.yml` resolves the hosted `config_lint@1` plugin, so a cold-cache run with
 no `raw.githubusercontent` reachability fails (CI and warm caches are fine). Run
 the model tier on demand with `just lint-llm`;
@@ -83,8 +84,11 @@ main's current tip, so unrelated later commits on main are never linted, and the
 judge doesn't flag pre-existing code a change merely sits near). llmlint does the changed-file selection itself, so no wrapper script is needed. CI installs
 the committed Codex harness via bun and authenticates it with the `OPENAI_API_KEY`
 repo secret; without that secret the model step fails (the validate step needs no
-credential). It is a separate job (not folded into `check`) to keep the clean-clone
-gate uv-only. Its context (`llmlint`, the job id) **must** be a branch-protection
+credential). It is a separate job (not folded into `check`) because external contact promotes
+it out of the affected tier unconditionally: a non-deterministic, credential-gated
+tier has no place in the deterministic gate. In the graph it is the `llmlint-tier`
+project's `lint-llm` target, a name no gate tier fans out over, on a project that
+depends on nothing — so no change elsewhere can reach it. Its context (`llmlint`, the job id) **must** be a branch-protection
 required check, else auto-merge lands past a red run once `check`/`commitlint` go
 green; apply with `uv run --script skills/bootstrap/create-repo/scripts/setup_github_governance.py check commitlint llmlint`, which now
 refuses to omit it.

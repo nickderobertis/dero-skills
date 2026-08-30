@@ -1,0 +1,14 @@
+{
+  "name": "authoring-scripts",
+  "root": "scripts",
+  "projectType": "library",
+  "tags": [
+    "type:tooling",
+    "lang:bash"
+  ],
+  "targets": {
+    "lint": {
+      "command": "PATH=\"$HOME/.local/bin:$PATH\" shellcheck scripts/*.sh"
+    }
+  }
+}
