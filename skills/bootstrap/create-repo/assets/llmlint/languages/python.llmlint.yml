@@ -1,7 +1,7 @@
 # Python judge-level rules (plugin). Pulled in by the composer when the repo's
 # language includes python. Pairs with languages/python.md.
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; the blocking model lint exercises the changed rule configuration.
-version: 1.3.0
+version: 1.4.0
 
 rules:
   - name: async_typed_clients_at_boundaries
@@ -60,17 +60,28 @@ rules:
     require_line_attribution: true
 
   - name: projects_stay_in_one_uv_workspace
+    # Narrowed to distributions: a build-graph project is not a Python package
+    # merely because Python runs inside it, and references/project-graph.md warns
+    # against inventing packages to have projects.
     description: |
-      true when every Python project in the repo is a member of the root uv
+      This judges Python *distributions* — a unit that owns Python source together
+      with its own dependency set. It does NOT judge a build-graph project (an Nx
+      `project.json`, say) that only declares targets run over source rooted
+      elsewhere in the workspace: a test tier, a lint/format/validate target, a
+      docs target, a target holder. Such a project owns no distribution, needs no
+      `pyproject.toml` of its own, and is true as long as what it runs resolves
+      against the root lock — a manifest per target holder is ceremony this rule
+      does not ask for.
+      true when every Python distribution in the repo is a member of the root uv
       workspace (`[tool.uv.workspace] members`), carries its own
-      `pyproject.toml`, depends on sibling projects through
+      `pyproject.toml`, depends on sibling distributions through
       `[tool.uv.sources] workspace = true`, and resolves against the single root
-      `uv.lock`. false when a project is invisible to the workspace, commits a
-      second `uv.lock`/`requirements.txt` for the same ecosystem, or reaches a
-      sibling by a relative path import instead of a declared workspace
-      dependency. A repo with exactly one Python project, rooted at the repo
-      root, needs no `[tool.uv.workspace]` table to be true — the claim is that
-      no project resolves outside the one root lock.
+      `uv.lock`. false when such a distribution is invisible to the workspace,
+      when any project commits a second `uv.lock`/`requirements.txt` for the same
+      ecosystem, or when one reaches a sibling's source by a relative path import
+      instead of a declared workspace dependency. A repo with exactly one Python
+      distribution, rooted at the repo root, needs no `[tool.uv.workspace]` table
+      to be true — the claim is that no project resolves outside the one root lock.
     files:
       include:
         - "**/pyproject.toml"

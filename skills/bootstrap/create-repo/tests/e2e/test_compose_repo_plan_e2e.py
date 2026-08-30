@@ -594,11 +594,12 @@ def _localize_pins(config_path: Path, tmp_path: Path) -> Path:
     return localized
 
 
-def wired_rule_names(config_path: Path, tmp_path: Path) -> set[str]:
-    """Every judge rule an emitted llmlint config actually pulls in.
+def wired_rules(config_path: Path, tmp_path: Path) -> dict[str, dict]:
+    """Every judge rule an emitted llmlint config pulls in, by name.
 
     Asks llmlint to merge the config, so a rule counts as carried only when the
-    config a consumer runs would reach it.
+    config a consumer runs would reach it — and the value is the rule as the
+    judge receives it, description included.
     """
     merged = subprocess.run(
         [LLMLINT, "config", "-c", str(_localize_pins(config_path, tmp_path))],
@@ -611,13 +612,20 @@ def wired_rule_names(config_path: Path, tmp_path: Path) -> set[str]:
     # The report is another tool's JSON, so a layout change should say so here
     # rather than surface as an opaque KeyError inside somebody's assertion.
     try:
-        names = {rule["name"] for rule in json.loads(merged.stdout)["config"]["rules"]}
+        rules = {
+            rule["name"]: rule for rule in json.loads(merged.stdout)["config"]["rules"]
+        }
     except (KeyError, TypeError) as exc:
         raise AssertionError(
             f"`llmlint config` changed shape:\n{merged.stdout[:400]}"
         ) from exc
-    assert names, f"`llmlint config` merged no rules:\n{merged.stdout[:400]}"
-    return names
+    assert rules, f"`llmlint config` merged no rules:\n{merged.stdout[:400]}"
+    return rules
+
+
+def wired_rule_names(config_path: Path, tmp_path: Path) -> set[str]:
+    """The names of every judge rule an emitted llmlint config pulls in."""
+    return set(wired_rules(config_path, tmp_path))
 
 
 @requires_llmlint
@@ -681,3 +689,81 @@ def test_composed_configs_without_releasing_drop_the_release_sweep_rules(tmp_pat
     ongoing_rules = wired_rule_names(ongoing, tmp_path)
     assert "no_second_broader_sweep_over_an_already_gated_commit" in ongoing_rules
     assert "release_does_not_regate_an_already_swept_commit" not in ongoing_rules
+
+
+# Two rules are deliberately NARROWER than their name suggests, because judging
+# the property their name states would contradict guidance this skill ships:
+# `references/project-graph.md` requires every root recipe to delegate to the
+# orchestrator, and warns against inventing a package so a project can exist. A
+# later edit that re-broadens either one puts the skill back in contradiction
+# with itself, and the judged tier that would notice is non-deterministic and
+# harness-bound — so the boundary is asserted here, on the rule text a consumer's
+# merged config actually hands the judge.
+#
+# Each case pins BOTH sides of the line: the carve-out (so re-broadening fails)
+# and the violation the rule was written to catch (so narrowing it into
+# something that catches nothing fails too).
+NARROWED_RULES = (
+    pytest.param(
+        "tool_output_is_signal",
+        (
+            "the output the repository's OWN code produces",
+            "delegates to a third-party build orchestrator",
+            "is NOT a violation for that tool's own output",
+        ),
+        (
+            "quiet on success",
+            "false when any is noisy on success or fails with a message that "
+            "omits the cause or the fix",
+        ),
+        id="tool_output_is_signal",
+    ),
+    pytest.param(
+        "projects_stay_in_one_uv_workspace",
+        (
+            "This judges Python *distributions*",
+            "does NOT judge a build-graph project",
+            "needs no `pyproject.toml` of its own",
+        ),
+        (
+            "member of the root uv workspace",
+            "commits a second `uv.lock`/`requirements.txt` for the same ecosystem",
+            "reaches a sibling's source by a relative path import",
+        ),
+        id="projects_stay_in_one_uv_workspace",
+    ),
+)
+
+
+@requires_llmlint
+@pytest.mark.parametrize(("rule", "carve_outs", "still_catches"), NARROWED_RULES)
+def test_narrowed_rules_keep_both_sides_of_their_line(
+    tmp_path, rule, carve_outs, still_catches
+):
+    ongoing = tmp_path / "llmlint.yml"
+    result = run(
+        "--shape",
+        "library",
+        "--language",
+        "python",
+        "--llmlint-config",
+        str(ongoing),
+    )
+    assert result.returncode == 0, result.stderr
+
+    rules = wired_rules(ongoing, tmp_path)
+    assert rule in rules, sorted(rules)
+    # The judge reads the description as prose, so line wrapping is not part of
+    # the claim — compare on normalised whitespace.
+    description = " ".join(rules[rule]["description"].split())
+
+    for clause in carve_outs:
+        assert clause in description, (
+            f"{rule} lost the carve-out {clause!r} — it is broad again, and now "
+            "contradicts the project-graph guidance this skill ships"
+        )
+    for clause in still_catches:
+        assert clause in description, (
+            f"{rule} lost {clause!r} — narrowed until it no longer catches what "
+            "it was written for, which is worse than the contradiction"
+        )
