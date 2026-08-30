@@ -1,0 +1,28 @@
+{
+  "name": "llmlint-tier",
+  "root": "tests/llmlint",
+  "projectType": "library",
+  "tags": ["type:external", "lang:python"],
+  "targets": {
+    "format": {
+      "command": "uv run ruff format tests/llmlint"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check tests/llmlint"
+    },
+    "lint": {
+      "command": "uv run ruff check tests/llmlint"
+    },
+    "validate": {
+      "command": "PATH=\"$HOME/.local/bin:$PATH\" llmlint validate",
+      "inputs": ["default", "llmlintTier"]
+    },
+    "test": {
+      "command": "uv run pytest tests/llmlint",
+      "inputs": ["default", "llmlintTier"]
+    },
+    "lint-llm": {
+      "command": "PATH=\"$HOME/.local/bin:$PATH\" llmlint"
+    }
+  }
+}

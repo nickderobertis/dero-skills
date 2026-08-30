@@ -8,7 +8,7 @@
     "validate": "nx run-many -t validate",
     "smoke": "nx run-many -t smoke",
     "test": "nx run-many -t test",
-    "check": "nx run-many -t validate smoke test"
+    "check": "nx run-many -t format-check lint validate smoke test"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

@@ -2,10 +2,19 @@
   "name": "project-graph-e2e",
   "root": "tests/project-graph",
   "projectType": "library",
+  "tags": ["type:e2e", "lang:python"],
   "targets": {
+    "format": {
+      "command": "uv run ruff format tests/project-graph"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check tests/project-graph"
+    },
+    "lint": {
+      "command": "uv run ruff check tests/project-graph"
+    },
     "test": {
       "command": "uv run pytest tests/project-graph",
-      "cache": true,
       "inputs": ["default", "projectGraph"]
     }
   }

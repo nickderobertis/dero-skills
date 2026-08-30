@@ -1,18 +1,27 @@
 # create-repo tests
 
-Two tiers live here:
+Three tiers live here, and each is a project of its own so a change pays only
+for the tiers it can reach:
 
-- **Deterministic script tests** (`test_*.py` + `e2e/`) for the skill's PEP 723
-  scripts (`compose_repo_plan`, `check_repo_baseline`, `setup_github_governance`)
-  and for the suppression guard (`test_produced_repo_suppressions.py`).
-  Fast, un-mocked, and part of the gate — they run under `just check` (and
+- **The fast script tests** (`test_*.py` in this directory) — `bootstrap-create-repo`'s
+  own `test` target.
+- **The e2e journeys** (`e2e/`) — the `bootstrap-create-repo-e2e` project, which
+  depends on the skill it drives.
+  Both are un-mocked and part of the gate — they run under `just check` (and
   `just test`), embodying the "Tests are context engineering" mandate: real
   subprocesses over real temp files, never a mocked stand-in.
-- **The skill eval** (`test_create_repo_skilltest.py`), documented below.
+- **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
+  `bootstrap-create-repo-skilltest` project, documented below. It declares a
+  `skilltest` target rather than a `test` one, which is what keeps the gate from
+  ever reaching it.
+
+The `conftest.py` here puts this directory on `sys.path` for the whole subtree,
+so all three tiers share the repo-builder fixtures defined once in the fast
+tier's modules.
 
 ## The skilltest skill eval
 
-`test_create_repo_skilltest.py` drives the whole `create-repo` skill through a
+`skilltest/test_create_repo_skilltest.py` drives the whole `create-repo` skill through a
 real harness (`skilltest-pytest`, a dev dep) so it bootstraps a hello-world Rust
 CLI on a real filesystem, then judges the result. Its docstring covers the
 mechanics; the load-bearing rules:
@@ -107,9 +116,16 @@ Opt-in only — it drives a real ~20-30 min bootstrap and is never in `just chec
 just skilltest
 ```
 
-It needs a provider (`oneharness` on `PATH`, or a custom `SKILLTEST_PROVIDER`)
-and a sandbox it can write in (it runs the harness in bypass mode). Without the
-`--skilltest-e2e` flag / `SKILLTEST_E2E=1` it is skipped (the marker gate lives in
-the rootdir `conftest.py`); without a provider it is skipped too. The opt-in
-lifts the marker skip but the provider skip still applies, so a plain
-`just skilltest` in a provider-less shell is a no-op.
+That recipe runs the `bootstrap-create-repo-skilltest:skilltest` target, which is
+what sets `SKILLTEST_E2E=1`. Two independent things keep the eval from firing by
+accident, and they answer different callers: the **project graph** keeps it out
+of the gate (no gate tier fans out over the `skilltest` target name), and
+`skilltest/conftest.py` skips the marked cases without `SKILLTEST_E2E` for
+anyone who sweeps the tree with a bare `pytest`. The guard is an environment
+variable rather than a `--skilltest-e2e` flag because `pytest_addoption` is only
+honoured in an *initial* conftest, and this one is no longer at the rootdir.
+
+It also needs a provider (`oneharness` on `PATH`, or a custom
+`SKILLTEST_PROVIDER`) and a sandbox it can write in (it runs the harness in
+bypass mode). The opt-in lifts the marker skip but the provider skip still
+applies, so a plain `just skilltest` in a provider-less shell is a no-op.

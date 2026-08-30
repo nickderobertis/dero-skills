@@ -1,0 +1,14 @@
+{
+  "name": "consumer-bootstrap",
+  "root": "consumer-bootstrap",
+  "projectType": "library",
+  "tags": [
+    "type:deliverable",
+    "lang:bash"
+  ],
+  "targets": {
+    "lint": {
+      "command": "PATH=\"$HOME/.local/bin:$PATH\" shellcheck consumer-bootstrap/scripts/*.sh"
+    }
+  }
+}
