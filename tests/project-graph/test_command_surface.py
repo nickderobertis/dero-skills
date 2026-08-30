@@ -162,8 +162,6 @@ def test_the_gate_target_list_has_exactly_one_source() -> None:
     )
 
 
-# --- the recipes, RUN ------------------------------------------------------
-#
 # The dry-run cases above read what a recipe *would* run. These execute it: real
 # `just`, the real committed justfile, and every third-party launcher a recipe
 # hands work off to replaced by a recording double. That is what makes `upgrade`
@@ -286,3 +284,48 @@ def test_upgrade_stops_at_a_failed_relock_instead_of_gating_a_stale_tree(
     assert result.returncode != 0
     assert invoked == ["uv lock --upgrade"]
     assert GATE_SWEEP not in invoked
+
+
+@pytest.mark.parametrize(
+    ("recipe", "project_target", "args"),
+    [
+        # Both live outside the gate — `skilltest` drives a real ~20-30min harness
+        # bootstrap, `lint-llm` a real model — so the graph, not the recipe, is
+        # what keeps them out of it. The recipe's whole job is to name the right
+        # project:target and hand the caller's narrowing arguments through
+        # untouched: `just skilltest -x` and `just lint-llm <path>` are the
+        # documented ways to run one case, or one file, instead of all of them.
+        ("skilltest", "bootstrap-create-repo-skilltest:skilltest", ("-x",)),
+        (
+            "lint-llm",
+            "llmlint-tier:lint-llm",
+            ("scripts/setup-llmlint.sh", "justfile"),
+        ),
+    ],
+)
+def test_an_expensive_recipe_delegates_and_forwards_what_narrows_it(
+    surface, recipe: str, project_target: str, args: tuple[str, ...]
+) -> None:
+    delegated = f"bunx nx run {project_target}"
+
+    bare, invoked = run_recipe(surface, recipe)
+    assert bare.returncode == 0, bare.stdout + bare.stderr
+    assert invoked == [delegated]
+
+    # The double appends to one log across both runs, so the caller's arguments
+    # show up as the second entry — the same delegation, with them tacked on
+    # verbatim and in order.
+    narrowed, invoked = run_recipe(surface, recipe, *args)
+    assert narrowed.returncode == 0, narrowed.stdout + narrowed.stderr
+    assert invoked == [delegated, f"{delegated} {' '.join(args)}"]
+
+
+def test_an_expensive_recipe_reports_the_failure_of_what_it_delegated_to(
+    surface,
+) -> None:
+    # These two are the recipes a human runs by hand and reads the exit code of,
+    # with no gate behind them to catch a swallowed status: a failed eval that
+    # exits 0 reads as a passing one.
+    result, invoked = run_recipe(surface, "skilltest", fail_pattern="bunx nx run*")
+    assert result.returncode != 0
+    assert invoked == ["bunx nx run bootstrap-create-repo-skilltest:skilltest"]
