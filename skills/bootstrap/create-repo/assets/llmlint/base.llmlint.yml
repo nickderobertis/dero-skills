@@ -11,7 +11,7 @@
 # automatically. See references/llmlint.md ("Fragment versioning").
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.11.1
+version: 1.12.0
 
 rules:
   - name: comments_earn_their_place
@@ -298,14 +298,33 @@ rules:
 
   - name: contracts_have_one_source_or_a_drift_gate
     # Agreement among contract copies is cross-cutting, so no single line owns a violation.
+    # Storage and internal-code seams were WIDENED into this rule rather than split
+    # into their own: the premise is one positive invariant (a fact that must agree
+    # is kept aligned by one source), and which boundary it spans does not change
+    # it — a second rule would judge the same premise twice. The other half of an
+    # internal seam, which project may depend on which, is already judged by
+    # project-graph's `new_projects_keep_the_graph_uniform` and the buildout
+    # `project_boundaries_enforced`.
     description: |
-      A fact that must agree across a boundary — a version, a type or schema on
-      both sides of an API/DB/IPC seam, an enum or constant list mirrored in
-      another file or language — is kept in sync by one authoritative source the
-      others reference, by generated copies derived from it (codegen, with the
-      output checked in and its freshness gated), or by a reconciling check in
-      the quality gate that fails on drift. Restating the fact in several places
-      with nothing keeping them aligned is the violation.
+      true when the restatement is anchored to one authoritative source:
+      derived from it by codegen, with the output checked in and its freshness
+      gated, or reconciled against it by a check in the quality gate that fails
+      on drift. false when only convention holds the restatement and its
+      original together, so the two diverge silently the next time either side
+      changes.
     relevance: |
-      the target files restate a value, type, schema, enum, or contract that must
-      match a declaration living elsewhere in the repo or across a boundary
+      the target files restate a value, type, schema, column, key, field, or
+      enum that is also declared across a contract seam — any agreement two or
+      more parties must both hold to where at least one side can change
+      independently of the other. Apply that criterion rather than matching a
+      list: it is met by a call or transport surface (an HTTP route, a method
+      signature, a CLI flag schema, an event payload), by a persistence or
+      storage schema and the data model behind it (a table and its columns, a
+      document or key shape, an on-disk or wire format, a cache or queue entry,
+      a store shared across a boundary), and by an interface between internal
+      collections of code (what a package, module, or library owns and what
+      another may assume of it) alike, and equally by a store, serialization, or
+      internal boundary none of those examples names. A duplicated literal or
+      constant list, a re-declared field, column, or key set, and a parallel type
+      beside the original are restatements; reading, calling, importing from, or
+      annotating against a data model or an internal module is not

@@ -33,10 +33,16 @@ So a repo with exactly one deliverable still has a project graph. Split it:
   service (a live API, a container, a browser, a real database), becomes its own
   project so unrelated changes stop paying for it. Cost is a reason to split on
   its own — it needs no packaging story behind it.
-- **By what a change can reach.** Where the product already has an internal seam
-  — a plug-in interface, a codegen contract, a client for one external system —
-  make the seam a project, so the graph reflects it and affected detection can
-  use it.
+- **By what a change can reach.** Where the product already has a seam — a
+  plug-in interface, a codegen contract, a client for one external system, the
+  persistence or storage schema and data model something else reads and writes,
+  the boundary deciding what one internal package, module, or library owns and
+  what another may assume of it — make the seam a project, so the graph reflects
+  it and affected detection can use it. Every one of those is a **contract**: an
+  agreement two parties must both hold to where one can change independently.
+  That criterion, not this list, is what makes a seam a candidate — a store, a
+  serialization, or an internal boundary it names is treated no differently from
+  one it does not.
 
 ## Worked example: the plug-in interface
 
@@ -66,6 +72,19 @@ expensive suite to every change in the repo, and nothing fails to say so.
 The general rule this instances: **put the expensive thing behind a graph edge
 that unrelated changes cannot reach**, and make a boundary tag the thing that
 keeps the edge from being drawn back.
+
+`type:contract` is not reserved for a plug-in interface. A project that owns the
+**persistence or storage schema** other projects read and write — the migrations,
+the table and column names, the document or key shape, the on-disk or wire
+format — or one that owns the **interface between internal packages, modules, or
+libraries**, earns the same project and the same tag on the same terms: it is an
+agreement its consumers hold to and it changes on its own schedule, so give it a
+project, tag it `type:contract`, and let the module-boundary rule keep it from
+importing the consumers that depend on it. Judged by that criterion, a seam none
+of these examples names qualifies too. Land such a schema and its data model
+before what consumes them, and change either only the way the same section
+requires of a generated contract: non-breaking, with the drift check below
+keeping every restatement of a column, key, or field name aligned.
 
 ## Nx and the language's own workspace
 
@@ -126,7 +145,7 @@ orchestrator directly, so local and CI runs cannot drift. Bundled skill *scripts
 still stay orchestrator-independent (PEP 723 / Node built-ins): Nx orchestrates
 targets, it is never a runtime dependency of the scripts themselves.
 
-**Versioning & generated contracts.** Two graph-level concerns layer on top of
+**Versioning & cross-project contracts.** Two graph-level concerns layer on top of
 `releasing.md`:
 
 - **Lockstep versioning through one script.** When a single logical version spans
@@ -136,13 +155,19 @@ targets, it is never a runtime dependency of the scripts themselves.
   manifest, lockfile, and cross-package pin — and have the release tool call it
   (`semantic-release`'s `exec`, or `release-plz`). Publish each registry in
   dependency order and keep it **idempotent** (skip a version already live).
-- **Cross-language contracts are generated, never hand-written, and drift-checked.**
+- **Cross-project contracts are generated, never hand-written, and drift-checked.**
   When one language's types are the source of truth for a contract other packages
   consume (e.g. `schemars` Rust types → JSON Schema → Python/TS model codegen),
   generate the downstream models and add a `--check` mode to the generator that
   fails the gate if regenerating would change a committed file. This is the
   concrete form of `ci.md`'s "validate generated files," run at the workspace
-  level inside `just check`.
+  level inside `just check`. The rule is the contract, not the codegen: a
+  **storage schema** restated across projects (a migration's column names and the
+  model, query, or fixture repeating them) and an **internal package interface**
+  restated by its consumers get the same treatment — one authoritative source the
+  others reference, generated copies derived from it, or a reconciling check in
+  the gate that fails on drift. Whichever of the three a seam uses, nothing may be
+  restated across it with only convention holding the copies together.
 
 ## Verification
 
@@ -159,6 +184,14 @@ targets, it is never a runtime dependency of the scripts themselves.
   depends only on what it actually tests (no edge back to the core), so `nx
   affected` from an unrelated change does not reach it, and a boundary tag
   enforces that the edge cannot be drawn back.
+- [ ] **Contract seams are projects, and their restatements are gated.** Every
+  seam the repo has that is a contract — a plug-in interface, a codegen contract,
+  the persistence or storage schema and data model other projects read and write,
+  the boundary deciding what an internal package, module, or library owns, or any
+  other seam meeting the criterion — is a project of its own, tagged
+  `type:contract` with the module-boundary rule keeping it from depending on its
+  consumers; and every fact restated across it has one authoritative source, a
+  generated copy, or a gate check that fails on drift.
 - [ ] **Each deliverable is its own project.** Every app/package has a project
   definition with locally-declared targets (`build`, `lint`, `test`,
   `typecheck`, ...) calling its own language-native tool.

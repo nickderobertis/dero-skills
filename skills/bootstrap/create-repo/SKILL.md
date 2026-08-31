@@ -333,6 +333,10 @@ a suggested fix.
 14. **Architecture guidance should be explicit but not over-prescriptive.**
     - Specify non-negotiable invariants (boundaries, portability, security, data
       validation).
+    - Treat every seam two parties must hold to where one can change
+      independently as a contract: call surfaces, storage schemas and their data
+      models, and internal code interfaces have equal standing; the criterion,
+      not those examples, sets its reach.
     - Leave implementation flexibility inside those invariants; encode
       invariants in tests and docs.
 15. **Scripts and gates are agent context.**
