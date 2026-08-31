@@ -306,30 +306,25 @@ rules:
     # project-graph's `new_projects_keep_the_graph_uniform` and the buildout
     # `project_boundaries_enforced`.
     description: |
-      A contract is an agreement two or more parties must both hold to, where at
-      least one side can change independently of the other. Apply that criterion
-      to whatever seam the files show — the kinds below name where contracts are
-      found, and the examples inside them illustrate each kind's reach rather
-      than closing it:
-      a call or transport surface (an HTTP route, a method or function
-      signature, a CLI command or flag schema, an event or message payload); a
-      persistence or storage schema and the data model behind it (a table and
-      its columns, a document or key shape, an on-disk or wire file format, a
-      cache or queue entry, an in-memory store shared across a boundary — the
-      store outlives the code and other readers and writers depend on its
-      shape); and an interface between internal collections of code (the
-      boundary between packages, modules, libraries, or services inside one
-      repository, which decides what each owns and what one may assume of
-      another). All three are contracts of equal standing.
-      true when the restatement is anchored to one authoritative source: derived
-      from it by codegen, with the output checked in and its freshness gated, or
-      reconciled against it by a check in the quality gate that fails on drift.
-      false when only convention holds the two together, so they diverge
-      silently the next time either side changes.
+      true when a fact restated across a contract seam is anchored to one
+      authoritative source: derived from it by codegen, with the output checked
+      in and its freshness gated, or reconciled against it by a check in the
+      quality gate that fails on drift. false when only convention holds the
+      restatement and its original together, so the two diverge silently the
+      next time either side changes.
     relevance: |
-      the target files restate a value, type, schema, column, key, or enum that
-      is also declared elsewhere — in this repo or across a call, storage, or
-      internal package/module/library boundary. A duplicated literal or constant
-      list, a re-declared field, column, or key set, and a parallel type beside
-      the original are restatements; reading, calling, importing from, or
+      the target files restate a value, type, schema, column, key, field, or
+      enum that is also declared across a contract seam — any agreement two or
+      more parties must both hold to where at least one side can change
+      independently of the other. Apply that criterion rather than matching a
+      list: it is met by a call or transport surface (an HTTP route, a method
+      signature, a CLI flag schema, an event payload), by a persistence or
+      storage schema and the data model behind it (a table and its columns, a
+      document or key shape, an on-disk or wire format, a cache or queue entry,
+      a store shared across a boundary), and by an interface between internal
+      collections of code (what a package, module, or library owns and what
+      another may assume of it) alike, and equally by a store, serialization, or
+      internal boundary none of those examples names. A duplicated literal or
+      constant list, a re-declared field, column, or key set, and a parallel type
+      beside the original are restatements; reading, calling, importing from, or
       annotating against a data model or an internal module is not
