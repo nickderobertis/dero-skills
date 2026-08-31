@@ -321,19 +321,15 @@ rules:
       boundary between packages, modules, libraries, or services inside one
       repository, which decides what each owns and what one may assume of
       another). All three are contracts of equal standing.
-      true when every fact that must agree across such a contract — a version, a
-      type or schema, a column, key or field name, an enum or constant list
-      mirrored in another file or language — is kept in sync by one
-      authoritative source the others reference, by generated copies derived
-      from it (codegen, with the output checked in and its freshness gated), or
-      by a reconciling check in the quality gate that fails on drift. false when
-      the copy is held to the original by nothing but convention, so the two can
-      silently diverge when either side changes.
+      true when the restatement is anchored to one authoritative source: derived
+      from it by codegen, with the output checked in and its freshness gated, or
+      reconciled against it by a check in the quality gate that fails on drift.
+      false when only convention holds the two together, so they diverge
+      silently the next time either side changes.
     relevance: |
-      the target files hold a second, independently written copy of a value,
-      type, schema, column, key, or enum whose original is declared elsewhere —
-      in this repo or across a call, storage, or internal
-      package/module/library boundary. A duplicated literal or constant list, a
-      re-declared field, column, or key set, or a parallel type hand-written
-      beside the original is such a copy; reading, calling, importing from, or
+      the target files restate a value, type, schema, column, key, or enum that
+      is also declared elsewhere — in this repo or across a call, storage, or
+      internal package/module/library boundary. A duplicated literal or constant
+      list, a re-declared field, column, or key set, and a parallel type beside
+      the original are restatements; reading, calling, importing from, or
       annotating against a data model or an internal module is not
