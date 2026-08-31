@@ -328,10 +328,17 @@ rules:
       from it (codegen, with the output checked in and its freshness gated), or
       by a reconciling check in the quality gate that fails on drift. false when
       the fact is restated in several places with nothing keeping them aligned.
+      Using a contract is not restating it: calling across the seam, importing
+      its type, enum, or model, annotating a parameter or return with the type it
+      declares, or reading and writing a column through the model that owns it
+      all keep one source by construction and are true. Judge only an
+      INDEPENDENT SECOND COPY that could silently diverge — a duplicated literal
+      or constant list, a re-declared field, column, or key set, a parallel type
+      or schema hand-written beside the original.
     relevance: |
-      the target files restate a value, type, schema, column, key, enum, or other
-      fact that must match a declaration living elsewhere — in this repo or
-      across a call, storage, or internal package/module/library boundary.
-      Reading, using, or changing a data model or an internal module is not
-      itself enough: something must be stated twice, with nothing reconciling the
-      copies, for the premise to apply
+      the target files contain an independent second copy of a value, type,
+      schema, column, key, or enum whose original is declared elsewhere — in this
+      repo or across a call, storage, or internal package/module/library
+      boundary — with nothing reconciling the copies. Reading, calling, importing
+      from, annotating against, or otherwise merely using a data model or an
+      internal module is not such a copy and does not exercise this premise
