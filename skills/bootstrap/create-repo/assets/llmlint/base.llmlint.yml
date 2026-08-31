@@ -306,12 +306,12 @@ rules:
     # project-graph's `new_projects_keep_the_graph_uniform` and the buildout
     # `project_boundaries_enforced`.
     description: |
-      true when a fact restated across a contract seam is anchored to one
-      authoritative source: derived from it by codegen, with the output checked
-      in and its freshness gated, or reconciled against it by a check in the
-      quality gate that fails on drift. false when only convention holds the
-      restatement and its original together, so the two diverge silently the
-      next time either side changes.
+      true when the restatement is anchored to one authoritative source:
+      derived from it by codegen, with the output checked in and its freshness
+      gated, or reconciled against it by a check in the quality gate that fails
+      on drift. false when only convention holds the restatement and its
+      original together, so the two diverge silently the next time either side
+      changes.
     relevance: |
       the target files restate a value, type, schema, column, key, field, or
       enum that is also declared across a contract seam — any agreement two or
