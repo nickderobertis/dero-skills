@@ -333,6 +333,20 @@ a suggested fix.
 14. **Architecture guidance should be explicit but not over-prescriptive.**
     - Specify non-negotiable invariants (boundaries, portability, security, data
       validation).
+    - **A seam is a contract, whatever it spans.** The criterion — two parties
+      must both hold to it, and one can change independently of the other —
+      reaches a call or transport surface (route, method signature, CLI flag
+      schema, event payload), a persistence or storage schema and the data model
+      behind it (table and columns, document or key shape, on-disk or wire
+      format, cache or queue entry, a store shared across a boundary), and an
+      interface between internal collections of code (what a package, module, or
+      library owns, and what another may assume of it). Those illustrate how far
+      each kind reaches rather than bounding it; judge an unlisted store,
+      serialization, or internal boundary by the criterion. All three carry the
+      same four properties: land first and non-breaking, stated literally so
+      consumers restate rather than re-decide them, never changed unilaterally
+      once agreed, and one source or a drift gate for any fact restated across
+      them.
     - Leave implementation flexibility inside those invariants; encode
       invariants in tests and docs.
 15. **Scripts and gates are agent context.**

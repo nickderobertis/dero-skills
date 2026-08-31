@@ -11,7 +11,7 @@
 # automatically. See references/llmlint.md ("Fragment versioning").
 # llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.11.1
+version: 1.12.0
 
 rules:
   - name: comments_earn_their_place
@@ -298,14 +298,40 @@ rules:
 
   - name: contracts_have_one_source_or_a_drift_gate
     # Agreement among contract copies is cross-cutting, so no single line owns a violation.
+    # Storage and internal-code seams were WIDENED into this rule rather than split
+    # into their own: the premise is one positive invariant (a fact that must agree
+    # is kept aligned by one source), and which boundary it spans does not change
+    # it — a second rule would judge the same premise twice. The other half of an
+    # internal seam, which project may depend on which, is already judged by
+    # project-graph's `new_projects_keep_the_graph_uniform` and the buildout
+    # `project_boundaries_enforced`.
     description: |
-      A fact that must agree across a boundary — a version, a type or schema on
-      both sides of an API/DB/IPC seam, an enum or constant list mirrored in
-      another file or language — is kept in sync by one authoritative source the
-      others reference, by generated copies derived from it (codegen, with the
-      output checked in and its freshness gated), or by a reconciling check in
-      the quality gate that fails on drift. Restating the fact in several places
-      with nothing keeping them aligned is the violation.
+      A contract is an agreement two or more parties must both hold to, where at
+      least one side can change independently of the other. Apply that criterion
+      to whatever seam the files show — the kinds below name where contracts are
+      found, and the examples inside them illustrate each kind's reach rather
+      than closing it:
+      a call or transport surface (an HTTP route, a method or function
+      signature, a CLI command or flag schema, an event or message payload); a
+      persistence or storage schema and the data model behind it (a table and
+      its columns, a document or key shape, an on-disk or wire file format, a
+      cache or queue entry, an in-memory store shared across a boundary — the
+      store outlives the code and other readers and writers depend on its
+      shape); and an interface between internal collections of code (the
+      boundary between packages, modules, libraries, or services inside one
+      repository, which decides what each owns and what one may assume of
+      another). All three are contracts of equal standing.
+      true when every fact that must agree across such a contract — a version, a
+      type or schema, a column, key or field name, an enum or constant list
+      mirrored in another file or language — is kept in sync by one
+      authoritative source the others reference, by generated copies derived
+      from it (codegen, with the output checked in and its freshness gated), or
+      by a reconciling check in the quality gate that fails on drift. false when
+      the fact is restated in several places with nothing keeping them aligned.
     relevance: |
-      the target files restate a value, type, schema, enum, or contract that must
-      match a declaration living elsewhere in the repo or across a boundary
+      the target files restate a value, type, schema, column, key, enum, or other
+      fact that must match a declaration living elsewhere — in this repo or
+      across a call, storage, or internal package/module/library boundary.
+      Reading, using, or changing a data model or an internal module is not
+      itself enough: something must be stated twice, with nothing reconciling the
+      copies, for the premise to apply

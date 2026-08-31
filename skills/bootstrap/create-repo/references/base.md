@@ -38,6 +38,24 @@ composed plan carries before any shape/language/cross-cutting items are added.
   CLI as a command, an HTTP route as a request, the public API as a caller, the
   UI through user-facing actions), not through internal shortcuts a real user
   could never take.
+- **A contract is any agreement across a seam, and storage and internal code
+  boundaries are contracts too.** The criterion: two or more parties must both
+  hold to it and at least one can change independently of the other. Contracts
+  are found in three kinds of place, of equal standing — a **call or transport
+  surface** (an HTTP route, a method signature, a CLI command or flag schema, an
+  event payload); a **persistence or storage schema and the data model behind
+  it** (a table and its columns, a document or key shape, an on-disk or wire
+  format, a cache or queue entry, an in-memory store shared across a boundary —
+  the store outlives the code that writes it, and other readers depend on its
+  shape); and an **interface between internal collections of code** (what a
+  package, module, library, or service inside the repo owns, and what another may
+  assume of it). Those examples show how far each kind reaches, not where it
+  stops: meet an unlisted store, format, or boundary and judge it by the
+  criterion. Four properties hold for all three alike — land the contract first
+  and non-breaking; state it literally, so consumers restate it rather than
+  deciding it again; never change it unilaterally once agreed; and keep one
+  authoritative source, a generated copy, or a reconciling drift check for any
+  fact restated across it.
 - **Security is a baseline invariant, not a follow-up.** Secrets never enter the
   tree — they live in the platform's secret store and are referenced by name;
   every external input is validated at its trust boundary before use; and every
@@ -83,6 +101,14 @@ composed plan carries before any shape/language/cross-cutting items are added.
   journey, happy path **and** failure/recovery, running inside `just check`
   (a too-expensive case is a documented exception CI still runs, never silently
   skipped).
+- [ ] **Contracts held at every seam.** Every contract the repo has — a call or
+  transport surface, a persistence or storage schema and its data model, and the
+  interface between its internal packages, modules, or libraries alike, plus any
+  other seam the criterion reaches — landed before its consumers and
+  non-breaking, is stated literally rather than left for each consumer to decide,
+  is not changed out from under its consumers, and has one authoritative source,
+  a generated copy, or a gate check that fails on drift for every fact restated
+  across it.
 - [ ] **User design decisions recorded.** Every durable design decision the user
   stated lives at the scope it governs — the important ones in that scope's
   `AGENTS.md`, the rest in a `DESIGN.md` nested there, holding only
