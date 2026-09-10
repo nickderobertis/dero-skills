@@ -5,13 +5,10 @@
 # linters can't; keep using ruff/clippy/biome/shellcheck/tsc for what they cover.
 #
 # `version` is the published plugin version consumers pin with `@` (e.g. `@1`).
-# Full semver: bump minor for an added or tightened rule, patch for a wording
-# fix, major only for a breaking change (a removed/renamed rule, or one whose
-# meaning flips). Consumers pin the major, so non-breaking bumps flow to them
-# automatically. See references/llmlint.md ("Fragment versioning").
-# llmlint: ignore-file[changed_behavior_has_e2e] these are LLM-judge config invariants with no deterministic runtime path; real-harness evals stay opt-in by repository convention (skills/bootstrap/create-repo/tests/AGENTS.md), while the blocking model lint exercises the changed rule text.
+# Version classification and consumer pinning: see references/llmlint.md
+# ("Fragment versioning").
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.12.0
+version: 1.13.0
 
 rules:
   - name: comments_earn_their_place
@@ -70,30 +67,50 @@ rules:
     relevance: the target files define an end-to-end or integration test
     require_line_attribution: true
 
+  # llmlint: ignore[names_match_behavior, name_describes_what_the_rule_checks] this published rule identifier must remain stable for consumer overrides and allowlisted ignores; renaming it for the structural-proof exception would break those consumers.
   - name: changed_behavior_has_e2e
+    # llmlint: ignore[description_omits_already_excluded_situations] relevance controls admission; the description quantifies only admitted behavior, avoiding both a redundant relevance qualifier and a broader admission condition.
     description: |
-      true when EVERY distinct user-facing behavior these changes ADD or MODIFY is
-      exercised by a real end-to-end or integration test — each new or altered code
-      path, output, exit status, and failure/recovery path, not one happy-path test
-      standing in for the whole change — and every behavior they REMOVE, which needs
-      no end-to-end coverage of its own, has had its end-to-end test removed with it.
-      Coverage scales with the change: a large
-      addition that introduces several journeys needs each of them exercised, while a
-      one-line change needs only its own path. Judge only the behavior the diff
-      introduces, alters, or removes: locate the e2e/integration tests for this entry
-      point or module — read the repo's test tree as needed — and confirm each such
-      behavior is covered, whether an existing test already exercises it or a new test
-      was added alongside the change. false when any observable behavior the change
-      introduces or alters is left without an end-to-end or integration test, or any
-      behavior it removes is left with one. This
-      rule does NOT require backfilling the feature's pre-existing, untouched
-      behavior — only the paths this change adds, modifies, or removes.
+      true when EVERY distinct behavior these changes ADD or MODIFY is exercised
+      by a real end-to-end or integration test — each new or altered code path,
+      output, exit status, and failure/recovery path, not one happy-path test standing in for the whole change — and every
+      behavior they REMOVE has had its obsolete end-to-end test removed with it.
+      Where the cheapest honest end-to-end proof would cost more than the defect
+      it prevents, a deterministic structural assertion satisfies this rule,
+      provided that assertion states at its own site why the end-to-end proof was
+      declined.
+      Locate the tests for this entry point or module — read the repo's test tree
+      as needed — and confirm coverage by an existing or new test, or by the
+      justified structural assertion above. false when an assertion lacks that
+      reason, any added or modified behavior lacks proof, or a removed behavior
+      retains an obsolete test.
     relevance: |
-      the target files change observable product behavior — an added, altered, or
-      removed code path, output, exit status, or handled error. A test is not itself
-      product behavior, and neither is a behavior-preserving edit (a refactor,
-      formatting, a comment, docs, configuration, or a type-only change) that no user
-      could observe.
+      the target files add, alter, or remove observable behavior and BOTH criteria
+      hold. Judge only those changed paths, not pre-existing, untouched behavior:
+      (1) The behavior is authored in this repository. A guarantee a third-party
+      tool makes in isolation belongs to that tool's maintainers: clippy failing
+      on its own finding, a formatter reformatting, or a package manager refusing
+      an unlocked dependency. What this repository composes out of tools into a
+      path of its own is authored here and tested by nobody else — which artifacts
+      get published and where, what an installer writes and starts, or what a
+      script does around the tool it calls. A structural claim is excluded even
+      when authored here: it is settled by reading a file rather than running
+      anything. Whether a gate recipe invokes every tier the policy declares is
+      proved by a deterministic check reading the recipe; running the gate proves
+      it more slowly and no better. Apply this criterion rather than matching a
+      list; the examples illustrate its reach, not its limits.
+      (2) The failure would otherwise be silent. Ask what happens if this behavior
+      breaks and nothing tests it. A release or publication path shipping a broken
+      artifact is discovered by whoever installs it; a deployment or provisioning
+      script, a scheduled job, and a developer tool that checks something are
+      discovered late or never. Those failures are silent and owe end-to-end proof.
+      A quality gate that stops refusing bad code is loud — the first red change
+      that merges says so — as is a build that stops building or an entry point
+      that stops running. Apply this criterion rather than matching a list; it
+      reaches equally a silent failure none of these examples names.
+      A test is not itself the behavior under test, and a behavior-preserving edit
+      (a refactor, formatting, a comment, docs, configuration, or a type-only
+      change) that no user could observe does not meet the criterion.
     # llmlint: ignore[line_localizable_rules_require_attribution] missing coverage is attributed to the changed production line whose behavior lacks an e2e test.
     require_line_attribution: true
 
