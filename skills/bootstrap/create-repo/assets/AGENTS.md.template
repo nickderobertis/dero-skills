@@ -131,8 +131,10 @@ so it is auditable and re-appliable.
 - The quality gate is strict: no warnings-only mode. A diagnostic is either an
   error or suppressed with a documented, tracked rationale.
 - **Tests are realistic, not mocked, and complete, not minimal.** E2E drives the
-  real artifact across real boundaries; a feature isn't done until a real journey
-  covers it (see "Tests are context engineering").
+  real artifact across real boundaries. Proof is proportionate to the change per
+  the [create-repo base rules](https://github.com/nickderobertis/dero-skills/blob/main/skills/bootstrap/create-repo/assets/llmlint/base.llmlint.yml),
+  the authoritative criterion including its justified structural-proof allowance
+  (see "Tests are context engineering").
 - Validate all external / IO inputs at trust boundaries.
 - Keep the artifact portable across the supported platform matrix.
 - **Security is gate-level.** Do not commit secrets, credentials, PII, or
@@ -159,14 +161,15 @@ work. Realism and coverage are a rule, not a preference (see Invariants).
   Mock only a genuinely external third party you can't run, and say which.
 - **A green mocked suite is worse than none** — false confidence the next agent
   builds on, breaking in production where no human watches.
-- **Done means complete, not minimal:** every user-facing journey, happy path
-  *and* failure/recovery — not one smoke test.
+- **Done means complete, not minimal:** for journeys owing e2e under
+  the criterion linked in Invariants, cover happy path *and*
+  failure/recovery — not one smoke test.
 - **Coverage is a floor, not the target:** line coverage is satisfiable with
   mocks that prove nothing. Chase real journeys; let the number follow.
-- **The suite is the source of truth for what's covered:** a feature isn't done
-  until its real e2e journey lands in the suite. Name a journey here only when it
-  is a non-obvious contract the suite alone wouldn't make clear — don't mirror
-  the test list.
+- **The suite is the source of truth for what's covered:** changes land with the
+  proportional proof required by the criterion linked in Invariants.
+  Name a journey here only when it is a non-obvious contract the suite alone
+  wouldn't make clear — don't mirror the test list.
 
 ## Keeping the allowlist current
 

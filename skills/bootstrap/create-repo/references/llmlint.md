@@ -69,10 +69,12 @@ everything they already check, and reach for llmlint only for the judgment calls
   under root without `--dangerously-skip-permissions` refusing.
 - **Fragment versioning is semver; consumers pin the major.** Each fragment
   carries a `version:` (`MAJOR.MINOR.PATCH`). Bump **minor** for an added or
-  tightened rule, **patch** for a wording fix, **major** only for a breaking
-  change — a removed or renamed rule, or one whose meaning flips such that
-  previously-passing code now fails or a consumer's `override` dangles. The
-  composer pins a consumer to the **major only** (`@1`), which llmlint reads as
+  tightened or loosened rule, **patch** for a wording fix, **major** only for a
+  breaking change — a removed or renamed rule, or one whose meaning flips such that
+  previously-passing code now fails or a consumer's `override` dangles. A
+  loosened rule is minor because consumers pin the major and it cannot break a
+  consumer that was passing: previously-failing code can pass, no rule is removed,
+  and no override dangles. The composer pins a consumer to the **major only** (`@1`), which llmlint reads as
   "any `1.x`", so non-breaking bumps reach pinned repos on their next (cold-cache
   or CI) run automatically while a major bump stays opt-in. Because the pin is
   also llmlint's cache key, a warm-cached consumer forces a refetch with

@@ -62,8 +62,11 @@ clone, run one command, and trust.
    `AGENTS.md`; the baseline checker verifies it is filled in. Exclusions are for
    *optional tooling and layout* that doesn't fit (asdf, direnv, `src` layout, a
    release pipeline) — never for the non-negotiable invariants: a strict gate,
-   realistic un-mocked e2e of every real user journey, and CI that proves the
-   artifact. Those are not optional and are not "excluded with a rationale."
+   realistic un-mocked e2e proportionate to the change (per
+   `changed_behavior_has_e2e` in [the base rules](./assets/llmlint/base.llmlint.yml)),
+   and CI that proves the artifact. This rule is the authoritative criterion
+   throughout this skill, including its justified structural-proof allowance.
+   Those are not optional and are not "excluded with a rationale."
 3. **Establish one command surface.** Add a `just` recipe set: `bootstrap`,
    `check`, `test`, `lint`, `format`, `upgrade`, from
    [`assets/justfile.template`](./assets/justfile.template). `just bootstrap`
@@ -85,10 +88,10 @@ clone, run one command, and trust.
    entry point proves the mock, not the product, and a green mocked suite is
    worse than none (the next agent builds on its false confidence). Drive the
    real artifact across real boundaries the way a user does. "Done" means
-   **complete, not minimal**: every user-facing journey, happy path *and*
-   failure/recovery — not one smoke test. Coverage is a floor (satisfiable with
-   mocks that prove nothing), not the target. Enumerate the journeys in
-   `AGENTS.md` so coverage is auditable and grows with the repo.
+   **complete, not minimal** for journeys owing e2e under that criterion:
+   happy path *and* failure/recovery — not one smoke test. Coverage is a floor
+   (satisfiable with mocks that prove nothing), not the target. Enumerate the
+   journeys in `AGENTS.md` so coverage is auditable and grows with the repo.
 7. **Add CI that proves the artifact.** A clean checkout must bootstrap from
    scratch and run the complete gate (`just bootstrap` then `just check`), on
    the supported platform matrix. Start from
@@ -197,8 +200,8 @@ a suggested fix.
      shape is.
    - Explicitly state what guidance was excluded and why — but only optional
      tooling/layout qualifies. The non-negotiable invariants (strict gate,
-     realistic un-mocked e2e of every real journey, CI proving the artifact) are
-     never excluded.
+     realistic un-mocked e2e proportionate to the change under the criterion above,
+     CI proving the artifact) are never excluded.
 2. **One command-oriented workflow.**
    - Provide a small, memorable command surface (typically via `just`):
      `bootstrap`, `check`, `test`, `lint`, `format`, `upgrade`.
@@ -226,9 +229,9 @@ a suggested fix.
      agent builds on). Drive the real artifact across real boundaries the way a
      user does. Mock only a genuinely external third party you can't run, and say
      which.
-   - "Done" means **complete, not minimal**: every user-facing journey, success
-     **and** failure/recovery, validated at boundaries — landing in the suite,
-     the source of truth for what's covered, as features land.
+   - "Done" means **complete, not minimal** for journeys owing e2e under that
+     criterion: success **and** failure/recovery, validated at boundaries as
+     features land.
    - E2E runs in the default `just check` and CI — part of the gate, not opt-in. A
      test too expensive for every run is a documented exception CI still executes
      (e.g. nightly), never silently excluded (no default `#[ignore]`, deselected
@@ -353,7 +356,8 @@ a suggested fix.
       mock the layer under test or settle for a happy-path smoke test — a green
       mocked suite is a liability, not coverage.
     - Make the journeys a growing contract in the suite — the source of truth for
-      what's covered: when a feature lands, its real e2e journey lands with it.
+      what's covered: changes land with the proportional proof that criterion
+      requires.
 17. **Security is a baseline invariant.**
     - Treat security as gate-level, not a follow-up: secrets never enter the tree
       (they live in the platform secret store, referenced by name), every external

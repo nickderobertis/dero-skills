@@ -32,9 +32,10 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - **Strict, deterministic gate.** Format, lint, type check, and tests fail on
   issues — no warnings-only mode — with coverage measured and enforced.
 - **Realistic e2e is an invariant, not a preference.** The suite is the only QA
-  loop, so it drives the real artifact across real boundaries and covers every
-  user journey; mocking the layer under test is a fail. Test as close as possible
-  to what the user does — exercise the software through its real interface (the
+  loop, so it drives the real artifact across real boundaries; mocking the layer
+  under test is a fail. Proof is proportionate to the change under
+  `changed_behavior_has_e2e`, the authoritative criterion.
+  Test as close as possible to what the user does — exercise the software through its real interface (the
   CLI as a command, an HTTP route as a request, the public API as a caller, the
   UI through user-facing actions), not through internal shortcuts a real user
   could never take.
@@ -96,11 +97,11 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - [ ] **Coverage enforced.** Coverage is measured and the gate fails below the
   threshold (95% line coverage by default, or a documented lower bar in
   `AGENTS.md`).
-- [ ] **Real e2e of every journey.** E2E drives the real artifact across real
-  boundaries — not mocking the layer under test — and covers every user-facing
-  journey, happy path **and** failure/recovery, running inside `just check`
-  (a too-expensive case is a documented exception CI still runs, never silently
-  skipped).
+- [ ] **Proportional proof of changed journeys.** Under that criterion, verify the
+  required e2e or justified structural assertion. Required e2e drives the
+  real artifact across real boundaries — never mocking the layer under test —
+  covering happy path **and** failure/recovery inside `just check` (an expensive
+  test retained outside the default run is a documented exception CI still runs).
 - [ ] **Contracts held at every seam.** Every contract the repo has — a call or
   transport surface, a persistence or storage schema and its data model, and the
   interface between its internal packages, modules, or libraries alike, plus any
