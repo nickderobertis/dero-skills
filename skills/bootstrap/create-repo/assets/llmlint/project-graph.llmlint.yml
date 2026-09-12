@@ -1,7 +1,7 @@
 # Project-graph ongoing rules (plugin). Pairs with project-graph.md — the checks
 # that keep the project graph doing its job as the repo keeps changing, not just
 # at creation. Composed into every repo, since the Nx project graph is mandatory.
-version: 1.2.0
+version: 1.3.0
 
 rules:
   - name: instruction_layer_localized
@@ -43,3 +43,61 @@ rules:
     files:
       include: ["nx.json", "**/project.json"]
     relevance: the target files declare a project that did not exist before
+
+  - name: code_lands_in_the_domain_that_owns_it
+    # Pairs with project-graph.md "Boundaries follow domains, not kinds of code".
+    # The contract test below is spelled identically to the reference's.
+    # llmlint: ignore[description_and_relevance_are_concise, description_omits_already_excluded_situations] the description is the reference's contract test verbatim plus both false cases (a declaration in a kind-of-code package, and one domain's entry in a central enumeration), each of which a judge has admitted as a contract before; and its subject — which declaration landed — is what the true case predicates on, so it is named here even though relevance also admits by it.
+    description: |
+      true when a new or changed type, interface (a trait, protocol, abstract base,
+      or port), store or repository interface, or helper lands in the project of
+      the domain that owns it — the project whose other code changes when that
+      concern changes — or in a project that is a genuine cross-domain contract: a
+      shared identity, an envelope or representation rule, a wire or storage
+      format, or an interface every domain must agree on. A shared package is a
+      contract only if adding or changing one domain's concept does not require
+      editing it. A contract holds what every domain must agree on and never
+      enumerates the domains: a closed sum type, registry, or table in a central
+      package with an entry per domain's things is a bag with a type signature,
+      however it is persisted or served. false when it lands in a project grouped
+      by the kind of code it is rather than by the concern it serves — a central
+      `types`, `models`, `store`, `data-access`, `utils`, `common` or `shared`
+      package several domains depend on — so that a change to one domain's concern
+      re-touches a package every other domain builds against; and false when it
+      adds one domain's entry — a variant, a registration, a row, a case — to a
+      closed sum type, registry, or table in a central package, or declares one
+      domain's structs in the central package because a central enumeration
+      reaches them. The project's name is a signal, not the test: a `types`
+      project holding only the identities, the envelope and the formats every
+      domain agrees on is a contract, and a `contract` project holding one
+      domain's structs beside another's is a bag.
+    files:
+      include:
+        - "**/*.py"
+        - "**/*.ts"
+        - "**/*.tsx"
+        - "**/*.js"
+        - "**/*.jsx"
+        - "**/*.rs"
+        - "**/*.go"
+        - "**/*.rb"
+        - "**/*.java"
+        - "**/*.kt"
+        - "**/*.cs"
+        - "**/*.swift"
+        - "**/*.c"
+        - "**/*.h"
+        - "**/*.cc"
+        - "**/*.cpp"
+        - "**/*.hpp"
+        - "**/*.php"
+        - "**/*.sh"
+        - "**/*.tf"
+    # llmlint: ignore[description_and_relevance_are_concise] the inverse names the one change this rule must not admit — a function-body edit inside one project — so a judge does not stretch "moves a declaration" over it.
+    relevance: |
+      the change adds, moves, or re-homes a type, interface, store or repository
+      interface, or helper declaration; adds a variant, registration, row, or
+      case to a sum type, registry, or table shared across projects; or gives one
+      project a dependency on another. A change confined to the body of an
+      existing function inside one project is not judged
+    require_line_attribution: true

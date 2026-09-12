@@ -44,6 +44,66 @@ So a repo with exactly one deliverable still has a project graph. Split it:
   serialization, or an internal boundary it names is treated no differently from
   one it does not.
 
+## Boundaries follow domains, not kinds of code
+
+Tier and cost say *why* one product becomes several units. When it is split
+further for modularity, the boundaries between those units follow **domains,
+never kinds of code**: prefer domain-driven boundaries that would actually
+isolate related changes; minimize central packages that result in many
+dependent changes; avoid unnecessary grouping that leads to dependencies of
+unrelated code — types and data-access packages are domain-specific, not
+centralized.
+
+The test of a boundary is that a change to one concern stays inside one unit.
+So a domain's types, its store interface, and its logic belong together, in a
+unit named for the concern it serves (`provider-a`, `supervision`), not spread
+across a `types`, a `store-api`, and a `core`.
+
+The shape to refuse is a package named for a *kind* of code — `types`,
+`models`, `store-api`, `data-access`, `utils`, `common` — that several domains
+depend on, unless it is a genuine cross-domain contract. The `type:contract`
+criterion decides that: a shared identity, a wire or storage format, or an
+interface every domain must agree on is a contract; a bag of every domain's
+structs is not, and a domain's own records living in a central package do not
+become a contract by being served or persisted, since the contract is the
+format, not the package that happens to declare it. The **contract test** is
+how the criterion is applied — ask of a candidate central package whether one
+domain adding a concept would have to edit it:
+
+> A shared package is a contract only if adding or changing one domain's
+> concept does not require editing it. A contract holds what every domain must
+> agree on and never enumerates the domains: a closed sum type, registry, or
+> table in a central package with an entry per domain's things is a bag with a
+> type signature, however it is persisted or served.
+
+Worked example: a supervisor with two printer providers. The layered shape:
+
+| Project | Holds | `dependsOn` / graph edges |
+| --- | --- | --- |
+| `types` | every domain's structs: both providers' wire types, the supervision records, and one event enum with a variant per domain's events | — |
+| `store-api` | the store interface over all of them | `store-api -> types` |
+| `core` | the supervision logic | `core -> store-api`, `core -> types` |
+| `provider-a`, `provider-b` | each provider's port implementation | `provider-a -> core`, `provider-b -> core` |
+| `app` | the composition root | `app -> provider-a`, `app -> provider-b` |
+
+A change to provider A's wire format, or to the events it writes, edits `types`
+and rebuilds everything: `nx affected` from that one change reaches
+`store-api`, `core`, both providers, and `app`. The domain shape:
+
+| Project | Holds | `dependsOn` / graph edges |
+| --- | --- | --- |
+| `contract` | only what every domain agrees on: identities, timestamps, and the event **envelope** every domain writes under (a kind name and an opaque payload) — never an enum with a variant per domain's events | — |
+| `provider-a` | provider A's wire types, its event kinds, and its port implementation | `provider-a -> contract` |
+| `provider-b` | the same for provider B | `provider-b -> contract` |
+| `core` | the supervision domain's records, its event kinds, and the store interfaces *it* needs | `core -> contract` |
+| `app` | the composition root | `app -> core`, `app -> provider-a`, `app -> provider-b` |
+
+(The port a provider implements is a contract project on the plug-in example's
+terms, elided here.) The same change edits `provider-a` and rebuilds it and
+`app`, and adding provider C edits nothing in `contract`. That is how the graph
+benefits: `nx affected` from a change in one domain reaches that domain, the
+contracts it changed, and the roots — not every unit.
+
 ## Worked example: the plug-in interface
 
 A repo whose one deliverable is a tool with a plug-in system. The interface's
@@ -78,10 +138,12 @@ keeps the edge from being drawn back.
 the table and column names, the document or key shape, the on-disk or wire
 format — or one that owns the **interface between internal packages, modules, or
 libraries**, earns the same project and the same tag on the same terms: it is an
-agreement its consumers hold to and it changes on its own schedule, so give it a
-project, tag it `type:contract`, and let the module-boundary rule keep it from
-importing the consumers that depend on it. Judged by that criterion, a seam none
-of these examples names qualifies too. Land such a schema and its data model
+agreement its consumers hold to, and it passes the contract test above — a schema
+or seam that one domain adding a concept has to edit is not on its own schedule,
+and belongs to that domain. When both hold, give it a project, tag it
+`type:contract`, and let the module-boundary rule keep it from importing the
+consumers that depend on it. Judged by that criterion, a seam none of these
+examples names qualifies too. Land such a schema and its data model
 before what consumes them, and change either only the way the same section
 requires of a generated contract: non-breaking, with the drift check below
 keeping every restatement of a column, key, or field name aligned.
@@ -125,10 +187,12 @@ its dependencies resolve against the same lock.
   `run-many`/`affected` fan out *by name*, so this consistency is what lets one
   root command cover the whole repo.
 - **Enforce project boundaries.** Tag projects and enforce allowed dependencies
-  (e.g. Nx's module-boundary lint rule) so the graph stays acyclic and the
-  layering (app -> feature -> shared) holds. Boundaries are what keep a repo from
-  collapsing into a big ball of mud — and, per the worked example, what keep an
-  expensive suite out of reach of changes that have nothing to do with it.
+  (e.g. Nx's module-boundary lint rule) so the graph stays acyclic and
+  dependencies run one way: domains depend on contracts, never on each other's
+  internals, and the roots depend on the domains. Boundaries are what keep a
+  repo from collapsing into a big ball of mud — and, per the worked example,
+  what keep an expensive suite out of reach of changes that have nothing to do
+  with it.
 - **Localize the instruction layer.** Add a nested `AGENTS.md` in each project
   for subtree-specific rules; the root `AGENTS.md` keeps only repo-wide
   constraints. Use `CODEOWNERS` so changes route to the right reviewers.
@@ -192,6 +256,11 @@ targets, it is never a runtime dependency of the scripts themselves.
   `type:contract` with the module-boundary rule keeping it from depending on its
   consumers; and every fact restated across it has one authoritative source, a
   generated copy, or a gate check that fails on drift.
+- [ ] **Boundaries follow domains.** Each project holds one concern's types,
+  interfaces, and logic together; the only projects several others depend on are
+  genuine cross-domain contracts, none of which a domain adding a concept has to
+  edit; and no project grouped by kind of code (`types`, `models`, `store-api`,
+  `data-access`, `utils`, `common`) has several domains depending on it.
 - [ ] **Each deliverable is its own project.** Every app/package has a project
   definition with locally-declared targets (`build`, `lint`, `test`,
   `typecheck`, ...) calling its own language-native tool.
