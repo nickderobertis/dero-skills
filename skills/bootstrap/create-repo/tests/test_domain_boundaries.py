@@ -119,6 +119,7 @@ def reference() -> str:
 @pytest.fixture(scope="module")
 def contract_test(reference: str) -> str:
     """The two sentences, read off the reference's blockquote: the one source."""
+    assert f"\n{SECTION_HEADING}\n" in reference, "reference lost its section"
     section = reference.split(f"\n{SECTION_HEADING}\n", 1)[1].split("\n## ", 1)[0]
     quoted = [line[2:] for line in section.splitlines() if line.startswith("> ")]
     text = _squash(" ".join(quoted))

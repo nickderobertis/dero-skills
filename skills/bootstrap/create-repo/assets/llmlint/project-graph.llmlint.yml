@@ -45,12 +45,9 @@ rules:
     relevance: the target files declare a project that did not exist before
 
   - name: code_lands_in_the_domain_that_owns_it
-    # Pairs with project-graph.md "Boundaries follow domains, not kinds of code":
-    # the units of one product are domains, and a shared package is a contract
-    # only if it passes the contract test stated there (the two sentences below
-    # are that test, spelled identically to the reference's — the create-repo
-    # fast tier compares them). The globs are `new_code_lands_in_a_project`'s in
-    # base.llmlint.yml, so the rule judges every source language alike.
+    # Pairs with project-graph.md "Boundaries follow domains, not kinds of code".
+    # The contract test below is spelled identically to the reference's.
+    # llmlint: ignore[description_and_relevance_are_concise, description_omits_already_excluded_situations] the description is the reference's contract test verbatim plus both false cases (a declaration in a kind-of-code package, and one domain's entry in a central enumeration), each of which a judge has admitted as a contract before; and its subject — which declaration landed — is what the true case predicates on, so it is named here even though relevance also admits by it.
     description: |
       true when a new or changed type, interface (a trait, protocol, abstract base,
       or port), store or repository interface, or helper lands in the project of
@@ -96,9 +93,11 @@ rules:
         - "**/*.php"
         - "**/*.sh"
         - "**/*.tf"
+    # llmlint: ignore[description_and_relevance_are_concise] the inverse names the one change this rule must not admit — a function-body edit inside one project — so a judge does not stretch "moves a declaration" over it.
     relevance: |
       the change adds, moves, or re-homes a type, interface, store or repository
       interface, or helper declaration; adds a variant, registration, row, or
       case to a sum type, registry, or table shared across projects; or gives one
       project a dependency on another. A change confined to the body of an
       existing function inside one project is not judged
+    require_line_attribution: true
