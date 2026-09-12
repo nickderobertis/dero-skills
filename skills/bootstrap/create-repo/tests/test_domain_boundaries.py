@@ -149,7 +149,7 @@ def test_the_ongoing_rule_judges_every_language_the_base_rule_does():
     assert ours == base, {"missing": base - ours, "extra": ours - base}
 
 
-def test_the_buildout_rule_is_declared():
+def test_the_buildout_rule_states_a_true_and_a_false_case():
     rule = _rule(BUILDOUT, BUILDOUT_RULE)
     description = _description(rule)
     assert "true when" in description
