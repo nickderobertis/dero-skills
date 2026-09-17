@@ -50,8 +50,9 @@ Checks:
     (maturin under any bindings), `[tool.uv] package = false`, or the
     `Private :: Do Not Upload` classifier. Presence-only: it reads the tree and
     the manifest and never builds a wheel — the wheel-level proof is the repo's
-    own gate (references/languages/python.md). Silent where no manifest qualifies,
-    so a repo with no Python package is untouched.
+    own gate (references/languages/python.md). A manifest that is not TOML is
+    reported, never inferred exempt. Silent where no manifest qualifies, so a
+    repo with no Python package is untouched.
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
   * A GitHub pull-request template exists (`.github/pull_request_template.md`,
@@ -236,15 +237,10 @@ COVERAGE_CONFIG_NAMES = (
     "Cargo.toml",
 )
 
-# Build backends the typed-packaging invariant (references/languages/python.md)
-# holds: a manifest naming one publishes an installable distribution of
-# importable Python modules, so it owes a `py.typed` marker and the
-# `Typing :: Typed` classifier. The set is the invariant's, not a claim that
-# these backends build only pure Python — setuptools can drive a compiled
-# extension too, and such a wheel still ships importable packages that owe the
-# marker. A backend outside the set — maturin under any bindings, a scikit-build
-# extension — is exempt: its product is the extension, whose typing story is its
-# own.
+# The build backends the typed-packaging invariant (references/languages/python.md)
+# holds, verbatim from it; the test suite fails when the two drift. The name says
+# "held", not "pure Python": setuptools can drive a compiled extension too, and
+# such a wheel still ships importable packages that owe the marker.
 TYPED_PACKAGING_BACKENDS = frozenset(
     {
         "hatchling.build",
@@ -838,16 +834,17 @@ def _table(data: object, *keys: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def parse_pyproject(path: Path) -> PyprojectManifest | None:
-    """Read the typed-packaging fields of ``path``; ``None`` where it does not parse.
+def parse_pyproject(path: Path) -> PyprojectManifest:
+    """Read the typed-packaging fields of ``path``.
 
-    A manifest that does not parse names no backend, so it cannot qualify;
-    ``uv`` refuses it long before this audit would.
+    Raises ``ValueError`` where the file cannot be read or is not TOML: a manifest
+    that does not parse is a defect the audit reports, never an exemption it
+    infers — silently skipping one would let a broken manifest bypass the check.
     """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-        return None
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise ValueError(f"does not parse as TOML ({exc})") from exc
     backend = _table(data, "build-system").get("build-backend")
     classifiers = _table(data, "project").get("classifiers")
     uv_package = _table(data, "tool", "uv").get("package")
@@ -881,11 +878,21 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     qualifying = 0
     for path in iter_pyproject_manifests(repo):
-        manifest = parse_pyproject(path)
-        if manifest is None or not manifest.owes_typed_packaging:
+        rel = path.relative_to(repo).as_posix()
+        try:
+            manifest = parse_pyproject(path)
+        except ValueError as exc:
+            findings.append(
+                Finding(
+                    "ERROR",
+                    f"{rel} cannot be audited for typed packaging: {exc}",
+                    "repair the manifest so it parses as TOML (uv refuses it as it stands)",
+                )
+            )
+            continue
+        if not manifest.owes_typed_packaging:
             continue
         qualifying += 1
-        rel = path.relative_to(repo).as_posix()
         missing: list[str] = []
         fixes: list[str] = []
         if not has_typed_marker(path.parent):

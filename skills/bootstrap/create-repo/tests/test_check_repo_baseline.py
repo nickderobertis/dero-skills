@@ -953,10 +953,10 @@ def test_one_marker_satisfies_a_manifest_shipping_several_packages(tmp_path):
     assert any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
 
 
-def test_manifest_that_does_not_parse_is_skipped_without_failing_the_audit(tmp_path):
-    # A pyproject.toml uv itself would refuse names no backend the audit can
-    # read, so it neither qualifies nor crashes the checker: the rest of the
-    # audit still runs and reports the other manifests on their own terms.
+def test_manifest_that_does_not_parse_is_reported_not_exempted(tmp_path):
+    # A pyproject.toml that is not TOML cannot be classified as firing or exempt,
+    # and inferring "exempt" would let a broken manifest bypass the check. It is
+    # its own finding, and the other manifests are still audited on their terms.
     repo = make_repo(tmp_path)
     broken = repo / "packages" / "broken"
     broken.mkdir(parents=True)
@@ -964,8 +964,15 @@ def test_manifest_that_does_not_parse_is_skipped_without_failing_the_audit(tmp_p
         '[build-system\nbuild-backend = "hatchling.build"\n', encoding="utf-8"
     )
     write_package(repo, marker=False, project_dir="packages/a", package_dir="a")
-    assert crb.parse_pyproject(broken / "pyproject.toml") is None
-    errors = typed_packaging_errors(crb.audit(repo))
+    findings = crb.audit(repo)
+    broken_errors = [
+        f for f in findings if "packages/broken/pyproject.toml" in f.message
+    ]
+    assert len(broken_errors) == 1
+    assert broken_errors[0].level == "ERROR"
+    assert "does not parse as TOML" in broken_errors[0].message
+    assert "repair the manifest" in broken_errors[0].fix
+    errors = typed_packaging_errors(findings)
     assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
 
 
