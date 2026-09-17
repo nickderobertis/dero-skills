@@ -815,10 +815,11 @@ class PyprojectManifest(NamedTuple):
     uv_package: bool | None
 
     @property
-    def publishes_typed_distribution(self) -> bool:
-        """Whether the typed-packaging invariant holds this manifest.
+    def owes_typed_packaging(self) -> bool:
+        """Whether the typed-packaging invariant holds this manifest to its terms.
 
-        The four exemptions are read here: no ``[build-system]`` (nothing is
+        True names a manifest the check audits, not one that already satisfies
+        it. The four exemptions are read here: no ``[build-system]`` (nothing is
         built), a backend outside ``TYPED_PACKAGING_BACKENDS``, ``[tool.uv]
         package = false`` (a workspace root or a tests-only member), and
         ``Private :: Do Not Upload``.
@@ -881,7 +882,7 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
     qualifying = 0
     for path in iter_pyproject_manifests(repo):
         manifest = parse_pyproject(path)
-        if manifest is None or not manifest.publishes_typed_distribution:
+        if manifest is None or not manifest.owes_typed_packaging:
             continue
         qualifying += 1
         rel = path.relative_to(repo).as_posix()
