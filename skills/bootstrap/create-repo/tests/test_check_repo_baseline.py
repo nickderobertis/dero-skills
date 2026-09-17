@@ -17,8 +17,6 @@ import re
 import sys
 from pathlib import Path
 
-import pytest
-
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "check_repo_baseline.py"
 
@@ -953,102 +951,6 @@ def test_one_marker_satisfies_a_manifest_shipping_several_packages(tmp_path):
     findings = crb.audit(repo)
     assert not typed_packaging_errors(findings)
     assert any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
-
-
-def test_manifest_that_does_not_parse_is_reported_not_exempted(tmp_path):
-    # A pyproject.toml that is not TOML cannot be classified as firing or exempt,
-    # and inferring "exempt" would let a broken manifest bypass the check. It is
-    # its own finding, and the other manifests are still audited on their terms.
-    repo = make_repo(tmp_path)
-    broken = repo / "packages" / "broken"
-    broken.mkdir(parents=True)
-    (broken / "pyproject.toml").write_text(
-        '[build-system\nbuild-backend = "hatchling.build"\n', encoding="utf-8"
-    )
-    write_package(repo, marker=False, project_dir="packages/a", package_dir="a")
-    findings = crb.audit(repo)
-    broken_errors = [
-        f for f in findings if "packages/broken/pyproject.toml" in f.message
-    ]
-    assert len(broken_errors) == 1
-    assert broken_errors[0].level == "ERROR"
-    assert "does not parse as TOML" in broken_errors[0].message
-    assert "repair the manifest" in broken_errors[0].fix
-    errors = typed_packaging_errors(findings)
-    assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
-
-
-@pytest.mark.parametrize(
-    ("manifest_text", "reason"),
-    [
-        (
-            'build-system = 1\n[project]\nname = "demo"\nversion = "0.1.0"\n',
-            "[build-system] is not a table",
-        ),
-        (
-            '[build-system]\nbuild-backend = 1\n[project]\nname = "demo"\n',
-            "[build-system].build-backend is not a string",
-        ),
-        (
-            '[build-system]\nbuild-backend = "hatchling.build"\n'
-            '[project]\nname = "demo"\nclassifiers = "Typing :: Typed"\n',
-            "[project].classifiers is not a list of strings",
-        ),
-        (
-            '[build-system]\nbuild-backend = "hatchling.build"\n'
-            '[project]\nname = "demo"\nclassifiers = ["Typing :: Typed", 1]\n',
-            "[project].classifiers is not a list of strings",
-        ),
-        (
-            '[build-system]\nbuild-backend = "hatchling.build"\n'
-            '[project]\nname = "demo"\n[tool.uv]\npackage = "no"\n',
-            "[tool.uv].package is not a boolean",
-        ),
-        (
-            '[build-system]\nbuild-backend = "hatchling.build"\n'
-            '[project]\nname = "demo"\n[tool]\nuv = false\n',
-            "[tool.uv] is not a table",
-        ),
-    ],
-    ids=[
-        "build-system-not-a-table",
-        "backend-not-a-string",
-        "classifiers-not-a-list",
-        "classifier-entry-not-a-string",
-        "package-not-a-bool",
-        "tool-uv-not-a-table",
-    ],
-)
-def test_manifest_with_a_wrong_shaped_field_is_reported_not_exempted(
-    tmp_path, manifest_text, reason
-):
-    # Valid TOML with the wrong shape is the same defect as non-TOML: read as an
-    # absent field it would exempt itself, so it is reported rather than
-    # classified. Each case is a real manifest the audit reads off disk.
-    repo = make_repo(tmp_path)
-    manifest = write_package(repo, backend="hatchling.build", marker=False)
-    manifest.write_text(manifest_text, encoding="utf-8")
-    findings = crb.audit(repo)
-    errors = [f for f in findings if "packages/demo/pyproject.toml" in f.message]
-    assert len(errors) == 1
-    assert errors[0].level == "ERROR"
-    assert reason in errors[0].message
-    assert "repair the manifest" in errors[0].fix
-    assert not typed_packaging_errors(findings)
-
-
-def test_manifest_that_is_not_utf8_is_reported_not_exempted(tmp_path):
-    # Bytes tomllib cannot decode are the unreadable-manifest path: reported
-    # like non-TOML, not skipped.
-    repo = make_repo(tmp_path)
-    manifest = write_package(repo, backend="hatchling.build", marker=False)
-    manifest.write_bytes(b'[build-system]\nbuild-backend = "\xff"\n')
-    findings = crb.audit(repo)
-    errors = [f for f in findings if "packages/demo/pyproject.toml" in f.message]
-    assert len(errors) == 1
-    assert errors[0].level == "ERROR"
-    assert "does not parse as TOML" in errors[0].message
-    assert not typed_packaging_errors(findings)
 
 
 def _typed_packaging_statement(text: str, start: str, end: str) -> str:

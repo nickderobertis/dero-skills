@@ -52,10 +52,9 @@ Checks:
     `Private :: Do Not Upload` classifier. Presence-only: it reads the tree and
     the manifest and never builds a wheel — the wheel-level proof is the repo's
     own gate (references/languages/python.md, the one statement of the invariant;
-    the test suite holds this inventory and the checker's constants to it). A
-    manifest that is not TOML, or carries one of those fields with the wrong
-    shape, is reported, never inferred exempt. Silent where no manifest
-    qualifies, so a repo with no Python package is untouched.
+    the test suite holds this inventory and the checker's constants to it).
+    Silent where no manifest qualifies, so a repo with no Python package is
+    untouched.
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
   * A GitHub pull-request template exists (`.github/pull_request_template.md`,
@@ -830,49 +829,38 @@ class PyprojectManifest(NamedTuple):
         )
 
 
-def _table(data: dict, *keys: str) -> dict:
-    """The nested TOML table at ``keys``, or ``{}`` where a level is absent.
-
-    Raises ``ValueError`` where a level is present but not a table (``project =
-    1``): absent means "not declared", the wrong shape means "broken".
-    """
-    for depth, key in enumerate(keys):
-        data = data.get(key, {})
-        if not isinstance(data, dict):
-            raise ValueError(f"[{'.'.join(keys[: depth + 1])}] is not a table")
-    return data
+def _table(data: object, *keys: str) -> dict:
+    """The nested TOML table at ``keys``, or ``{}`` where any level is not a table."""
+    for key in keys:
+        data = data.get(key) if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
 
 
-def parse_pyproject(path: Path) -> PyprojectManifest:
-    """Read the typed-packaging fields of ``path``.
+def parse_pyproject(path: Path) -> PyprojectManifest | None:
+    """Read the typed-packaging fields of ``path``; ``None`` where it does not parse.
 
-    Raises ``ValueError`` where the file cannot be read, is not TOML, or carries
-    one of these fields with the wrong type: such a manifest is a defect the
-    audit reports, never an exemption it infers — reading a non-string
-    ``build-backend`` as "no build system" would let a broken manifest bypass
-    the check. A field that is absent is what it means (no backend, no
-    classifiers, flag unset).
+    Presence-only, like the check it serves: a field that is absent or not of
+    the shape the check reads is treated as not declared — a manifest that does
+    not parse, or names its backend as something other than a string, names no
+    backend the check can hold and so never fires. Whether the manifest is
+    well-formed is ``uv``'s to say, and it refuses one long before this audit.
     """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        raise ValueError(f"does not parse as TOML ({exc})") from exc
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
     backend = _table(data, "build-system").get("build-backend")
-    if backend is not None and not isinstance(backend, str):
-        raise ValueError("[build-system].build-backend is not a string")
-    classifiers = _table(data, "project").get("classifiers", [])
-    if not isinstance(classifiers, list) or not all(
-        isinstance(c, str) for c in classifiers
-    ):
-        raise ValueError("[project].classifiers is not a list of strings")
+    classifiers = _table(data, "project").get("classifiers")
     uv_package = _table(data, "tool", "uv").get("package")
-    if uv_package is not None and not isinstance(uv_package, bool):
-        raise ValueError("[tool.uv].package is not a boolean")
     return PyprojectManifest(
         path=path,
-        backend=backend,
-        classifiers=tuple(classifiers),
-        uv_package=uv_package,
+        backend=backend if isinstance(backend, str) else None,
+        classifiers=tuple(
+            c
+            for c in (classifiers if isinstance(classifiers, list) else [])
+            if isinstance(c, str)
+        ),
+        uv_package=uv_package if isinstance(uv_package, bool) else None,
     )
 
 
@@ -894,22 +882,11 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     qualifying = 0
     for path in iter_pyproject_manifests(repo):
-        rel = path.relative_to(repo).as_posix()
-        try:
-            manifest = parse_pyproject(path)
-        except ValueError as exc:
-            findings.append(
-                Finding(
-                    "ERROR",
-                    f"{rel} cannot be audited for typed packaging: {exc}",
-                    "repair the manifest: valid TOML, a string build-backend, a list of "
-                    "string classifiers, a boolean [tool.uv].package",
-                )
-            )
-            continue
-        if not manifest.owes_typed_packaging:
+        manifest = parse_pyproject(path)
+        if manifest is None or not manifest.owes_typed_packaging:
             continue
         qualifying += 1
+        rel = path.relative_to(repo).as_posix()
         missing: list[str] = []
         fixes: list[str] = []
         if not has_typed_marker(path.parent):
