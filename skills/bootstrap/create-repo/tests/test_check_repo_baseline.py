@@ -797,6 +797,7 @@ def test_coverage_satisfied_by_agents_md_note(tmp_path):
     assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
 
 
+# llmlint: ignore[comments_earn_their_place] this module groups its tests behind section banners (`# --- coverage ---`, `# --- composition ---`); without this one the typed-packaging tests read as part of the coverage section above, so it names a boundary rather than decorating one.
 # --- typed packaging (PEP 561) ---------------------------------------------
 
 
@@ -934,6 +935,62 @@ def test_each_qualifying_manifest_is_reported_on_its_own(tmp_path):
     write_package(repo, project_dir="packages/b", package_dir="b")
     errors = typed_packaging_errors(crb.audit(repo))
     assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
+
+
+def test_one_marker_satisfies_a_manifest_shipping_several_packages(tmp_path):
+    # The audit is presence-only by contract: one py.typed anywhere under the
+    # manifest's directory passes it, even where the wheel would ship a second
+    # package without one. Holding every shipped package to the marker is the
+    # wheel-level check in the repo's own gate, which reads the built artifact
+    # this audit never produces — so this pins the boundary rather than the gap.
+    repo = make_repo(tmp_path)
+    manifest = write_package(repo)
+    bare = manifest.parent / "demo_extras"
+    bare.mkdir()
+    (bare / "__init__.py").write_text("", encoding="utf-8")
+    findings = crb.audit(repo)
+    assert not typed_packaging_errors(findings)
+    assert any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
+
+
+def test_manifest_that_does_not_parse_is_skipped_without_failing_the_audit(tmp_path):
+    # A pyproject.toml uv itself would refuse names no backend the audit can
+    # read, so it neither qualifies nor crashes the checker: the rest of the
+    # audit still runs and reports the other manifests on their own terms.
+    repo = make_repo(tmp_path)
+    broken = repo / "packages" / "broken"
+    broken.mkdir(parents=True)
+    (broken / "pyproject.toml").write_text(
+        '[build-system\nbuild-backend = "hatchling.build"\n', encoding="utf-8"
+    )
+    write_package(repo, marker=False, project_dir="packages/a", package_dir="a")
+    assert crb.parse_pyproject(broken / "pyproject.toml") is None
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
+
+
+def test_backend_set_and_literals_match_the_reference_invariant():
+    # The invariant is stated once, in references/languages/python.md; the
+    # checker's constants derive from it. This is the drift gate between the two:
+    # a backend added to or dropped from either side fails here until both agree.
+    reference = (SKILL_DIR / "references" / "languages" / "python.md").read_text(
+        encoding="utf-8"
+    )
+    bullet = reference[reference.index("**Typed packaging.**") :]
+    bullet = " ".join(bullet[: bullet.index("\n- **")].split())
+    backend_list = re.search(r"build backend \(([^)]*)\)", bullet)
+    assert backend_list, bullet
+    documented_backends = set(re.findall(r"`([^`]+)`", backend_list.group(1)))
+    assert documented_backends == set(crb.TYPED_PACKAGING_BACKENDS), bullet
+    for literal in (
+        crb.TYPED_MARKER,
+        crb.TYPED_CLASSIFIER,
+        crb.PRIVATE_CLASSIFIER,
+        "`[tool.uv] package = false`",
+        "no `[build-system]`",
+        "maturin",
+    ):
+        assert literal in bullet, literal
 
 
 # --- composition -----------------------------------------------------------

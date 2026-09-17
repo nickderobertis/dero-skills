@@ -236,13 +236,16 @@ COVERAGE_CONFIG_NAMES = (
     "Cargo.toml",
 )
 
-# Build backends that package pure Python: a manifest naming one publishes an
-# installable distribution of importable modules, which the typed-packaging
-# invariant (references/languages/python.md) holds to a `py.typed` marker and the
-# `Typing :: Typed` classifier. A backend outside this set — maturin under any
-# bindings, a setuptools-rust or scikit-build extension — is exempt: it ships a
-# compiled extension whose typing story is its own.
-PURE_PYTHON_BUILD_BACKENDS = frozenset(
+# Build backends the typed-packaging invariant (references/languages/python.md)
+# holds: a manifest naming one publishes an installable distribution of
+# importable Python modules, so it owes a `py.typed` marker and the
+# `Typing :: Typed` classifier. The set is the invariant's, not a claim that
+# these backends build only pure Python — setuptools can drive a compiled
+# extension too, and such a wheel still ships importable packages that owe the
+# marker. A backend outside the set — maturin under any bindings, a scikit-build
+# extension — is exempt: its product is the extension, whose typing story is its
+# own.
+TYPED_PACKAGING_BACKENDS = frozenset(
     {
         "hatchling.build",
         "uv_build",
@@ -797,31 +800,66 @@ def has_typed_marker(project_dir: Path) -> bool:
     return False
 
 
-def _classifiers(data: dict) -> list[str]:
-    project = data.get("project")
-    classifiers = project.get("classifiers") if isinstance(project, dict) else None
-    if not isinstance(classifiers, list):
-        return []
-    return [c for c in classifiers if isinstance(c, str)]
+class PyprojectManifest(NamedTuple):
+    """The fields of a ``pyproject.toml`` the typed-packaging check reads.
 
-
-def _manifest_publishes_pure_python(data: dict) -> bool:
-    """Whether a parsed manifest is one the typed-packaging invariant holds.
-
-    The four exemptions are read here: no ``[build-system]`` (nothing is built),
-    a backend outside the pure-Python set, ``[tool.uv] package = false`` (a
-    workspace root or a tests-only member), and ``Private :: Do Not Upload``.
+    ``backend`` is ``[build-system].build-backend`` (``None`` when the manifest
+    has no ``[build-system]``), ``classifiers`` the string entries of
+    ``[project].classifiers``, and ``uv_package`` the ``[tool.uv] package``
+    flag (``None`` when unset).
     """
-    build_system = data.get("build-system")
-    if not isinstance(build_system, dict):
-        return False
-    if build_system.get("build-backend") not in PURE_PYTHON_BUILD_BACKENDS:
-        return False
-    tool = data.get("tool")
-    uv = tool.get("uv") if isinstance(tool, dict) else None
-    if isinstance(uv, dict) and uv.get("package") is False:
-        return False
-    return PRIVATE_CLASSIFIER not in _classifiers(data)
+
+    path: Path
+    backend: str | None
+    classifiers: tuple[str, ...]
+    uv_package: bool | None
+
+    @property
+    def publishes_typed_distribution(self) -> bool:
+        """Whether the typed-packaging invariant holds this manifest.
+
+        The four exemptions are read here: no ``[build-system]`` (nothing is
+        built), a backend outside ``TYPED_PACKAGING_BACKENDS``, ``[tool.uv]
+        package = false`` (a workspace root or a tests-only member), and
+        ``Private :: Do Not Upload``.
+        """
+        return (
+            self.backend in TYPED_PACKAGING_BACKENDS
+            and self.uv_package is not False
+            and PRIVATE_CLASSIFIER not in self.classifiers
+        )
+
+
+def _table(data: object, *keys: str) -> dict:
+    """The nested TOML table at ``keys``, or ``{}`` where any level is not a table."""
+    for key in keys:
+        data = data.get(key) if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def parse_pyproject(path: Path) -> PyprojectManifest | None:
+    """Read the typed-packaging fields of ``path``; ``None`` where it does not parse.
+
+    A manifest that does not parse names no backend, so it cannot qualify;
+    ``uv`` refuses it long before this audit would.
+    """
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    backend = _table(data, "build-system").get("build-backend")
+    classifiers = _table(data, "project").get("classifiers")
+    uv_package = _table(data, "tool", "uv").get("package")
+    return PyprojectManifest(
+        path=path,
+        backend=backend if isinstance(backend, str) else None,
+        classifiers=tuple(
+            c
+            for c in (classifiers if isinstance(classifiers, list) else [])
+            if isinstance(c, str)
+        ),
+        uv_package=uv_package if isinstance(uv_package, bool) else None,
+    )
 
 
 def check_typed_packaging(repo: Path) -> list[Finding]:
@@ -830,43 +868,39 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
     A fully annotated package that omits ``py.typed`` is untyped to every
     consumer: their type checker degrades each imported name to ``Any`` and the
     import earns a ``type: ignore[import-untyped]``. So a manifest naming a
-    pure-Python build backend must carry the marker beside an ``__init__.py``
-    under its directory and declare ``Typing :: Typed``. Presence-only, like the
-    rest of the audit: it reads the tree and the manifest and never builds a
-    wheel. The wheel-level proof — the built artifact carries ``<package>/py.typed``
-    and its METADATA the classifier — is the repo's own gate, per
-    ``references/languages/python.md``. Silent where no manifest qualifies.
+    backend in ``TYPED_PACKAGING_BACKENDS`` must carry the marker beside an
+    ``__init__.py`` under its directory and declare ``Typing :: Typed``.
+    Presence-only, like the rest of the audit: it reads the tree and the manifest
+    and never builds a wheel, and one marker anywhere under the manifest's
+    directory satisfies it. The per-package proof — the built artifact carries
+    ``<package>/py.typed`` for every package it ships and its METADATA the
+    classifier — is the repo's own gate, per ``references/languages/python.md``.
+    Silent where no manifest qualifies.
     """
     findings: list[Finding] = []
     qualifying = 0
-    for manifest in iter_pyproject_manifests(repo):
-        try:
-            data = tomllib.loads(manifest.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
-            # A manifest that does not parse names no backend, so it cannot
-            # qualify; `uv` refuses it long before this audit would.
-            continue
-        if not _manifest_publishes_pure_python(data):
+    for path in iter_pyproject_manifests(repo):
+        manifest = parse_pyproject(path)
+        if manifest is None or not manifest.publishes_typed_distribution:
             continue
         qualifying += 1
-        rel = manifest.relative_to(repo).as_posix()
+        rel = path.relative_to(repo).as_posix()
         missing: list[str] = []
         fixes: list[str] = []
-        if not has_typed_marker(manifest.parent):
+        if not has_typed_marker(path.parent):
             missing.append(f"a `{TYPED_MARKER}` marker")
             fixes.append(
                 f"add an empty `{TYPED_MARKER}` beside the package's __init__.py "
                 f"(so the wheel carries <package>/{TYPED_MARKER})"
             )
-        if TYPED_CLASSIFIER not in _classifiers(data):
+        if TYPED_CLASSIFIER not in manifest.classifiers:
             missing.append(f"the `{TYPED_CLASSIFIER}` classifier")
             fixes.append(f'add "{TYPED_CLASSIFIER}" to [project].classifiers')
         if missing:
-            backend = data["build-system"]["build-backend"]
             findings.append(
                 Finding(
                     "ERROR",
-                    f"{rel} ({backend}) publishes an untyped distribution: "
+                    f"{rel} ({manifest.backend}) publishes an untyped distribution: "
                     f"missing {' and '.join(missing)}",
                     "; ".join(fixes),
                 )
@@ -875,7 +909,7 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
         findings.append(
             Finding(
                 "OK",
-                f"typed packaging: {qualifying} pure-Python manifest(s) ship "
+                f"typed packaging: {qualifying} publishing manifest(s) ship "
                 f"{TYPED_MARKER} and {TYPED_CLASSIFIER}",
             )
         )

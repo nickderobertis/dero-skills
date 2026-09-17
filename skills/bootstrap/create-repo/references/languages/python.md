@@ -49,8 +49,7 @@ Language-level conventions for any Python repo. Combine with a product shape
   classifier. The baseline audit (`scripts/check_repo_baseline.py`) checks the
   marker as tree presence — a `py.typed` beside an `__init__.py` under the
   manifest's directory — and the classifier as manifest content, and never
-  builds anything; the wheel-level check is the repo's own. Packaging and
-  release mechanics are in `shapes/library.md` ("Packaging and release").
+  builds anything; the wheel-level check is the repo's own.
 - **Command mapping.** The root recipes delegate to the orchestrator, which runs
   the per-project targets named below.
   - `just bootstrap` -> `uv sync` at the workspace root (one resolve covering
