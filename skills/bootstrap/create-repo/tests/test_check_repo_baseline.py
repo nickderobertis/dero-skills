@@ -976,10 +976,34 @@ def test_manifest_that_does_not_parse_is_reported_not_exempted(tmp_path):
     assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
 
 
+def test_manifest_with_a_non_string_backend_is_reported_not_exempted(tmp_path):
+    # Valid TOML with the wrong shape is the same defect: read as "no backend"
+    # it would exempt itself, so it is reported rather than classified.
+    repo = make_repo(tmp_path)
+    manifest = write_package(repo, backend="hatchling.build", marker=False)
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'build-backend = "hatchling.build"', "build-backend = 1"
+        ),
+        encoding="utf-8",
+    )
+    findings = crb.audit(repo)
+    errors = [f for f in findings if "packages/demo/pyproject.toml" in f.message]
+    assert len(errors) == 1
+    assert errors[0].level == "ERROR"
+    assert "build-backend is not a string" in errors[0].message
+    assert "a string build-backend" in errors[0].fix
+    assert not typed_packaging_errors(findings)
+
+
 def test_backend_set_and_literals_match_the_reference_invariant():
     # The invariant is stated once, in references/languages/python.md; the
     # checker's constants derive from it. This is the drift gate between the two:
     # a backend added to or dropped from either side fails here until both agree.
+    # A structural assertion, deliberately: which backends the set names is
+    # settled by reading the file, and the behavior the set drives — a manifest
+    # naming one of them firing — is proven by the audit tests above over real
+    # manifests; running the script once per backend would prove that no better.
     reference = (SKILL_DIR / "references" / "languages" / "python.md").read_text(
         encoding="utf-8"
     )

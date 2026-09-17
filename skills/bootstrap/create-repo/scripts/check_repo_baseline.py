@@ -837,26 +837,33 @@ def _table(data: object, *keys: str) -> dict:
 def parse_pyproject(path: Path) -> PyprojectManifest:
     """Read the typed-packaging fields of ``path``.
 
-    Raises ``ValueError`` where the file cannot be read or is not TOML: a manifest
-    that does not parse is a defect the audit reports, never an exemption it
-    infers — silently skipping one would let a broken manifest bypass the check.
+    Raises ``ValueError`` where the file cannot be read, is not TOML, or carries
+    one of these fields with the wrong type: such a manifest is a defect the
+    audit reports, never an exemption it infers — reading a non-string
+    ``build-backend`` as "no build system" would let a broken manifest bypass
+    the check. A field that is absent is what it means (no backend, no
+    classifiers, flag unset).
     """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"does not parse as TOML ({exc})") from exc
     backend = _table(data, "build-system").get("build-backend")
-    classifiers = _table(data, "project").get("classifiers")
+    if backend is not None and not isinstance(backend, str):
+        raise ValueError("[build-system].build-backend is not a string")
+    classifiers = _table(data, "project").get("classifiers", [])
+    if not isinstance(classifiers, list) or not all(
+        isinstance(c, str) for c in classifiers
+    ):
+        raise ValueError("[project].classifiers is not a list of strings")
     uv_package = _table(data, "tool", "uv").get("package")
+    if uv_package is not None and not isinstance(uv_package, bool):
+        raise ValueError("[tool.uv].package is not a boolean")
     return PyprojectManifest(
         path=path,
-        backend=backend if isinstance(backend, str) else None,
-        classifiers=tuple(
-            c
-            for c in (classifiers if isinstance(classifiers, list) else [])
-            if isinstance(c, str)
-        ),
-        uv_package=uv_package if isinstance(uv_package, bool) else None,
+        backend=backend,
+        classifiers=tuple(classifiers),
+        uv_package=uv_package,
     )
 
 
@@ -886,7 +893,8 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
                 Finding(
                     "ERROR",
                     f"{rel} cannot be audited for typed packaging: {exc}",
-                    "repair the manifest so it parses as TOML (uv refuses it as it stands)",
+                    "repair the manifest: valid TOML, a string build-backend, a list of "
+                    "string classifiers, a boolean [tool.uv].package",
                 )
             )
             continue
