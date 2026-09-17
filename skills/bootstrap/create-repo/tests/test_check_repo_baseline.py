@@ -17,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "check_repo_baseline.py"
 
@@ -976,30 +978,93 @@ def test_manifest_that_does_not_parse_is_reported_not_exempted(tmp_path):
     assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
 
 
-def test_manifest_with_a_non_string_backend_is_reported_not_exempted(tmp_path):
-    # Valid TOML with the wrong shape is the same defect: read as "no backend"
-    # it would exempt itself, so it is reported rather than classified.
+@pytest.mark.parametrize(
+    ("manifest_text", "reason"),
+    [
+        (
+            'build-system = 1\n[project]\nname = "demo"\nversion = "0.1.0"\n',
+            "[build-system] is not a table",
+        ),
+        (
+            '[build-system]\nbuild-backend = 1\n[project]\nname = "demo"\n',
+            "[build-system].build-backend is not a string",
+        ),
+        (
+            '[build-system]\nbuild-backend = "hatchling.build"\n'
+            '[project]\nname = "demo"\nclassifiers = "Typing :: Typed"\n',
+            "[project].classifiers is not a list of strings",
+        ),
+        (
+            '[build-system]\nbuild-backend = "hatchling.build"\n'
+            '[project]\nname = "demo"\nclassifiers = ["Typing :: Typed", 1]\n',
+            "[project].classifiers is not a list of strings",
+        ),
+        (
+            '[build-system]\nbuild-backend = "hatchling.build"\n'
+            '[project]\nname = "demo"\n[tool.uv]\npackage = "no"\n',
+            "[tool.uv].package is not a boolean",
+        ),
+        (
+            '[build-system]\nbuild-backend = "hatchling.build"\n'
+            '[project]\nname = "demo"\n[tool]\nuv = false\n',
+            "[tool.uv] is not a table",
+        ),
+    ],
+    ids=[
+        "build-system-not-a-table",
+        "backend-not-a-string",
+        "classifiers-not-a-list",
+        "classifier-entry-not-a-string",
+        "package-not-a-bool",
+        "tool-uv-not-a-table",
+    ],
+)
+def test_manifest_with_a_wrong_shaped_field_is_reported_not_exempted(
+    tmp_path, manifest_text, reason
+):
+    # Valid TOML with the wrong shape is the same defect as non-TOML: read as an
+    # absent field it would exempt itself, so it is reported rather than
+    # classified. Each case is a real manifest the audit reads off disk.
     repo = make_repo(tmp_path)
     manifest = write_package(repo, backend="hatchling.build", marker=False)
-    manifest.write_text(
-        manifest.read_text(encoding="utf-8").replace(
-            'build-backend = "hatchling.build"', "build-backend = 1"
-        ),
-        encoding="utf-8",
-    )
+    manifest.write_text(manifest_text, encoding="utf-8")
     findings = crb.audit(repo)
     errors = [f for f in findings if "packages/demo/pyproject.toml" in f.message]
     assert len(errors) == 1
     assert errors[0].level == "ERROR"
-    assert "build-backend is not a string" in errors[0].message
-    assert "a string build-backend" in errors[0].fix
+    assert reason in errors[0].message
+    assert "repair the manifest" in errors[0].fix
     assert not typed_packaging_errors(findings)
+
+
+def test_manifest_that_is_not_utf8_is_reported_not_exempted(tmp_path):
+    # Bytes tomllib cannot decode are the unreadable-manifest path: reported
+    # like non-TOML, not skipped.
+    repo = make_repo(tmp_path)
+    manifest = write_package(repo, backend="hatchling.build", marker=False)
+    manifest.write_bytes(b'[build-system]\nbuild-backend = "\xff"\n')
+    findings = crb.audit(repo)
+    errors = [f for f in findings if "packages/demo/pyproject.toml" in f.message]
+    assert len(errors) == 1
+    assert errors[0].level == "ERROR"
+    assert "does not parse as TOML" in errors[0].message
+    assert not typed_packaging_errors(findings)
+
+
+def _typed_packaging_statement(text: str, start: str, end: str) -> str:
+    """The passage of ``text`` from ``start`` up to the next ``end`` (or the end of
+    the text), unwrapped onto one line so wrapping cannot split a literal."""
+    passage = text[text.index(start) :]
+    stop = passage.find(end)
+    return " ".join((passage if stop == -1 else passage[:stop]).split())
 
 
 def test_backend_set_and_literals_match_the_reference_invariant():
     # The invariant is stated once, in references/languages/python.md; the
-    # checker's constants derive from it. This is the drift gate between the two:
-    # a backend added to or dropped from either side fails here until both agree.
+    # checker's constants derive from it, and its Verification checklist and the
+    # script's inventory of checks restate it in their own registers. This is
+    # the drift gate holding all of them to the one statement: a backend or
+    # exemption added to or dropped from any copy fails here until they agree.
     # A structural assertion, deliberately: which backends the set names is
     # settled by reading the file, and the behavior the set drives — a manifest
     # naming one of them firing — is proven by the audit tests above over real
@@ -1007,21 +1072,28 @@ def test_backend_set_and_literals_match_the_reference_invariant():
     reference = (SKILL_DIR / "references" / "languages" / "python.md").read_text(
         encoding="utf-8"
     )
-    bullet = reference[reference.index("**Typed packaging.**") :]
-    bullet = " ".join(bullet[: bullet.index("\n- **")].split())
-    backend_list = re.search(r"build backend \(([^)]*)\)", bullet)
-    assert backend_list, bullet
-    documented_backends = set(re.findall(r"`([^`]+)`", backend_list.group(1)))
-    assert documented_backends == set(crb.TYPED_PACKAGING_BACKENDS), bullet
-    for literal in (
-        crb.TYPED_MARKER,
-        crb.TYPED_CLASSIFIER,
-        crb.PRIVATE_CLASSIFIER,
-        "`[tool.uv] package = false`",
-        "no `[build-system]`",
-        "maturin",
-    ):
-        assert literal in bullet, literal
+    bullet = _typed_packaging_statement(reference, "**Typed packaging.**", "\n- **")
+    checklist = _typed_packaging_statement(
+        reference, "- [ ] **Typed packaging.**", "\n- [ ]"
+    )
+    inventory = _typed_packaging_statement(
+        crb.__doc__, "* Typed packaging (Python)", "\n  * "
+    )
+    for statement in (bullet, inventory):
+        backend_list = re.search(r"build backend \(([^)]*)\)", statement)
+        assert backend_list, statement
+        documented = set(re.findall(r"`([^`]+)`", backend_list.group(1)))
+        assert documented == set(crb.TYPED_PACKAGING_BACKENDS), statement
+    for statement in (bullet, checklist, inventory):
+        for literal in (
+            crb.TYPED_MARKER,
+            crb.TYPED_CLASSIFIER,
+            crb.PRIVATE_CLASSIFIER,
+            "`[tool.uv] package = false`",
+            "no `[build-system]`",
+            "maturin",
+        ):
+            assert literal in statement, (literal, statement)
 
 
 # --- composition -----------------------------------------------------------

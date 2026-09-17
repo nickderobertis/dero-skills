@@ -43,16 +43,19 @@ Checks:
     threshold in a config file, or an explicit coverage statement in AGENTS.md
     (coverage is a default gate, so dropping it must be a documented decision).
   * Typed packaging (Python): every `pyproject.toml` naming a pure-Python build
-    backend (hatchling, uv_build, setuptools, flit, pdm, poetry-core) ships a
+    backend (`hatchling.build`, `uv_build`, `setuptools.build_meta`,
+    `flit_core.buildapi`, `pdm.backend`, `poetry.core.masonry.api`) ships a
     `py.typed` marker beside an `__init__.py` under its directory AND declares
     the `Typing :: Typed` classifier, so the wheel it publishes is typed for its
     consumers (PEP 561). Exempt: no `[build-system]`, a backend outside that set
     (maturin under any bindings), `[tool.uv] package = false`, or the
     `Private :: Do Not Upload` classifier. Presence-only: it reads the tree and
     the manifest and never builds a wheel — the wheel-level proof is the repo's
-    own gate (references/languages/python.md). A manifest that is not TOML is
-    reported, never inferred exempt. Silent where no manifest qualifies, so a
-    repo with no Python package is untouched.
+    own gate (references/languages/python.md, the one statement of the invariant;
+    the test suite holds this inventory and the checker's constants to it). A
+    manifest that is not TOML, or carries one of those fields with the wrong
+    shape, is reported, never inferred exempt. Silent where no manifest
+    qualifies, so a repo with no Python package is untouched.
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
   * A GitHub pull-request template exists (`.github/pull_request_template.md`,
@@ -827,11 +830,17 @@ class PyprojectManifest(NamedTuple):
         )
 
 
-def _table(data: object, *keys: str) -> dict:
-    """The nested TOML table at ``keys``, or ``{}`` where any level is not a table."""
-    for key in keys:
-        data = data.get(key) if isinstance(data, dict) else None
-    return data if isinstance(data, dict) else {}
+def _table(data: dict, *keys: str) -> dict:
+    """The nested TOML table at ``keys``, or ``{}`` where a level is absent.
+
+    Raises ``ValueError`` where a level is present but not a table (``project =
+    1``): absent means "not declared", the wrong shape means "broken".
+    """
+    for depth, key in enumerate(keys):
+        data = data.get(key, {})
+        if not isinstance(data, dict):
+            raise ValueError(f"[{'.'.join(keys[: depth + 1])}] is not a table")
+    return data
 
 
 def parse_pyproject(path: Path) -> PyprojectManifest:
