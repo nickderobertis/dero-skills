@@ -24,6 +24,7 @@ from test_check_repo_baseline import (
     SCRIPT,
     _buildout_repo,
     make_repo,
+    write_package,
 )
 
 # The gate delegating with Nx's comma-separated target list (`--targets=a,b`)
@@ -164,3 +165,43 @@ def test_e2e_comma_separated_targets_without_test_still_fail_the_gate(tmp_path):
     assert result.returncode == 1
     assert "does not run `test`" in result.stderr
     assert "make `check` depend on `test`" in result.stderr
+
+
+def test_e2e_untyped_pure_python_package_fails_then_passes_once_typed(tmp_path):
+    # The typed-packaging invariant seen as an author sees it, both ways over one
+    # repo. First a hatchling package with neither the py.typed marker nor the
+    # classifier: the finding names the manifest, both missing halves and the
+    # fix, and the command exits 1. Then the two fixes it asks for, and the same
+    # command reports the quiet success — the check reads the tree, so adding the
+    # files is all it takes; nothing is built.
+    repo = tmp_path / "untyped"
+    repo.mkdir()
+    make_repo(repo)
+    manifest = write_package(
+        repo, backend="hatchling.build", marker=False, classifiers=()
+    )
+    result = _run_script(repo)
+    assert result.returncode == 1
+    errors = [line for line in result.stderr.splitlines() if line.startswith("ERROR")]
+    assert len(errors) == 1, result.stderr
+    assert "packages/demo/pyproject.toml (hatchling.build)" in errors[0]
+    assert "publishes an untyped distribution" in errors[0]
+    assert "`py.typed` marker" in errors[0]
+    assert "`Typing :: Typed` classifier" in errors[0]
+    assert "add an empty `py.typed` beside the package's __init__.py" in result.stderr
+    assert '"Typing :: Typed" to [project].classifiers' in result.stderr
+
+    (manifest.parent / "demo" / "py.typed").write_text("", encoding="utf-8")
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            'version = "0.1.0"\n',
+            'version = "0.1.0"\nclassifiers = ["Typing :: Typed"]\n',
+        ),
+        encoding="utf-8",
+    )
+    result = _run_script(repo)
+    assert result.returncode == 0, result.stderr
+    assert "untyped distribution" not in result.stderr
+    assert [line for line in result.stdout.splitlines() if line.strip()] == [
+        f"OK    baseline invariants satisfied: {repo.resolve()}"
+    ]
