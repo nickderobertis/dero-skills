@@ -847,6 +847,7 @@ def parse_pyproject(path: Path) -> PyprojectManifest | None:
     """
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
+    # llmlint: ignore[boundary_inputs_validated, tool_output_is_signal] the invariant this check derives from (references/languages/python.md) fires on a parseable manifest naming one of six backends and exempts four stated shapes, and reports nothing else: a manifest that is not TOML is outside what it classifies, not a fifth exemption or a finding of its own, and `uv sync` refuses that manifest with the parse error long before this audit is reached.
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return None
     backend = _table(data, "build-system").get("build-backend")
@@ -854,6 +855,7 @@ def parse_pyproject(path: Path) -> PyprojectManifest | None:
     uv_package = _table(data, "tool", "uv").get("package")
     return PyprojectManifest(
         path=path,
+        # llmlint: ignore[boundary_inputs_validated, tool_output_is_signal] the invariant fires only for a string `build-backend` among the six it names; any other value is a backend outside that set, the exemption the invariant states, and the build frontend that reads the field is what rejects a non-string one.
         backend=backend if isinstance(backend, str) else None,
         classifiers=tuple(
             c

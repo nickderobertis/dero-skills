@@ -953,6 +953,34 @@ def test_one_marker_satisfies_a_manifest_shipping_several_packages(tmp_path):
     assert any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
 
 
+def test_manifest_outside_what_the_invariant_classifies_never_fires(tmp_path):
+    # The invariant fires on a parseable manifest whose string build-backend is
+    # one of the six, and reports nothing else: a manifest that is not TOML, or
+    # whose backend is not a string, names no backend the check holds. Neither
+    # fires, neither stops the audit, and the manifest beside them is still
+    # reported on its own terms.
+    repo = make_repo(tmp_path)
+    broken = repo / "packages" / "broken"
+    broken.mkdir(parents=True)
+    (broken / "pyproject.toml").write_text(
+        '[build-system\nbuild-backend = "hatchling.build"\n', encoding="utf-8"
+    )
+    odd = write_package(
+        repo, marker=False, project_dir="packages/odd", package_dir="odd"
+    )
+    odd.write_text(
+        odd.read_text(encoding="utf-8").replace(
+            'build-backend = "hatchling.build"', "build-backend = 1"
+        ),
+        encoding="utf-8",
+    )
+    write_package(repo, marker=False, project_dir="packages/a", package_dir="a")
+    assert crb.parse_pyproject(broken / "pyproject.toml") is None
+    assert crb.parse_pyproject(odd).backend is None
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
+
+
 def _typed_packaging_statement(text: str, start: str, end: str) -> str:
     """The passage of ``text`` from ``start`` up to the next ``end`` (or the end of
     the text), unwrapped onto one line so wrapping cannot split a literal."""
