@@ -246,6 +246,52 @@ def levels(findings, level):
     return [f.message for f in findings if f.level == level]
 
 
+def write_package(
+    repo: Path,
+    *,
+    backend: str | None = "hatchling.build",
+    marker: bool = True,
+    classifiers: tuple[str, ...] = ("Typing :: Typed",),
+    package: bool | None = None,
+    project_dir: str = "packages/demo",
+    package_dir: str = "demo",
+) -> Path:
+    """Write a publishable Python package under ``repo`` and return its manifest.
+
+    ``backend`` names the ``[build-system].build-backend`` (None writes no
+    ``[build-system]`` at all); ``marker`` drops an empty ``py.typed`` beside the
+    package's ``__init__.py``; ``classifiers`` is the ``[project].classifiers``
+    list; ``package`` writes ``[tool.uv] package = <bool>`` when given. The
+    manifest sits at ``project_dir``, the package at ``project_dir/package_dir``.
+    """
+    project = repo / project_dir
+    pkg = project / package_dir
+    pkg.mkdir(parents=True, exist_ok=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    if marker:
+        (pkg / "py.typed").write_text("", encoding="utf-8")
+    lines = ["[project]", 'name = "demo"', 'version = "0.1.0"']
+    if classifiers:
+        joined = ", ".join(f'"{c}"' for c in classifiers)
+        lines.append(f"classifiers = [{joined}]")
+    if backend is not None:
+        lines += ["", "[build-system]", f'build-backend = "{backend}"']
+    if package is not None:
+        lines += ["", "[tool.uv]", f"package = {str(package).lower()}"]
+    manifest = project / "pyproject.toml"
+    manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return manifest
+
+
+def typed_packaging_errors(findings) -> list:
+    """The typed-packaging ERROR findings, whole (message and fix)."""
+    return [
+        f
+        for f in findings
+        if f.level == "ERROR" and "publishes an untyped distribution" in f.message
+    ]
+
+
 # --- parse_just_recipes ----------------------------------------------------
 
 
@@ -749,6 +795,235 @@ def test_coverage_satisfied_by_agents_md_note(tmp_path):
         make_repo(tmp_path, justfile=NO_COVERAGE_JUSTFILE, composition=agents)
     )
     assert not any("coverage signal" in m for m in levels(findings, "ERROR"))
+
+
+# llmlint: ignore[comments_earn_their_place] this module groups its tests behind section banners (`# --- coverage ---`, `# --- composition ---`); without this one the typed-packaging tests read as part of the coverage section above, so it names a boundary rather than decorating one.
+# --- typed packaging (PEP 561) ---------------------------------------------
+
+
+def test_hatchling_package_without_marker_is_error(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo, backend="hatchling.build", marker=False)
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1
+    assert "packages/demo/pyproject.toml" in errors[0].message
+    assert "hatchling.build" in errors[0].message
+    assert "py.typed" in errors[0].message
+    assert "Typing :: Typed" not in errors[0].message
+    assert "add an empty `py.typed` beside the package's __init__.py" in errors[0].fix
+
+
+def test_uv_build_package_without_marker_is_error(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo, backend="uv_build", marker=False)
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1
+    assert "uv_build" in errors[0].message
+    assert "py.typed" in errors[0].message
+
+
+def test_package_missing_only_the_classifier_is_error(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo, classifiers=())
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1
+    assert "Typing :: Typed" in errors[0].message
+    assert "py.typed" not in errors[0].message
+    assert '"Typing :: Typed" to [project].classifiers' in errors[0].fix
+
+
+def test_package_missing_both_names_both_halves_in_one_finding(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo, marker=False, classifiers=())
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1
+    assert "py.typed" in errors[0].message
+    assert "Typing :: Typed" in errors[0].message
+    assert "py.typed" in errors[0].fix
+    assert "[project].classifiers" in errors[0].fix
+
+
+def test_typed_package_passes_and_is_reported_ok(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo)
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert any("typed packaging" in m for m in levels(findings, "OK"))
+
+
+def test_maturin_manifest_is_exempt(tmp_path):
+    # An extension module's typing story is its own; the marker is not demanded.
+    repo = make_repo(tmp_path)
+    write_package(repo, backend="maturin", marker=False, classifiers=())
+    findings = crb.audit(repo)
+    assert not typed_packaging_errors(findings)
+    assert not any("typed packaging" in m for m in levels(findings, "OK"))
+
+
+def test_package_false_workspace_root_is_exempt(tmp_path):
+    # `[tool.uv] package = false` on a manifest that still names a backend: the
+    # flag, not the backend, decides — nothing installs a workspace root.
+    repo = make_repo(tmp_path)
+    write_package(repo, marker=False, classifiers=(), package=False, project_dir=".")
+    assert not typed_packaging_errors(crb.audit(repo))
+
+
+def test_private_do_not_upload_manifest_is_exempt(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo, marker=False, classifiers=("Private :: Do Not Upload",))
+    assert not typed_packaging_errors(crb.audit(repo))
+
+
+def test_manifest_without_build_system_is_exempt(tmp_path):
+    # A pyproject.toml that only carries tool config (the coverage fixture's
+    # shape) builds nothing, so there is no wheel to hold typed.
+    repo = make_repo(tmp_path)
+    write_package(repo, backend=None, marker=False, classifiers=())
+    assert not typed_packaging_errors(crb.audit(repo))
+
+
+def test_repo_without_pyproject_is_untouched(tmp_path):
+    # The conformant fixture writes no manifest at all (a non-Python repo).
+    repo = make_repo(tmp_path)
+    assert crb.iter_pyproject_manifests(repo) == []
+    findings = crb.audit(repo)
+    assert not typed_packaging_errors(findings)
+    assert not any("typed packaging" in m for m in levels(findings, "OK"))
+
+
+def test_manifests_under_vendored_and_build_trees_are_not_discovered(tmp_path):
+    repo = make_repo(tmp_path)
+    for excluded in (".git", ".venv", "node_modules", "dist", "build", "target"):
+        write_package(
+            repo,
+            marker=False,
+            classifiers=(),
+            project_dir=f"{excluded}/vendored",
+        )
+    assert not typed_packaging_errors(crb.audit(repo))
+
+
+def test_marker_under_an_excluded_tree_does_not_satisfy_the_manifest(tmp_path):
+    # The manifest itself qualifies; the only py.typed beside an __init__.py sits
+    # under directories the wheel never ships from, so the finding stands.
+    repo = make_repo(tmp_path)
+    manifest = write_package(repo, marker=False)
+    for excluded in (".venv", "node_modules", "dist", "build", "target", "tests"):
+        stray = manifest.parent / excluded / "stray"
+        stray.mkdir(parents=True)
+        (stray / "__init__.py").write_text("", encoding="utf-8")
+        (stray / "py.typed").write_text("", encoding="utf-8")
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1
+    assert "py.typed" in errors[0].message
+
+
+def test_marker_without_an_init_beside_it_does_not_count(tmp_path):
+    # A py.typed dropped at the project root, outside any package, ships in no
+    # wheel: the marker only counts where an __init__.py makes it a package.
+    repo = make_repo(tmp_path)
+    manifest = write_package(repo, marker=False)
+    (manifest.parent / "py.typed").write_text("", encoding="utf-8")
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1
+    assert "py.typed" in errors[0].message
+
+
+def test_each_qualifying_manifest_is_reported_on_its_own(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo, marker=False, project_dir="packages/a", package_dir="a")
+    write_package(repo, project_dir="packages/b", package_dir="b")
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
+
+
+def test_one_marker_satisfies_a_manifest_shipping_several_packages(tmp_path):
+    # The audit is presence-only by contract: one py.typed anywhere under the
+    # manifest's directory passes it, even where the wheel would ship a second
+    # package without one. Holding every shipped package to the marker is the
+    # wheel-level check in the repo's own gate, which reads the built artifact
+    # this audit never produces — so this pins the boundary rather than the gap.
+    repo = make_repo(tmp_path)
+    manifest = write_package(repo)
+    bare = manifest.parent / "demo_extras"
+    bare.mkdir()
+    (bare / "__init__.py").write_text("", encoding="utf-8")
+    findings = crb.audit(repo)
+    assert not typed_packaging_errors(findings)
+    assert any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
+
+
+def test_manifest_outside_what_the_invariant_classifies_never_fires(tmp_path):
+    # The invariant fires on a parseable manifest whose string build-backend is
+    # one of the six, and reports nothing else: a manifest that is not TOML, or
+    # whose backend is not a string, names no backend the check holds. Neither
+    # fires, neither stops the audit, and the manifest beside them is still
+    # reported on its own terms.
+    repo = make_repo(tmp_path)
+    broken = repo / "packages" / "broken"
+    broken.mkdir(parents=True)
+    (broken / "pyproject.toml").write_text(
+        '[build-system\nbuild-backend = "hatchling.build"\n', encoding="utf-8"
+    )
+    odd = write_package(
+        repo, marker=False, project_dir="packages/odd", package_dir="odd"
+    )
+    odd.write_text(
+        odd.read_text(encoding="utf-8").replace(
+            'build-backend = "hatchling.build"', "build-backend = 1"
+        ),
+        encoding="utf-8",
+    )
+    write_package(repo, marker=False, project_dir="packages/a", package_dir="a")
+    assert crb.parse_pyproject(broken / "pyproject.toml") is None
+    assert crb.parse_pyproject(odd).backend is None
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == ["packages/a/pyproject.toml"]
+
+
+def _typed_packaging_statement(text: str, start: str, end: str) -> str:
+    """The passage of ``text`` from ``start`` up to the next ``end`` (or the end of
+    the text), unwrapped onto one line so wrapping cannot split a literal."""
+    passage = text[text.index(start) :]
+    stop = passage.find(end)
+    return " ".join((passage if stop == -1 else passage[:stop]).split())
+
+
+def test_backend_set_and_literals_match_the_reference_invariant():
+    # The invariant is stated once, in references/languages/python.md; the
+    # checker's constants derive from it, and its Verification checklist and the
+    # script's inventory of checks restate it in their own registers. This is
+    # the drift gate holding all of them to the one statement: a backend or
+    # exemption added to or dropped from any copy fails here until they agree.
+    # A structural assertion, deliberately: which backends the set names is
+    # settled by reading the file, and the behavior the set drives — a manifest
+    # naming one of them firing — is proven by the audit tests above over real
+    # manifests; running the script once per backend would prove that no better.
+    reference = (SKILL_DIR / "references" / "languages" / "python.md").read_text(
+        encoding="utf-8"
+    )
+    bullet = _typed_packaging_statement(reference, "**Typed packaging.**", "\n- **")
+    checklist = _typed_packaging_statement(
+        reference, "- [ ] **Typed packaging.**", "\n- [ ]"
+    )
+    inventory = _typed_packaging_statement(
+        crb.__doc__, "* Typed packaging (Python)", "\n  * "
+    )
+    for statement in (bullet, inventory):
+        backend_list = re.search(r"build backend \(([^)]*)\)", statement)
+        assert backend_list, statement
+        documented = set(re.findall(r"`([^`]+)`", backend_list.group(1)))
+        assert documented == set(crb.TYPED_PACKAGING_BACKENDS), statement
+    for statement in (bullet, checklist, inventory):
+        for literal in (
+            crb.TYPED_MARKER,
+            crb.TYPED_CLASSIFIER,
+            crb.PRIVATE_CLASSIFIER,
+            "`[tool.uv] package = false`",
+            "no `[build-system]`",
+            "maturin",
+        ):
+            assert literal in statement, (literal, statement)
 
 
 # --- composition -----------------------------------------------------------

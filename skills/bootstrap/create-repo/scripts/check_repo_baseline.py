@@ -42,6 +42,19 @@ Checks:
   * A coverage signal exists: a coverage tool/flag in the justfile, a coverage
     threshold in a config file, or an explicit coverage statement in AGENTS.md
     (coverage is a default gate, so dropping it must be a documented decision).
+  * Typed packaging (Python): every `pyproject.toml` naming a pure-Python build
+    backend (`hatchling.build`, `uv_build`, `setuptools.build_meta`,
+    `flit_core.buildapi`, `pdm.backend`, `poetry.core.masonry.api`) ships a
+    `py.typed` marker beside an `__init__.py` under its directory AND declares
+    the `Typing :: Typed` classifier, so the wheel it publishes is typed for its
+    consumers (PEP 561). Exempt: no `[build-system]`, a backend outside that set
+    (maturin under any bindings), `[tool.uv] package = false`, or the
+    `Private :: Do Not Upload` classifier. Presence-only: it reads the tree and
+    the manifest and never builds a wheel — the wheel-level proof is the repo's
+    own gate (references/languages/python.md, the one statement of the invariant;
+    the test suite holds this inventory and the checker's constants to it).
+    Silent where no manifest qualifies, so a repo with no Python package is
+    untouched.
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
   * A GitHub pull-request template exists (`.github/pull_request_template.md`,
@@ -98,6 +111,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple, Protocol
@@ -224,6 +238,33 @@ COVERAGE_CONFIG_NAMES = (
     "jest.config.ts",
     "Cargo.toml",
 )
+
+# The build backends the typed-packaging invariant (references/languages/python.md)
+# holds, verbatim from it; the test suite fails when the two drift. The name says
+# "held", not "pure Python": setuptools can drive a compiled extension too, and
+# such a wheel still ships importable packages that owe the marker.
+TYPED_PACKAGING_BACKENDS = frozenset(
+    {
+        "hatchling.build",
+        "uv_build",
+        "setuptools.build_meta",
+        "flit_core.buildapi",
+        "pdm.backend",
+        "poetry.core.masonry.api",
+    }
+)
+
+# The trove classifier a typed distribution declares, and the one that marks a
+# manifest as never published (so nothing installs it and typing it buys nothing).
+TYPED_CLASSIFIER = "Typing :: Typed"
+PRIVATE_CLASSIFIER = "Private :: Do Not Upload"
+
+# The marker file PEP 561 has a wheel carry inside each typed package.
+TYPED_MARKER = "py.typed"
+
+# Test trees are never what the wheel ships, so a `py.typed` found under one sits
+# beside test helpers rather than the distributed package and does not count.
+TEST_DIR_NAMES = frozenset({"test", "tests"})
 
 # An AGENTS.md heading that records how the repo was built up from the skill's
 # reference axes (product shape + language(s) + cross-cutting/intersection
@@ -721,6 +762,162 @@ def check_coverage(repo: Path) -> list[Finding]:
             "state in AGENTS.md the coverage bar or why it does not apply",
         )
     ]
+
+
+def _walk_tree(root: Path):
+    """Yield ``(directory, dirnames, filenames)`` under ``root``, pruning SKIP_DIRS.
+
+    ``os.walk`` with in-place pruning so a vendored tree or virtualenv is never
+    descended into, not merely filtered out after the fact — the difference
+    between a fast walk and one that enumerates ``node_modules``.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
+        yield Path(dirpath), dirnames, filenames
+
+
+def iter_pyproject_manifests(repo: Path) -> list[Path]:
+    """Every ``pyproject.toml`` in the repo, outside vendored and build trees."""
+    return [
+        directory / "pyproject.toml"
+        for directory, _dirnames, filenames in _walk_tree(repo)
+        if "pyproject.toml" in filenames
+    ]
+
+
+def has_typed_marker(project_dir: Path) -> bool:
+    """Whether a ``py.typed`` sits beside an ``__init__.py`` under ``project_dir``.
+
+    Test directories are pruned as well as the vendored ones: a marker the wheel
+    would not carry cannot satisfy the invariant.
+    """
+    for _directory, dirnames, filenames in _walk_tree(project_dir):
+        dirnames[:] = [d for d in dirnames if d not in TEST_DIR_NAMES]
+        if TYPED_MARKER in filenames and "__init__.py" in filenames:
+            return True
+    return False
+
+
+class PyprojectManifest(NamedTuple):
+    """The fields of a ``pyproject.toml`` the typed-packaging check reads.
+
+    ``backend`` is ``[build-system].build-backend`` (``None`` when the manifest
+    has no ``[build-system]``), ``classifiers`` the string entries of
+    ``[project].classifiers``, and ``uv_package`` the ``[tool.uv] package``
+    flag (``None`` when unset).
+    """
+
+    path: Path
+    backend: str | None
+    classifiers: tuple[str, ...]
+    uv_package: bool | None
+
+    @property
+    def owes_typed_packaging(self) -> bool:
+        """Whether the typed-packaging invariant holds this manifest to its terms.
+
+        True names a manifest the check audits, not one that already satisfies
+        it. The four exemptions are read here: no ``[build-system]`` (nothing is
+        built), a backend outside ``TYPED_PACKAGING_BACKENDS``, ``[tool.uv]
+        package = false`` (a workspace root or a tests-only member), and
+        ``Private :: Do Not Upload``.
+        """
+        return (
+            self.backend in TYPED_PACKAGING_BACKENDS
+            and self.uv_package is not False
+            and PRIVATE_CLASSIFIER not in self.classifiers
+        )
+
+
+def _table(data: object, *keys: str) -> dict:
+    """The nested TOML table at ``keys``, or ``{}`` where any level is not a table."""
+    for key in keys:
+        data = data.get(key) if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def parse_pyproject(path: Path) -> PyprojectManifest | None:
+    """Read the typed-packaging fields of ``path``; ``None`` where it does not parse.
+
+    Presence-only, like the check it serves: a field that is absent or not of
+    the shape the check reads is treated as not declared — a manifest that does
+    not parse, or names its backend as something other than a string, names no
+    backend the check can hold and so never fires. Whether the manifest is
+    well-formed is ``uv``'s to say, and it refuses one long before this audit.
+    """
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    # llmlint: ignore[boundary_inputs_validated, tool_output_is_signal] the invariant this check derives from (references/languages/python.md) fires on a parseable manifest naming one of six backends and exempts four stated shapes, and reports nothing else: a manifest that is not TOML is outside what it classifies, not a fifth exemption or a finding of its own, and `uv sync` refuses that manifest with the parse error long before this audit is reached.
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        return None
+    backend = _table(data, "build-system").get("build-backend")
+    classifiers = _table(data, "project").get("classifiers")
+    uv_package = _table(data, "tool", "uv").get("package")
+    return PyprojectManifest(
+        path=path,
+        # llmlint: ignore[boundary_inputs_validated, tool_output_is_signal] the invariant fires only for a string `build-backend` among the six it names; any other value is a backend outside that set, the exemption the invariant states, and the build frontend that reads the field is what rejects a non-string one.
+        backend=backend if isinstance(backend, str) else None,
+        classifiers=tuple(
+            c
+            for c in (classifiers if isinstance(classifiers, list) else [])
+            if isinstance(c, str)
+        ),
+        uv_package=uv_package if isinstance(uv_package, bool) else None,
+    )
+
+
+def check_typed_packaging(repo: Path) -> list[Finding]:
+    """Require every pure-Python distribution to ship typed (PEP 561).
+
+    A fully annotated package that omits ``py.typed`` is untyped to every
+    consumer: their type checker degrades each imported name to ``Any`` and the
+    import earns a ``type: ignore[import-untyped]``. So a manifest naming a
+    backend in ``TYPED_PACKAGING_BACKENDS`` must carry the marker beside an
+    ``__init__.py`` under its directory and declare ``Typing :: Typed``.
+    Presence-only, like the rest of the audit: it reads the tree and the manifest
+    and never builds a wheel, and one marker anywhere under the manifest's
+    directory satisfies it. The per-package proof — the built artifact carries
+    ``<package>/py.typed`` for every package it ships and its METADATA the
+    classifier — is the repo's own gate, per ``references/languages/python.md``.
+    Silent where no manifest qualifies.
+    """
+    findings: list[Finding] = []
+    qualifying = 0
+    for path in iter_pyproject_manifests(repo):
+        manifest = parse_pyproject(path)
+        if manifest is None or not manifest.owes_typed_packaging:
+            continue
+        qualifying += 1
+        rel = path.relative_to(repo).as_posix()
+        missing: list[str] = []
+        fixes: list[str] = []
+        if not has_typed_marker(path.parent):
+            missing.append(f"a `{TYPED_MARKER}` marker")
+            fixes.append(
+                f"add an empty `{TYPED_MARKER}` beside the package's __init__.py "
+                f"(so the wheel carries <package>/{TYPED_MARKER})"
+            )
+        if TYPED_CLASSIFIER not in manifest.classifiers:
+            missing.append(f"the `{TYPED_CLASSIFIER}` classifier")
+            fixes.append(f'add "{TYPED_CLASSIFIER}" to [project].classifiers')
+        if missing:
+            findings.append(
+                Finding(
+                    "ERROR",
+                    f"{rel} ({manifest.backend}) publishes an untyped distribution: "
+                    f"missing {' and '.join(missing)}",
+                    "; ".join(fixes),
+                )
+            )
+    if qualifying and not findings:
+        findings.append(
+            Finding(
+                "OK",
+                f"typed packaging: {qualifying} publishing manifest(s) ship "
+                f"{TYPED_MARKER} and {TYPED_CLASSIFIER}",
+            )
+        )
+    return findings
 
 
 def find_heading_section(text: str, heading_re: re.Pattern[str]) -> list[str] | None:
@@ -1699,6 +1896,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_e2e(repo)
     findings += check_e2e_realism(repo)
     findings += check_coverage(repo)
+    findings += check_typed_packaging(repo)
     findings += check_ci(repo)
     findings += check_pr_template(repo)
     findings += check_notignored(repo)
