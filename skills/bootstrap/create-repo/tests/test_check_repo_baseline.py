@@ -16,6 +16,7 @@ import importlib.util
 import re
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "check_repo_baseline.py"
@@ -1254,7 +1255,14 @@ def test_cargo_manifest_under_a_vendored_or_build_tree_does_not_count(tmp_path):
     assert cargo_build_config_findings(crb.audit(repo)) == []
 
 
-def _buildout_rule(fragment: str, name: str) -> dict:
+class BuildoutRule(NamedTuple):
+    """The parts of a buildout rule a drift test reads: its judge text and targets."""
+
+    description: str
+    include: tuple[str, ...]
+
+
+def _buildout_rule(fragment: str, name: str) -> BuildoutRule:
     """The ``name`` rule of a buildout fragment: its description text and ``files``.
 
     Stdlib-only, like everything here, so it slices the YAML rather than parsing
@@ -1270,10 +1278,10 @@ def _buildout_rule(fragment: str, name: str) -> dict:
     description = re.search(r"description: \|\n((?:      .*\n)+)", block)
     include = re.search(r"include:\n((?:        - .*\n)+)", block)
     assert description and include, block
-    return {
-        "description": description.group(1),
-        "files": {"include": re.findall(r'- "([^"]+)"', include.group(1))},
-    }
+    return BuildoutRule(
+        description=description.group(1),
+        include=tuple(re.findall(r'- "([^"]+)"', include.group(1))),
+    )
 
 
 def test_cargo_build_config_literals_match_the_reference_contract():
@@ -1300,8 +1308,8 @@ def test_cargo_build_config_literals_match_the_reference_contract():
     assert file_text.strip() + "\n" == CONFORMANT_CARGO_CONFIG
     parsed = crb.tomllib.loads(file_text)
     rule = _buildout_rule("languages/rust.llmlint.yml", "dev_profile_and_target_dir")
-    assert rule["files"]["include"] == [crb.CARGO_CONFIG, f"**/{crb.CARGO_MANIFEST}"]
-    judge = " ".join(rule["description"].split())
+    assert rule.include == (crb.CARGO_CONFIG, f"**/{crb.CARGO_MANIFEST}")
+    judge = " ".join(rule.description.split())
     for key in crb.CARGO_BUILD_KEYS:
         value = crb._table(parsed, *key.table)[key.name]
         assert type(value) is type(key.expected) and value == key.expected, key
