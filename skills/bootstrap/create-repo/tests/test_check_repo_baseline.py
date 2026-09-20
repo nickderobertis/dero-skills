@@ -292,6 +292,60 @@ def typed_packaging_errors(findings) -> list:
     ]
 
 
+# The cargo build configuration exactly as references/languages/rust.md has a
+# bootstrap agent write it, comments included: the passing fixture is the real
+# file, not a minimal stand-in for it.
+CONFORMANT_CARGO_CONFIG = """\
+# Build configuration every cargo invocation anywhere inside this clone reads.
+#
+# `target-dir` here is resolved relative to this file's parent directory, so every
+# crate in this clone — workspace members and any crate outside the workspace
+# alike — builds into `<clone>/target`, and a second clone or worktree of this
+# repository, carrying its own copy of this file, builds into its own root. Never
+# point this outside the clone: concurrent worktrees must not share one target
+# directory.
+[build]
+target-dir = "target"
+
+# Line tables only for dev and test builds (`test` inherits `dev`): backtraces and
+# coverage keep file:line, and the full debuginfo cargo writes by default
+# (`debug = 2`) stays off the disk. `release` is untouched.
+[profile.dev]
+debug = 1
+"""
+
+
+def write_cargo_repo(
+    repo: Path, *, config: str | None = CONFORMANT_CARGO_CONFIG
+) -> Path:
+    """Make ``repo`` a Rust workspace and return its root ``Cargo.toml``.
+
+    Writes a virtual root manifest with one member crate under ``crates/`` and,
+    unless ``config`` is None, ``.cargo/config.toml`` with ``config`` verbatim.
+    """
+    crate = repo / "crates" / "demo"
+    crate.mkdir(parents=True, exist_ok=True)
+    (crate / "Cargo.toml").write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\nedition = "2021"\n',
+        encoding="utf-8",
+    )
+    manifest = repo / "Cargo.toml"
+    manifest.write_text('[workspace]\nmembers = ["crates/demo"]\n', encoding="utf-8")
+    if config is not None:
+        (repo / ".cargo").mkdir(exist_ok=True)
+        (repo / ".cargo" / "config.toml").write_text(config, encoding="utf-8")
+    return manifest
+
+
+def cargo_build_config_findings(findings) -> list:
+    """The cargo build-configuration findings of every level, whole."""
+    return [
+        f
+        for f in findings
+        if "cargo build configuration" in f.message or f.message.startswith(".cargo/")
+    ]
+
+
 # --- parse_just_recipes ----------------------------------------------------
 
 
@@ -1024,6 +1078,215 @@ def test_backend_set_and_literals_match_the_reference_invariant():
             "maturin",
         ):
             assert literal in statement, (literal, statement)
+
+
+# --- cargo build configuration (Rust) ---------------------------------------
+
+
+def test_rust_repo_carrying_the_cargo_build_config_passes(tmp_path):
+    repo = make_repo(tmp_path)
+    write_cargo_repo(repo)
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert [f.level for f in cargo_build_config_findings(findings)] == ["OK"]
+    assert "profile.dev.debug = 1" in cargo_build_config_findings(findings)[0].message
+
+
+def test_extra_tables_beside_the_two_keys_still_pass(tmp_path):
+    # A real config carries more than the contract: other `[build]` keys, other
+    # tables, other profiles. Only the two keys are held, and `release` keeping
+    # full debuginfo is exactly the "release is untouched" the contract states.
+    repo = make_repo(tmp_path)
+    write_cargo_repo(
+        repo,
+        config=(
+            '[build]\njobs = 4\ntarget-dir = "target"\n\n'
+            "[net]\ngit-fetch-with-cli = true\n\n"
+            "[profile.dev]\nopt-level = 1\ndebug = 1\n\n"
+            "[profile.release]\ndebug = 2\n"
+        ),
+    )
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+
+
+def test_rust_repo_without_the_cargo_config_is_error_naming_the_file(tmp_path):
+    repo = make_repo(tmp_path)
+    write_cargo_repo(repo, config=None)
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert errors[0].message.startswith(".cargo/config.toml missing")
+    assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0].message
+    assert "create .cargo/config.toml at the repo root" in errors[0].fix
+
+
+def test_nested_crate_alone_still_owes_the_root_config(tmp_path):
+    # A polyglot repo whose only manifest sits under a subdirectory is still a
+    # Rust repo, and the config it owes is the root one — the file cargo reads
+    # from every working directory inside the clone.
+    repo = make_repo(tmp_path)
+    crate = repo / "services" / "worker"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "worker"\n', encoding="utf-8")
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert [e.message.split(" ")[0] for e in errors] == [".cargo/config.toml"]
+
+
+def test_debug_2_is_error_naming_the_key_and_expected_value(tmp_path):
+    repo = make_repo(tmp_path)
+    write_cargo_repo(
+        repo, config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = 2\n'
+    )
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert errors[0].message == (
+        ".cargo/config.toml: cargo build configuration `profile.dev.debug` is 2, expected 1"
+    )
+    assert errors[0].fix.startswith(
+        "set `debug = 1` under [profile.dev] in .cargo/config.toml"
+    )
+
+
+def test_debug_true_is_error_even_though_true_equals_1_in_python(tmp_path):
+    # `debug = true` is cargo's level 2 — full debuginfo, the thing the contract
+    # turns off — and `True == 1` in Python, so the check has to compare the
+    # type, not just the value.
+    repo = make_repo(tmp_path)
+    write_cargo_repo(
+        repo, config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = true\n'
+    )
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert "`profile.dev.debug` is true, expected 1" in errors[0].message
+
+
+def test_debug_string_1_is_error(tmp_path):
+    repo = make_repo(tmp_path)
+    write_cargo_repo(
+        repo, config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = "1"\n'
+    )
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert '`profile.dev.debug` is "1", expected 1' in errors[0].message
+
+
+def test_target_dir_elsewhere_is_error_naming_the_key(tmp_path):
+    # A target directory outside the clone is the shared-across-worktrees shape
+    # the contract exists to forbid.
+    repo = make_repo(tmp_path)
+    write_cargo_repo(
+        repo,
+        config='[build]\ntarget-dir = "/var/cache/shared-target"\n\n[profile.dev]\ndebug = 1\n',
+    )
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert errors[0].message == (
+        ".cargo/config.toml: cargo build configuration `build.target-dir` is "
+        '"/var/cache/shared-target", expected "target"'
+    )
+    assert errors[0].fix.startswith(
+        'set `target-dir = "target"` under [build] in .cargo/config.toml'
+    )
+
+
+def test_each_missing_key_is_its_own_finding(tmp_path):
+    # A config that exists but carries neither key — the shape of a repo that had
+    # a `.cargo/config.toml` for another reason before the contract — names each
+    # key on its own, as unset rather than as some value.
+    repo = make_repo(tmp_path)
+    write_cargo_repo(repo, config="[net]\ngit-fetch-with-cli = true\n")
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert [e.message for e in errors] == [
+        ".cargo/config.toml: cargo build configuration `build.target-dir` is unset, "
+        'expected "target"',
+        ".cargo/config.toml: cargo build configuration `profile.dev.debug` is unset, "
+        "expected 1",
+    ]
+
+
+def test_unparseable_cargo_config_is_error(tmp_path):
+    # A file cargo itself cannot read carries neither key; unlike a broken
+    # pyproject (which names no backend and so is outside that invariant), the
+    # config is owed here, so it fails rather than falling silent.
+    repo = make_repo(tmp_path)
+    write_cargo_repo(repo, config="[build\n")
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert errors[0].message.startswith(".cargo/config.toml does not parse as TOML")
+    assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0].message
+
+
+def test_repo_without_a_cargo_manifest_is_not_asked_for_the_config(tmp_path):
+    repo = make_repo(tmp_path)
+    write_package(repo)
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert cargo_build_config_findings(findings) == []
+
+
+def test_cargo_manifest_under_a_vendored_or_build_tree_does_not_count(tmp_path):
+    # `target/` and `node_modules/` are pruned from discovery, so a vendored
+    # crate's manifest does not make a non-Rust repo owe the config.
+    repo = make_repo(tmp_path)
+    for tree in ("target/package/demo-0.1.0", "node_modules/some-addon"):
+        vendored = repo / tree
+        vendored.mkdir(parents=True)
+        (vendored / "Cargo.toml").write_text(
+            '[package]\nname = "v"\n', encoding="utf-8"
+        )
+    assert cargo_build_config_findings(crb.audit(repo)) == []
+
+
+def test_cargo_build_config_literals_match_the_reference_contract():
+    # The contract is stated once, in references/languages/rust.md; the checker's
+    # constants derive from it and the reference's Verification item, its file
+    # text and the script's inventory restate it. This holds every copy to the
+    # one statement: the file text the reference has an agent write parses to
+    # exactly the values the checker holds, and each restatement names them.
+    reference = (SKILL_DIR / "references" / "languages" / "rust.md").read_text(
+        encoding="utf-8"
+    )
+    bullet = _typed_packaging_statement(
+        reference, "**Cargo build configuration.**", "\n- **"
+    )
+    checklist = _typed_packaging_statement(
+        reference, "- [ ] **Cargo build configuration.**", "\n- [ ]"
+    )
+    inventory = _typed_packaging_statement(
+        crb.__doc__, "* Cargo build configuration (Rust)", "\n  * "
+    )
+    fenced = re.search(r"```toml\n(.*?)```", reference, re.DOTALL)
+    assert fenced, "rust.md carries the exact .cargo/config.toml text"
+    file_text = "\n".join(line.strip() for line in fenced.group(1).splitlines())
+    assert file_text.strip() + "\n" == CONFORMANT_CARGO_CONFIG
+    parsed = crb.tomllib.loads(file_text)
+    for keys, expected in crb.CARGO_BUILD_KEYS:
+        value = crb._table(parsed, *keys[:-1])[keys[-1]]
+        assert type(value) is type(expected) and value == expected, keys
+        for statement in (bullet, checklist, inventory):
+            assert f"`{'.'.join(keys)} = {crb._toml_scalar(expected)}`" in statement, (
+                keys,
+                statement,
+            )
+    for statement in (bullet, checklist, inventory):
+        assert f"`{crb.CARGO_CONFIG}`" in statement, statement
+        assert "worktree" in statement and "release" in statement, statement
 
 
 # --- composition -----------------------------------------------------------

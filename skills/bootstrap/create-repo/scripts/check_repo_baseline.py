@@ -55,6 +55,14 @@ Checks:
     the test suite holds this inventory and the checker's constants to it).
     Silent where no manifest qualifies, so a repo with no Python package is
     untouched.
+  * Cargo build configuration (Rust): a repo holding any `Cargo.toml` carries a
+    root `.cargo/config.toml` with `build.target-dir = "target"` (a string: one
+    per-clone target directory every crate in the clone builds into, never
+    shared across worktrees or repositories) and `profile.dev.debug = 1` (the
+    integer "limited" level — line tables only for dev and test builds, `release`
+    untouched; `true` or `"1"` is not it). The finding names the file, the key
+    and the value expected. Silent where the repo has no `Cargo.toml`
+    (references/languages/rust.md, the one statement of the contract).
   * A CI workflow exists under .github/workflows/ AND runs the gate
     (`just check`) — a workflow that never invokes the gate proves nothing.
   * A GitHub pull-request template exists (`.github/pull_request_template.md`,
@@ -265,6 +273,20 @@ TYPED_MARKER = "py.typed"
 # Test trees are never what the wheel ships, so a `py.typed` found under one sits
 # beside test helpers rather than the distributed package and does not count.
 TEST_DIR_NAMES = frozenset({"test", "tests"})
+
+# The cargo build configuration every Rust repository carries
+# (references/languages/rust.md): the root config file, the two keys and the one
+# value each holds. `target-dir` is resolved by cargo relative to the directory
+# holding `.cargo/`, so this string names `<clone>/target` — one target directory
+# per clone/worktree, never shared across them. `debug` is cargo's integer
+# "limited" level (line tables only): `true` is level 2 and a string is nothing
+# cargo accepts, so the value is held to the integer, not to something equal to 1.
+CARGO_MANIFEST = "Cargo.toml"
+CARGO_CONFIG = ".cargo/config.toml"
+CARGO_BUILD_KEYS: tuple[tuple[tuple[str, ...], object], ...] = (
+    (("build", "target-dir"), "target"),
+    (("profile", "dev", "debug"), 1),
+)
 
 # An AGENTS.md heading that records how the repo was built up from the skill's
 # reference axes (product shape + language(s) + cross-cutting/intersection
@@ -915,6 +937,98 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
                 "OK",
                 f"typed packaging: {qualifying} publishing manifest(s) ship "
                 f"{TYPED_MARKER} and {TYPED_CLASSIFIER}",
+            )
+        )
+    return findings
+
+
+def has_cargo_manifest(repo: Path) -> bool:
+    """Whether any ``Cargo.toml`` sits in the repo, outside vendored and build trees."""
+    return any(
+        CARGO_MANIFEST in filenames
+        for _directory, _dirnames, filenames in _walk_tree(repo)
+    )
+
+
+def _toml_scalar(value: object) -> str:
+    """``value`` as a TOML reader would write it, for a finding that quotes it.
+
+    JSON and TOML spell a string, an integer and a boolean the same way, which
+    is what lets a finding say ``is true, expected 1`` in the file's own syntax;
+    anything else (a table, a date) falls back to ``repr``.
+    """
+    try:
+        return json.dumps(value)
+    except TypeError:
+        return repr(value)
+
+
+def check_cargo_build_config(repo: Path) -> list[Finding]:
+    """Hold a Rust repository to the shared cargo build configuration.
+
+    Every repo containing a ``Cargo.toml`` carries the root ``.cargo/config.toml``
+    with exactly the keys in ``CARGO_BUILD_KEYS``: one target directory per clone
+    that every crate in it builds into (``build.target-dir = "target"``) and line
+    tables only for dev and test builds (``profile.dev.debug = 1``). Both live in
+    the config file rather than a manifest because a manifest profile reaches only
+    the workspace that declares it while the config file reaches every crate under
+    the clone, and ``target-dir`` can live nowhere else. This is the drift gate for
+    that contract: a missing file, a missing key, or another value — a ``true`` or
+    a ``"1"`` where the integer ``1`` is owed — is an ERROR naming the file, the
+    key and the value expected. Silent where the repo has no ``Cargo.toml``.
+    """
+    if not has_cargo_manifest(repo):
+        return []
+    path = repo / CARGO_CONFIG
+    expected_text = ", ".join(
+        f"{'.'.join(keys)} = {_toml_scalar(value)}" for keys, value in CARGO_BUILD_KEYS
+    )
+    if not path.is_file():
+        return [
+            Finding(
+                "ERROR",
+                f"{CARGO_CONFIG} missing: a repo with a {CARGO_MANIFEST} carries the "
+                f"cargo build configuration ({expected_text})",
+                f"create {CARGO_CONFIG} at the repo root with the two keys "
+                "(references/languages/rust.md carries the exact file text)",
+            )
+        ]
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        return [
+            Finding(
+                "ERROR",
+                f"{CARGO_CONFIG} does not parse as TOML ({exc}), so it cannot carry "
+                f"the cargo build configuration ({expected_text})",
+                f"fix the file so cargo can read it, then set {expected_text}",
+            )
+        ]
+    findings: list[Finding] = []
+    for keys, expected in CARGO_BUILD_KEYS:
+        table = _table(data, *keys[:-1])
+        dotted = ".".join(keys)
+        table_header = f"[{'.'.join(keys[:-1])}]"
+        actual = table.get(keys[-1])
+        # `type(...) is` rather than `==`: `True == 1` in Python, and `True` is
+        # cargo's level 2 — the full debuginfo the contract exists to turn off.
+        if type(actual) is type(expected) and actual == expected:
+            continue
+        state = "is unset" if keys[-1] not in table else f"is {_toml_scalar(actual)}"
+        findings.append(
+            Finding(
+                "ERROR",
+                f"{CARGO_CONFIG}: cargo build configuration `{dotted}` {state}, "
+                f"expected {_toml_scalar(expected)}",
+                f"set `{keys[-1]} = {_toml_scalar(expected)}` under {table_header} "
+                f"in {CARGO_CONFIG} (references/languages/rust.md)",
+            )
+        )
+    if not findings:
+        findings.append(
+            Finding(
+                "OK",
+                f"cargo build configuration: {CARGO_CONFIG} carries {expected_text}",
             )
         )
     return findings
@@ -1897,6 +2011,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_e2e_realism(repo)
     findings += check_coverage(repo)
     findings += check_typed_packaging(repo)
+    findings += check_cargo_build_config(repo)
     findings += check_ci(repo)
     findings += check_pr_template(repo)
     findings += check_notignored(repo)
