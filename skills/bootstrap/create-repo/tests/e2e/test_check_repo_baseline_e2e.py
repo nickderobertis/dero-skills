@@ -19,11 +19,13 @@ import subprocess
 from pathlib import Path
 
 from test_check_repo_baseline import (
+    CONFORMANT_CARGO_CONFIG,
     FULL_JUSTFILE,
     NO_ORCHESTRATOR_JUSTFILE,
     SCRIPT,
     _buildout_repo,
     make_repo,
+    write_cargo_repo,
     write_package,
 )
 
@@ -215,6 +217,53 @@ def test_e2e_untyped_pure_python_package_fails_then_passes_once_typed(tmp_path):
     result = _run_script(repo)
     assert result.returncode == 0, result.stderr
     assert "untyped distribution" not in result.stderr
+    assert [line for line in result.stdout.splitlines() if line.strip()] == [
+        f"OK    baseline invariants satisfied: {repo.resolve()}"
+    ]
+
+
+def _cargo_build_config_errors(result) -> list[str]:
+    return [
+        line
+        for line in result.stderr.splitlines()
+        if line.startswith("ERROR") and ".cargo/config.toml" in line
+    ]
+
+
+def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path):
+    # The drift gate the contract names, driven the way a later reader runs it
+    # against a Rust repository: no config, then a config carrying full debuginfo
+    # (`debug = true` is level 2, the value the contract exists to turn off), then
+    # the exact file text the reference has an agent write.
+    repo = tmp_path / "rust"
+    repo.mkdir()
+    make_repo(repo)
+    write_cargo_repo(repo, config=None)
+    result = _run_script(repo)
+    assert result.returncode == 1
+    errors = _cargo_build_config_errors(result)
+    assert len(errors) == 1, result.stderr
+    assert errors[0].startswith("ERROR .cargo/config.toml missing")
+    assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0]
+    assert "create .cargo/config.toml at the repo root" in result.stderr
+
+    config = repo / ".cargo" / "config.toml"
+    config.parent.mkdir()
+    config.write_text(
+        '[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = true\n',
+        encoding="utf-8",
+    )
+    result = _run_script(repo)
+    assert result.returncode == 1
+    errors = _cargo_build_config_errors(result)
+    assert len(errors) == 1, result.stderr
+    assert "`profile.dev.debug` is true, expected 1" in errors[0]
+    assert "set `debug = 1` under [profile.dev] in .cargo/config.toml" in result.stderr
+
+    config.write_text(CONFORMANT_CARGO_CONFIG, encoding="utf-8")
+    result = _run_script(repo)
+    assert result.returncode == 0, result.stderr
+    assert ".cargo/config.toml" not in result.stderr
     assert [line for line in result.stdout.splitlines() if line.strip()] == [
         f"OK    baseline invariants satisfied: {repo.resolve()}"
     ]

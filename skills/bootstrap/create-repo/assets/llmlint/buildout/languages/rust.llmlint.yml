@@ -1,7 +1,7 @@
 # Rust buildout rules (plugin) — run ONCE during repo creation, then discarded.
 # One-time structural checks on toolchain pinning and the strict clippy gate; the
 # ongoing Rust judgment rules live in languages/rust.llmlint.yml.
-version: 1.1
+version: 1.2
 
 rules:
   - name: toolchain_pinned_and_installed
@@ -13,6 +13,21 @@ rules:
       drift from the committed pin.
     files:
       include: ["**/rust-toolchain.toml", "**/rust-toolchain", ".github/workflows/**"]
+
+  - name: dev_profile_and_target_dir
+    description: |
+      true when the repository root carries `.cargo/config.toml` with
+      `[build] target-dir = "target"` and `[profile.dev] debug = 1` (the integer
+      1: line tables only for dev and test builds, `release` untouched), so every
+      crate in the clone builds into `<clone>/target` and each worktree into its
+      own. false when the file is missing, either key is absent or holds another
+      value (`true` is full debuginfo), `target-dir` points outside the clone
+      (one target directory shared across worktrees), or the keys sit in a
+      `Cargo.toml` instead of the config file.
+    files:
+      include:
+        - ".cargo/config.toml"
+        - "**/Cargo.toml"
 
   - name: clippy_denies_warnings
     description: |

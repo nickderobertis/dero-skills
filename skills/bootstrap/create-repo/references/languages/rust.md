@@ -11,6 +11,51 @@ the points below concrete.
   `rustfmt`/`clippy`/`llvm-tools` — and the release `targets`) as the single
   source of truth, and have CI install from it rather than from a separate action
   pin.
+- **Cargo build configuration.** A root `.cargo/config.toml` carries two keys
+  every cargo invocation anywhere inside the clone reads:
+  `build.target-dir = "target"` and `profile.dev.debug = 1`. `target-dir` is
+  resolved relative to the directory holding `.cargo/`, so every crate in the
+  clone — workspace members and any crate outside the workspace alike — builds
+  into `<clone>/target` rather than a `target/` per crate, and a second clone or
+  worktree of the repo, carrying its own copy of the file, builds into its own
+  root: the target directory is per clone/worktree and is **never shared across
+  worktrees or across repositories** (concurrent builds must not contend for
+  one), so never point it outside the clone. `debug = 1` (an integer: cargo's
+  "limited" level, line tables only) keeps `file:line` for backtraces and
+  `cargo llvm-cov` while the full debuginfo cargo writes by default (`debug = 2`)
+  stays off the disk; the `test` profile inherits it from `dev`, and `release`
+  (and any other profile a repo declares) is untouched. Both keys live in the
+  config file rather than `Cargo.toml` because a manifest `[profile]` reaches
+  only the workspace that declares it while the config file reaches every crate
+  under the clone — and `target-dir` can live nowhere else. Existing
+  `[profile.dev]` keys in a manifest (`opt-level`, `package."*"`) stay where
+  they are: config-file profile keys merge with manifest ones key by key. Where
+  a `.cargo/config.toml` already exists, merge the keys into its `[build]` /
+  `[profile.dev]` tables (a TOML table may appear once); where none exists,
+  create it with exactly this text:
+
+  ```toml
+  # Build configuration every cargo invocation anywhere inside this clone reads.
+  #
+  # `target-dir` here is resolved relative to this file's parent directory, so every
+  # crate in this clone — workspace members and any crate outside the workspace
+  # alike — builds into `<clone>/target`, and a second clone or worktree of this
+  # repository, carrying its own copy of this file, builds into its own root. Never
+  # point this outside the clone: concurrent worktrees must not share one target
+  # directory.
+  [build]
+  target-dir = "target"
+
+  # Line tables only for dev and test builds (`test` inherits `dev`): backtraces and
+  # coverage keep file:line, and the full debuginfo cargo writes by default
+  # (`debug = 2`) stays off the disk. `release` is untouched.
+  [profile.dev]
+  debug = 1
+  ```
+
+  `check_repo_baseline.py` holds every repo containing a `Cargo.toml` to exactly
+  these two values; the `CARGO_TARGET_DIR` variable or `--target-dir` still
+  override the file for the one invocation that sets them.
 - **MSRV (when you promise one).** Declare `rust-version` once in
   `[workspace.package]` and inherit it per crate, set
   `msrv` in `clippy.toml` so clippy flags too-new APIs, and add a `just msrv`
@@ -140,6 +185,13 @@ repo-level target too.
 - [ ] **Toolchain.** Stable Rust with `rustfmt` and `clippy -D warnings` as
   strict gates; the toolchain is pinned in `rust-toolchain.toml` (channel,
   components, release targets) and CI installs from it.
+- [ ] **Cargo build configuration.** The root `.cargo/config.toml` carries
+  `build.target-dir = "target"` (a string) and `profile.dev.debug = 1` (an
+  integer), so every crate in the clone builds into `<clone>/target` with
+  line-table debuginfo for dev and test builds while `release` is untouched; the
+  target directory is never pointed outside the clone nor shared across
+  worktrees or repositories. `check_repo_baseline.py` fails a repo holding a
+  `Cargo.toml` when the file is missing or either key carries another value.
 - [ ] **MSRV (if promised).** `rust-version` in `[workspace.package]` and
   inherited per crate, `msrv` in `clippy.toml`, and a `just msrv` recipe — run in
   CI when the minimum is a real commitment.
