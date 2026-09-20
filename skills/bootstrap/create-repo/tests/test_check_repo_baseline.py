@@ -1365,13 +1365,13 @@ def test_cargo_build_config_literals_match_the_reference_contract():
         value = crb._table(parsed, *key.table)[key.name]
         assert type(value) is type(key.expected) and value == key.expected, key
         for statement in (bullet, checklist, inventory):
-            assert f"`{key.dotted} = {crb._toml_scalar(key.expected)}`" in statement, (
+            assert f"`{key.dotted} = {crb._render_value(key.expected)}`" in statement, (
                 key,
                 statement,
             )
         # The judge's words spell the key with its table header rather than dotted.
         assert (
-            f"[{'.'.join(key.table)}] {key.name} = {crb._toml_scalar(key.expected)}"
+            f"[{'.'.join(key.table)}] {key.name} = {crb._render_value(key.expected)}"
             in judge
         )
     for statement in (bullet, checklist, inventory, judge):

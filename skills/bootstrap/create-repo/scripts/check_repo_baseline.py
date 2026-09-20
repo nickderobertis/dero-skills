@@ -968,12 +968,12 @@ def has_cargo_manifest(repo: Path) -> bool:
     )
 
 
-def _toml_scalar(value: object) -> str:
-    """``value`` as a TOML reader would write it, for a finding that quotes it.
+def _render_value(value: object) -> str:
+    """``value`` quoted for a finding, in the config file's own syntax where it has one.
 
     JSON and TOML spell a string, an integer and a boolean the same way, which
-    is what lets a finding say ``is true, expected 1`` in the file's own syntax;
-    anything else (a table, a date) falls back to ``repr``.
+    is what lets a finding say ``is true, expected 1``; a value JSON cannot
+    spell (a date) falls back to ``repr`` so the reader still sees what is there.
     """
     try:
         return json.dumps(value)
@@ -999,7 +999,7 @@ def check_cargo_build_config(repo: Path) -> list[Finding]:
         return []
     path = repo / CARGO_CONFIG
     expected_text = ", ".join(
-        f"{key.dotted} = {_toml_scalar(key.expected)}" for key in CARGO_BUILD_KEYS
+        f"{key.dotted} = {_render_value(key.expected)}" for key in CARGO_BUILD_KEYS
     )
     if not path.is_file():
         return [
@@ -1030,13 +1030,13 @@ def check_cargo_build_config(repo: Path) -> list[Finding]:
         # cargo's level 2 — the full debuginfo the contract exists to turn off.
         if type(actual) is type(key.expected) and actual == key.expected:
             continue
-        state = "is unset" if key.name not in table else f"is {_toml_scalar(actual)}"
+        state = "is unset" if key.name not in table else f"is {_render_value(actual)}"
         findings.append(
             Finding(
                 "ERROR",
                 f"{CARGO_CONFIG}: cargo build configuration `{key.dotted}` {state}, "
-                f"expected {_toml_scalar(key.expected)}",
-                f"set `{key.name} = {_toml_scalar(key.expected)}` under "
+                f"expected {_render_value(key.expected)}",
+                f"set `{key.name} = {_render_value(key.expected)}` under "
                 f"[{'.'.join(key.table)}] in {CARGO_CONFIG} (references/languages/rust.md)",
             )
         )
