@@ -1,7 +1,7 @@
 # Rust buildout rules (plugin) — run ONCE during repo creation, then discarded.
 # One-time structural checks on toolchain pinning and the strict clippy gate; the
 # ongoing Rust judgment rules live in languages/rust.llmlint.yml.
-version: 1.1
+version: 1.2
 
 rules:
   - name: toolchain_pinned_and_installed
@@ -13,6 +13,29 @@ rules:
       drift from the committed pin.
     files:
       include: ["**/rust-toolchain.toml", "**/rust-toolchain", ".github/workflows/**"]
+
+  - name: dev_profile_and_target_dir
+    description: |
+      true when the repository root carries `.cargo/config.toml` with
+      `[build] target-dir = "target"` and `[profile.dev] debug = 1` — the
+      integer 1 (line tables only for dev and test builds, since `test`
+      inherits `dev`), not `true` (full debuginfo, level 2) and not a string —
+      so every crate in the clone, workspace member or not, builds into
+      `<clone>/target` and a second clone or worktree builds into its own root;
+      `release` and any other profile are untouched, and a manifest's other
+      `[profile.dev]` keys (`opt-level`, `package."*"`) stay where they are.
+      false when the file is missing, either key is absent or carries another
+      value, `target-dir` names a directory outside the clone (an absolute path,
+      or one climbing above the repo root, shares one target directory across
+      worktrees, which is forbidden), the keys live in a `Cargo.toml` instead (a
+      manifest profile reaches only its own workspace, and `target-dir` cannot
+      live there at all), or a `Cargo.toml` `[profile.dev]` declares its own
+      `debug` — the config file overrides it, so it is a second, dead statement
+      of the level that misleads the next reader.
+    files:
+      include:
+        - ".cargo/config.toml"
+        - "**/Cargo.toml"
 
   - name: clippy_denies_warnings
     description: |
