@@ -274,18 +274,36 @@ TYPED_MARKER = "py.typed"
 # beside test helpers rather than the distributed package and does not count.
 TEST_DIR_NAMES = frozenset({"test", "tests"})
 
-# The cargo build configuration every Rust repository carries
-# (references/languages/rust.md): the root config file, the two keys and the one
-# value each holds. `target-dir` is resolved by cargo relative to the directory
-# holding `.cargo/`, so this string names `<clone>/target` — one target directory
-# per clone/worktree, never shared across them. `debug` is cargo's integer
-# "limited" level (line tables only): `true` is level 2 and a string is nothing
-# cargo accepts, so the value is held to the integer, not to something equal to 1.
+# The cargo build configuration every Rust repository carries, verbatim from
+# references/languages/rust.md (the test suite fails when the two drift). Each
+# value is held by type as well as equality: `debug = true` is cargo's level 2,
+# not the integer 1 it equals in Python.
 CARGO_MANIFEST = "Cargo.toml"
 CARGO_CONFIG = ".cargo/config.toml"
-CARGO_BUILD_KEYS: tuple[tuple[tuple[str, ...], object], ...] = (
-    (("build", "target-dir"), "target"),
-    (("profile", "dev", "debug"), 1),
+
+
+class CargoBuildKey(NamedTuple):
+    """One key of the contract: its table path in ``CARGO_CONFIG`` and its value."""
+
+    path: tuple[str, ...]
+    expected: object
+
+    @property
+    def dotted(self) -> str:
+        return ".".join(self.path)
+
+    @property
+    def table(self) -> tuple[str, ...]:
+        return self.path[:-1]
+
+    @property
+    def name(self) -> str:
+        return self.path[-1]
+
+
+CARGO_BUILD_KEYS = (
+    CargoBuildKey(("build", "target-dir"), "target"),
+    CargoBuildKey(("profile", "dev", "debug"), 1),
 )
 
 # An AGENTS.md heading that records how the repo was built up from the skill's
@@ -981,7 +999,7 @@ def check_cargo_build_config(repo: Path) -> list[Finding]:
         return []
     path = repo / CARGO_CONFIG
     expected_text = ", ".join(
-        f"{'.'.join(keys)} = {_toml_scalar(value)}" for keys, value in CARGO_BUILD_KEYS
+        f"{key.dotted} = {_toml_scalar(key.expected)}" for key in CARGO_BUILD_KEYS
     )
     if not path.is_file():
         return [
@@ -1005,23 +1023,21 @@ def check_cargo_build_config(repo: Path) -> list[Finding]:
             )
         ]
     findings: list[Finding] = []
-    for keys, expected in CARGO_BUILD_KEYS:
-        table = _table(data, *keys[:-1])
-        dotted = ".".join(keys)
-        table_header = f"[{'.'.join(keys[:-1])}]"
-        actual = table.get(keys[-1])
+    for key in CARGO_BUILD_KEYS:
+        table = _table(data, *key.table)
+        actual = table.get(key.name)
         # `type(...) is` rather than `==`: `True == 1` in Python, and `True` is
         # cargo's level 2 — the full debuginfo the contract exists to turn off.
-        if type(actual) is type(expected) and actual == expected:
+        if type(actual) is type(key.expected) and actual == key.expected:
             continue
-        state = "is unset" if keys[-1] not in table else f"is {_toml_scalar(actual)}"
+        state = "is unset" if key.name not in table else f"is {_toml_scalar(actual)}"
         findings.append(
             Finding(
                 "ERROR",
-                f"{CARGO_CONFIG}: cargo build configuration `{dotted}` {state}, "
-                f"expected {_toml_scalar(expected)}",
-                f"set `{keys[-1]} = {_toml_scalar(expected)}` under {table_header} "
-                f"in {CARGO_CONFIG} (references/languages/rust.md)",
+                f"{CARGO_CONFIG}: cargo build configuration `{key.dotted}` {state}, "
+                f"expected {_toml_scalar(key.expected)}",
+                f"set `{key.name} = {_toml_scalar(key.expected)}` under "
+                f"[{'.'.join(key.table)}] in {CARGO_CONFIG} (references/languages/rust.md)",
             )
         )
     if not findings:

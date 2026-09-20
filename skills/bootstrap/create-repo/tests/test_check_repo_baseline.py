@@ -1080,6 +1080,7 @@ def test_backend_set_and_literals_match_the_reference_invariant():
             assert literal in statement, (literal, statement)
 
 
+# llmlint: ignore[comments_earn_their_place] same boundary as the typed-packaging banner above: this module groups its tests behind section banners, and without this one the cargo build-configuration tests read as part of the typed-packaging section.
 # --- cargo build configuration (Rust) ---------------------------------------
 
 
@@ -1253,6 +1254,28 @@ def test_cargo_manifest_under_a_vendored_or_build_tree_does_not_count(tmp_path):
     assert cargo_build_config_findings(crb.audit(repo)) == []
 
 
+def _buildout_rule(fragment: str, name: str) -> dict:
+    """The ``name`` rule of a buildout fragment: its description text and ``files``.
+
+    Stdlib-only, like everything here, so it slices the YAML rather than parsing
+    it: a rule runs from its ``- name:`` line to the next, its description is the
+    block scalar under ``description: |``, and its include list is the quoted
+    entries under ``include:``. Enough to hold the judge's words to the contract.
+    """
+    text = (SKILL_DIR / "assets" / "llmlint" / "buildout" / fragment).read_text(
+        encoding="utf-8"
+    )
+    blocks = re.split(r"(?m)^  - name: ", text)[1:]
+    block = next(b for b in blocks if b.startswith(name + "\n"))
+    description = re.search(r"description: \|\n((?:      .*\n)+)", block)
+    include = re.search(r"include:\n((?:        - .*\n)+)", block)
+    assert description and include, block
+    return {
+        "description": description.group(1),
+        "files": {"include": re.findall(r'- "([^"]+)"', include.group(1))},
+    }
+
+
 def test_cargo_build_config_literals_match_the_reference_contract():
     # The contract is stated once, in references/languages/rust.md; the checker's
     # constants derive from it and the reference's Verification item, its file
@@ -1276,15 +1299,23 @@ def test_cargo_build_config_literals_match_the_reference_contract():
     file_text = "\n".join(line.strip() for line in fenced.group(1).splitlines())
     assert file_text.strip() + "\n" == CONFORMANT_CARGO_CONFIG
     parsed = crb.tomllib.loads(file_text)
-    for keys, expected in crb.CARGO_BUILD_KEYS:
-        value = crb._table(parsed, *keys[:-1])[keys[-1]]
-        assert type(value) is type(expected) and value == expected, keys
+    rule = _buildout_rule("languages/rust.llmlint.yml", "dev_profile_and_target_dir")
+    assert rule["files"]["include"] == [crb.CARGO_CONFIG, f"**/{crb.CARGO_MANIFEST}"]
+    judge = " ".join(rule["description"].split())
+    for key in crb.CARGO_BUILD_KEYS:
+        value = crb._table(parsed, *key.table)[key.name]
+        assert type(value) is type(key.expected) and value == key.expected, key
         for statement in (bullet, checklist, inventory):
-            assert f"`{'.'.join(keys)} = {crb._toml_scalar(expected)}`" in statement, (
-                keys,
+            assert f"`{key.dotted} = {crb._toml_scalar(key.expected)}`" in statement, (
+                key,
                 statement,
             )
-    for statement in (bullet, checklist, inventory):
+        # The judge's words spell the key with its table header rather than dotted.
+        assert (
+            f"[{'.'.join(key.table)}] {key.name} = {crb._toml_scalar(key.expected)}"
+            in judge
+        )
+    for statement in (bullet, checklist, inventory, judge):
         assert f"`{crb.CARGO_CONFIG}`" in statement, statement
         assert "worktree" in statement and "release" in statement, statement
 
