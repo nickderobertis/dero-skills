@@ -13,10 +13,13 @@ subprocess with a stubbed external ``llmlint`` — lives in
 from __future__ import annotations
 
 import importlib.util
+import os
 import re
 import sys
 from pathlib import Path
 from typing import NamedTuple
+
+import pytest
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = SKILL_DIR / "scripts" / "check_repo_baseline.py"
@@ -1232,6 +1235,54 @@ def test_unparseable_cargo_config_is_error(tmp_path):
     assert len(errors) == 1
     assert errors[0].message.startswith(".cargo/config.toml does not parse as TOML")
     assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0].message
+
+
+def test_non_scalar_debug_value_is_quoted_by_repr(tmp_path):
+    # A TOML value with no JSON spelling (a date) still has to be quoted back in
+    # the finding, so the reader sees what the file holds rather than a crash.
+    repo = make_repo(tmp_path)
+    write_cargo_repo(
+        repo,
+        config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = 1979-05-27\n',
+    )
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert (
+        "`profile.dev.debug` is datetime.date(1979, 5, 27), expected 1"
+        in errors[0].message
+    )
+
+
+def test_non_utf8_cargo_config_is_error(tmp_path):
+    repo = make_repo(tmp_path)
+    write_cargo_repo(repo)
+    (repo / ".cargo" / "config.toml").write_bytes(b"[build]\ntarget-dir = \xff\xfe\n")
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert len(errors) == 1
+    assert errors[0].message.startswith(".cargo/config.toml does not parse as TOML")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads a mode-000 file")
+def test_unreadable_cargo_config_is_error(tmp_path):
+    repo = make_repo(tmp_path)
+    write_cargo_repo(repo)
+    config = repo / ".cargo" / "config.toml"
+    config.chmod(0)
+    try:
+        errors = [
+            f
+            for f in cargo_build_config_findings(crb.audit(repo))
+            if f.level == "ERROR"
+        ]
+    finally:
+        config.chmod(0o644)
+    assert len(errors) == 1
+    assert errors[0].message.startswith(".cargo/config.toml does not parse as TOML")
+    assert "Permission denied" in errors[0].message
 
 
 def test_repo_without_a_cargo_manifest_is_not_asked_for_the_config(tmp_path):
