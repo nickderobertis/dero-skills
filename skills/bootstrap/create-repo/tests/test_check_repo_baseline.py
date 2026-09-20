@@ -1293,16 +1293,49 @@ def test_repo_without_a_cargo_manifest_is_not_asked_for_the_config(tmp_path):
     assert cargo_build_config_findings(findings) == []
 
 
-def test_cargo_manifest_under_a_vendored_or_build_tree_does_not_count(tmp_path):
-    # `target/` and `node_modules/` are pruned from discovery, so a vendored
-    # crate's manifest does not make a non-Rust repo owe the config.
+def test_manifest_only_under_a_vendored_tree_still_owes_the_config(tmp_path):
+    # The contract holds a repository holding *any* Cargo.toml: a crate vendored
+    # under node_modules/ is one cargo can build from inside the clone, so the
+    # root config is owed even when it is the only manifest.
     repo = make_repo(tmp_path)
-    for tree in ("target/package/demo-0.1.0", "node_modules/some-addon"):
-        vendored = repo / tree
-        vendored.mkdir(parents=True)
-        (vendored / "Cargo.toml").write_text(
-            '[package]\nname = "v"\n', encoding="utf-8"
-        )
+    vendored = repo / "node_modules" / "some-addon"
+    vendored.mkdir(parents=True)
+    (vendored / "Cargo.toml").write_text('[package]\nname = "v"\n', encoding="utf-8")
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert [e.message.split(" ")[0] for e in errors] == [".cargo/config.toml"]
+    assert errors[0].message.startswith(".cargo/config.toml missing")
+
+
+def test_manifest_only_under_the_target_tree_still_owes_the_config(tmp_path):
+    # Same for a manifest cargo itself unpacked under target/ (`cargo package`):
+    # it is a Cargo.toml in the repository, and the check does not second-guess
+    # where it sits.
+    repo = make_repo(tmp_path)
+    unpacked = repo / "target" / "package" / "demo-0.1.0"
+    unpacked.mkdir(parents=True)
+    (unpacked / "Cargo.toml").write_text('[package]\nname = "demo"\n', encoding="utf-8")
+    errors = [
+        f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
+    ]
+    assert [e.message.split(" ")[0] for e in errors] == [".cargo/config.toml"]
+    (repo / ".cargo").mkdir()
+    (repo / ".cargo" / "config.toml").write_text(
+        CONFORMANT_CARGO_CONFIG, encoding="utf-8"
+    )
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert [f.level for f in cargo_build_config_findings(findings)] == ["OK"]
+
+
+def test_manifest_under_the_git_object_store_does_not_count(tmp_path):
+    # `.git/` is the one tree skipped: nothing under it is a manifest of the
+    # working tree, so a stray file there cannot make a non-Rust repo owe the config.
+    repo = make_repo(tmp_path)
+    stray = repo / ".git" / "some-worktree-junk"
+    stray.mkdir(parents=True)
+    (stray / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
     assert cargo_build_config_findings(crb.audit(repo)) == []
 
 

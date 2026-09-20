@@ -961,11 +961,19 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
 
 
 def has_cargo_manifest(repo: Path) -> bool:
-    """Whether any ``Cargo.toml`` sits in the repo, outside vendored and build trees."""
-    return any(
-        CARGO_MANIFEST in filenames
-        for _directory, _dirnames, filenames in _walk_tree(repo)
-    )
+    """Whether any ``Cargo.toml`` sits anywhere in the repo, ``.git/`` aside.
+
+    Deliberately not ``_walk_tree``: the contract holds a repository containing
+    *any* manifest, and a crate vendored under ``node_modules/`` or unpacked
+    under ``target/`` is one cargo can be asked to build from inside the clone,
+    so it owes the root config like any other. Only ``.git/`` is skipped — an
+    object store never holds a manifest of the tree.
+    """
+    for _dirpath, dirnames, filenames in os.walk(repo):
+        dirnames[:] = [d for d in dirnames if d != ".git"]
+        if CARGO_MANIFEST in filenames:
+            return True
+    return False
 
 
 def _render_value(value: object) -> str:
