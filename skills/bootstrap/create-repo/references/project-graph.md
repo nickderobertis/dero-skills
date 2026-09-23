@@ -6,6 +6,8 @@ all its tests — run only when a change can actually reach them. This layers on
 top of the per-project shapes and languages: every project inside still picks
 its own shape + language references.
 
+<!-- llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] this reference restates the project-graph policies its llmlint plugin declares, by design and for the same reason `base.md` restates SKILL.md's: the narrative states each policy once so the verification checklist below can be checked against it. The plugin's rule descriptions are the source; nothing here adds a policy they do not declare. -->
+
 **Nx is the orchestrator, and there is no native-workspace substitute.** A pure
 Rust repo and a pure Python repo carry the Node/bun toolchain for Nx the same as
 a TypeScript one. The trade is deliberate: there is essentially always a test
@@ -195,7 +197,7 @@ its dependencies resolve against the same lock.
   with it.
 - **Localize the instruction layer.** Add a nested `AGENTS.md` in each project
   for subtree-specific rules; the root `AGENTS.md` keeps only repo-wide
-  constraints. Use `CODEOWNERS` so changes route to the right reviewers.
+  constraints.
 - **Polyglot, one graph.** Multiple languages live in a single project graph,
   each project running its own toolchain, each ecosystem keeping its one
   lockfile, and Nx caching across them uniformly.
@@ -278,8 +280,7 @@ targets, it is never a runtime dependency of the scripts themselves.
   dependencies enforced (e.g. the module-boundary lint rule); target names are
   uniform across projects.
 - [ ] **Instruction layer localized.** Each project has a nested `AGENTS.md` for
-  subtree rules, with `CODEOWNERS` routing reviews; the root `AGENTS.md` keeps
-  only repo-wide constraints.
+  subtree rules; the root `AGENTS.md` keeps only repo-wide constraints.
 - [ ] **Scripts stay orchestrator-independent.** Bundled skill scripts remain
   self-contained (PEP 723 / Node built-ins) — Nx orchestrates targets, it is
   never a runtime dependency of the scripts.
