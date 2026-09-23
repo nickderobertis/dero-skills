@@ -6,6 +6,8 @@ all its tests — run only when a change can actually reach them. This layers on
 top of the per-project shapes and languages: every project inside still picks
 its own shape + language references.
 
+<!-- llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] this reference restates the project-graph policies its llmlint plugin declares, by design and for the same reason `base.md` restates SKILL.md's: the narrative states each policy once so the verification checklist below can be checked against it. The plugin's rule descriptions are the source; nothing here adds a policy they do not declare. -->
+
 **Nx is the orchestrator, and there is no native-workspace substitute.** A pure
 Rust repo and a pure Python repo carry the Node/bun toolchain for Nx the same as
 a TypeScript one. The trade is deliberate: there is essentially always a test
