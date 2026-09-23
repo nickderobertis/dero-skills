@@ -15,7 +15,6 @@ would be judged over.
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
@@ -46,8 +45,8 @@ def llmlint_bin() -> str:
     the gate already requires it (`llmlint-tier:validate` shells out to it), so a
     missing binary is a broken setup rather than a reason to skip and go green.
     """
-    path = os.pathsep.join([str(_LLMLINT_BIN_DIR), os.environ.get("PATH", "")])
-    found = shutil.which("llmlint", path=path)
+    installed = _LLMLINT_BIN_DIR / "llmlint"
+    found = str(installed) if installed.is_file() else shutil.which("llmlint")
     assert found is not None, (
         "llmlint not found on PATH or in "
         f"{_LLMLINT_BIN_DIR} — run `just bootstrap` (or `just session-setup`) "
