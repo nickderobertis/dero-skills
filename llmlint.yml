@@ -15,6 +15,12 @@ files:
     - "uv.lock"
     - "bun.lock"
     - ".allowlister.json"
+    # Local agent-session configuration, like `.allowlister.json` above: which
+    # hooks a Claude Code session wires and which commands it may run without a
+    # prompt. It configures a developer's own session rather than anything this
+    # repository produces or ships, and dispatched work here runs in a sandbox, so
+    # the judged tier has no product behaviour to rule on in it.
+    - ".claude/settings.json"
     - "gh-secrets.json"
 
 oneharness:
