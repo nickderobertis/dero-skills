@@ -42,6 +42,10 @@
       "{workspaceRoot}/.claude/settings.json",
       "{workspaceRoot}/**/project.json"
     ],
+    "oneharnessRelease": [
+      "{workspaceRoot}/pyproject.toml",
+      "{workspaceRoot}/uv.lock"
+    ],
     "skillEval": [
       "{workspaceRoot}/skills/bootstrap/create-repo/tests/skilltest/**/*"
     ]

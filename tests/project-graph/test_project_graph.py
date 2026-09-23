@@ -146,6 +146,16 @@ def test_a_change_to_a_dogfooded_contract_reruns_the_drift_gate():
         assert "authoring-tools" in affected_test_projects(contract), contract
 
 
+def test_a_change_to_the_oneharness_bound_reruns_the_skill_e2e_tier():
+    # test_oneharness_config_e2e.py parses the composed oneharness.toml with the
+    # release the root dev group bounds `oneharness-cli` to, which uv.lock pins.
+    # nx.json's `oneharnessRelease` input keeps both files in that tier's graph,
+    # so moving the bound reruns it instead of replaying a pass against the old
+    # release.
+    for manifest in ("pyproject.toml", "uv.lock"):
+        assert "bootstrap-create-repo-e2e" in affected_test_projects(manifest), manifest
+
+
 def test_an_unrelated_change_selects_nothing():
     assert affected_test_projects("docs/authoring-skills.md") == set()
 
