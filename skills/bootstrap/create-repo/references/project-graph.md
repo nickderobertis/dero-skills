@@ -195,7 +195,7 @@ its dependencies resolve against the same lock.
   with it.
 - **Localize the instruction layer.** Add a nested `AGENTS.md` in each project
   for subtree-specific rules; the root `AGENTS.md` keeps only repo-wide
-  constraints. Use `CODEOWNERS` so changes route to the right reviewers.
+  constraints.
 - **Polyglot, one graph.** Multiple languages live in a single project graph,
   each project running its own toolchain, each ecosystem keeping its one
   lockfile, and Nx caching across them uniformly.
@@ -278,8 +278,7 @@ targets, it is never a runtime dependency of the scripts themselves.
   dependencies enforced (e.g. the module-boundary lint rule); target names are
   uniform across projects.
 - [ ] **Instruction layer localized.** Each project has a nested `AGENTS.md` for
-  subtree rules, with `CODEOWNERS` routing reviews; the root `AGENTS.md` keeps
-  only repo-wide constraints.
+  subtree rules; the root `AGENTS.md` keeps only repo-wide constraints.
 - [ ] **Scripts stay orchestrator-independent.** Bundled skill scripts remain
   self-contained (PEP 723 / Node built-ins) — Nx orchestrates targets, it is
   never a runtime dependency of the scripts.
