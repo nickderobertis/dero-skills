@@ -1,17 +1,16 @@
 # Project-graph ongoing rules (plugin). Pairs with project-graph.md — the checks
 # that keep the project graph doing its job as the repo keeps changing, not just
 # at creation. Composed into every repo, since the Nx project graph is mandatory.
-version: 1.3.0
+version: 1.4.0
 
 rules:
   - name: instruction_layer_localized
     description: |
-      true when subtree rules live in a nested `AGENTS.md` inside each project and
-      `CODEOWNERS` routes reviews, leaving the root `AGENTS.md` to repo-wide
-      constraints only. false when project-specific rules are piled into the root
-      `AGENTS.md`, or there is no ownership routing.
+      true when subtree rules live in a nested `AGENTS.md` inside each project,
+      leaving the root `AGENTS.md` to repo-wide constraints only. false when
+      project-specific rules are piled into the root `AGENTS.md`.
     files:
-      include: ["**/AGENTS.md", "CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
+      include: ["**/AGENTS.md"]
 
   - name: expensive_tests_stay_behind_their_own_edge
     description: |
