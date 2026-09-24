@@ -15,7 +15,8 @@
       "command": "uv run ruff check skills/bootstrap/create-repo/tests/e2e"
     },
     "test": {
-      "command": "uv run pytest skills/bootstrap/create-repo/tests/e2e"
+      "command": "uv run pytest skills/bootstrap/create-repo/tests/e2e",
+      "inputs": ["default", "oneharnessRelease"]
     }
   }
 }

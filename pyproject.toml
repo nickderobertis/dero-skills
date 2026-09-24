@@ -14,6 +14,12 @@ dev = [
     # depends on the matching `notignored-cli` build, so the guard in
     # skills/bootstrap/create-repo/tests/ is verified against one known contract.
     "notignored-sdk==0.1.5",
+    # The sole declaration of the oneharness line the create-repo baseline is
+    # verified against — `llmlint-cli`, how a consumer gets oneharness, constrains
+    # it only from below. tests/e2e/test_oneharness_config_e2e.py reads this entry.
+    "oneharness-cli>=0.16,<0.17",
+    # Reads that entry: the authoritative PEP 508 parser, so no grammar is restated.
+    "packaging>=24",
     "pytest>=8.0",
     "ruff>=0.8",
     "skilltest-pytest>=0.8.0",
