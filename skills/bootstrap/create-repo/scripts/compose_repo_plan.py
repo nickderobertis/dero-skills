@@ -71,6 +71,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 # The Verification section heading every composable reference carries. Its body
 # (the ``- [ ]`` checklist items) is lifted out of the guidance and assembled
@@ -115,7 +116,6 @@ LLMLINT_VERSION_RE = re.compile(r"^version:\s*(\S+)", re.MULTILINE)
 # loudly instead of emitting a broken pin.
 FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
 
-# --- tool wiring (`--tool` + `--wiring`) -------------------------------------
 # The onebudgetspec release a consumer is pinned to: the npm package its `budgets`
 # targets run, at the version references/tools/onebudgetspec.md documents (its
 # README link names the same tag; tests hold the two, and this repo's own
@@ -147,12 +147,10 @@ NX_DEFAULT_NAMED_INPUTS: dict[str, list[str]] = {
 BUDGETS_RECIPE_NAME = "budgets"
 # The recipe itself, an asset so this script carries no orchestrator command.
 ONEBUDGETSPEC_RECIPE = "assets/tools/onebudgetspec.justfile"
-# A justfile recipe header (see check_repo_baseline.RECIPE_RE): the name, its
-# parameters, and the dependency list after the single terminating colon.
-JUST_CHECK_HEADER_RE = re.compile(r"^check\b([^\n:]*):(?!=)(.*)$", re.MULTILINE)
-JUST_RECIPE_NAME_RE = re.compile(
-    r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)", re.MULTILINE
-)
+# A justfile recipe header: its name, then its parameters up to the single
+# terminating colon, dependencies after it. The baseline checker reads recipes
+# with the same pattern (its RECIPE_RE); the test suite holds the two equal.
+JUST_RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
 JUST_BASE_ASSIGNMENT_RE = re.compile(r"^base\s*:=", re.MULTILINE)
 
 
@@ -594,11 +592,38 @@ def _write_json(path: Path, data: dict[str, object]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def wire_justfile(path: Path, recipe: str) -> list[str]:
-    """Add the ``budgets`` ``recipe`` to the justfile and make ``check`` depend on it.
+class RecipeHeader(NamedTuple):
+    """A justfile recipe's header line, split where just splits it."""
 
-    The recipe runs at ``check``'s tier against its merge base, so the justfile
-    must carry the template's ``tier`` parameter and ``base`` assignment.
+    index: int  # its line number
+    params: str  # between the name and the colon
+    deps: str  # after the colon, without a trailing comment
+    comment: str  # the trailing comment's text, or ""
+
+
+def recipe_headers(text: str) -> dict[str, RecipeHeader]:
+    headers: dict[str, RecipeHeader] = {}
+    for index, line in enumerate(text.splitlines()):
+        match = JUST_RECIPE_RE.match(line)
+        if match:
+            name = match.group(1)
+            deps, _, comment = line[match.end() :].partition("#")
+            params = line[len(name) : match.end() - 1]
+            headers[name] = RecipeHeader(index, params, deps, comment)
+    return headers
+
+
+def parameter_names(params: str) -> set[str]:
+    """The names of a recipe's parameters (``tier="affected"`` names ``tier``)."""
+    return {token.split("=", 1)[0].lstrip("+*$") for token in params.split()}
+
+
+def plan_justfile(path: Path, recipe: str) -> tuple[str, list[str]]:
+    """The justfile with the ``budgets`` ``recipe`` added and ``check`` depending on it.
+
+    The recipe runs at ``check``'s tier against the merge base, so the justfile
+    must carry the template's ``tier`` parameter and ``base`` assignment. Returns
+    the new text and a note per change; writes nothing.
     """
     template = "assets/justfile.template"
     if not path.is_file():
@@ -608,8 +633,9 @@ def wire_justfile(path: Path, recipe: str) -> list[str]:
             "`budgets` recipe that its `check` recipe depends on."
         )
     text = path.read_text(encoding="utf-8")
-    header = JUST_CHECK_HEADER_RE.search(text)
-    if header is None or "tier" not in header.group(1):
+    headers = recipe_headers(text)
+    check = headers.get("check")
+    if check is None or "tier" not in parameter_names(check.params):
         raise WiringError(
             f"{path} has no `check tier=...` recipe to run the budgets at\n"
             f"      fix: give `check` the tier parameter {template} declares, then "
@@ -622,61 +648,66 @@ def wire_justfile(path: Path, recipe: str) -> list[str]:
             "re-run --wiring."
         )
     changes: list[str] = []
-    deps, _, comment = header.group(2).partition("#")
     call = f"({BUDGETS_RECIPE_NAME} tier)"
-    if BUDGETS_RECIPE_NAME not in {tok.strip("()") for tok in deps.split()}:
-        rest = f" #{comment}" if comment else ""
-        line = f"check{header.group(1)}:{deps.rstrip()} {call}{rest}"
-        text = text[: header.start()] + line + text[header.end() :]
+    if BUDGETS_RECIPE_NAME not in {tok.strip("()") for tok in check.deps.split()}:
+        lines = text.splitlines(keepends=True)
+        comment = f" #{check.comment.rstrip()}" if check.comment else ""
+        lines[check.index] = (
+            f"check{check.params}:{check.deps.rstrip()} {call}{comment}\n"
+        )
+        text = "".join(lines)
         changes.append(f"`check` depends on `{call}`")
-    names = {m.group(1) for m in JUST_RECIPE_NAME_RE.finditer(text)}
-    if BUDGETS_RECIPE_NAME not in names:
+    if BUDGETS_RECIPE_NAME not in headers:
         text = text.rstrip("\n") + "\n\n" + recipe
         changes.append("added the `budgets` recipe")
-    path.write_text(text, encoding="utf-8")
-    return changes
+    return text, changes
 
 
-def wire_onebudgetspec(repo: Path, skill_dir: Path) -> list[str]:
-    """Pin onebudgetspec, give Nx its budget targets, and put them in ``check``.
-
-    Idempotent: what is already wired is left as it is, so re-running it changes
-    nothing. Returns a note per change made.
-    """
-    changes: list[str] = []
-
-    package_json = repo / "package.json"
-    package = _read_json_object(package_json)
-    package.setdefault("private", True)
+def plan_package_json(package: dict[str, object], path: Path) -> list[str]:
+    """Pin the release in ``package`` (in place); a note per change."""
     deps = package.get("dependencies")
     table_name = (
         "dependencies"
         if isinstance(deps, dict) and ONEBUDGETSPEC_NPM_PACKAGE in deps
         else "devDependencies"
     )
-    table = _json_table(package, table_name, package_json)
-    if table.get(ONEBUDGETSPEC_NPM_PACKAGE) != ONEBUDGETSPEC_VERSION:
-        table[ONEBUDGETSPEC_NPM_PACKAGE] = ONEBUDGETSPEC_VERSION
-        changes.append(
-            f"package.json pins {ONEBUDGETSPEC_NPM_PACKAGE} {ONEBUDGETSPEC_VERSION} "
-            "(install to record it in the lockfile)"
-        )
-    _write_json(package_json, package)
+    table = _json_table(package, table_name, path)
+    if table.get(ONEBUDGETSPEC_NPM_PACKAGE) == ONEBUDGETSPEC_VERSION:
+        return []
+    table[ONEBUDGETSPEC_NPM_PACKAGE] = ONEBUDGETSPEC_VERSION
+    package.setdefault("private", True)
+    return [
+        f"package.json pins {ONEBUDGETSPEC_NPM_PACKAGE} {ONEBUDGETSPEC_VERSION} "
+        "(install to record it in the lockfile)"
+    ]
 
-    nx_json = repo / "nx.json"
-    nx = _read_json_object(nx_json)
-    named = _json_table(nx, "namedInputs", nx_json)
+
+def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:
+    """Add the budget targets' defaults to ``nx`` (in place); a note per change.
+
+    What the workspace already defines is kept as it is.
+    """
+    changes: list[str] = []
+    named = _json_table(nx, "namedInputs", path)
     for name, inputs in NX_DEFAULT_NAMED_INPUTS.items():
         if name not in named:
             named[name] = list(inputs)
             changes.append(f"nx.json defines the `{name}` named input")
-    defaults = _json_table(nx, "targetDefaults", nx_json)
+    defaults = _json_table(nx, "targetDefaults", path)
     for target, config in ONEBUDGETSPEC_TARGET_DEFAULTS.items():
         if target not in defaults:
             defaults[target] = json.loads(json.dumps(config))
             changes.append(f"nx.json target default `{target}`")
-    _write_json(nx_json, nx)
+    return changes
 
+
+def wire_onebudgetspec(repo: Path, skill_dir: Path) -> list[str]:
+    """Pin onebudgetspec, give Nx its budget targets, and put them in ``check``.
+
+    Every file is validated before any is written, so a refusal leaves the repo
+    as it was. Idempotent: an already-wired repo is left byte-for-byte as it is.
+    Returns a note per change made.
+    """
     justfile = next(
         (
             repo / name
@@ -686,8 +717,23 @@ def wire_onebudgetspec(repo: Path, skill_dir: Path) -> list[str]:
         repo / "justfile",
     )
     recipe = (skill_dir / ONEBUDGETSPEC_RECIPE).read_text(encoding="utf-8")
-    changes += wire_justfile(justfile, recipe)
-    return changes
+    just_text, just_changes = plan_justfile(justfile, recipe)
+
+    package_json = repo / "package.json"
+    package = _read_json_object(package_json)
+    package_changes = plan_package_json(package, package_json)
+
+    nx_json = repo / "nx.json"
+    nx = _read_json_object(nx_json)
+    nx_changes = plan_nx_json(nx, nx_json)
+
+    if package_changes:
+        _write_json(package_json, package)
+    if nx_changes:
+        _write_json(nx_json, nx)
+    if just_changes:
+        justfile.write_text(just_text, encoding="utf-8")
+    return package_changes + nx_changes + just_changes
 
 
 # The setup step of each tool that has one, keyed by its `--tool` name.

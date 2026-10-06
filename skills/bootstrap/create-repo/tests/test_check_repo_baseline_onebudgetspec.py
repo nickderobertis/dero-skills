@@ -12,7 +12,10 @@ Whether the wired repo actually measures is the e2e tier's
 from __future__ import annotations
 
 import json
+import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -127,9 +130,6 @@ def test_a_wired_repo_passes(tmp_path):
     assert levels(crb.audit(repo), "ERROR") == []
 
 
-# --- not pinned -------------------------------------------------------------
-
-
 def test_no_pin_fails(tmp_path):
     repo = wired_repo(tmp_path)
     (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
@@ -168,9 +168,6 @@ def test_a_uv_pin_recorded_in_uv_lock_passes(tmp_path):
     (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
     [error] = levels(budget_findings(repo), "ERROR")
     assert "uv.lock does not record it" in error
-
-
-# --- a budgets.yaml no target `check` runs ------------------------------------
 
 
 def test_a_project_file_checked_by_a_target_check_does_not_run_fails(tmp_path):
@@ -229,9 +226,6 @@ def test_a_check_that_no_longer_depends_on_budgets_leaves_every_file_out(tmp_pat
     assert all(e.startswith("a budgets file is not in the gate") for e in errors)
 
 
-# --- the lint rules not adopted ----------------------------------------------
-
-
 def test_lint_rules_not_adopted_fails(tmp_path):
     repo = wired_repo(tmp_path)
     config = repo / "llmlint.yml"
@@ -242,7 +236,103 @@ def test_lint_rules_not_adopted_fails(tmp_path):
     assert "the onebudgetspec lint rules are not adopted" in error
 
 
-# --- not declared ------------------------------------------------------------
+def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    lock = repo / "bun.lock"
+    lock.write_text(
+        lock.read_text(encoding="utf-8").replace("cli@0.1.3", "cli@0.1.2"),
+        encoding="utf-8",
+    )
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "pins @onebudgetspec/cli 0.1.3 but no lockfile records it" in error
+
+
+@pytest.mark.parametrize(
+    ("lockfile", "body"),
+    [
+        (
+            "package-lock.json",
+            '{"packages": {"node_modules/@onebudgetspec/cli": {"version": "0.1.3"}}}',
+        ),
+        ("pnpm-lock.yaml", "packages:\n\n  '@onebudgetspec/cli@0.1.3':\n"),
+        ("yarn.lock", '"@onebudgetspec/cli@0.1.3":\n  version "0.1.3"\n'),
+    ],
+)
+def test_each_npm_lockfile_records_the_pin(tmp_path, lockfile, body):
+    repo = wired_repo(tmp_path)
+    (repo / "bun.lock").unlink()
+    (repo / lockfile).write_text(body, encoding="utf-8")
+    assert levels(budget_findings(repo), "ERROR") == []
+    (repo / lockfile).write_text(body.replace("0.1.3", "0.1.2"), encoding="utf-8")
+    assert len(levels(budget_findings(repo), "ERROR")) == 1
+
+
+@pytest.mark.parametrize(
+    "budgets_target",
+    [
+        {
+            "options": {
+                "command": "onebudgetspec check --exclude-label host",
+                "cwd": "services/api",
+            }
+        },
+        {
+            "options": {
+                "commands": [
+                    "echo measuring",
+                    {"command": "onebudgetspec check services/api/budgets.yaml"},
+                ]
+            }
+        },
+    ],
+    ids=["options.command from options.cwd", "options.commands"],
+)
+def test_a_target_running_check_through_its_options_reaches_the_file(
+    tmp_path, budgets_target
+):
+    repo = wired_repo(tmp_path)
+    project = {"name": "api", "targets": {"budgets": budgets_target}}
+    (repo / "services" / "api" / "project.json").write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    assert levels(budget_findings(repo), "ERROR") == []
+
+
+def test_a_target_checking_from_another_directory_misses_the_file(tmp_path):
+    repo = wired_repo(tmp_path)
+    budgets = {"options": {"command": "onebudgetspec check", "cwd": "services/web"}}
+    project = {"name": "api", "targets": {"budgets": budgets}}
+    (repo / "services" / "api" / "project.json").write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "no target in services/api/project.json runs `onebudgetspec check`" in error
+
+
+def test_a_commented_out_plugin_is_not_adoption(tmp_path):
+    repo = wired_repo(tmp_path)
+    config = repo / "llmlint.yml"
+    lines = config.read_text(encoding="utf-8").splitlines()
+    commented = [
+        line.replace("  - ", "  # - ") if "onebudgetspec" in line else line
+        for line in lines
+    ]
+    config.write_text("\n".join(commented) + "\n", encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "the onebudgetspec lint rules are not adopted" in error
+
+
+def test_the_value_taking_check_options_are_the_clis(tmp_path):
+    # `onebudgetspec check --help` (the dev dependency, the same release the
+    # composer pins) is the source of which options take a value.
+    binary = Path(sys.executable).parent / "onebudgetspec"
+    found = str(binary) if binary.is_file() else shutil.which("onebudgetspec")
+    assert found is not None, "onebudgetspec is not installed — run `just bootstrap`"
+    help_text = subprocess.run(
+        [found, "check", "--help"], capture_output=True, text=True, check=True
+    ).stdout
+    taking_values = set(re.findall(r"^\s+(--[a-z-]+) <[A-Z_]+>", help_text, re.M))
+    assert taking_values == crb.ONEBUDGETSPEC_VALUE_FLAGS
 
 
 def test_a_repo_that_does_not_declare_it_is_not_checked(tmp_path):
@@ -254,9 +344,6 @@ def test_a_repo_that_does_not_declare_it_is_not_checked(tmp_path):
     (repo / "budgets.yaml").write_text(ROOT_BUDGETS, encoding="utf-8")
     assert budget_findings(repo) == []
     assert levels(crb.audit(repo), "ERROR") == []
-
-
-# --- what `onebudgetspec check` reads ------------------------------------------
 
 
 ROOT = "budgets.yaml"

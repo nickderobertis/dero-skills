@@ -374,8 +374,7 @@ def test_buildout_pins_track_each_fragment_current_major(tmp_path):
     )
 
 
-# --- the onebudgetspec opt-in (`--tool onebudgetspec`, `--wiring`) ------------
-# Driven through the real CLI over real files. The wiring's behaviour in a real
+# The onebudgetspec opt-in (`--tool onebudgetspec`, `--wiring`), driven through the real CLI over real files. The wiring's behaviour in a real
 # Nx workspace — budgets measured, scoped, failed and cached — is the e2e tier's
 # (e2e/test_onebudgetspec_wiring_e2e.py).
 
@@ -436,7 +435,6 @@ def test_without_the_opt_in_nothing_names_onebudgetspec(tmp_path):
     assert "tools/" not in composed
     assert "Tool: onebudgetspec" not in plan
     assert "--tool" not in plan
-    # And no wiring: the repository is left as the template made it.
     assert (repo / "justfile").read_text(encoding="utf-8") == before
     assert not (repo / "package.json").exists()
     assert not (repo / "nx.json").exists()
@@ -551,6 +549,101 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
     assert refusal in result.stderr
     assert "assets/justfile.template" in result.stderr
     assert (tmp_path / "justfile").read_text(encoding="utf-8") == justfile
+
+
+@pytest.mark.parametrize(
+    ("name", "body", "refusal"),
+    [
+        ("package.json", "[]", "package.json does not hold a JSON object"),
+        (
+            "package.json",
+            '{"devDependencies": ["@onebudgetspec/cli"]}',
+            "`devDependencies` is not a JSON object",
+        ),
+        ("nx.json", '{"targetDefaults": []}', "`targetDefaults` is not a JSON object"),
+        ("nx.json", '{"namedInputs": "default"}', "`namedInputs` is not a JSON object"),
+    ],
+    ids=[
+        "package not an object",
+        "devDependencies a list",
+        "targetDefaults a list",
+        "namedInputs a string",
+    ],
+)
+def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, refusal):
+    repo = template_repo(tmp_path)
+    (repo / name).write_text(body, encoding="utf-8")
+    justfile = (repo / "justfile").read_text(encoding="utf-8")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 2
+    assert refusal in result.stderr
+    assert "fix:" in result.stderr
+    assert (repo / name).read_text(encoding="utf-8") == body
+    assert (repo / "justfile").read_text(encoding="utf-8") == justfile
+
+
+def test_a_refused_justfile_leaves_every_manifest_untouched(tmp_path):
+    # The justfile is refused after the manifests could have been merged; the
+    # wiring validates all three before it writes any.
+    repo = tmp_path
+    (repo / "justfile").write_text('check tier="affected":\n    echo gate\n')
+    (repo / "package.json").write_text('{"private":true}', encoding="utf-8")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 2
+    assert "no `base` assignment" in result.stderr
+    assert (repo / "package.json").read_text(encoding="utf-8") == '{"private":true}'
+    assert not (repo / "nx.json").exists()
+
+
+def test_wiring_keeps_the_workspaces_own_budget_target_defaults(tmp_path):
+    repo = template_repo(tmp_path)
+    own = {"budgets": {"cache": False, "inputs": ["{projectRoot}/**/*"]}}
+    (repo / "nx.json").write_text(json.dumps({"targetDefaults": own}), encoding="utf-8")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    defaults = json.loads((repo / "nx.json").read_text(encoding="utf-8"))
+    assert defaults["targetDefaults"]["budgets"] == own["budgets"]
+    assert defaults["targetDefaults"]["budgets-host"] == {"cache": False}
+
+
+def test_wiring_leaves_an_already_pinned_manifest_byte_for_byte(tmp_path):
+    repo = template_repo(tmp_path)
+    compact = (
+        f'{{"devDependencies":{{"@onebudgetspec/cli":"{crp.ONEBUDGETSPEC_VERSION}"}}}}'
+    )
+    (repo / "package.json").write_text(compact, encoding="utf-8")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    assert (repo / "package.json").read_text(encoding="utf-8") == compact
+
+
+def test_wiring_finds_a_capitalised_justfile(tmp_path):
+    repo = template_repo(tmp_path)
+    (repo / "justfile").rename(repo / "Justfile")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    assert not (repo / "justfile").exists()
+    assert "(budgets tier)" in (repo / "Justfile").read_text(encoding="utf-8")
+
+
+def test_a_parameter_merely_containing_tier_is_not_the_tier(tmp_path):
+    justfile = 'base := "origin/main"\ncheck other_tier="x":\n    echo gate\n'
+    (tmp_path / "justfile").write_text(justfile, encoding="utf-8")
+    result = compose_into(
+        tmp_path, "--tool", "onebudgetspec", "--wiring", str(tmp_path)
+    )
+    assert result.returncode == 2
+    assert "no `check tier=...` recipe" in result.stderr
+
+
+def test_the_composer_reads_recipes_with_the_baseline_checkers_grammar():
+    checker = SKILL_DIR / "scripts" / "check_repo_baseline.py"
+    spec_crb = importlib.util.spec_from_file_location("crb_grammar", checker)
+    assert spec_crb is not None and spec_crb.loader is not None
+    crb = importlib.util.module_from_spec(spec_crb)
+    sys.modules[spec_crb.name] = crb
+    spec_crb.loader.exec_module(crb)
+    assert crp.JUST_RECIPE_RE.pattern == crb.RECIPE_RE.pattern
 
 
 def test_the_onebudgetspec_release_is_named_once_in_lockstep():

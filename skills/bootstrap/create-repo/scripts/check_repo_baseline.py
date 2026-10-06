@@ -1409,30 +1409,50 @@ def oneharness_fallback_harnesses(text: str) -> list[str] | None:
     return ids or None
 
 
-def llmlint_config_has_plugins(text: str) -> bool:
-    """True when an llmlint config declares at least one plugin.
+def _yaml_scalar(text: str) -> str:
+    """A flow scalar's value: a quoted string's contents, else up to a comment."""
+    text = text.strip()
+    if text[:1] in ("'", '"'):
+        end = text.find(text[0], 1)
+        return text[1:end] if end > 0 else text[1:]
+    return text.split(" #", 1)[0].strip()
+
+
+def llmlint_plugins(text: str) -> list[str]:
+    """The entries of an llmlint config's top-level ``plugins`` list.
 
     Handles the block form (``plugins:`` then indented ``- ...`` entries) and the
-    inline form (``plugins: ["..."]``). A light scan, not a YAML parse — enough to
-    tell a composed config from an empty ``plugins: []`` or a missing key.
+    inline form (``plugins: ["...", "..."]``); comments are not entries. A light
+    scan, not a YAML parse.
     """
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped.startswith("plugins:"):
+        if not line.startswith("plugins:"):
             continue
-        rest = stripped[len("plugins:") :].strip()
+        rest = line[len("plugins:") :].split(" #", 1)[0].strip()
         if rest.startswith("["):
-            return rest not in ("[]", "[ ]")
-        # Block form: an indented list entry before the next top-level key.
+            inner = rest.strip("[]")
+            return [v for v in (_yaml_scalar(part) for part in inner.split(",")) if v]
+        entries: list[str] = []
         for nxt in lines[i + 1 :]:
-            if not nxt.strip():
+            if not nxt.strip() or nxt.lstrip().startswith("#"):
                 continue
-            if re.match(r"^\s+-\s+\S", nxt):
-                return True
             if not nxt.startswith((" ", "\t")):
                 break
-    return False
+            entry = re.match(r"^\s+-\s+(\S.*)$", nxt)
+            if entry and (value := _yaml_scalar(entry.group(1))):
+                entries.append(value)
+        return entries
+    return []
+
+
+def llmlint_config_has_plugins(text: str) -> bool:
+    """True when an llmlint config declares at least one plugin.
+
+    Enough to tell a composed config from an empty ``plugins: []`` or a missing
+    key.
+    """
+    return bool(llmlint_plugins(text))
 
 
 def ci_references_llmlint(repo: Path) -> bool:
@@ -1762,33 +1782,42 @@ def check_llmlint(repo: Path) -> list[Finding]:
     ]
 
 
-# --- onebudgetspec (a declared tool) ----------------------------------------
-# The setup step `compose_repo_plan.py --tool onebudgetspec --wiring` performs,
-# verified for a repo whose recorded composition names the tool's reference
-# (references/tools/onebudgetspec.md). Deterministic: nothing here runs a budget.
+# onebudgetspec, a declared tool: the setup step `compose_repo_plan.py --tool
+# onebudgetspec --wiring` performs, verified for a repo whose recorded composition
+# names references/tools/onebudgetspec.md. Deterministic: nothing here runs a budget.
 
 ONEBUDGETSPEC_REFERENCE = "tools/onebudgetspec.md"
 BUDGETS_FILE = "budgets.yaml"
 # The release's npm packages (the SDK installs the CLI at its own version) and
-# their PyPI counterparts.
+# their PyPI counterparts, each pinned as `name==version`.
 ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
-ONEBUDGETSPEC_PYPI_RE = re.compile(r"^\s*onebudgetspec-(?:cli|sdk)\s*==\s*[\w.+-]+\s*$")
-NPM_LOCKFILES = (
-    "bun.lock",
-    "bun.lockb",
-    "package-lock.json",
-    "pnpm-lock.yaml",
-    "yarn.lock",
+ONEBUDGETSPEC_PYPI_PIN_RE = re.compile(
+    r"^\s*(onebudgetspec-(?:cli|sdk))\s*==\s*([0-9][0-9A-Za-z.+-]*)\s*$"
 )
+NPM_LOCKFILES = ("bun.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")
 # One exact version: no range operator, tag or URL.
 EXACT_NPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
-ONEBUDGETSPEC_LINT_RE = re.compile(r"tools/onebudgetspec\.llmlint\.yml@1\b")
-# An `onebudgetspec check` invocation and the arguments that follow it.
+ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
 ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
-# The `check` flags that take a value, so that value is not read as a PATH.
+# The `check` options that take a value, so that value is not read as a PATH —
+# `onebudgetspec check --help` is their source, which the test suite reconciles.
 ONEBUDGETSPEC_VALUE_FLAGS = frozenset(
     {"--id", "--label", "--exclude-label", "--output"}
 )
+
+
+class CheckArgs(NamedTuple):
+    """The PATH arguments of one ``onebudgetspec check``, and whether it recurses."""
+
+    paths: list[str]
+    recursive: bool
+
+
+class TargetCommand(NamedTuple):
+    """A command an Nx target runs, and the repo-relative directory it runs in."""
+
+    command: str
+    cwd: str
 
 
 def declares_onebudgetspec(repo: Path) -> bool:
@@ -1799,6 +1828,75 @@ def declares_onebudgetspec(repo: Path) -> bool:
     return ONEBUDGETSPEC_REFERENCE in refs
 
 
+def npm_lock_records(lock: Path, name: str, version: str) -> bool:
+    """Whether npm lockfile ``lock`` records package ``name`` at ``version``."""
+    text = lock.read_text(encoding="utf-8")
+    if lock.name == "package-lock.json":
+        try:
+            packages = json.loads(text).get("packages", {})
+        except (json.JSONDecodeError, AttributeError):
+            return False
+        entry = (
+            packages.get(f"node_modules/{name}") if isinstance(packages, dict) else None
+        )
+        return isinstance(entry, dict) and entry.get("version") == version
+    if lock.name == "bun.lock":
+        # Each package's entry opens with its resolution, `"name@version"`.
+        return f'"{name}@{version}"' in text
+    # pnpm keys a package `name@version`; yarn its spec `name@[npm:]version`.
+    key = re.escape(name) + r"@(?:npm:)?" + re.escape(version)
+    return re.search(rf"(?m)^\s*['\"]?/?{key}['\"(:]", text) is not None
+
+
+def _npm_pin_problem(repo: Path, package: object) -> str | None:
+    declared = {
+        name: spec
+        for table in ("dependencies", "devDependencies")
+        if isinstance(package, dict) and isinstance(package.get(table), dict)
+        for name, spec in package[table].items()
+        if name in ONEBUDGETSPEC_NPM_PACKAGES
+    }
+    loose = sorted(
+        f"{name} {spec!r}"
+        for name, spec in declared.items()
+        if not (isinstance(spec, str) and EXACT_NPM_VERSION_RE.match(spec))
+    )
+    if loose:
+        return f"package.json declares {', '.join(loose)}, not one exact version"
+    locks = [repo / lock for lock in NPM_LOCKFILES if (repo / lock).is_file()]
+    unrecorded = sorted(
+        f"{name} {spec}"
+        for name, spec in declared.items()
+        if not any(npm_lock_records(lock, name, spec) for lock in locks)
+    )
+    if unrecorded:
+        return f"package.json pins {', '.join(unrecorded)} but no lockfile records it"
+    return None
+
+
+def _uv_pin_problem(repo: Path, pins: dict[str, str]) -> str | None:
+    lock = repo / "uv.lock"
+    try:
+        data = tomllib.loads(lock.read_text(encoding="utf-8")) if lock.is_file() else {}
+    except tomllib.TOMLDecodeError:
+        data = {}
+    packages = data.get("package", [])
+    locked = {
+        entry.get("name"): entry.get("version")
+        for entry in packages
+        if isinstance(packages, list)
+        if isinstance(entry, dict)
+    }
+    unrecorded = sorted(
+        f"{name}=={version}"
+        for name, version in pins.items()
+        if locked.get(name) != version
+    )
+    if unrecorded:
+        return f"pyproject.toml pins {', '.join(unrecorded)} but uv.lock does not record it"
+    return None
+
+
 def onebudgetspec_pin_problem(repo: Path) -> str | None:
     """Why onebudgetspec is not pinned in a lockfile, or None when it is."""
     package_json = repo / "package.json"
@@ -1807,33 +1905,17 @@ def onebudgetspec_pin_problem(repo: Path) -> str | None:
             package = json.loads(package_json.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             package = {}
-        declared = {
-            name: spec
-            for table in ("dependencies", "devDependencies")
-            if isinstance(package, dict) and isinstance(package.get(table), dict)
-            for name, spec in package[table].items()
-            if name in ONEBUDGETSPEC_NPM_PACKAGES
-        }
-        if declared:
-            loose = sorted(
-                f"{name} {spec!r}"
-                for name, spec in declared.items()
-                if not (isinstance(spec, str) and EXACT_NPM_VERSION_RE.match(spec))
-            )
-            if loose:
-                return (
-                    f"package.json declares {', '.join(loose)}, not one exact version"
-                )
-            for lock in NPM_LOCKFILES:
-                path = repo / lock
-                if path.is_file() and any(
-                    name.encode() in path.read_bytes() for name in declared
-                ):
-                    return None
-            return (
-                f"package.json pins {', '.join(sorted(declared))} but no lockfile "
-                "records it"
-            )
+        tables = (
+            [package.get(table) for table in ("dependencies", "devDependencies")]
+            if isinstance(package, dict)
+            else []
+        )
+        if any(
+            isinstance(table, dict) and name in table
+            for table in tables
+            for name in ONEBUDGETSPEC_NPM_PACKAGES
+        ):
+            return _npm_pin_problem(repo, package)
     pyproject = repo / "pyproject.toml"
     if pyproject.is_file():
         try:
@@ -1850,23 +1932,22 @@ def onebudgetspec_pin_problem(repo: Path) -> str | None:
             for entry in group
             if isinstance(entry, str)
         ]
-        if any(ONEBUDGETSPEC_PYPI_RE.match(entry) for entry in entries):
-            lock = repo / "uv.lock"
-            if lock.is_file() and 'name = "onebudgetspec-cli"' in lock.read_text(
-                encoding="utf-8"
-            ):
-                return None
-            return "pyproject.toml pins onebudgetspec but uv.lock does not record it"
+        pins = dict(
+            match.groups()
+            for entry in entries
+            if (match := ONEBUDGETSPEC_PYPI_PIN_RE.match(entry))
+        )
+        if pins:
+            return _uv_pin_problem(repo, pins)
     return "no manifest pins onebudgetspec"
 
 
-def _onebudgetspec_check_paths(args: str) -> tuple[list[str], bool]:
-    """The PATH arguments of an ``onebudgetspec check`` and whether it recurses."""
-    tokens = [token.strip("\"'") for token in args.split()]
+def onebudgetspec_check_args(args: str) -> CheckArgs:
+    """Read the PATH arguments and ``--recursive`` out of a ``check``'s arguments."""
     paths: list[str] = []
     recursive = False
     skip_value = False
-    for token in tokens:
+    for token in (token.strip("\"'") for token in args.split()):
         if skip_value:
             skip_value = False
         elif token == "--recursive":
@@ -1875,7 +1956,7 @@ def _onebudgetspec_check_paths(args: str) -> tuple[list[str], bool]:
             skip_value = True
         elif not token.startswith("-"):
             paths.append(token)
-    return paths, recursive
+    return CheckArgs(paths, recursive)
 
 
 def onebudgetspec_reaches(command: str, cwd: str, target: str) -> bool:
@@ -1885,20 +1966,21 @@ def onebudgetspec_reaches(command: str, cwd: str, target: str) -> bool:
     directory's file; ``--recursive`` reads every file under a PATH directory.
     """
     for match in ONEBUDGETSPEC_CHECK_RE.finditer(command):
-        paths, recursive = _onebudgetspec_check_paths(match.group(1))
-        for path in paths or [BUDGETS_FILE]:
+        args = onebudgetspec_check_args(match.group(1))
+        for path in args.paths or [BUDGETS_FILE]:
             resolved = os.path.normpath(os.path.join(cwd, path))
             if resolved == target:
                 return True
-            if recursive and (
+            if args.recursive and (
                 resolved == "." or target.startswith(resolved.rstrip("/") + "/")
             ):
                 return True
     return False
 
 
-def _target_commands(target: object) -> list[tuple[str, str]]:
-    """``(command, cwd)`` pairs an Nx target in project.json runs."""
+def target_commands(target: object) -> list[TargetCommand]:
+    """The commands an Nx target in project.json runs: its ``command``, or its
+    ``options.command``/``options.commands`` from ``options.cwd``."""
     if not isinstance(target, dict):
         return []
     options = target.get("options")
@@ -1910,7 +1992,9 @@ def _target_commands(target: object) -> list[tuple[str, str]]:
         commands += [
             item.get("command") if isinstance(item, dict) else item for item in listed
         ]
-    return [(command, cwd) for command in commands if isinstance(command, str)]
+    return [
+        TargetCommand(command, cwd) for command in commands if isinstance(command, str)
+    ]
 
 
 def owning_project(repo: Path, directory: Path) -> Path | None:
@@ -1951,7 +2035,7 @@ def budgets_file_reach_problem(
             onebudgetspec_reaches(
                 command.replace("{projectRoot}", project_rel), cwd, rel
             )
-            for command, cwd in _target_commands(target)
+            for command, cwd in target_commands(target)
         )
     )
     if not checking:
@@ -2017,7 +2101,8 @@ def check_onebudgetspec(repo: Path) -> list[Finding]:
             )
 
     cfg = find_llmlint_config(repo)
-    if cfg is None or not ONEBUDGETSPEC_LINT_RE.search(cfg.read_text(encoding="utf-8")):
+    plugins = llmlint_plugins(cfg.read_text(encoding="utf-8")) if cfg else []
+    if not any(plugin.endswith(ONEBUDGETSPEC_PLUGIN_SUFFIX) for plugin in plugins):
         problems.append(
             Finding(
                 "ERROR",

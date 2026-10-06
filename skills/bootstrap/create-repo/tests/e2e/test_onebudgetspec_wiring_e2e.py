@@ -27,11 +27,14 @@ says a command ran, as opposed to Nx replaying it from cache.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -39,6 +42,7 @@ import pytest
 SKILL_DIR = Path(__file__).resolve().parents[2]
 COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 JUSTFILE_TEMPLATE = SKILL_DIR / "assets" / "justfile.template"
+REFERENCE = SKILL_DIR / "references" / "tools" / "onebudgetspec.md"
 LINT_URL = (
     "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
     "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
@@ -366,3 +370,79 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     plain = ANSI_RE.sub("", second.stdout)
     [cached] = [line for line in plain.splitlines() if "nx run api:budgets " in line]
     assert "cache" in cached, second.stdout
+
+
+def _composer():
+    spec = importlib.util.spec_from_file_location("crp_e2e", COMPOSER)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_reference_and_wiring_name_the_pinned_releases_surface():
+    # The README at the tag the composer pins is the source of every name the
+    # reference and the wiring restate: the reporters, the variables, the two
+    # targets and the cache inputs.
+    crp = _composer()
+    url = (
+        "https://raw.githubusercontent.com/nickderobertis/onebudgetspec/"
+        f"v{crp.ONEBUDGETSPEC_VERSION}/README.md"
+    )
+    with urllib.request.urlopen(url, timeout=60) as response:
+        readme = response.read().decode("utf-8")
+    reference = REFERENCE.read_text(encoding="utf-8")
+
+    signatures = re.findall(r"^\| [^|]+ \| `([^`]+)`", reference, re.MULTILINE)
+    assert len(signatures) == 3, signatures
+    for signature in signatures:
+        assert f"`{signature}`" in readme, signature
+    for name in (
+        "ONEBUDGETSPEC_BUDGET_ID",
+        "ONEBUDGETSPEC_RESULT",
+        "--exclude-label host",
+        "--label host",
+        "nx affected -t budgets budgets-host",
+        "onebudgetspec check budgets.yaml",
+    ):
+        assert name in reference and name in readme, name
+
+    # The README's Nx example is the shape the wiring's target defaults copy.
+    [example] = [
+        json.loads(block)
+        for block in re.findall(r"```json\n(.*?)```", readme, re.DOTALL)
+        if '"budgets-host"' in block
+    ]
+    budgets = example["targets"]["budgets"]
+    defaults = crp.ONEBUDGETSPEC_TARGET_DEFAULTS
+    assert defaults["budgets"] == {"cache": True, "inputs": budgets["inputs"]}
+    assert defaults["budgets-host"] == {
+        "cache": example["targets"]["budgets-host"]["cache"]
+    }
+    for cache_input in budgets["inputs"]:
+        written = (
+            cache_input if isinstance(cache_input, str) else json.dumps(cache_input)
+        )
+        assert written.strip("{}").strip() in reference, written
+
+
+def test_the_typescript_reporter_writes_only_inside_a_check(generated, tmp_path):
+    repo, _base = generated
+    call = (
+        'import { report } from "@onebudgetspec/sdk"; '
+        'process.stdout.write(String(report(2, "two")));'
+    )
+    outside = repo.run("node", "--input-type=module", "-e", call)
+    assert (outside.returncode, outside.stdout) == (0, "false"), outside.stderr
+
+    result = tmp_path / "result.json"
+    result.write_text("", encoding="utf-8")
+    inside = repo.run(
+        "node", "--input-type=module", "-e", call, ONEBUDGETSPEC_RESULT=str(result)
+    )
+    assert (inside.returncode, inside.stdout) == (0, "true"), inside.stderr
+    assert json.loads(result.read_text(encoding="utf-8")) == {
+        "value": 2,
+        "detail": "two",
+    }

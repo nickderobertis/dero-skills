@@ -10,6 +10,9 @@ for the tiers it can reach:
   Both are un-mocked and part of the gate — they run under `just check` (and
   `just test`), embodying the "Tests are context engineering" mandate: real
   subprocesses over real temp files, never a mocked stand-in.
+  `e2e/test_onebudgetspec_wiring_e2e.py` is the one journey that needs the
+  network: it `bun install`s a generated repo's pinned onebudgetspec and Nx, and
+  reads the pinned release's README to hold the reference's names to it.
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
