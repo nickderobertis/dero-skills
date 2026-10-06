@@ -383,6 +383,14 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     [cached] = [line for line in plain.splitlines() if "nx run api:budgets " in line]
     assert "cache" in cached, second.stdout
 
+    # An edit to the code the reported budgets measure is in their cache key:
+    # the next run measures them again rather than replaying the old figure.
+    sync = repo.root / "services" / "api" / "src" / "sync.mjs"
+    sync.write_text(sync.read_text(encoding="utf-8") + "// edited\n", encoding="utf-8")
+    third = repo.run("just", "check", NX_BASE=base)
+    assert third.returncode == 0, third.stdout + third.stderr
+    assert repo.take_measured() == ALL_BUDGETS
+
 
 def _release_readme(version: str, workdir: Path) -> str:
     """The README at the release's tag, read with git (one blob, no checkout)."""

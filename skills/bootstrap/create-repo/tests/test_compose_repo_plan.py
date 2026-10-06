@@ -643,11 +643,12 @@ def test_wiring_keeps_an_existing_budgets_recipe_and_puts_it_in_check(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("edit", "refusal"),
+    ("edit", "refusal", "repair"),
     [
         (
             lambda text: text + "\nbudgets:\n    echo our own budgets\n",
             "a `budgets` recipe without a `tier` parameter",
+            lambda text: text.replace("\nbudgets:", '\nbudgets tier="affected":'),
         ),
         (
             lambda text: (
@@ -657,12 +658,13 @@ def test_wiring_keeps_an_existing_budgets_recipe_and_puts_it_in_check(tmp_path):
                 + '\nbudgets tier="affected":\n    echo {{tier}}\n'
             ),
             "`check` depends on `budgets` without passing its tier",
+            lambda text: text.replace(": budgets &&", ": (budgets tier) &&"),
         ),
     ],
     ids=["budgets without a tier", "check's budgets dependency drops the tier"],
 )
 def test_wiring_refuses_a_budgets_recipe_check_cannot_pass_its_tier(
-    tmp_path, edit, refusal
+    tmp_path, edit, refusal, repair
 ):
     # `check all` has to reach every domain's budgets; a recipe or dependency
     # that drops the tier would quietly keep the affected tier instead.
@@ -676,6 +678,19 @@ def test_wiring_refuses_a_budgets_recipe_check_cannot_pass_its_tier(
     assert "fix:" in result.stderr
     assert justfile.read_text(encoding="utf-8") == before
     assert not (repo / "package.json").exists()
+
+    # The fix the refusal names lets the wiring finish, and then it is settled.
+    justfile.write_text(repair(before), encoding="utf-8")
+    retried = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert retried.returncode == 0, retried.stderr
+    text = justfile.read_text(encoding="utf-8")
+    assert text.count("(budgets tier)") == 1
+    assert text.count("\nbudgets tier=") == 1
+    assert (repo / "package.json").is_file()
+    again = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert again.returncode == 0, again.stderr
+    assert "already wired" in again.stderr
+    assert justfile.read_text(encoding="utf-8") == text
 
 
 def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):

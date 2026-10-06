@@ -1414,7 +1414,8 @@ def _yaml_scalar(text: str) -> str:
     text = text.strip()
     if text[:1] in ("'", '"'):
         end = text.find(text[0], 1)
-        return text[1:end] if end > 0 else text[1:]
+        # An unterminated quote is malformed YAML, not a value.
+        return text[1:end] if end > 0 else ""
     return text.split(" #", 1)[0].strip()
 
 
@@ -1794,8 +1795,10 @@ ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
 ONEBUDGETSPEC_PYPI_PIN_RE = re.compile(
     r"^\s*(onebudgetspec-(?:cli|sdk))\s*==\s*([0-9][0-9A-Za-z.+-]*)\s*$"
 )
-# The lockfile of the bun workspace the skill's justfile drives Nx through.
+# The lockfile of the bun workspace the skill's justfile drives Nx through: JSON
+# that allows trailing commas, which are dropped before parsing.
 BUN_LOCKFILE = "bun.lock"
+JSON_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
 # One exact version: no range operator, tag or URL.
 EXACT_NPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
@@ -1805,6 +1808,8 @@ ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
 ONEBUDGETSPEC_VALUE_FLAGS = frozenset(
     {"--id", "--label", "--exclude-label", "--output"}
 )
+# The `check` options that take none, from the same source.
+ONEBUDGETSPEC_SWITCHES = frozenset({"--recursive", "--json"})
 
 
 class CheckArgs(NamedTuple):
@@ -1832,9 +1837,19 @@ def declares_onebudgetspec(repo: Path) -> bool:
 def bun_lock_records(lock: Path, name: str, version: str) -> bool:
     """Whether ``bun.lock`` records package ``name`` at ``version``.
 
-    Each package's entry opens with its resolution, ``"name@version"``.
+    Its ``packages`` table keys each package by name to an array that opens with
+    the package's resolution, ``"name@version"``.
     """
-    return lock.is_file() and f'"{name}@{version}"' in lock.read_text(encoding="utf-8")
+    if not lock.is_file():
+        return False
+    text = JSON_TRAILING_COMMA_RE.sub(r"\1", lock.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    packages = data.get("packages") if isinstance(data, dict) else None
+    entry = packages.get(name) if isinstance(packages, dict) else None
+    return isinstance(entry, list) and entry[:1] == [f"{name}@{version}"]
 
 
 def _npm_pin_problem(repo: Path, package: object) -> str | None:
@@ -1933,22 +1948,32 @@ def onebudgetspec_pin_problem(repo: Path) -> str | None:
     return "no manifest pins onebudgetspec"
 
 
-def onebudgetspec_check_args(args: str) -> CheckArgs:
-    """Read the PATH arguments and ``--recursive`` out of a ``check``'s arguments."""
+def onebudgetspec_check_args(args: str) -> CheckArgs | None:
+    """Read the PATH arguments and ``--recursive`` out of a ``check``'s arguments.
+
+    None when the CLI would refuse them — an option it does not take, or one
+    missing its value — so that command checks no file.
+    """
     paths: list[str] = []
     recursive = False
     skip_value = False
     for token in (token.strip("\"'") for token in args.split()):
-        match token:
+        match token.partition("="):
             case _ if skip_value:
                 skip_value = False
-            case "--recursive":
+            case ("--recursive", "", ""):
                 recursive = True
-            case flag if flag in ONEBUDGETSPEC_VALUE_FLAGS:
+            case (switch, "", "") if switch in ONEBUDGETSPEC_SWITCHES:
+                pass
+            case (flag, "", "") if flag in ONEBUDGETSPEC_VALUE_FLAGS:
                 skip_value = True
-            case path if not path.startswith("-"):
-                paths.append(path)
-    return CheckArgs(paths, recursive)
+            case (flag, "=", _) if flag in ONEBUDGETSPEC_VALUE_FLAGS:
+                pass
+            case _ if token.startswith("-"):
+                return None
+            case _:
+                paths.append(token)
+    return None if skip_value else CheckArgs(paths, recursive)
 
 
 def onebudgetspec_reaches(command: str, cwd: str, target: str) -> bool:
@@ -1959,6 +1984,8 @@ def onebudgetspec_reaches(command: str, cwd: str, target: str) -> bool:
     """
     for match in ONEBUDGETSPEC_CHECK_RE.finditer(command):
         args = onebudgetspec_check_args(match.group(1))
+        if args is None:
+            continue
         for path in args.paths or [BUDGETS_FILE]:
             resolved = os.path.normpath(os.path.join(cwd, path))
             if resolved == target:

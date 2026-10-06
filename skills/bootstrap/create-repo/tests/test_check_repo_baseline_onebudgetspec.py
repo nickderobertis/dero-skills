@@ -248,6 +248,44 @@ def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "lock",
+    [
+        "not json at all\n",
+        '{"packages": {"other": ["other@1.0.0", "", {"note": '
+        '"@onebudgetspec/cli@0.1.3"}, "sha512-y"]}}\n',
+        '{"packages": {"@onebudgetspec/cli": "@onebudgetspec/cli@0.1.3"}}\n',
+    ],
+    ids=["not JSON", "named only inside another package", "entry not an array"],
+)
+def test_a_bun_lock_that_resolves_no_such_package_fails(tmp_path, lock):
+    repo = wired_repo(tmp_path)
+    (repo / "bun.lock").write_text(lock, encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "pins @onebudgetspec/cli 0.1.3 but bun.lock does not record it" in error
+
+
+@pytest.mark.parametrize(
+    ("command", "reached"),
+    [
+        ("onebudgetspec check --label=host services/api/budgets.yaml", True),
+        ("onebudgetspec check --json services/api/budgets.yaml", True),
+        ("onebudgetspec check services/api/budgets.yaml --label", False),
+        ("onebudgetspec check --bogus services/api/budgets.yaml", False),
+        ("onebudgetspec check --help", False),
+    ],
+    ids=["--flag=value", "a switch", "a value missing", "unknown option", "--help"],
+)
+def test_check_arguments_the_cli_refuses_reach_no_file(tmp_path, command, reached):
+    repo = wired_repo(tmp_path)
+    project = {"name": "api", "targets": {"budgets": {"command": command}}}
+    (repo / "services" / "api" / "project.json").write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    errors = levels(budget_findings(repo), "ERROR")
+    assert len(errors) == (0 if reached else 1), errors
+
+
+@pytest.mark.parametrize(
     "budgets_target",
     [
         {
@@ -325,6 +363,16 @@ def test_the_uv_pin_reading_agrees_with_a_uv_generated_lock():
     assert crb.onebudgetspec_pin_problem(SKILL_DIR.parents[2]) is None
 
 
+def test_an_unterminated_quoted_plugin_is_not_adoption(tmp_path):
+    repo = wired_repo(tmp_path)
+    config = repo / "llmlint.yml"
+    lines = config.read_text(encoding="utf-8").splitlines()
+    broken = [line.rstrip('"') if "onebudgetspec" in line else line for line in lines]
+    config.write_text("\n".join(broken) + "\n", encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "the onebudgetspec lint rules are not adopted" in error
+
+
 def test_a_commented_out_plugin_is_not_adoption(tmp_path):
     repo = wired_repo(tmp_path)
     config = repo / "llmlint.yml"
@@ -349,6 +397,8 @@ def test_the_value_taking_check_options_are_the_clis(tmp_path):
     ).stdout
     taking_values = set(re.findall(r"^\s+(--[a-z-]+) <[A-Z_]+>", help_text, re.M))
     assert taking_values == crb.ONEBUDGETSPEC_VALUE_FLAGS
+    switches = set(re.findall(r"^\s+(--[a-z-]+)$", help_text, re.M))
+    assert switches == crb.ONEBUDGETSPEC_SWITCHES
 
 
 def test_a_repo_that_does_not_declare_it_is_not_checked(tmp_path):
