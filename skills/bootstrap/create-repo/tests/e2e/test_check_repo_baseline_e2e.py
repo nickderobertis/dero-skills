@@ -30,7 +30,7 @@ from test_check_repo_baseline import (
     write_cargo_repo,
     write_package,
 )
-from test_check_repo_baseline_onebudgetspec import wired_repo
+from test_check_repo_baseline_onebudgetspec import API_BUDGETS, wired_repo
 from test_ci_llmlint_selection_e2e import llmlint_bin
 
 # The gate delegating with Nx's comma-separated target list (`--targets=a,b`)
@@ -353,3 +353,45 @@ def test_the_checker_reads_plugins_as_llmlint_does(tmp_path, config, listed):
     assert done.returncode in (0, 1), output
     adopted = "the onebudgetspec lint rules are not adopted" not in output
     assert adopted is listed, output
+
+
+def test_a_recursive_check_reaches_the_files_under_its_directory_only(tmp_path):
+    # A domain whose targets check a directory with `--recursive`, audited
+    # through the checker's command line: every budgets file under that
+    # directory is in the gate, and one outside it is reported.
+    repo = wired_repo(tmp_path)
+    api = repo / "services" / "api"
+    nested = api / "budgets" / "pages" / "budgets.yaml"
+    nested.parent.mkdir(parents=True)
+    nested.write_text(API_BUDGETS.replace("api-requests", "api-pages"), "utf-8")
+
+    def audit(directory: str) -> str:
+        project = {
+            "name": "api",
+            "targets": {
+                "budgets": {
+                    "command": f"onebudgetspec check --recursive {directory} "
+                    "--exclude-label host"
+                },
+                "budgets-host": {
+                    "command": f"onebudgetspec check --recursive {directory} "
+                    "--label host"
+                },
+            },
+        }
+        (api / "project.json").write_text(json.dumps(project), encoding="utf-8")
+        done = subprocess.run(
+            ["uv", "run", "--script", str(SCRIPT), str(repo)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert done.returncode in (0, 1), done.stdout + done.stderr
+        return done.stdout + done.stderr
+
+    whole = audit("{projectRoot}")
+    assert "budgets file is not in the gate" not in whole, whole
+
+    narrowed = audit("{projectRoot}/budgets")
+    [unreached] = [line for line in narrowed.splitlines() if "not in the gate" in line]
+    assert "on services/api/budgets.yaml" in unreached, narrowed

@@ -688,6 +688,11 @@ def plan_justfile(path: Path, recipe: str) -> JustfilePlan:
 def plan_package_json(package: dict[str, object], path: Path) -> list[str]:
     """Pin the release in ``package`` (in place); a note per change."""
     deps = package.get("dependencies")
+    if deps is not None and not isinstance(deps, dict):
+        raise WiringError(
+            f"{path}: `dependencies` is not a JSON object\n"
+            "      fix: make `dependencies` an object, then re-run --wiring."
+        )
     table_name = (
         "dependencies"
         if isinstance(deps, dict) and ONEBUDGETSPEC_NPM_PACKAGE in deps
@@ -715,10 +720,14 @@ def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:
         if name not in named:
             named[name] = list(inputs)
             changes.append(f"nx.json defines the `{name}` named input")
-        elif not isinstance(named[name], list):
+        elif not isinstance(named[name], list) or not all(
+            isinstance(entry, (str, dict)) for entry in named[name]
+        ):
             raise WiringError(
-                f"{path}: named input `{name}` is not a list of inputs\n"
-                f"      fix: make `namedInputs.{name}` a list, then re-run --wiring."
+                f"{path}: named input `{name}` is not a list of inputs (each a "
+                "path pattern or an input object)\n"
+                f"      fix: make `namedInputs.{name}` such a list, then re-run "
+                "--wiring."
             )
     defaults = _json_table(nx, "targetDefaults", path)
     for target, config in ONEBUDGETSPEC_TARGET_DEFAULTS.items():

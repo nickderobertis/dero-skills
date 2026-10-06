@@ -572,6 +572,12 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
             '{"targetDefaults": {"budgets": true}}',
             "target default `budgets` is not a JSON object",
         ),
+        ("package.json", '{"dependencies": []}', "`dependencies` is not a JSON object"),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": ["default", null]}}',
+            "named input `production` is not a list of inputs",
+        ),
     ],
     ids=[
         "package not an object",
@@ -580,6 +586,8 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
         "namedInputs a string",
         "production not a list",
         "budgets default not an object",
+        "dependencies a list",
+        "a named input entry that is no input",
     ],
 )
 def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, refusal):
