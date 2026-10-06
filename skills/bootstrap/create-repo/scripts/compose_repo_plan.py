@@ -144,16 +144,26 @@ NX_DEFAULT_NAMED_INPUTS: dict[str, list[str]] = {
     "production": ["default"],
 }
 # The input objects Nx accepts, each keyed by the one property that names its
-# kind, to the properties it may carry beside it. Nx's own `nx-schema.json` is
-# the source, which tests/test_onebudgetspec_release.py reconciles this with.
-NX_INPUT_OBJECT_KEYS: dict[str, frozenset[str]] = {
-    "fileset": frozenset(),
-    "input": frozenset({"projects", "dependencies"}),
-    "runtime": frozenset(),
-    "env": frozenset(),
-    "externalDependencies": frozenset(),
-    "dependentTasksOutputFiles": frozenset({"transitive"}),
+# kind, to every property it may carry and the JSON types that property takes
+# (an array is always of strings). An `input` object names `projects` or
+# `dependencies`, never both. Nx's own `nx-schema.json` is the source, which
+# tests/test_onebudgetspec_release.py reconciles this with.
+NX_INPUT_OBJECTS: dict[str, dict[str, frozenset[str]]] = {
+    "fileset": {"fileset": frozenset({"string"})},
+    "input": {
+        "input": frozenset({"string"}),
+        "projects": frozenset({"string", "array"}),
+        "dependencies": frozenset({"boolean"}),
+    },
+    "runtime": {"runtime": frozenset({"string"})},
+    "env": {"env": frozenset({"string"})},
+    "externalDependencies": {"externalDependencies": frozenset({"array"})},
+    "dependentTasksOutputFiles": {
+        "dependentTasksOutputFiles": frozenset({"string"}),
+        "transitive": frozenset({"boolean"}),
+    },
 }
+NX_INPUT_EXCLUSIVE = frozenset({"projects", "dependencies"})
 BUDGETS_RECIPE_NAME = "budgets"
 # The recipe itself, an asset so this script carries no orchestrator command.
 ONEBUDGETSPEC_RECIPE = "assets/tools/onebudgetspec.justfile"
@@ -721,17 +731,32 @@ def plan_package_json(package: dict[str, object], path: Path) -> list[str]:
     ]
 
 
+def _json_type(value: object) -> str | None:
+    """The JSON-schema type of ``value`` an Nx input property can take, or None."""
+    match value:
+        case bool():
+            return "boolean"
+        case str():
+            return "string"
+        case list() if all(isinstance(item, str) for item in value):
+            return "array"
+    return None
+
+
 def _is_nx_input(entry: object) -> bool:
-    """Whether ``entry`` is an Nx input: a path pattern or a known input object."""
+    """Whether ``entry`` is an Nx input: a path pattern or a valid input object."""
     if isinstance(entry, str):
         return bool(entry)
     if not isinstance(entry, dict):
         return False
-    kinds = NX_INPUT_OBJECT_KEYS.keys() & entry.keys()
-    if len(kinds) != 1:
+    kinds = NX_INPUT_OBJECTS.keys() & entry.keys()
+    if len(kinds) != 1 or NX_INPUT_EXCLUSIVE <= entry.keys():
         return False
     [kind] = kinds
-    return entry.keys() - {kind} <= NX_INPUT_OBJECT_KEYS[kind]
+    properties = NX_INPUT_OBJECTS[kind]
+    return all(
+        _json_type(value) in properties.get(key, ()) for key, value in entry.items()
+    )
 
 
 def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:

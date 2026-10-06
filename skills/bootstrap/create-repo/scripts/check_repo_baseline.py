@@ -1801,21 +1801,27 @@ BUDGETS_FILE = "budgets.yaml"
 # their PyPI counterparts. A pin is exact when the manifest's spec is the version
 # the lockfile resolves, so no npm range or PEP 508 specifier grammar is restated
 # here; what a lockfile resolves is read only if it has the shape of one release
-# version — SemVer 2.0 for bun.lock, PEP 440's normalized form (which uv writes)
-# for uv.lock — so an empty or garbled entry resolves nothing.
+# version — SemVer 2.0 for bun.lock (semver.org's own pattern), PEP 440's
+# normalized form, which uv writes, for uv.lock — so an empty or garbled entry
+# resolves nothing. tests/test_onebudgetspec_release.py holds the two patterns to
+# node's `semver.valid` and `packaging`'s `Version`.
 ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
 ONEBUDGETSPEC_PYPI_PACKAGES = ("onebudgetspec-cli", "onebudgetspec-sdk")
 # The lockfile of the bun workspace the skill's justfile drives Nx through: JSON
 # that allows trailing commas, which are dropped before parsing.
 BUN_LOCKFILE = "bun.lock"
 JSON_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+_SEMVER_PRERELEASE_ID = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
 NPM_VERSION_RE = re.compile(
     r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    rf"(?:-{_SEMVER_PRERELEASE_ID}(?:\.{_SEMVER_PRERELEASE_ID})*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
+_PEP440_NUMBER = r"(?:0|[1-9]\d*)"
 PEP440_NORMALIZED_RE = re.compile(
-    r"(?:\d+!)?\d+(?:\.\d+)*(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?"
-    r"(?:\+[a-z0-9]+(?:\.[a-z0-9]+)*)?"
+    rf"(?:{_PEP440_NUMBER}!)?{_PEP440_NUMBER}(?:\.{_PEP440_NUMBER})*"
+    rf"(?:(?:a|b|rc){_PEP440_NUMBER})?(?:\.post{_PEP440_NUMBER})?"
+    rf"(?:\.dev{_PEP440_NUMBER})?(?:\+[a-z0-9]+(?:\.[a-z0-9]+)*)?"
 )
 ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
 ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")

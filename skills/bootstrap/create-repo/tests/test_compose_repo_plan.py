@@ -605,6 +605,22 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
             '{"namedInputs": {"production": [{"env": "CI", "transitive": true}]}}',
             "named input `production` is not a list of inputs",
         ),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": [{"env": []}]}}',
+            "named input `production` is not a list of inputs",
+        ),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": [{"externalDependencies": [1]}]}}',
+            "named input `production` is not a list of inputs",
+        ),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": [{"input": "default", "projects": "a", '
+            '"dependencies": true}]}}',
+            "named input `production` is not a list of inputs",
+        ),
     ],
     ids=[
         "package not an object",
@@ -618,6 +634,9 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
         "an empty input object",
         "an input object of no known kind",
         "an input object with a key its kind does not take",
+        "an input object whose value has the wrong type",
+        "an array input holding a non-string",
+        "an input object naming both projects and dependencies",
     ],
 )
 def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, refusal):

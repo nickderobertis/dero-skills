@@ -329,6 +329,7 @@ def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
         '{"packages": {"@onebudgetspec/cli": "@onebudgetspec/cli@0.1.3"}}\n',
         '{"packages": {"@onebudgetspec/cli": ["@onebudgetspec/cli@"]}}\n',
         '{"packages": {"@onebudgetspec/cli": ["@onebudgetspec/cli@^0.1.3"]}}\n',
+        '{"packages": {"@onebudgetspec/cli": ["@onebudgetspec/cli@0.1.3-01"]}}\n',
     ],
     ids=[
         "not JSON",
@@ -336,6 +337,7 @@ def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
         "entry not an array",
         "an empty version",
         "a range, not a version",
+        "a leading zero in a prerelease",
     ],
 )
 def test_a_bun_lock_that_resolves_no_such_package_fails(tmp_path, lock):

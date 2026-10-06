@@ -282,9 +282,9 @@ def test_editing_the_eval_rechecks_the_wiring_the_fast_tier_asserts():
 
 
 def test_a_change_to_the_node_install_reruns_the_skill_fast_tier():
-    # tests/test_onebudgetspec_release.py reads Nx's schema and the bun-written
-    # lock from what `bun install` put in node_modules; nx.json's `nxRelease`
-    # input keeps the manifests that decide it in that project's graph.
+    # tests/test_onebudgetspec_release.py reads Nx's schema, `semver` and the
+    # bun-written lock from what `bun install` put in node_modules; nx.json's
+    # `nxRelease` input keeps the manifests that decide it in that project's graph.
     for manifest in ("package.json", "bun.lock"):
         assert "bootstrap-create-repo" in affected_test_projects(manifest), manifest
 
