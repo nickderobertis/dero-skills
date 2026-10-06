@@ -184,7 +184,7 @@ def test_the_judged_rules_fixtures_are_real_onebudgetspec_consumers(
         }
         if (root / module.ROOT / "tests" / "telemetry.py").is_file():
             tested = subprocess.run(
-                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                ["uv", "run", "python", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
                 + [f"{module.ROOT}/tests"],
                 cwd=root,
                 env=env,
