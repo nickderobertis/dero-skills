@@ -1790,17 +1790,14 @@ def check_llmlint(repo: Path) -> list[Finding]:
 ONEBUDGETSPEC_REFERENCE = "tools/onebudgetspec.md"
 BUDGETS_FILE = "budgets.yaml"
 # The release's npm packages (the SDK installs the CLI at its own version) and
-# their PyPI counterparts, each pinned as `name==version`.
+# their PyPI counterparts. A pin is exact when the manifest's spec is the version
+# the lockfile resolves, so no npm or PEP 508 version grammar is restated here.
 ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
-ONEBUDGETSPEC_PYPI_PIN_RE = re.compile(
-    r"^\s*(onebudgetspec-(?:cli|sdk))\s*==\s*([0-9][0-9A-Za-z.+-]*)\s*$"
-)
+ONEBUDGETSPEC_PYPI_PACKAGES = ("onebudgetspec-cli", "onebudgetspec-sdk")
 # The lockfile of the bun workspace the skill's justfile drives Nx through: JSON
 # that allows trailing commas, which are dropped before parsing.
 BUN_LOCKFILE = "bun.lock"
 JSON_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
-# One exact version: no range operator, tag or URL.
-EXACT_NPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
 ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
 # The `check` options that take a value, so that value is not read as a PATH —
@@ -1834,25 +1831,118 @@ def declares_onebudgetspec(repo: Path) -> bool:
     return ONEBUDGETSPEC_REFERENCE in refs
 
 
-def bun_lock_records(lock: Path, name: str, version: str) -> bool:
-    """Whether ``bun.lock`` records package ``name`` at ``version``.
+def bun_lock_resolution(lock: Path, name: str) -> str | None:
+    """The version ``bun.lock`` resolves package ``name`` to, or None.
 
     Its ``packages`` table keys each package by name to an array that opens with
     the package's resolution, ``"name@version"``.
     """
     if not lock.is_file():
-        return False
+        return None
     text = JSON_TRAILING_COMMA_RE.sub(r"\1", lock.read_text(encoding="utf-8"))
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        return False
+        return None
     packages = data.get("packages") if isinstance(data, dict) else None
     entry = packages.get(name) if isinstance(packages, dict) else None
-    return isinstance(entry, list) and entry[:1] == [f"{name}@{version}"]
+    match entry:
+        case [str(resolution), *_] if resolution.startswith(f"{name}@"):
+            return resolution.removeprefix(f"{name}@")
+    return None
 
 
-def _npm_pin_problem(repo: Path, package: object) -> str | None:
+def _npm_pin_problem(repo: Path, declared: dict[str, object]) -> str | None:
+    problems = []
+    for name, spec in sorted(declared.items()):
+        resolved = bun_lock_resolution(repo / BUN_LOCKFILE, name)
+        if resolved is None:
+            problems.append(
+                f"package.json pins {name} {spec} but bun.lock does not record it"
+            )
+        elif spec != resolved:
+            problems.append(
+                f"package.json declares {name} {spec!r}, which is not the exact "
+                f"version bun.lock resolves ({resolved})"
+            )
+    return "; ".join(problems) or None
+
+
+def _uv_lock_packages(repo: Path) -> list[dict[str, object]]:
+    lock = repo / "uv.lock"
+    try:
+        data = tomllib.loads(lock.read_text(encoding="utf-8")) if lock.is_file() else {}
+    except tomllib.TOMLDecodeError:
+        data = {}
+    packages = data.get("package", [])
+    return (
+        [p for p in packages if isinstance(p, dict)]
+        if isinstance(packages, list)
+        else []
+    )
+
+
+def uv_lock_requirements(packages: list[dict[str, object]]) -> list[tuple[str, object]]:
+    """Each ``(name, specifier)`` a workspace member requires of onebudgetspec.
+
+    uv.lock records a member's dependencies and dependency groups under its
+    ``metadata``, names normalized, so pyproject.toml's PEP 508 strings are not
+    parsed here.
+    """
+    requirements: list[tuple[str, object]] = []
+    for entry in packages:
+        source, metadata = entry.get("source"), entry.get("metadata")
+        if not (isinstance(source, dict) and {"virtual", "editable"} & source.keys()):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        dev = metadata.get("requires-dev")
+        groups = [
+            metadata.get("requires-dist"),
+            *(dev.values() if isinstance(dev, dict) else []),
+        ]
+        requirements += [
+            (req["name"], req.get("specifier"))
+            for group in groups
+            if isinstance(group, list)
+            for req in group
+            if isinstance(req, dict) and req.get("name") in ONEBUDGETSPEC_PYPI_PACKAGES
+        ]
+    return requirements
+
+
+def _uv_pin_problem(
+    packages: list[dict[str, object]], requirements: list[tuple[str, object]]
+) -> str | None:
+    resolved = {
+        entry["name"]: entry.get("version")
+        for entry in packages
+        if isinstance(entry.get("name"), str)
+    }
+    problems = []
+    for name, specifier in sorted(requirements, key=str):
+        version = resolved.get(name)
+        if version is None:
+            problems.append(f"uv.lock requires {name} but does not resolve it")
+        elif specifier != f"=={version}":
+            problems.append(
+                f"uv.lock records {name} {specifier or 'unbounded'}, not `==` the "
+                f"version it resolves ({version})"
+            )
+    return "; ".join(dict.fromkeys(problems)) or None
+
+
+def onebudgetspec_pin_problem(repo: Path) -> str | None:
+    """Why onebudgetspec is not pinned in a lockfile, or None when it is."""
+    package_json = repo / "package.json"
+    try:
+        package = (
+            json.loads(package_json.read_text(encoding="utf-8"))
+            if package_json.is_file()
+            else {}
+        )
+    except json.JSONDecodeError:
+        package = {}
     declared = {
         name: spec
         for table in ("dependencies", "devDependencies")
@@ -1860,92 +1950,13 @@ def _npm_pin_problem(repo: Path, package: object) -> str | None:
         for name, spec in package[table].items()
         if name in ONEBUDGETSPEC_NPM_PACKAGES
     }
-    loose = sorted(
-        f"{name} {spec!r}"
-        for name, spec in declared.items()
-        if not (isinstance(spec, str) and EXACT_NPM_VERSION_RE.match(spec))
-    )
-    if loose:
-        return f"package.json declares {', '.join(loose)}, not one exact version"
-    unrecorded = sorted(
-        f"{name} {spec}"
-        for name, spec in declared.items()
-        if not bun_lock_records(repo / BUN_LOCKFILE, name, spec)
-    )
-    if unrecorded:
-        return (
-            f"package.json pins {', '.join(unrecorded)} but bun.lock does not record it"
-        )
-    return None
-
-
-def _uv_pin_problem(repo: Path, pins: dict[str, str]) -> str | None:
-    lock = repo / "uv.lock"
-    try:
-        data = tomllib.loads(lock.read_text(encoding="utf-8")) if lock.is_file() else {}
-    except tomllib.TOMLDecodeError:
-        data = {}
-    packages = data.get("package", [])
-    if not isinstance(packages, list):
-        packages = []
-    locked = {
-        entry["name"]: entry.get("version")
-        for entry in packages
-        if isinstance(entry, dict) and isinstance(entry.get("name"), str)
-    }
-    unrecorded = sorted(
-        f"{name}=={version}"
-        for name, version in pins.items()
-        if locked.get(name) != version
-    )
-    if unrecorded:
-        return f"pyproject.toml pins {', '.join(unrecorded)} but uv.lock does not record it"
-    return None
-
-
-def onebudgetspec_pin_problem(repo: Path) -> str | None:
-    """Why onebudgetspec is not pinned in a lockfile, or None when it is."""
-    package_json = repo / "package.json"
-    if package_json.is_file():
-        try:
-            package = json.loads(package_json.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            package = {}
-        tables = (
-            [package.get(table) for table in ("dependencies", "devDependencies")]
-            if isinstance(package, dict)
-            else []
-        )
-        if any(
-            isinstance(table, dict) and name in table
-            for table in tables
-            for name in ONEBUDGETSPEC_NPM_PACKAGES
-        ):
-            return _npm_pin_problem(repo, package)
-    pyproject = repo / "pyproject.toml"
-    if pyproject.is_file():
-        try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError:
-            data = {}
-        entries = [
-            entry
-            for group in [
-                _table(data, "project").get("dependencies", []),
-                *_table(data, "dependency-groups").values(),
-            ]
-            if isinstance(group, list)
-            for entry in group
-            if isinstance(entry, str)
-        ]
-        pins = dict(
-            match.groups()
-            for entry in entries
-            if (match := ONEBUDGETSPEC_PYPI_PIN_RE.match(entry))
-        )
-        if pins:
-            return _uv_pin_problem(repo, pins)
-    return "no manifest pins onebudgetspec"
+    if declared:
+        return _npm_pin_problem(repo, declared)
+    packages = _uv_lock_packages(repo)
+    requirements = uv_lock_requirements(packages)
+    if requirements:
+        return _uv_pin_problem(packages, requirements)
+    return "neither package.json nor uv.lock pins onebudgetspec"
 
 
 def onebudgetspec_check_args(args: str) -> CheckArgs | None:
@@ -1959,6 +1970,8 @@ def onebudgetspec_check_args(args: str) -> CheckArgs | None:
     skip_value = False
     for token in (token.strip("\"'") for token in args.split()):
         match token.partition("="):
+            case _ if skip_value and token.startswith("-"):
+                return None
             case _ if skip_value:
                 skip_value = False
             case ("--recursive", "", ""):
@@ -2088,7 +2101,7 @@ def check_onebudgetspec(repo: Path) -> list[Finding]:
                 "ERROR",
                 f"onebudgetspec is not pinned: {pin}",
                 "pin @onebudgetspec/cli to one exact version in package.json and "
-                f"`bun install` so bun.lock records it; {wiring}",
+                f"`just bootstrap` so bun.lock records it; {wiring}",
             )
         )
 

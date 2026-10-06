@@ -126,7 +126,6 @@ def test_a_wired_repo_passes(tmp_path):
     assert levels(findings, "OK") == [
         "onebudgetspec pinned, 2 budgets file(s) reached by check, lint rules adopted"
     ]
-    # And the whole baseline holds with it.
     assert levels(crb.audit(repo), "ERROR") == []
 
 
@@ -134,7 +133,10 @@ def test_no_pin_fails(tmp_path):
     repo = wired_repo(tmp_path)
     (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
     [error] = levels(budget_findings(repo), "ERROR")
-    assert error == "onebudgetspec is not pinned: no manifest pins onebudgetspec"
+    assert error == (
+        "onebudgetspec is not pinned: neither package.json nor uv.lock pins "
+        "onebudgetspec"
+    )
 
 
 def test_a_version_range_is_not_a_pin(tmp_path):
@@ -143,7 +145,10 @@ def test_a_version_range_is_not_a_pin(tmp_path):
     package["devDependencies"]["@onebudgetspec/cli"] = "^0.1.3"
     (repo / "package.json").write_text(json.dumps(package), encoding="utf-8")
     [error] = levels(budget_findings(repo), "ERROR")
-    assert "@onebudgetspec/cli '^0.1.3', not one exact version" in error
+    assert (
+        "declares @onebudgetspec/cli '^0.1.3', which is not the exact version "
+        "bun.lock resolves (0.1.3)"
+    ) in error
 
 
 def test_a_pin_no_lockfile_records_fails(tmp_path):
@@ -153,21 +158,89 @@ def test_a_pin_no_lockfile_records_fails(tmp_path):
     assert "but bun.lock does not record it" in error
 
 
-def test_a_uv_pin_recorded_in_uv_lock_passes(tmp_path):
+def uv_repo(tmp_path: Path, dist: str = "", dev: str = "") -> Path:
+    """A wired repo whose onebudgetspec pin lives in uv.lock rather than bun.lock.
+
+    ``dist`` and ``dev`` are the root project's requirement tables as uv.lock
+    records them; both onebudgetspec packages resolve to 0.1.3.
+    """
     repo = wired_repo(tmp_path)
     (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
     (repo / "bun.lock").unlink()
-    (repo / "pyproject.toml").write_text(
-        '[dependency-groups]\ndev = ["onebudgetspec-cli==0.1.3"]\n', encoding="utf-8"
-    )
     (repo / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "onebudgetspec-cli"\nversion = "0.1.3"\n',
+        f"""\
+version = 1
+
+[[package]]
+name = "app"
+version = "0.1.0"
+source = {{ virtual = "." }}
+
+[package.metadata]
+requires-dist = [{dist}]
+
+[package.metadata.requires-dev]
+dev = [{dev}]
+
+[[package]]
+name = "onebudgetspec-cli"
+version = "0.1.3"
+
+[[package]]
+name = "onebudgetspec-sdk"
+version = "0.1.3"
+""",
         encoding="utf-8",
     )
+    return repo
+
+
+CLI_PINNED = '{ name = "onebudgetspec-cli", specifier = "==0.1.3" }'
+
+
+def test_a_uv_pin_recorded_in_uv_lock_passes(tmp_path):
+    repo = uv_repo(tmp_path, dev=CLI_PINNED)
     assert levels(budget_findings(repo), "ERROR") == []
-    (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("dist", "dev", "problem"),
+    [
+        (
+            "",
+            '{ name = "onebudgetspec-cli", specifier = "==0.1.2" }',
+            "uv.lock records onebudgetspec-cli ==0.1.2, not `==` the version it "
+            "resolves (0.1.3)",
+        ),
+        (
+            '{ name = "onebudgetspec-sdk", specifier = ">=0.1" }',
+            CLI_PINNED,
+            "uv.lock records onebudgetspec-sdk >=0.1, not `==` the version it "
+            "resolves (0.1.3)",
+        ),
+        (
+            '{ name = "onebudgetspec-sdk" }',
+            CLI_PINNED,
+            "uv.lock records onebudgetspec-sdk unbounded",
+        ),
+    ],
+    ids=["stale pin", "an unpinned sdk beside a pinned cli", "no specifier"],
+)
+def test_a_uv_requirement_that_is_not_the_resolved_version_fails(
+    tmp_path, dist, dev, problem
+):
+    repo = uv_repo(tmp_path, dist=dist, dev=dev)
     [error] = levels(budget_findings(repo), "ERROR")
-    assert "uv.lock does not record it" in error
+    assert problem in error
+
+
+def test_a_uv_requirement_the_lock_does_not_resolve_fails(tmp_path):
+    repo = uv_repo(tmp_path, dev=CLI_PINNED)
+    lock = repo / "uv.lock"
+    text = lock.read_text(encoding="utf-8")
+    lock.write_text(text.split('[[package]]\nname = "onebudgetspec-cli"')[0])
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "uv.lock requires onebudgetspec-cli but does not resolve it" in error
 
 
 def test_a_project_file_checked_by_a_target_check_does_not_run_fails(tmp_path):
@@ -244,7 +317,7 @@ def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
         encoding="utf-8",
     )
     [error] = levels(budget_findings(repo), "ERROR")
-    assert "pins @onebudgetspec/cli 0.1.3 but bun.lock does not record it" in error
+    assert "'0.1.3', which is not the exact version bun.lock resolves (0.1.2)" in error
 
 
 @pytest.mark.parametrize(
@@ -271,9 +344,17 @@ def test_a_bun_lock_that_resolves_no_such_package_fails(tmp_path, lock):
         ("onebudgetspec check --json services/api/budgets.yaml", True),
         ("onebudgetspec check services/api/budgets.yaml --label", False),
         ("onebudgetspec check --bogus services/api/budgets.yaml", False),
+        ("onebudgetspec check --label --bogus services/api/budgets.yaml", False),
         ("onebudgetspec check --help", False),
     ],
-    ids=["--flag=value", "a switch", "a value missing", "unknown option", "--help"],
+    ids=[
+        "--flag=value",
+        "a switch",
+        "a value missing",
+        "unknown option",
+        "an option as a value",
+        "--help",
+    ],
 )
 def test_check_arguments_the_cli_refuses_reach_no_file(tmp_path, command, reached):
     repo = wired_repo(tmp_path)
@@ -347,14 +428,10 @@ def test_an_inline_plugins_list_adopts_the_rules(tmp_path):
     ids=["package not a list", "entry name not a string"],
 )
 def test_a_uv_lock_it_cannot_read_records_nothing(tmp_path, lock):
-    repo = wired_repo(tmp_path)
-    (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
-    (repo / "pyproject.toml").write_text(
-        '[project]\ndependencies = ["onebudgetspec-sdk==0.1.3"]\n', encoding="utf-8"
-    )
+    repo = uv_repo(tmp_path, dev=CLI_PINNED)
     (repo / "uv.lock").write_text(lock, encoding="utf-8")
     [error] = levels(budget_findings(repo), "ERROR")
-    assert "onebudgetspec-sdk==0.1.3 but uv.lock does not record it" in error
+    assert "neither package.json nor uv.lock pins onebudgetspec" in error
 
 
 def test_the_uv_pin_reading_agrees_with_a_uv_generated_lock():
