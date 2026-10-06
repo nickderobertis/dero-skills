@@ -46,13 +46,13 @@ pytestmark = [
 ]
 
 
-class Outcome(StrEnum):
-    """The rule outcomes llmlint's JSON report can carry."""
+class Expected(StrEnum):
+    """The verdicts these cases expect, spelled as llmlint reports them. Not the
+    report's whole vocabulary: any other outcome simply fails to match."""
 
     PASS = "pass"
     FAIL = "fail"
     NOT_RELEVANT = "not_relevant"
-    SKIPPED = "skipped"
 
 
 # The baseline every tree varies from: one budget counting the Linear requests a
@@ -498,7 +498,7 @@ class Case:
     rule: str
     fixture: str
     tree: dict[str, str]
-    expected: Outcome
+    expected: Expected
     # For a FAIL: a file the judge must attribute a violation to.
     culprit: str | None = None
 
@@ -509,63 +509,63 @@ ONLY_JUDGE = "onebudgetspec_is_the_only_judge"
 DIRECT = "budget_commands_measure_directly"
 
 CASES = [
-    Case(DESCRIPTIONS, "terse", _conforming(), Outcome.PASS),
+    Case(DESCRIPTIONS, "terse", _conforming(), Expected.PASS),
     Case(
         DESCRIPTIONS,
         "changelog-narrative",
         _narrative_description(),
-        Outcome.FAIL,
+        Expected.FAIL,
         f"{ROOT}/budgets.yaml",
     ),
     Case(
         DESCRIPTIONS,
         "restates-fields",
         _field_restating_description(),
-        Outcome.FAIL,
+        Expected.FAIL,
         f"{ROOT}/budgets.yaml",
     ),
-    Case(MINIMAL_TREE, "self-contained", _conforming(), Outcome.PASS),
+    Case(MINIMAL_TREE, "self-contained", _conforming(), Expected.PASS),
     Case(
         MINIMAL_TREE,
         "shared-harness-and-measured-code-outside",
         _shared_harness_outside(),
-        Outcome.PASS,
+        Expected.PASS,
     ),
     Case(
         MINIMAL_TREE,
         "budget-only-script-outside",
         _budget_only_script_outside(),
-        Outcome.FAIL,
+        Expected.FAIL,
     ),
     Case(
         MINIMAL_TREE,
         "budget-only-fixture-outside",
         _budget_only_fixture_outside(),
-        Outcome.FAIL,
+        Expected.FAIL,
     ),
-    Case(ONLY_JUDGE, "reports-figure", _conforming(), Outcome.PASS),
-    Case(ONLY_JUDGE, "elapsed-run", _elapsed_budget(), Outcome.PASS),
+    Case(ONLY_JUDGE, "reports-figure", _conforming(), Expected.PASS),
+    Case(ONLY_JUDGE, "elapsed-run", _elapsed_budget(), Expected.PASS),
     Case(
         ONLY_JUDGE,
         "asserts-threshold",
         _asserts_threshold(),
-        Outcome.FAIL,
+        Expected.FAIL,
         f"{ROOT}/budgets/measure_sync_requests.py",
     ),
     Case(
         ONLY_JUDGE,
         "reads-budgets-yaml",
         _reads_budgets_yaml(),
-        Outcome.FAIL,
+        Expected.FAIL,
         f"{ROOT}/budgets/measure_sync_requests.py",
     ),
-    Case(DIRECT, "direct", _conforming(), Outcome.PASS),
-    Case(DIRECT, "generic-runner", _generic_runner(), Outcome.PASS),
-    Case(DIRECT, "wrapper-relists-ids", _WRAPPER_RELISTS_IDS, Outcome.FAIL),
-    Case(DIRECT, "wrapper-rechecks-result", _WRAPPER_RECHECKS_RESULT, Outcome.FAIL),
+    Case(DIRECT, "direct", _conforming(), Expected.PASS),
+    Case(DIRECT, "generic-runner", _generic_runner(), Expected.PASS),
+    Case(DIRECT, "wrapper-relists-ids", _WRAPPER_RELISTS_IDS, Expected.FAIL),
+    Case(DIRECT, "wrapper-rechecks-result", _WRAPPER_RECHECKS_RESULT, Expected.FAIL),
     # Every rule's relevance clause drops matched files no budget reaches.
     *(
-        Case(rule, "no-budgets", _no_budgets(), Outcome.NOT_RELEVANT)
+        Case(rule, "no-budgets", _no_budgets(), Expected.NOT_RELEVANT)
         for rule in (DESCRIPTIONS, MINIMAL_TREE, ONLY_JUDGE, DIRECT)
     ),
 ]
@@ -573,7 +573,7 @@ CASES = [
 
 @dataclass(frozen=True)
 class Verdict:
-    outcome: Outcome
+    outcome: str
     violation_files: list[str]
     report: str
 
@@ -620,13 +620,15 @@ def _verdict(rule_name: str, result: subprocess.CompletedProcess[str]) -> Verdic
     matches = [r for r in rules if isinstance(r, dict) and r.get("name") == rule_name]
     assert len(matches) == 1, f"no single verdict for {rule_name}: {rules}"
     (rule,) = matches
-    violations = rule.get("violations") or []
+    violations = rule.get("violations", [])
     assert isinstance(violations, list), rule
-    files = [v.get("file") for v in violations if isinstance(v, dict)]
-    assert all(isinstance(f, str) for f in files), rule
+    assert all(
+        isinstance(v, dict) and isinstance(v.get("file"), str) for v in violations
+    ), rule
+    assert isinstance(rule.get("outcome"), str), rule
     return Verdict(
-        outcome=Outcome(rule.get("outcome")),
-        violation_files=files,
+        outcome=rule["outcome"],
+        violation_files=[v["file"] for v in violations],
         report=json.dumps(rule, indent=2),
     )
 
