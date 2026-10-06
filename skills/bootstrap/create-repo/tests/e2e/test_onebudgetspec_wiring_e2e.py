@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -45,6 +46,8 @@ LINT_URL = (
 # The consumer's own Nx. The `budgets` target's `externalDependencies` input
 # needs an Nx that reads `bun.lock`; Nx 20 refuses the target there.
 NX_VERSION = "23.2.1"
+# Nx colours its task lines when the run it is nested in forces colour.
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 ALL_BUDGETS = {
     "api-requests-per-sync",
@@ -360,7 +363,6 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     # elapsed ones, host-labelled or in the root file, ran again.
     assert repo.measured() == {"web-cold-start", "workspace-walk"}
     # Nx says so too, on the line for the cached target (not `budgets-host`).
-    [cached] = [
-        line for line in second.stdout.splitlines() if "nx run api:budgets " in line
-    ]
+    plain = ANSI_RE.sub("", second.stdout)
+    [cached] = [line for line in plain.splitlines() if "nx run api:budgets " in line]
     assert "cache" in cached, second.stdout

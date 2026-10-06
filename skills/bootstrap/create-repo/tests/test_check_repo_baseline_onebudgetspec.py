@@ -16,11 +16,19 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from test_check_repo_baseline import CONFORMANT_AGENTS, crb, levels, make_repo
+from test_check_repo_baseline import (
+    CONFORMANT_AGENTS,
+    FULL_JUSTFILE,
+    crb,
+    levels,
+    make_repo,
+)
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 
+# The wiring runs the budgets against the merge base the template assigns.
+BASED_JUSTFILE = 'base := "origin/main"\n\n' + FULL_JUSTFILE
 DECLARING_AGENTS = CONFORMANT_AGENTS.replace(
     "+ ci.md", "+ ci.md + tools/onebudgetspec.md"
 )
@@ -71,7 +79,7 @@ def api_project(budgets_target: str = "budgets") -> dict[str, object]:
 
 def wired_repo(tmp_path: Path) -> Path:
     """A baseline repo declaring onebudgetspec, set up by the composer's wiring."""
-    repo = make_repo(tmp_path, composition=DECLARING_AGENTS)
+    repo = make_repo(tmp_path, composition=DECLARING_AGENTS, justfile=BASED_JUSTFILE)
     result = subprocess.run(
         [
             "uv",

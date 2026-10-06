@@ -145,6 +145,8 @@ NX_DEFAULT_NAMED_INPUTS: dict[str, list[str]] = {
     "production": ["default"],
 }
 BUDGETS_RECIPE_NAME = "budgets"
+# The recipe itself, an asset so this script carries no orchestrator command.
+ONEBUDGETSPEC_RECIPE = "assets/tools/onebudgetspec.justfile"
 # A justfile recipe header (see check_repo_baseline.RECIPE_RE): the name, its
 # parameters, and the dependency list after the single terminating colon.
 JUST_CHECK_HEADER_RE = re.compile(r"^check\b([^\n:]*):(?!=)(.*)$", re.MULTILINE)
@@ -592,78 +594,50 @@ def _write_json(path: Path, data: dict[str, object]) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def budgets_recipe(*, tiered: bool, has_base: bool) -> str:
-    """The justfile ``budgets`` recipe, shaped to the ``check`` it joins.
+def wire_justfile(path: Path, recipe: str) -> list[str]:
+    """Add the ``budgets`` ``recipe`` to the justfile and make ``check`` depend on it.
 
-    A ``check`` that takes the template's ``tier`` parameter gets the same tier
-    switch, so ``just check all`` sweeps every project's budgets too.
+    The recipe runs at ``check``'s tier against its merge base, so the justfile
+    must carry the template's ``tier`` parameter and ``base`` assignment.
     """
-    # The same just expression the template's `check` resolves its tier with.
-    affected = '"bunx nx affected --base=" + base' if has_base else '"bunx nx affected"'
-    lines = [
-        "# The onebudgetspec budgets (references/tools/onebudgetspec.md), which `check`",
-        "# depends on. Each budget domain's project checks its own `budgets.yaml` through",
-        "# its `budgets` target (deterministic, cached) and its `budgets-host` target",
-        "# (elapsed or host-reading, never cached); the root `budgets.yaml` holds what",
-        "# every change must stay within, so it is checked on every run.",
-    ]
-    if tiered:
-        unknown = (
-            "error(\"unknown tier '\" + tier + \"' — use 'affected' (the default) "
-            "or 'all'\")"
-        )
-        lines += [
-            'budgets tier="affected":',
-            '    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" '
-            f"{{ {affected} }} else {{ {unknown} }} }}}} -t budgets budgets-host",
-        ]
-    else:
-        target = "bunx nx affected --base={{base}}" if has_base else "bunx nx affected"
-        lines += ["budgets:", f"    {target} -t budgets budgets-host"]
-    lines.append("    [ ! -f budgets.yaml ] || bunx onebudgetspec check budgets.yaml")
-    return "\n".join(lines) + "\n"
-
-
-def wire_justfile(path: Path) -> list[str]:
-    """Add the ``budgets`` recipe to the justfile and make ``check`` depend on it."""
+    template = "assets/justfile.template"
     if not path.is_file():
         raise WiringError(
             f"no justfile at {path}\n"
-            "      fix: copy the skill's assets/justfile.template there first; the "
-            "wiring adds a `budgets` recipe that its `check` recipe depends on."
+            f"      fix: copy the skill's {template} there first; the wiring adds a "
+            "`budgets` recipe that its `check` recipe depends on."
         )
     text = path.read_text(encoding="utf-8")
     header = JUST_CHECK_HEADER_RE.search(text)
-    if header is None:
+    if header is None or "tier" not in header.group(1):
         raise WiringError(
-            f"{path} defines no `check` recipe\n"
-            "      fix: add the gate's `check` recipe (assets/justfile.template), "
-            "then re-run --wiring."
+            f"{path} has no `check tier=...` recipe to run the budgets at\n"
+            f"      fix: give `check` the tier parameter {template} declares, then "
+            "re-run --wiring."
+        )
+    if JUST_BASE_ASSIGNMENT_RE.search(text) is None:
+        raise WiringError(
+            f"{path} has no `base` assignment for the affected tier to key off\n"
+            f"      fix: add the `base :=` assignment {template} declares, then "
+            "re-run --wiring."
         )
     changes: list[str] = []
-    tiered = "tier" in header.group(1)
     deps, _, comment = header.group(2).partition("#")
+    call = f"({BUDGETS_RECIPE_NAME} tier)"
     if BUDGETS_RECIPE_NAME not in {tok.strip("()") for tok in deps.split()}:
-        call = f"({BUDGETS_RECIPE_NAME} tier)" if tiered else BUDGETS_RECIPE_NAME
-        new_deps = f"{deps.rstrip()} {call}"
         rest = f" #{comment}" if comment else ""
-        line = f"check{header.group(1)}:{new_deps}{rest}"
+        line = f"check{header.group(1)}:{deps.rstrip()} {call}{rest}"
         text = text[: header.start()] + line + text[header.end() :]
         changes.append(f"`check` depends on `{call}`")
     names = {m.group(1) for m in JUST_RECIPE_NAME_RE.finditer(text)}
     if BUDGETS_RECIPE_NAME not in names:
-        has_base = JUST_BASE_ASSIGNMENT_RE.search(text) is not None
-        text = (
-            text.rstrip("\n")
-            + "\n\n"
-            + budgets_recipe(tiered=tiered, has_base=has_base)
-        )
+        text = text.rstrip("\n") + "\n\n" + recipe
         changes.append("added the `budgets` recipe")
     path.write_text(text, encoding="utf-8")
     return changes
 
 
-def wire_onebudgetspec(repo: Path) -> list[str]:
+def wire_onebudgetspec(repo: Path, skill_dir: Path) -> list[str]:
     """Pin onebudgetspec, give Nx its budget targets, and put them in ``check``.
 
     Idempotent: what is already wired is left as it is, so re-running it changes
@@ -711,7 +685,8 @@ def wire_onebudgetspec(repo: Path) -> list[str]:
         ),
         repo / "justfile",
     )
-    changes += wire_justfile(justfile)
+    recipe = (skill_dir / ONEBUDGETSPEC_RECIPE).read_text(encoding="utf-8")
+    changes += wire_justfile(justfile, recipe)
     return changes
 
 
@@ -956,7 +931,7 @@ def main(argv: list[str]) -> int:
             return 2
         for tool in dict.fromkeys(wired):
             try:
-                changes = TOOL_WIRING[tool](repo)
+                changes = TOOL_WIRING[tool](repo, skill_dir)
             except WiringError as exc:
                 print(f"ERROR {tool} wiring: {exc}", file=sys.stderr)
                 return 2

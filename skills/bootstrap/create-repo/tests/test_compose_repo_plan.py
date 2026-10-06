@@ -427,8 +427,15 @@ def test_without_the_opt_in_nothing_names_onebudgetspec(tmp_path):
     before = (repo / "justfile").read_text(encoding="utf-8")
     result = compose_into(repo)
     assert result.returncode == 0, result.stderr
-    for written in ("plan.md", "llmlint.yml"):
-        assert "onebudgetspec" not in (repo / written).read_text(encoding="utf-8")
+    assert "onebudgetspec" not in (repo / "llmlint.yml").read_text(encoding="utf-8")
+    # rust-cli.md's guidance mentions the tool; the plan composes no part of it.
+    plan = (repo / "plan.md").read_text(encoding="utf-8")
+    [composed] = [
+        line for line in plan.splitlines() if "**References composed:**" in line
+    ]
+    assert "tools/" not in composed
+    assert "Tool: onebudgetspec" not in plan
+    assert "--tool" not in plan
     # And no wiring: the repository is left as the template made it.
     assert (repo / "justfile").read_text(encoding="utf-8") == before
     assert not (repo / "package.json").exists()
@@ -525,16 +532,25 @@ def test_wiring_refuses_a_package_json_it_cannot_read(tmp_path):
     assert (repo / "package.json").read_text(encoding="utf-8") == "{not json"
 
 
-def test_wiring_a_plain_check_recipe_runs_the_affected_budgets(tmp_path):
-    repo = tmp_path
-    (repo / "justfile").write_text(
-        "check: lint test\n    echo gate\n", encoding="utf-8"
+@pytest.mark.parametrize(
+    ("justfile", "refusal"),
+    [
+        ("check: lint test\n    echo gate\n", "no `check tier=...` recipe"),
+        ('check tier="affected":\n    echo gate\n', "no `base` assignment"),
+    ],
+    ids=["check without a tier", "no merge base"],
+)
+def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, refusal):
+    # The recipe runs at check's tier against the template's merge base; a
+    # justfile without them is named, not quietly given a recipe that breaks it.
+    (tmp_path / "justfile").write_text(justfile, encoding="utf-8")
+    result = compose_into(
+        tmp_path, "--tool", "onebudgetspec", "--wiring", str(tmp_path)
     )
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
-    assert result.returncode == 0, result.stderr
-    justfile = (repo / "justfile").read_text(encoding="utf-8")
-    assert justfile.startswith("check: lint test budgets\n")
-    assert "budgets:\n    bunx nx affected -t budgets budgets-host\n" in justfile
+    assert result.returncode == 2
+    assert refusal in result.stderr
+    assert "assets/justfile.template" in result.stderr
+    assert (tmp_path / "justfile").read_text(encoding="utf-8") == justfile
 
 
 def test_the_onebudgetspec_release_is_named_once_in_lockstep():
