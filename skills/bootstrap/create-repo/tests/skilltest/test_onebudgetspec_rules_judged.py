@@ -4,15 +4,15 @@ Each case writes a small consumer repo to disk — a `budgets.yaml`, the code it
 command runs, and an `llmlint.yml` adopting the in-tree fragment as a plugin, the
 way a budgets-registering repo adopts it by URL — then runs the real `llmlint`
 over it with one rule selected and reads the verdict from its JSON report. Every
-rule gets a conforming tree it must pass and a nonconforming one it must fail;
-the minimal-tree rule also gets the non-pedantic case, a measuring script that
-calls a shared harness and the code it measures, both outside the budget's tree.
+true and false clause a rule states gets a tree of its own, so each verdict is
+proven independently; the minimal-tree rule also gets the non-pedantic case, a
+measuring script that calls a shared harness and the code it measures, both
+outside the budget's tree.
 
 Nothing is mocked: the judge is the harness `oneharness.toml` selects, which is
 why this sits in the `skilltest` project rather than the gate — it needs a
 credential and its verdicts are a model's. The cases run concurrently, since each
-is one independent judge call. Run with
-`just skilltest -k onebudgetspec`.
+is one independent judge call. Run with `just skilltest -k onebudgetspec`.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import pytest
@@ -45,9 +46,19 @@ pytestmark = [
 ]
 
 
-# --- fixture trees ------------------------------------------------------------
-# Shared pieces: a conforming budget measuring the Linear requests one issue sync
-# makes, reported through ONEBUDGETSPEC_RESULT.
+class Outcome(StrEnum):
+    """The rule outcomes llmlint's JSON report can carry."""
+
+    PASS = "pass"
+    FAIL = "fail"
+    NOT_RELEVANT = "not_relevant"
+    SKIPPED = "skipped"
+
+
+# The baseline every tree varies from: one budget counting the Linear requests a
+# full issue sync makes, reported through ONEBUDGETSPEC_RESULT, all under
+# packages/linear-sync/. It conforms to all four rules.
+ROOT = "packages/linear-sync"
 
 _TERSE_DESCRIPTION = (
     "Linear API requests one full issue sync makes. Protects the sync from "
@@ -55,23 +66,35 @@ _TERSE_DESCRIPTION = (
 )
 
 
-def _budgets_yaml(command: str, description: str = _TERSE_DESCRIPTION) -> str:
+def _budget(
+    command: str,
+    *,
+    budget_id: str = "linear-sync-requests",
+    description: str = _TERSE_DESCRIPTION,
+    measure: str = "reported",
+    unit: str = "requests",
+    threshold: int = 14,
+) -> str:
     indented = "\n".join(f"      {line}" for line in description.splitlines())
     return f"""\
-schema_version: 1
-budgets:
-  - id: linear-sync-requests
+  - id: {budget_id}
     description: |
 {indented}
-    measure: reported
+    measure: {measure}
     command: {command}
-    unit: requests
+    unit: {unit}
     direction: max
-    threshold: 14
+    threshold: {threshold}
 """
 
 
-_MEASURE_SELF_CONTAINED = '''\
+def _budgets_yaml(*budgets: str) -> str:
+    return "schema_version: 1\nbudgets:\n" + "".join(budgets)
+
+
+_MEASURE_COMMAND = '["uv", "run", "python", "budgets/measure_sync_requests.py"]'
+
+_MEASURE = '''\
 """Count the Linear requests one full issue sync makes, for onebudgetspec."""
 
 import json
@@ -131,26 +154,50 @@ class RecordingTransport:
 '''
 
 
-def _self_contained_tree() -> dict[str, str]:
+def _conforming() -> dict[str, str]:
     """Everything the budget needs lives under packages/linear-sync/."""
     return {
-        "packages/linear-sync/budgets.yaml": _budgets_yaml(
-            '["uv", "run", "python", "budgets/measure_sync_requests.py"]'
-        ),
-        "packages/linear-sync/budgets/measure_sync_requests.py": (
-            _MEASURE_SELF_CONTAINED
-        ),
-        "packages/linear-sync/budgets/fixtures/issues_two_pages.json": (
-            _ISSUES_FIXTURE
-        ),
-        "packages/linear-sync/src/linear_sync/sync.py": _SYNC,
-        "packages/linear-sync/src/linear_sync/client.py": _CLIENT,
+        f"{ROOT}/budgets.yaml": _budgets_yaml(_budget(_MEASURE_COMMAND)),
+        f"{ROOT}/budgets/measure_sync_requests.py": _MEASURE,
+        f"{ROOT}/budgets/fixtures/issues_two_pages.json": _ISSUES_FIXTURE,
+        f"{ROOT}/src/linear_sync/sync.py": _SYNC,
+        f"{ROOT}/src/linear_sync/client.py": _CLIENT,
     }
 
 
-def _shared_harness_tree() -> dict[str, str]:
-    """The budget's own files live under budgets/linear/; the harness it drives
-    (also used by the unit tests) and the code it measures live elsewhere."""
+def _with(**overrides: str) -> dict[str, str]:
+    """The conforming tree with files replaced or added, keyed relative to ROOT."""
+    tree = _conforming()
+    tree.update({f"{ROOT}/{rel}": body for rel, body in overrides.items()})
+    return tree
+
+
+def _description(text: str) -> dict[str, str]:
+    return {"budgets.yaml": _budgets_yaml(_budget(_MEASURE_COMMAND, description=text))}
+
+
+def _narrative_description() -> dict[str, str]:
+    return _with(
+        **_description(
+            "Base (c9e75a8): 18 requests. Journey 1 fetched the first page (1),\n"
+            "journey 2 refetched each issue (14), journey 3 paged comments (3).\n"
+            "Lowered to 14 after the batching change in #212."
+        )
+    )
+
+
+def _field_restating_description() -> dict[str, str]:
+    return _with(
+        **_description(
+            "Runs budgets/measure_sync_requests.py and reports requests; must "
+            "stay at or below a maximum of 14 requests."
+        )
+    )
+
+
+def _shared_harness_outside() -> dict[str, str]:
+    """The budget's own files live under budgets/linear/; the replay harness it
+    drives (also used by the unit tests) and the code it measures live elsewhere."""
     measure = '''\
 """Count the Linear requests one full issue sync makes, for onebudgetspec."""
 
@@ -159,39 +206,30 @@ import os
 from pathlib import Path
 
 from linear_sync.sync import sync_issues
-from testkit.recording_server import RecordingServer
+from testkit.replay import ReplayTransport
 
 PAGES = Path(__file__).parent / "fixtures" / "issues_two_pages.json"
 
-with RecordingServer.replaying(PAGES) as server:
-    sync_issues(server.transport())
+transport = ReplayTransport.from_file(PAGES)
+sync_issues(transport)
 Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(
-    json.dumps({"value": len(server.requests)})
+    json.dumps({"value": len(transport.requests)})
 )
 '''
-    recording_server = '''\
-"""A loopback server replaying recorded GraphQL pages; shared by every suite."""
+    replay = '''\
+"""Replays recorded GraphQL pages and records each request; every suite's harness."""
 
 import json
 
 
-class RecordingServer:
+class ReplayTransport:
     def __init__(self, pages):
         self._pages = iter(pages)
         self.requests = []
 
     @classmethod
-    def replaying(cls, path):
+    def from_file(cls, path):
         return cls(json.loads(path.read_text())["pages"])
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def transport(self):
-        return self
 
     def post(self, path, body):
         self.requests.append((path, body))
@@ -199,113 +237,220 @@ class RecordingServer:
 '''
     unit_test = """\
 from linear_sync.sync import sync_issues
-from testkit.recording_server import RecordingServer
+from testkit.replay import ReplayTransport
 
 
 def test_sync_follows_every_page():
-    server = RecordingServer([{"issues": [{"id": "A"}], "next": "2"},
-                              {"issues": [{"id": "B"}], "next": None}])
-    assert [i["id"] for i in sync_issues(server.transport())] == ["A", "B"]
+    transport = ReplayTransport(
+        [{"issues": [{"id": "A"}], "next": "2"}, {"issues": [{"id": "B"}], "next": None}]
+    )
+    assert [i["id"] for i in sync_issues(transport)] == ["A", "B"]
 """
     return {
         "budgets/linear/budgets.yaml": _budgets_yaml(
-            '["uv", "run", "python", "measure_sync_requests.py"]'
+            _budget('["uv", "run", "python", "measure_sync_requests.py"]')
         ),
         "budgets/linear/measure_sync_requests.py": measure,
         "budgets/linear/fixtures/issues_two_pages.json": _ISSUES_FIXTURE,
         "src/linear_sync/sync.py": _SYNC,
-        "testkit/testkit/recording_server.py": recording_server,
+        "testkit/testkit/replay.py": replay,
         "tests/test_sync.py": unit_test,
     }
 
 
-def _budget_only_files_outside_tree() -> dict[str, str]:
+def _budget_only_script_outside() -> dict[str, str]:
     """The budget sits in packages/linear-sync/, but its measuring script and its
     fixture — used by nothing else — sit in the repo-root e2e suite."""
-    measure = _MEASURE_SELF_CONTAINED.replace(
-        'Path(__file__).parent / "fixtures" / "issues_two_pages.json"',
-        'Path(__file__).parent / "fixtures" / "linear_budget_issues.json"',
+    tree = _conforming()
+    del tree[f"{ROOT}/budgets/measure_sync_requests.py"]
+    del tree[f"{ROOT}/budgets/fixtures/issues_two_pages.json"]
+    tree[f"{ROOT}/budgets.yaml"] = _budgets_yaml(
+        _budget('["uv", "run", "python", "../../tests/e2e/linear_budget.py"]')
     )
-    return {
-        "packages/linear-sync/budgets.yaml": _budgets_yaml(
-            '["uv", "run", "python", "../../tests/e2e/linear_budget.py"]'
-        ),
-        "packages/linear-sync/src/linear_sync/sync.py": _SYNC,
-        "packages/linear-sync/src/linear_sync/client.py": _CLIENT,
-        "tests/e2e/linear_budget.py": measure,
-        "tests/e2e/fixtures/linear_budget_issues.json": _ISSUES_FIXTURE,
-    }
-
-
-def _narrative_descriptions() -> dict[str, str]:
-    tree = _self_contained_tree()
-    tree["packages/linear-sync/budgets.yaml"] = _budgets_yaml(
-        '["uv", "run", "python", "budgets/measure_sync_requests.py"]',
-        description=(
-            "Base (c9e75a8): 18 requests. Journey 1 fetched the first page (1),\n"
-            "journey 2 refetched each issue (14), journey 3 paged comments (3).\n"
-            "Lowered to 14 after the batching change in #212. Runs\n"
-            "measure_sync_requests.py and fails above 14 requests."
-        ),
-    )
+    tree["tests/e2e/linear_budget.py"] = _MEASURE
+    tree["tests/e2e/fixtures/issues_two_pages.json"] = _ISSUES_FIXTURE
     return tree
 
 
-def _measure_judges_itself() -> dict[str, str]:
-    tree = _self_contained_tree()
-    tree["packages/linear-sync/budgets/measure_sync_requests.py"] = '''\
-"""Count the Linear requests one full issue sync makes, for onebudgetspec."""
+def _budget_only_fixture_outside() -> dict[str, str]:
+    """The measuring script is in the tree, but the fixture only it reads is not."""
+    tree = _conforming()
+    del tree[f"{ROOT}/budgets/fixtures/issues_two_pages.json"]
+    tree[f"{ROOT}/budgets/measure_sync_requests.py"] = _MEASURE.replace(
+        'Path(__file__).parent / "fixtures" / "issues_two_pages.json"',
+        'Path(__file__).parents[3] / "fixtures" / "linear_sync_budget_pages.json"',
+    )
+    tree["fixtures/linear_sync_budget_pages.json"] = _ISSUES_FIXTURE
+    return tree
 
+
+def _elapsed_budget() -> dict[str, str]:
+    return _with(
+        **{
+            "budgets.yaml": _budgets_yaml(
+                _budget(
+                    '["uv", "run", "python", "budgets/sync_fixture_pages.py"]',
+                    budget_id="linear-sync-seconds",
+                    description=(
+                        "Wall clock of one full issue sync against recorded pages. "
+                        "Protects the sync loop from quadratic slowdowns."
+                    ),
+                    measure="elapsed",
+                    unit="seconds",
+                    threshold=5,
+                )
+            ),
+            "budgets/sync_fixture_pages.py": '''\
+"""One full issue sync against recorded pages; onebudgetspec times the run."""
+
+from pathlib import Path
+
+from linear_sync.client import RecordingTransport
+from linear_sync.sync import sync_issues
+
+sync_issues(
+    RecordingTransport.replaying(
+        Path(__file__).parent / "fixtures" / "issues_two_pages.json"
+    )
+)
+''',
+        }
+    )
+
+
+def _asserts_threshold() -> dict[str, str]:
+    return _with(
+        **{
+            "budgets/measure_sync_requests.py": _MEASURE
+            + """
+assert len(transport.requests) <= 14, (
+    f"{len(transport.requests)} Linear requests is over the budget of 14"
+)
+"""
+        }
+    )
+
+
+def _reads_budgets_yaml() -> dict[str, str]:
+    return _with(
+        **{
+            "budgets/measure_sync_requests.py": _MEASURE.replace(
+                "transport = RecordingTransport.replaying(FIXTURE)\n",
+                """\
+import yaml
+
+BUDGETS = yaml.safe_load((Path(__file__).parents[1] / "budgets.yaml").read_text())
+(BUDGET,) = [b for b in BUDGETS["budgets"] if b["id"] == "linear-sync-requests"]
+print(f"measuring {BUDGET['id']} in {BUDGET['unit']}")
+
+transport = RecordingTransport.replaying(FIXTURE)
+""",
+            )
+        }
+    )
+
+
+_RUNNER = '''\
+"""Run one measurement module by name and report its figure, for every budget."""
+
+import importlib
 import json
 import os
 import sys
 from pathlib import Path
 
-import yaml
+measurement = importlib.import_module(f"measurements.{sys.argv[1]}")
+Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(
+    json.dumps({"value": measurement.measure()})
+)
+'''
+
+
+def _generic_runner() -> dict[str, str]:
+    runner_command = '["uv", "run", "python", "budgets/run.py", "{name}"]'
+    tree = _conforming()
+    del tree[f"{ROOT}/budgets/measure_sync_requests.py"]
+    tree.update(
+        {
+            f"{ROOT}/budgets.yaml": _budgets_yaml(
+                _budget(runner_command.format(name="sync_requests")),
+                _budget(
+                    runner_command.format(name="sync_pages"),
+                    budget_id="linear-sync-pages",
+                    description=(
+                        "Issue pages one full sync fetches. Protects against "
+                        "shrinking the page size Linear allows."
+                    ),
+                    unit="pages",
+                    threshold=3,
+                ),
+            ),
+            f"{ROOT}/budgets/run.py": _RUNNER,
+            f"{ROOT}/budgets/measurements/__init__.py": "",
+            f"{ROOT}/budgets/measurements/sync_requests.py": '''\
+"""Linear requests one full issue sync makes."""
+
+from pathlib import Path
 
 from linear_sync.client import RecordingTransport
 from linear_sync.sync import sync_issues
 
-HERE = Path(__file__).parent
-FIXTURE = HERE / "fixtures" / "issues_two_pages.json"
-BUDGETS = yaml.safe_load((HERE.parent / "budgets.yaml").read_text())
-THRESHOLD = next(
-    b["threshold"] for b in BUDGETS["budgets"] if b["id"] == "linear-sync-requests"
-)
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "issues_two_pages.json"
 
-transport = RecordingTransport.replaying(FIXTURE)
-sync_issues(transport)
-count = len(transport.requests)
-Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(json.dumps({"value": count}))
-if count > THRESHOLD:
-    sys.exit(f"linear-sync-requests: {count} requests is over the {THRESHOLD} budget")
-'''
+
+def measure():
+    transport = RecordingTransport.replaying(FIXTURE)
+    sync_issues(transport)
+    return len(transport.requests)
+''',
+            f"{ROOT}/budgets/measurements/sync_pages.py": '''\
+"""Issue pages one full sync fetches."""
+
+from pathlib import Path
+
+from linear_sync.client import RecordingTransport
+from linear_sync.sync import sync_issues
+
+FIXTURE = Path(__file__).parents[1] / "fixtures" / "issues_two_pages.json"
+
+
+def measure():
+    transport = RecordingTransport.replaying(FIXTURE)
+    sync_issues(transport)
+    return sum(1 for _, body in transport.requests if body["query"] == "issues")
+''',
+        }
+    )
     return tree
 
 
-def _per_budget_wrapper() -> dict[str, str]:
-    tree = _self_contained_tree()
-    tree["packages/linear-sync/budgets.yaml"] = _budgets_yaml(
-        '["sh", "budgets/linear-sync-requests.sh", "linear-sync-requests"]'
+def _wrapper(body: str) -> dict[str, str]:
+    return _with(
+        **{
+            "budgets.yaml": _budgets_yaml(
+                _budget('["sh", "budgets/linear-sync-requests.sh"]')
+            ),
+            "budgets/linear-sync-requests.sh": "#!/bin/sh\nset -eu\n" + body,
+        }
     )
-    tree["packages/linear-sync/budgets/linear-sync-requests.sh"] = """\
-#!/bin/sh
-# Wrapper for the linear-sync-requests budget.
-set -eu
-case "$1" in
+
+
+_WRAPPER_RELISTS_IDS = _wrapper("""\
+budget_id=linear-sync-requests
+case "$budget_id" in
   linear-sync-requests|linear-write-requests) ;;
-  *) echo "unknown budget id: $1" >&2; exit 2 ;;
+  *) echo "unknown budget id: $budget_id" >&2; exit 2 ;;
 esac
+exec uv run python budgets/measure_sync_requests.py
+""")
+
+_WRAPPER_RECHECKS_RESULT = _wrapper("""\
 uv run python budgets/measure_sync_requests.py
 if [ ! -s "$ONEBUDGETSPEC_RESULT" ]; then
   echo "linear-sync-requests wrote no result" >&2
   exit 1
 fi
-"""
-    return tree
-
-
-# --- the cases ----------------------------------------------------------------
+""")
 
 
 @dataclass(frozen=True)
@@ -313,74 +458,77 @@ class Case:
     rule: str
     fixture: str
     tree: dict[str, str]
-    expected: str  # llmlint's rule outcome: "pass" or "fail"
-    # For a "fail": a file the judge must attribute a violation to.
+    expected: Outcome
+    # For a FAIL: a file the judge must attribute a violation to.
     culprit: str | None = None
 
 
+DESCRIPTIONS = "budget_descriptions_durable_and_terse"
+MINIMAL_TREE = "budgets_scoped_to_minimal_tree"
+ONLY_JUDGE = "onebudgetspec_is_the_only_judge"
+DIRECT = "budget_commands_measure_directly"
+
 CASES = [
+    Case(DESCRIPTIONS, "terse", _conforming(), Outcome.PASS),
     Case(
-        "budget_descriptions_durable_and_terse",
-        "terse",
-        _self_contained_tree(),
-        "pass",
-    ),
-    Case(
-        "budget_descriptions_durable_and_terse",
+        DESCRIPTIONS,
         "changelog-narrative",
-        _narrative_descriptions(),
-        "fail",
-        "packages/linear-sync/budgets.yaml",
+        _narrative_description(),
+        Outcome.FAIL,
+        f"{ROOT}/budgets.yaml",
     ),
     Case(
-        "budgets_scoped_to_minimal_tree",
-        "self-contained",
-        _self_contained_tree(),
-        "pass",
+        DESCRIPTIONS,
+        "restates-fields",
+        _field_restating_description(),
+        Outcome.FAIL,
+        f"{ROOT}/budgets.yaml",
     ),
+    Case(MINIMAL_TREE, "self-contained", _conforming(), Outcome.PASS),
     Case(
-        "budgets_scoped_to_minimal_tree",
+        MINIMAL_TREE,
         "shared-harness-and-measured-code-outside",
-        _shared_harness_tree(),
-        "pass",
+        _shared_harness_outside(),
+        Outcome.PASS,
     ),
     Case(
-        "budgets_scoped_to_minimal_tree",
+        MINIMAL_TREE,
         "budget-only-script-outside",
-        _budget_only_files_outside_tree(),
-        "fail",
+        _budget_only_script_outside(),
+        Outcome.FAIL,
     ),
     Case(
-        "onebudgetspec_is_the_only_judge",
-        "reports-only",
-        _self_contained_tree(),
-        "pass",
+        MINIMAL_TREE,
+        "budget-only-fixture-outside",
+        _budget_only_fixture_outside(),
+        Outcome.FAIL,
+    ),
+    Case(ONLY_JUDGE, "reports-figure", _conforming(), Outcome.PASS),
+    Case(ONLY_JUDGE, "elapsed-run", _elapsed_budget(), Outcome.PASS),
+    Case(
+        ONLY_JUDGE,
+        "asserts-threshold",
+        _asserts_threshold(),
+        Outcome.FAIL,
+        f"{ROOT}/budgets/measure_sync_requests.py",
     ),
     Case(
-        "onebudgetspec_is_the_only_judge",
-        "reads-budgets-and-asserts",
-        _measure_judges_itself(),
-        "fail",
-        "packages/linear-sync/budgets/measure_sync_requests.py",
+        ONLY_JUDGE,
+        "reads-budgets-yaml",
+        _reads_budgets_yaml(),
+        Outcome.FAIL,
+        f"{ROOT}/budgets/measure_sync_requests.py",
     ),
-    Case(
-        "budget_commands_measure_directly",
-        "direct",
-        _self_contained_tree(),
-        "pass",
-    ),
-    Case(
-        "budget_commands_measure_directly",
-        "per-budget-wrapper",
-        _per_budget_wrapper(),
-        "fail",
-    ),
+    Case(DIRECT, "direct", _conforming(), Outcome.PASS),
+    Case(DIRECT, "generic-runner", _generic_runner(), Outcome.PASS),
+    Case(DIRECT, "wrapper-relists-ids", _WRAPPER_RELISTS_IDS, Outcome.FAIL),
+    Case(DIRECT, "wrapper-rechecks-result", _WRAPPER_RECHECKS_RESULT, Outcome.FAIL),
 ]
 
 
 @dataclass(frozen=True)
 class Verdict:
-    outcome: str
+    outcome: Outcome
     violation_files: list[str]
     report: str
 
@@ -418,10 +566,14 @@ def _judge(case: Case, root: Path) -> Verdict:
     assert not report["errors"], report["errors"]
     (rule,) = [r for r in report["rules"] if r["name"] == case.rule]
     return Verdict(
-        outcome=rule["outcome"],
+        outcome=Outcome(rule["outcome"]),
         violation_files=[v["file"] for v in rule.get("violations") or []],
         report=json.dumps(rule, indent=2),
     )
+
+
+def _id(case: Case) -> str:
+    return f"{case.rule}/{case.fixture}"
 
 
 @pytest.fixture(scope="module")
@@ -433,10 +585,6 @@ def verdicts(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Verdict]:
             for c in CASES
         }
         return {key: future.result() for key, future in futures.items()}
-
-
-def _id(case: Case) -> str:
-    return f"{case.rule}/{case.fixture}"
 
 
 @pytest.mark.parametrize("case", CASES, ids=_id)

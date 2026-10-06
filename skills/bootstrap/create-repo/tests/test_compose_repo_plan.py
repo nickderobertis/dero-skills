@@ -64,7 +64,7 @@ def test_base_llmlint_fragment_exists():
     assert (LLMLINT_ASSETS / "base.llmlint.yml").is_file()
 
 
-def test_every_llmlint_fragment_maps_to_a_reference():
+def test_every_composable_llmlint_fragment_maps_to_a_reference():
     # A fragment's path mirrors a reference relpath (buildout/ stripped), so every
     # fragment must correspond to a real references/<...>.md — no orphans. The
     # exception is `tools/`: opt-in fragments a consumer adopts by URL, which the
