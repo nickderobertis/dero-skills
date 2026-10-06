@@ -1440,6 +1440,8 @@ def llmlint_plugins(text: str) -> list[str]:
                 return []  # an unclosed flow list is malformed, so lists nothing
             inner = rest[1:-1]
             return [v for v in (_yaml_scalar(part) for part in inner.split(",")) if v]
+        if rest:
+            return []  # a scalar is no list, whatever is indented below it
         entries: list[str] = []
         for nxt in lines[i + 1 :]:
             if not nxt.strip() or nxt.lstrip().startswith("#"):
@@ -1928,9 +1930,9 @@ def _uv_pin_problem(
     packages: list[dict[str, object]], requirements: list[Requirement]
 ) -> str | None:
     resolved = {
-        entry["name"]: entry.get("version")
+        entry["name"]: entry["version"]
         for entry in packages
-        if isinstance(entry.get("name"), str)
+        if isinstance(entry.get("name"), str) and isinstance(entry.get("version"), str)
     }
     problems = []
     for name, specifier in sorted(requirements, key=str):

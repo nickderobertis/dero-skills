@@ -26,11 +26,11 @@ from test_check_repo_baseline import (
     NO_ORCHESTRATOR_JUSTFILE,
     SCRIPT,
     _buildout_repo,
-    crb,
     make_repo,
     write_cargo_repo,
     write_package,
 )
+from test_check_repo_baseline_onebudgetspec import wired_repo
 from test_ci_llmlint_selection_e2e import llmlint_bin
 
 # The gate delegating with Nx's comma-separated target list (`--targets=a,b`)
@@ -273,18 +273,22 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     ]
 
 
-# The `plugins` spellings an llmlint.yml can carry, and malformed ones near them.
-# The checker's light scan decides whether the onebudgetspec rules are adopted;
-# real llmlint is the parser it must agree with, on what is listed and on what
-# is no config at all.
+# The `plugins` spellings an llmlint.yml can carry, malformed ones near them, and
+# whether real llmlint — the parser the checker's light scan must agree with —
+# loads the plugin each one names.
 PLUGINS_CORPUS = {
-    "block, quoted, commented": 'plugins:\n  - "./a.llmlint.yml"  # a\n  - ./b.llmlint.yml\n',
-    "block, single-quoted": "plugins:\n  - './a.llmlint.yml'\n",
-    "inline": 'plugins: ["./a.llmlint.yml", "./b.llmlint.yml"]\n',
-    "inline, commented": "plugins: ['./b.llmlint.yml']  # composed\n",
-    "content after a quote": 'plugins:\n  - "./a.llmlint.yml" trailing\n',
-    "an unclosed inline list": 'plugins: ["./a.llmlint.yml"\n',
-    "an unterminated quote": 'plugins:\n  - "./a.llmlint.yml\n',
+    "block, quoted, commented": (
+        'plugins:\n  - "{plugin}"  # a\n  - ./b.llmlint.yml\n',
+        True,
+    ),
+    "block, single-quoted": ("plugins:\n  - '{plugin}'\n", True),
+    "block, plain": ("plugins:\n  - {plugin}\n", True),
+    "inline": ('plugins: ["./b.llmlint.yml", "{plugin}"]\n', True),
+    "inline, commented": ("plugins: ['{plugin}']  # composed\n", True),
+    "content after a quote": ('plugins:\n  - "{plugin}" trailing\n', False),
+    "an unclosed inline list": ('plugins: ["{plugin}"\n', False),
+    "an unterminated quote": ('plugins:\n  - "{plugin}\n', False),
+    "a scalar before the entries": ('plugins: invalid\n  - "{plugin}"\n', False),
 }
 PLUGIN_FRAGMENT = """\
 version: 1.0.0
@@ -294,33 +298,58 @@ rules:
     files:
       include: ["**/*.md"]
 """
+ONEBUDGETSPEC_PLUGIN = (
+    "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
+    "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
+)
 
 
-@pytest.mark.parametrize("config", PLUGINS_CORPUS.values(), ids=PLUGINS_CORPUS)
-def test_the_plugins_scan_agrees_with_llmlint(tmp_path, config):
+def llmlint_loads(tree: Path, config: str) -> bool:
+    """Whether real llmlint, reading ``config`` in ``tree``, loads ./a.llmlint.yml."""
     for name in ("a", "b"):
-        (tmp_path / f"{name}.llmlint.yml").write_text(
+        (tree / f"{name}.llmlint.yml").write_text(
             PLUGIN_FRAGMENT.format(name=f"rule_{name}"), encoding="utf-8"
         )
-    (tmp_path / "llmlint.yml").write_text(config, encoding="utf-8")
+    (tree / "llmlint.yml").write_text(
+        config.format(plugin="./a.llmlint.yml"), encoding="utf-8"
+    )
     real = subprocess.run(
         [llmlint_bin(), "config", "--sources"],
-        cwd=tmp_path,
+        cwd=tree,
         capture_output=True,
         text=True,
         timeout=120,
     )
-    scanned = [
-        str((tmp_path / plugin).resolve()) for plugin in crb.llmlint_plugins(config)
-    ]
     if real.returncode != 0:
         assert "llmlint.yml" in real.stderr, real.stderr
-        assert scanned == [], scanned
-        return
-    loaded = [
-        path
-        for path in json.loads(real.stdout)["config_files"]
-        if Path(path).parent == tmp_path and Path(path).name != "llmlint.yml"
-    ]
-    assert loaded, real.stdout
-    assert scanned == loaded
+        return False
+    loaded = json.loads(real.stdout)["config_files"]
+    return str((tree / "a.llmlint.yml").resolve()) in loaded
+
+
+@pytest.mark.parametrize(
+    ("config", "listed"), PLUGINS_CORPUS.values(), ids=PLUGINS_CORPUS
+)
+def test_the_checker_reads_plugins_as_llmlint_does(tmp_path, config, listed):
+    oracle = tmp_path / "oracle"
+    oracle.mkdir()
+    assert llmlint_loads(oracle, config) is listed
+
+    # The same spelling naming the onebudgetspec rules, in a wired repo, through
+    # the checker's own command line.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    repo = wired_repo(repo)
+    (repo / "llmlint.yml").write_text(
+        config.format(plugin=ONEBUDGETSPEC_PLUGIN), encoding="utf-8"
+    )
+    done = subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), str(repo)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode in (0, 1), output
+    adopted = "the onebudgetspec lint rules are not adopted" not in output
+    assert adopted is listed, output

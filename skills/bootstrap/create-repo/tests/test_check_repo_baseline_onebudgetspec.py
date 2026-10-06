@@ -422,6 +422,21 @@ def test_an_inline_plugins_list_adopts_the_rules(tmp_path):
     assert levels(budget_findings(repo), "ERROR") == []
 
 
+def test_a_uv_lock_version_that_is_not_a_string_resolves_nothing(tmp_path):
+    repo = uv_repo(tmp_path, dev='{ name = "onebudgetspec-cli", specifier = "==3" }')
+    lock = repo / "uv.lock"
+    text = lock.read_text(encoding="utf-8")
+    lock.write_text(
+        text.replace(
+            'name = "onebudgetspec-cli"\nversion = "0.1.3"',
+            'name = "onebudgetspec-cli"\nversion = 3',
+        ),
+        encoding="utf-8",
+    )
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "uv.lock requires onebudgetspec-cli but does not resolve it" in error
+
+
 @pytest.mark.parametrize(
     "lock",
     ["package = 1\n", '[[package]]\nname = ["onebudgetspec-sdk"]\nversion = "0.1.3"\n'],
