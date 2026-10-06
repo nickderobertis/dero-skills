@@ -96,7 +96,7 @@ thing the graph exists to prevent.
 - `just lint-llm [paths]` — the LLM-as-judge *model* lint. NOT in the gate — it
   drives a real harness (see "Optional LLM lint" below).
 - `just skilltest [args]` — the `skilltest-pytest` skill evals; `just external
-  [args]` — the create-repo journeys that reach npm and GitHub. NOT in the gate
+  [args]` — the create-repo journeys that install from npm. NOT in the gate
   (see "Skill evals" below); no provider skips the evals, offline fails the rest.
 - `just session-setup` — provision a session's dev toolchain: ensure `just`, then
   `setup-llmlint`. Runs automatically via the `SessionStart` hook (see "Harness

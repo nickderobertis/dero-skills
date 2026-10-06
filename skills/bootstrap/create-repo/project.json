@@ -27,7 +27,8 @@
       "inputs": [
         "default",
         "skillEval",
-        "onebudgetspecRelease"
+        "onebudgetspecRelease",
+        "nxRelease"
       ]
     }
   }

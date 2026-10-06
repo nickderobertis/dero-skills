@@ -1799,13 +1799,24 @@ ONEBUDGETSPEC_REFERENCE = "tools/onebudgetspec.md"
 BUDGETS_FILE = "budgets.yaml"
 # The release's npm packages (the SDK installs the CLI at its own version) and
 # their PyPI counterparts. A pin is exact when the manifest's spec is the version
-# the lockfile resolves, so no npm or PEP 508 version grammar is restated here.
+# the lockfile resolves, so no npm range or PEP 508 specifier grammar is restated
+# here; what a lockfile resolves is read only if it has the shape of one release
+# version — SemVer 2.0 for bun.lock, PEP 440's normalized form (which uv writes)
+# for uv.lock — so an empty or garbled entry resolves nothing.
 ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
 ONEBUDGETSPEC_PYPI_PACKAGES = ("onebudgetspec-cli", "onebudgetspec-sdk")
 # The lockfile of the bun workspace the skill's justfile drives Nx through: JSON
 # that allows trailing commas, which are dropped before parsing.
 BUN_LOCKFILE = "bun.lock"
 JSON_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+NPM_VERSION_RE = re.compile(
+    r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
+PEP440_NORMALIZED_RE = re.compile(
+    r"(?:\d+!)?\d+(?:\.\d+)*(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?"
+    r"(?:\+[a-z0-9]+(?:\.[a-z0-9]+)*)?"
+)
 ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
 ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
 # The `check` options that take a value, so that value is not read as a PATH —
@@ -1856,7 +1867,8 @@ def bun_lock_resolution(lock: Path, name: str) -> str | None:
     entry = packages.get(name) if isinstance(packages, dict) else None
     match entry:
         case [str(resolution), *_] if resolution.startswith(f"{name}@"):
-            return resolution.removeprefix(f"{name}@")
+            version = resolution.removeprefix(f"{name}@")
+            return version if NPM_VERSION_RE.fullmatch(version) else None
     return None
 
 
@@ -1932,7 +1944,9 @@ def _uv_pin_problem(
     resolved = {
         entry["name"]: entry["version"]
         for entry in packages
-        if isinstance(entry.get("name"), str) and isinstance(entry.get("version"), str)
+        if isinstance(entry.get("name"), str)
+        and isinstance(entry.get("version"), str)
+        and PEP440_NORMALIZED_RE.fullmatch(entry["version"])
     }
     problems = []
     for name, specifier in sorted(requirements, key=str):

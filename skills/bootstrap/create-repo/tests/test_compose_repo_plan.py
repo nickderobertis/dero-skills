@@ -463,6 +463,18 @@ def test_wiring_pins_the_release_and_adds_both_targets_to_the_gate(tmp_path):
     assert "bunx onebudgetspec check budgets.yaml" in justfile
 
 
+# A workspace's own `production`, using an input object of each kind Nx takes.
+PRODUCTION = [
+    "{projectRoot}/src/**/*",
+    {"fileset": "{workspaceRoot}/tsconfig.base.json"},
+    {"input": "default", "dependencies": True},
+    {"runtime": "node --version"},
+    {"env": "NODE_ENV"},
+    {"externalDependencies": ["typescript"]},
+    {"dependentTasksOutputFiles": "**/*.d.ts", "transitive": True},
+]
+
+
 def test_wiring_is_idempotent_and_keeps_what_the_repo_already_has(tmp_path):
     repo = template_repo(tmp_path)
     (repo / "package.json").write_text(
@@ -470,7 +482,7 @@ def test_wiring_is_idempotent_and_keeps_what_the_repo_already_has(tmp_path):
         encoding="utf-8",
     )
     (repo / "nx.json").write_text(
-        json.dumps({"namedInputs": {"production": ["{projectRoot}/src/**/*"]}}),
+        json.dumps({"namedInputs": {"production": PRODUCTION}}),
         encoding="utf-8",
     )
     args = ("--tool", "onebudgetspec", "--wiring", str(repo))
@@ -488,7 +500,7 @@ def test_wiring_is_idempotent_and_keeps_what_the_repo_already_has(tmp_path):
     package = json.loads(wired["package.json"])
     assert package["devDependencies"]["nx"] == "23.2.1"
     nx = json.loads(wired["nx.json"])
-    assert nx["namedInputs"]["production"] == ["{projectRoot}/src/**/*"]
+    assert nx["namedInputs"]["production"] == PRODUCTION
 
 
 def test_wiring_moves_an_older_pin_to_the_release(tmp_path):
@@ -578,6 +590,21 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
             '{"namedInputs": {"production": ["default", null]}}',
             "named input `production` is not a list of inputs",
         ),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": ["default", {}]}}',
+            "named input `production` is not a list of inputs",
+        ),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": [{"glob": "src/**"}]}}',
+            "named input `production` is not a list of inputs",
+        ),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": [{"env": "CI", "transitive": true}]}}',
+            "named input `production` is not a list of inputs",
+        ),
     ],
     ids=[
         "package not an object",
@@ -588,6 +615,9 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
         "budgets default not an object",
         "dependencies a list",
         "a named input entry that is no input",
+        "an empty input object",
+        "an input object of no known kind",
+        "an input object with a key its kind does not take",
     ],
 )
 def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, refusal):

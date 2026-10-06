@@ -32,7 +32,7 @@ What is not obvious from the table:
   `format-check lint validate smoke test` — nothing else.
 - **The three bold targets are the promoted tiers.** `skilltest` drives a real
   ~20-30 minute harness bootstrap; `lint-llm` drives a judged model; `external`
-  installs from the npm registry and fetches from GitHub. All three leave
+  installs from the npm registry. All three leave
   the affected tier *unconditionally* because of what they contact
   (`ci.md`), not because of how long they take — so their names are absent from
   the gate's fan-out, and `llmlint-tier` depends on nothing, which is what keeps
@@ -57,8 +57,10 @@ What is not obvious from the table:
   the `oneharness-cli` bound lives — to the create-repo e2e tier that parses the
   composed config with that release, `onebudgetspecRelease` attaches the same two
   files — where the `onebudgetspec-cli` pin lives — to the create-repo fast tier
-  that runs the judged onebudgetspec fixtures through that release, and
-  `skillEval` attaches the harness-driven eval to the fast tier
+  that runs the judged onebudgetspec fixtures through that release and reads its
+  README, `nxRelease` attaches the root `package.json` and `bun.lock` — what
+  `node_modules` installs — to the same tier, which reads Nx's schema and that
+  lock, and `skillEval` attaches the harness-driven eval to the fast tier
   that checks its path constants (`tests/test_eval_wiring.py` — the eval never
   runs in the gate, so a broken constant inside it is otherwise invisible). An input is the only thing keeping a cached pass from outliving an
   edit to a file outside the project — add one whenever a target reads across a

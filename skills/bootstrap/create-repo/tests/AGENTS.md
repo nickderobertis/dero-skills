@@ -10,12 +10,13 @@ for the tiers it can reach:
   Both are un-mocked and part of the gate — they run under `just check` (and
   `just test`), embodying the "Tests are context engineering" mandate: real
   subprocesses over real temp files, never a mocked stand-in.
-  Both stay offline.
+  Both stay offline. `test_onebudgetspec_release.py` holds what the skill
+  restates of onebudgetspec, Nx and `bun.lock` to the installed releases' own
+  README, schema and lockfile, so that drift gate runs here too.
 - **The external journeys** (`external/`) — the `bootstrap-create-repo-external`
   project, for journeys that reach an external service.
   `external/test_onebudgetspec_wiring_e2e.py` installs the pinned onebudgetspec
-  from the npm registry and reads its README from GitHub, so it declares an
-  `external` target no gate tier fans out over (`just external`): external
+  from the npm registry, so it declares an `external` target no gate tier fans out over (`just external`): external
   contact promotes it out of the affected tier unconditionally
   (`references/ci.md`). Offline it fails rather than skips, on purpose: a
   stand-in for the release would prove nothing about the wiring.

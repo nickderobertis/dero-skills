@@ -39,7 +39,6 @@ import pytest
 SKILL_DIR = Path(__file__).resolve().parents[2]
 COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 JUSTFILE_TEMPLATE = SKILL_DIR / "assets" / "justfile.template"
-REFERENCE = SKILL_DIR / "references" / "tools" / "onebudgetspec.md"
 LINT_URL = (
     "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
     "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
@@ -390,79 +389,6 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     third = repo.run("just", "check", NX_BASE=base)
     assert third.returncode == 0, third.stdout + third.stderr
     assert repo.take_measured() == ALL_BUDGETS
-
-
-def _release_readme(version: str, workdir: Path) -> str:
-    """The README at the release's tag, read with git (one blob, no checkout)."""
-    clone = workdir / "onebudgetspec"
-    # llmlint: ignore[async_typed_clients_at_boundaries] a test-time read of one file at a release tag, done once per run by the git CLI the suite already drives everywhere; there is no service client to type, and the README is the source the reference is held to.
-    fetched = subprocess.run(
-        [
-            "git",
-            "clone",
-            "-q",
-            "--depth=1",
-            "--filter=blob:none",
-            "--no-checkout",
-            f"--branch=v{version}",
-            "https://github.com/nickderobertis/onebudgetspec.git",
-            str(clone),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert fetched.returncode == 0, fetched.stderr
-    shown = subprocess.run(
-        ["git", "-C", str(clone), "show", "HEAD:README.md"],
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert shown.returncode == 0, shown.stderr
-    return shown.stdout
-
-
-def test_the_reference_and_wiring_name_the_pinned_releases_surface(generated, tmp_path):
-    # The README at the tag the wiring pinned is the source of every name the
-    # reference restates and of the targets the wiring wrote into nx.json.
-    repo, _base = generated
-    package = json.loads((repo.root / "package.json").read_text(encoding="utf-8"))
-    readme = _release_readme(package["devDependencies"]["@onebudgetspec/cli"], tmp_path)
-    reference = REFERENCE.read_text(encoding="utf-8")
-
-    signatures = re.findall(r"^\| [^|]+ \| `([^`]+)`", reference, re.MULTILINE)
-    assert len(signatures) == 3, signatures
-    for signature in signatures:
-        assert f"`{signature}`" in readme, signature
-    for name in (
-        "ONEBUDGETSPEC_BUDGET_ID",
-        "ONEBUDGETSPEC_RESULT",
-        "--exclude-label host",
-        "--label host",
-        "nx affected -t budgets budgets-host",
-        "onebudgetspec check budgets.yaml",
-    ):
-        assert name in reference and name in readme, name
-
-    [example] = [
-        json.loads(block)
-        for block in re.findall(r"```json\n(.*?)```", readme, re.DOTALL)
-        if '"budgets-host"' in block
-    ]
-    wired = json.loads((repo.root / "nx.json").read_text(encoding="utf-8"))
-    budgets = example["targets"]["budgets"]
-    assert wired["targetDefaults"]["budgets"] == {
-        "cache": budgets["cache"],
-        "inputs": budgets["inputs"],
-    }
-    host = example["targets"]["budgets-host"]
-    assert wired["targetDefaults"]["budgets-host"] == {"cache": host["cache"]}
-    for cache_input in budgets["inputs"]:
-        written = (
-            cache_input if isinstance(cache_input, str) else json.dumps(cache_input)
-        )
-        assert written.strip("{}").strip() in reference, written
 
 
 def test_the_baseline_checker_reads_the_generated_repo_as_wired(generated):

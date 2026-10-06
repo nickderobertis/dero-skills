@@ -263,8 +263,8 @@ def test_an_unrelated_change_never_runs_the_external_journeys(unrelated):
 
 
 def test_the_external_journeys_never_ride_the_gate():
-    # They install from the npm registry and fetch from GitHub, so even a change
-    # to the skill they drive runs them only under their own target name; the
+    # They install from the npm registry, so even a change to the skill they
+    # drive runs them only under their own target name; the
     # gate still formats and lints them, which contacts nothing.
     changed = "skills/bootstrap/create-repo/scripts/compose_repo_plan.py"
     assert "bootstrap-create-repo-external" not in affected_test_projects(changed)
@@ -279,6 +279,14 @@ def test_editing_the_eval_rechecks_the_wiring_the_fast_tier_asserts():
     assert "bootstrap-create-repo" in affected_test_projects(
         "skills/bootstrap/create-repo/tests/skilltest/test_create_repo_skilltest.py"
     )
+
+
+def test_a_change_to_the_node_install_reruns_the_skill_fast_tier():
+    # tests/test_onebudgetspec_release.py reads Nx's schema and the bun-written
+    # lock from what `bun install` put in node_modules; nx.json's `nxRelease`
+    # input keeps the manifests that decide it in that project's graph.
+    for manifest in ("package.json", "bun.lock"):
+        assert "bootstrap-create-repo" in affected_test_projects(manifest), manifest
 
 
 def test_a_change_to_the_onebudgetspec_pin_reruns_the_skill_fast_tier():

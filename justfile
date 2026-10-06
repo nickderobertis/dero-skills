@@ -104,9 +104,8 @@ skilltest *args:
     bunx nx run bootstrap-create-repo-skilltest:skilltest {{args}}
 
 # Run the create-repo journeys that reach external services: they install the
-# pinned onebudgetspec from the npm registry and read its README from GitHub, so
-# they are a project of their own with an `external` target no gate tier fans
-# out over — external contact promotes them out of the affected tier
+# pinned onebudgetspec from the npm registry, so they are a project of their own
+# with an `external` target no gate tier fans out over — external contact promotes them out of the affected tier
 # unconditionally (references/ci.md). Offline they fail rather than skip. Pass
 # extra pytest args to narrow, e.g. `just external -k affected`.
 # llmlint: ignore[tool_output_is_signal] a developer-facing test runner — pytest's own pass/fail output is the signal you invoke it for, exactly as `just skilltest` does.

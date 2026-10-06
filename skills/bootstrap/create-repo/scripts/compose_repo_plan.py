@@ -123,7 +123,8 @@ FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
 ONEBUDGETSPEC_VERSION = "0.1.3"
 ONEBUDGETSPEC_NPM_PACKAGE = "@onebudgetspec/cli"
 # The Nx target defaults of the two budget targets, copied from the release
-# README's Nx example (the e2e tier holds the wired nx.json to it).
+# README's Nx example (tests/test_onebudgetspec_release.py holds it to the README
+# the pinned release ships).
 ONEBUDGETSPEC_TARGET_DEFAULTS: dict[str, dict[str, object]] = {
     "budgets": {
         "cache": True,
@@ -141,6 +142,17 @@ ONEBUDGETSPEC_TARGET_DEFAULTS: dict[str, dict[str, object]] = {
 NX_DEFAULT_NAMED_INPUTS: dict[str, list[str]] = {
     "default": ["{projectRoot}/**/*"],
     "production": ["default"],
+}
+# The input objects Nx accepts, each keyed by the one property that names its
+# kind, to the properties it may carry beside it. Nx's own `nx-schema.json` is
+# the source, which tests/test_onebudgetspec_release.py reconciles this with.
+NX_INPUT_OBJECT_KEYS: dict[str, frozenset[str]] = {
+    "fileset": frozenset(),
+    "input": frozenset({"projects", "dependencies"}),
+    "runtime": frozenset(),
+    "env": frozenset(),
+    "externalDependencies": frozenset(),
+    "dependentTasksOutputFiles": frozenset({"transitive"}),
 }
 BUDGETS_RECIPE_NAME = "budgets"
 # The recipe itself, an asset so this script carries no orchestrator command.
@@ -709,6 +721,19 @@ def plan_package_json(package: dict[str, object], path: Path) -> list[str]:
     ]
 
 
+def _is_nx_input(entry: object) -> bool:
+    """Whether ``entry`` is an Nx input: a path pattern or a known input object."""
+    if isinstance(entry, str):
+        return bool(entry)
+    if not isinstance(entry, dict):
+        return False
+    kinds = NX_INPUT_OBJECT_KEYS.keys() & entry.keys()
+    if len(kinds) != 1:
+        return False
+    [kind] = kinds
+    return entry.keys() - {kind} <= NX_INPUT_OBJECT_KEYS[kind]
+
+
 def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:
     """Add the budget targets' defaults to ``nx`` (in place); a note per change.
 
@@ -721,7 +746,7 @@ def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:
             named[name] = list(inputs)
             changes.append(f"nx.json defines the `{name}` named input")
         elif not isinstance(named[name], list) or not all(
-            isinstance(entry, (str, dict)) for entry in named[name]
+            map(_is_nx_input, named[name])
         ):
             raise WiringError(
                 f"{path}: named input `{name}` is not a list of inputs (each a "

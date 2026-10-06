@@ -327,8 +327,16 @@ def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
         '{"packages": {"other": ["other@1.0.0", "", {"note": '
         '"@onebudgetspec/cli@0.1.3"}, "sha512-y"]}}\n',
         '{"packages": {"@onebudgetspec/cli": "@onebudgetspec/cli@0.1.3"}}\n',
+        '{"packages": {"@onebudgetspec/cli": ["@onebudgetspec/cli@"]}}\n',
+        '{"packages": {"@onebudgetspec/cli": ["@onebudgetspec/cli@^0.1.3"]}}\n',
     ],
-    ids=["not JSON", "named only inside another package", "entry not an array"],
+    ids=[
+        "not JSON",
+        "named only inside another package",
+        "entry not an array",
+        "an empty version",
+        "a range, not a version",
+    ],
 )
 def test_a_bun_lock_that_resolves_no_such_package_fails(tmp_path, lock):
     repo = wired_repo(tmp_path)
@@ -422,14 +430,23 @@ def test_an_inline_plugins_list_adopts_the_rules(tmp_path):
     assert levels(budget_findings(repo), "ERROR") == []
 
 
-def test_a_uv_lock_version_that_is_not_a_string_resolves_nothing(tmp_path):
-    repo = uv_repo(tmp_path, dev='{ name = "onebudgetspec-cli", specifier = "==3" }')
+@pytest.mark.parametrize(
+    ("version", "specifier"),
+    [("3", "==3"), ('"latest"', "==latest"), ('""', "==")],
+    ids=["not a string", "not a version", "empty"],
+)
+def test_a_uv_lock_version_that_is_no_release_version_resolves_nothing(
+    tmp_path, version, specifier
+):
+    repo = uv_repo(
+        tmp_path, dev=f'{{ name = "onebudgetspec-cli", specifier = "{specifier}" }}'
+    )
     lock = repo / "uv.lock"
     text = lock.read_text(encoding="utf-8")
     lock.write_text(
         text.replace(
             'name = "onebudgetspec-cli"\nversion = "0.1.3"',
-            'name = "onebudgetspec-cli"\nversion = 3',
+            f'name = "onebudgetspec-cli"\nversion = {version}',
         ),
         encoding="utf-8",
     )
