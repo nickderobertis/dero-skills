@@ -52,10 +52,10 @@ so the baseline checker runs against this very section):
   `languages/bash.md` + `ci.md` + `project-graph.md`. Nx is **mandatory**, not an
   accelerator: the repo is a project graph and every root recipe delegates to it,
   so the gate needs bun/node as well as uv. Consumers still never run Nx.
-- **Project graph:** nine projects split by test tier and by cost (see "Project
-  graph" below). Fast tiers live with the code they cover; the two expensive ones
-  — the judged llmlint tier and the `skilltest` eval — sit behind graph edges an
-  unrelated change cannot reach.
+- **Project graph:** ten projects split by test tier and by cost (see "Project
+  graph" below). Fast tiers live with the code they cover; the three expensive
+  ones — the judged llmlint tier, the `skilltest` eval and the `external`
+  journeys — sit behind graph edges an unrelated change cannot reach.
 - **Staged gate:** `just check` runs the **affected** tier, `just check all` the
   **broader** sweep — which, since this repo releases on merge, runs once at
   merge-to-main per `ci.md`.
@@ -95,8 +95,9 @@ thing the graph exists to prevent.
   hook (skips if llmlint isn't installed; bypass with `git push --no-verify`).
 - `just lint-llm [paths]` — the LLM-as-judge *model* lint. NOT in the gate — it
   drives a real harness (see "Optional LLM lint" below).
-- `just skilltest [args]` — the `skilltest-pytest` skill evals. NOT in the gate
-  (see "Skill evals" below); with no provider they skip.
+- `just skilltest [args]` — the `skilltest-pytest` skill evals; `just external
+  [args]` — the create-repo journeys that reach npm and GitHub. NOT in the gate
+  (see "Skill evals" below); no provider skips the evals, offline fails the rest.
 - `just session-setup` — provision a session's dev toolchain: ensure `just`, then
   `setup-llmlint`. Runs automatically via the `SessionStart` hook (see "Harness
   split"); this is the manual entry point. Idempotent, no-ops in CI.
@@ -171,7 +172,7 @@ holding cross-project edges in place are in
 [`docs/project-graph.md`](docs/project-graph.md). Two rules belong here because
 breaking either is silent: **`just check` fans out over `format-check lint
 validate smoke test` and nothing else** (the expensive tiers use their own names,
-`skilltest` and `lint-llm`, so the gate cannot reach them — `tests/project-graph/`
+`skilltest`, `lint-llm` and `external`, so the gate cannot reach them — `tests/project-graph/`
 catches an addition), and **a target reading a file outside its project needs a
 named input in `nx.json`**, or a cached pass outlives an edit to that file.
 

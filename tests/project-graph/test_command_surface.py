@@ -296,6 +296,7 @@ def test_upgrade_stops_at_a_failed_relock_instead_of_gating_a_stale_tree(
         # untouched: `just skilltest -x` and `just lint-llm <path>` are the
         # documented ways to run one case, or one file, instead of all of them.
         ("skilltest", "bootstrap-create-repo-skilltest:skilltest", ("-x",)),
+        ("external", "bootstrap-create-repo-external:external", ("-k", "affected")),
         (
             "lint-llm",
             "llmlint-tier:lint-llm",
@@ -324,6 +325,7 @@ def test_an_expensive_recipe_delegates_and_forwards_what_narrows_it(
     ("recipe", "project_target"),
     [
         ("skilltest", "bootstrap-create-repo-skilltest:skilltest"),
+        ("external", "bootstrap-create-repo-external:external"),
         ("lint-llm", "llmlint-tier:lint-llm"),
     ],
 )

@@ -375,8 +375,8 @@ def test_buildout_pins_track_each_fragment_current_major(tmp_path):
 
 
 # The onebudgetspec opt-in (`--tool onebudgetspec`, `--wiring`), driven through the real CLI over real files. The wiring's behaviour in a real
-# Nx workspace — budgets measured, scoped, failed and cached — is the e2e tier's
-# (e2e/test_onebudgetspec_wiring_e2e.py).
+# Nx workspace — budgets measured, scoped, failed and cached — is the external tier's
+# (external/test_onebudgetspec_wiring_e2e.py).
 
 ONEBUDGETSPEC_URL = (
     "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"

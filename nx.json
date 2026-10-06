@@ -96,6 +96,9 @@
     "skilltest": {
       "cache": false
     },
+    "external": {
+      "cache": false
+    },
     "lint-llm": {
       "cache": false
     }

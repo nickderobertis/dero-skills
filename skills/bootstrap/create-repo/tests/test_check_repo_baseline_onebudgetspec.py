@@ -5,8 +5,8 @@ references it composed. Each fixture starts from the conformant baseline repo,
 has the real composer (`--tool onebudgetspec --wiring`) apply the setup step,
 adds budget domains the way a consumer would, and then breaks one of the three
 things the checker holds: the pin, a file's reach from `check`, the lint rules.
-Whether the wired repo actually measures is the e2e tier's
-(e2e/test_onebudgetspec_wiring_e2e.py).
+Whether the wired repo actually measures is the external tier's
+(external/test_onebudgetspec_wiring_e2e.py).
 """
 
 from __future__ import annotations
