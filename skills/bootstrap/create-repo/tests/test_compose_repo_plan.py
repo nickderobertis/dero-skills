@@ -795,13 +795,14 @@ def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):
     assert not missing.exists()
 
 
-def test_wiring_finds_a_capitalised_justfile(tmp_path):
+@pytest.mark.parametrize("name", ["Justfile", ".justfile"])
+def test_wiring_finds_each_justfile_name_just_reads(tmp_path, name):
     repo = template_repo(tmp_path)
-    (repo / "justfile").rename(repo / "Justfile")
+    (repo / "justfile").rename(repo / name)
     result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     assert not (repo / "justfile").exists()
-    assert "(budgets tier)" in (repo / "Justfile").read_text(encoding="utf-8")
+    assert "(budgets tier)" in (repo / name).read_text(encoding="utf-8")
 
 
 def test_a_parameter_merely_containing_tier_is_not_the_tier(tmp_path):
