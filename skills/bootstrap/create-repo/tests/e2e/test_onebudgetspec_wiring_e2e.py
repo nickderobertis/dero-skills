@@ -34,7 +34,6 @@ import re
 import shutil
 import subprocess
 import sys
-import urllib.request
 from pathlib import Path
 
 import pytest
@@ -235,7 +234,7 @@ class Generated:
         assert done.returncode == 0, done.stderr
         return self.run("git", "rev-parse", "HEAD").stdout.strip()
 
-    def measured(self) -> set[str]:
+    def take_measured(self) -> set[str]:
         """The budget ids whose command ran since the last call, then reset."""
         if not self.markers.exists():
             return set()
@@ -320,7 +319,7 @@ def test_check_executes_every_applicable_measurement(generated):
     repo, base = generated
     result = repo.run("just", "check", NX_BASE=base)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert repo.measured() == ALL_BUDGETS
+    assert repo.take_measured() == ALL_BUDGETS
 
 
 def test_the_affected_run_reaches_only_the_changed_project_and_the_root(generated):
@@ -333,7 +332,7 @@ def test_the_affected_run_reaches_only_the_changed_project_and_the_root(generate
     # The cache skipped, so a cached api budget would show if it were selected.
     result = repo.run("just", "budgets", NX_BASE=before, NX_SKIP_NX_CACHE="true")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert repo.measured() == {"web-cold-start", "workspace-walk"}
+    assert repo.take_measured() == {"web-cold-start", "workspace-walk"}
     assert "api:" not in result.stdout
 
 
@@ -359,21 +358,21 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     repo, base = generated
     first = repo.run("just", "check", NX_BASE=base)
     assert first.returncode == 0, first.stdout + first.stderr
-    assert repo.measured() == ALL_BUDGETS
+    assert repo.take_measured() == ALL_BUDGETS
 
     second = repo.run("just", "check", NX_BASE=base)
     assert second.returncode == 0, second.stdout + second.stderr
     # The reported budgets came back from Nx's cache without running; the
     # elapsed ones, host-labelled or in the root file, ran again.
-    assert repo.measured() == {"web-cold-start", "workspace-walk"}
+    assert repo.take_measured() == {"web-cold-start", "workspace-walk"}
     # Nx says so too, on the line for the cached target (not `budgets-host`).
     plain = ANSI_RE.sub("", second.stdout)
     [cached] = [line for line in plain.splitlines() if "nx run api:budgets " in line]
     assert "cache" in cached, second.stdout
 
 
-def _composer():
-    spec = importlib.util.spec_from_file_location("crp_e2e", COMPOSER)
+def _load(script: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, script)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -381,17 +380,42 @@ def _composer():
     return module
 
 
-def test_the_reference_and_wiring_name_the_pinned_releases_surface():
-    # The README at the tag the composer pins is the source of every name the
-    # reference and the wiring restate: the reporters, the variables, the two
-    # targets and the cache inputs.
-    crp = _composer()
-    url = (
-        "https://raw.githubusercontent.com/nickderobertis/onebudgetspec/"
-        f"v{crp.ONEBUDGETSPEC_VERSION}/README.md"
+def _release_readme(version: str, workdir: Path) -> str:
+    """The README at the release's tag, read with git (one blob, no checkout)."""
+    clone = workdir / "onebudgetspec"
+    fetched = subprocess.run(
+        [
+            "git",
+            "clone",
+            "-q",
+            "--depth=1",
+            "--filter=blob:none",
+            "--no-checkout",
+            f"--branch=v{version}",
+            "https://github.com/nickderobertis/onebudgetspec.git",
+            str(clone),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
-    with urllib.request.urlopen(url, timeout=60) as response:
-        readme = response.read().decode("utf-8")
+    assert fetched.returncode == 0, fetched.stderr
+    shown = subprocess.run(
+        ["git", "-C", str(clone), "show", "HEAD:README.md"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert shown.returncode == 0, shown.stderr
+    return shown.stdout
+
+
+def test_the_reference_and_wiring_name_the_pinned_releases_surface(generated, tmp_path):
+    # The README at the tag the wiring pinned is the source of every name the
+    # reference restates and of the targets the wiring wrote into nx.json.
+    repo, _base = generated
+    package = json.loads((repo.root / "package.json").read_text(encoding="utf-8"))
+    readme = _release_readme(package["devDependencies"]["@onebudgetspec/cli"], tmp_path)
     reference = REFERENCE.read_text(encoding="utf-8")
 
     signatures = re.findall(r"^\| [^|]+ \| `([^`]+)`", reference, re.MULTILINE)
@@ -408,23 +432,44 @@ def test_the_reference_and_wiring_name_the_pinned_releases_surface():
     ):
         assert name in reference and name in readme, name
 
-    # The README's Nx example is the shape the wiring's target defaults copy.
     [example] = [
         json.loads(block)
         for block in re.findall(r"```json\n(.*?)```", readme, re.DOTALL)
         if '"budgets-host"' in block
     ]
+    wired = json.loads((repo.root / "nx.json").read_text(encoding="utf-8"))
     budgets = example["targets"]["budgets"]
-    defaults = crp.ONEBUDGETSPEC_TARGET_DEFAULTS
-    assert defaults["budgets"] == {"cache": True, "inputs": budgets["inputs"]}
-    assert defaults["budgets-host"] == {
-        "cache": example["targets"]["budgets-host"]["cache"]
+    assert wired["targetDefaults"]["budgets"] == {
+        "cache": budgets["cache"],
+        "inputs": budgets["inputs"],
     }
+    host = example["targets"]["budgets-host"]
+    assert wired["targetDefaults"]["budgets-host"] == {"cache": host["cache"]}
     for cache_input in budgets["inputs"]:
         written = (
             cache_input if isinstance(cache_input, str) else json.dumps(cache_input)
         )
         assert written.strip("{}").strip() in reference, written
+
+
+def test_the_baseline_checker_reads_the_generated_repo_as_wired(generated):
+    # The checker's reading of a bun-written bun.lock, project targets and the
+    # composed llmlint.yml, on the repository the wiring produced.
+    repo, _base = generated
+    (repo.root / "AGENTS.md").write_text(
+        "# AGENTS\n\n## Stack and composition\n\n- **References composed:** "
+        "base.md, ci.md, tools/onebudgetspec.md\n",
+        encoding="utf-8",
+    )
+    crb = _load(SKILL_DIR / "scripts" / "check_repo_baseline.py", "crb_e2e")
+    findings = crb.check_onebudgetspec(repo.root)
+    assert [(f.level, f.message) for f in findings] == [
+        (
+            "OK",
+            "onebudgetspec pinned, 3 budgets file(s) reached by check, "
+            "lint rules adopted",
+        )
+    ]
 
 
 def test_the_typescript_reporter_writes_only_inside_a_check(generated, tmp_path):

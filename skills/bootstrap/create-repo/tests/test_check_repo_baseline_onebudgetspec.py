@@ -150,7 +150,7 @@ def test_a_pin_no_lockfile_records_fails(tmp_path):
     repo = wired_repo(tmp_path)
     (repo / "bun.lock").unlink()
     [error] = levels(budget_findings(repo), "ERROR")
-    assert "no lockfile records it" in error
+    assert "but bun.lock does not record it" in error
 
 
 def test_a_uv_pin_recorded_in_uv_lock_passes(tmp_path):
@@ -244,27 +244,7 @@ def test_a_pin_the_lockfile_records_at_another_version_fails(tmp_path):
         encoding="utf-8",
     )
     [error] = levels(budget_findings(repo), "ERROR")
-    assert "pins @onebudgetspec/cli 0.1.3 but no lockfile records it" in error
-
-
-@pytest.mark.parametrize(
-    ("lockfile", "body"),
-    [
-        (
-            "package-lock.json",
-            '{"packages": {"node_modules/@onebudgetspec/cli": {"version": "0.1.3"}}}',
-        ),
-        ("pnpm-lock.yaml", "packages:\n\n  '@onebudgetspec/cli@0.1.3':\n"),
-        ("yarn.lock", '"@onebudgetspec/cli@0.1.3":\n  version "0.1.3"\n'),
-    ],
-)
-def test_each_npm_lockfile_records_the_pin(tmp_path, lockfile, body):
-    repo = wired_repo(tmp_path)
-    (repo / "bun.lock").unlink()
-    (repo / lockfile).write_text(body, encoding="utf-8")
-    assert levels(budget_findings(repo), "ERROR") == []
-    (repo / lockfile).write_text(body.replace("0.1.3", "0.1.2"), encoding="utf-8")
-    assert len(levels(budget_findings(repo), "ERROR")) == 1
+    assert "pins @onebudgetspec/cli 0.1.3 but bun.lock does not record it" in error
 
 
 @pytest.mark.parametrize(
@@ -307,6 +287,37 @@ def test_a_target_checking_from_another_directory_misses_the_file(tmp_path):
     )
     [error] = levels(budget_findings(repo), "ERROR")
     assert "no target in services/api/project.json runs `onebudgetspec check`" in error
+
+
+def test_an_inline_plugins_list_adopts_the_rules(tmp_path):
+    repo = wired_repo(tmp_path)
+    url = next(
+        line.strip().strip("- ").strip('"')
+        for line in (repo / "llmlint.yml").read_text(encoding="utf-8").splitlines()
+        if "onebudgetspec" in line
+    )
+    (repo / "llmlint.yml").write_text(
+        f'plugins: ["https://example.com/base.llmlint.yml@1", "{url}"]  # composed\n',
+        encoding="utf-8",
+    )
+    assert levels(budget_findings(repo), "ERROR") == []
+
+
+def test_a_uv_lock_without_a_package_list_records_nothing(tmp_path):
+    repo = wired_repo(tmp_path)
+    (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
+    (repo / "pyproject.toml").write_text(
+        '[project]\ndependencies = ["onebudgetspec-sdk==0.1.3"]\n', encoding="utf-8"
+    )
+    (repo / "uv.lock").write_text("package = 1\n", encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "onebudgetspec-sdk==0.1.3 but uv.lock does not record it" in error
+
+
+def test_the_uv_pin_reading_agrees_with_a_uv_generated_lock():
+    # This repository pins `onebudgetspec-cli` in its dev group, and uv wrote its
+    # uv.lock: the checker must read that pair as pinned.
+    assert crb.onebudgetspec_pin_problem(SKILL_DIR.parents[2]) is None
 
 
 def test_a_commented_out_plugin_is_not_adoption(tmp_path):

@@ -1794,7 +1794,8 @@ ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
 ONEBUDGETSPEC_PYPI_PIN_RE = re.compile(
     r"^\s*(onebudgetspec-(?:cli|sdk))\s*==\s*([0-9][0-9A-Za-z.+-]*)\s*$"
 )
-NPM_LOCKFILES = ("bun.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock")
+# The lockfile of the bun workspace the skill's justfile drives Nx through.
+BUN_LOCKFILE = "bun.lock"
 # One exact version: no range operator, tag or URL.
 EXACT_NPM_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
@@ -1828,24 +1829,12 @@ def declares_onebudgetspec(repo: Path) -> bool:
     return ONEBUDGETSPEC_REFERENCE in refs
 
 
-def npm_lock_records(lock: Path, name: str, version: str) -> bool:
-    """Whether npm lockfile ``lock`` records package ``name`` at ``version``."""
-    text = lock.read_text(encoding="utf-8")
-    if lock.name == "package-lock.json":
-        try:
-            packages = json.loads(text).get("packages", {})
-        except (json.JSONDecodeError, AttributeError):
-            return False
-        entry = (
-            packages.get(f"node_modules/{name}") if isinstance(packages, dict) else None
-        )
-        return isinstance(entry, dict) and entry.get("version") == version
-    if lock.name == "bun.lock":
-        # Each package's entry opens with its resolution, `"name@version"`.
-        return f'"{name}@{version}"' in text
-    # pnpm keys a package `name@version`; yarn its spec `name@[npm:]version`.
-    key = re.escape(name) + r"@(?:npm:)?" + re.escape(version)
-    return re.search(rf"(?m)^\s*['\"]?/?{key}['\"(:]", text) is not None
+def bun_lock_records(lock: Path, name: str, version: str) -> bool:
+    """Whether ``bun.lock`` records package ``name`` at ``version``.
+
+    Each package's entry opens with its resolution, ``"name@version"``.
+    """
+    return lock.is_file() and f'"{name}@{version}"' in lock.read_text(encoding="utf-8")
 
 
 def _npm_pin_problem(repo: Path, package: object) -> str | None:
@@ -1863,14 +1852,15 @@ def _npm_pin_problem(repo: Path, package: object) -> str | None:
     )
     if loose:
         return f"package.json declares {', '.join(loose)}, not one exact version"
-    locks = [repo / lock for lock in NPM_LOCKFILES if (repo / lock).is_file()]
     unrecorded = sorted(
         f"{name} {spec}"
         for name, spec in declared.items()
-        if not any(npm_lock_records(lock, name, spec) for lock in locks)
+        if not bun_lock_records(repo / BUN_LOCKFILE, name, spec)
     )
     if unrecorded:
-        return f"package.json pins {', '.join(unrecorded)} but no lockfile records it"
+        return (
+            f"package.json pins {', '.join(unrecorded)} but bun.lock does not record it"
+        )
     return None
 
 
@@ -1881,10 +1871,11 @@ def _uv_pin_problem(repo: Path, pins: dict[str, str]) -> str | None:
     except tomllib.TOMLDecodeError:
         data = {}
     packages = data.get("package", [])
+    if not isinstance(packages, list):
+        packages = []
     locked = {
         entry.get("name"): entry.get("version")
         for entry in packages
-        if isinstance(packages, list)
         if isinstance(entry, dict)
     }
     unrecorded = sorted(
@@ -2069,7 +2060,7 @@ def check_onebudgetspec(repo: Path) -> list[Finding]:
                 "ERROR",
                 f"onebudgetspec is not pinned: {pin}",
                 "pin @onebudgetspec/cli to one exact version in package.json and "
-                f"install so the lockfile records it; {wiring}",
+                f"`bun install` so bun.lock records it; {wiring}",
             )
         )
 

@@ -71,7 +71,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Protocol
 
 # The Verification section heading every composable reference carries. Its body
 # (the ``- [ ]`` checklist items) is lifted out of the guidance and assembled
@@ -122,10 +122,8 @@ FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
 # `onebudgetspec-cli` dev pin, in lockstep).
 ONEBUDGETSPEC_VERSION = "0.1.3"
 ONEBUDGETSPEC_NPM_PACKAGE = "@onebudgetspec/cli"
-# The Nx target defaults of the two budget targets, as the release's README lays
-# them out: deterministic budgets cached on their tree, the production sources
-# they measure, any telemetry a dependent test wrote, and the pinned release;
-# `elapsed` and host-reading budgets (labelled `host`) never cached.
+# The Nx target defaults of the two budget targets, copied from the release
+# README's Nx example (the e2e tier holds the wired nx.json to it).
 ONEBUDGETSPEC_TARGET_DEFAULTS: dict[str, dict[str, object]] = {
     "budgets": {
         "cache": True,
@@ -693,11 +691,22 @@ def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:
         if name not in named:
             named[name] = list(inputs)
             changes.append(f"nx.json defines the `{name}` named input")
+        elif not isinstance(named[name], list):
+            raise WiringError(
+                f"{path}: named input `{name}` is not a list of inputs\n"
+                f"      fix: make `namedInputs.{name}` a list, then re-run --wiring."
+            )
     defaults = _json_table(nx, "targetDefaults", path)
     for target, config in ONEBUDGETSPEC_TARGET_DEFAULTS.items():
         if target not in defaults:
             defaults[target] = json.loads(json.dumps(config))
             changes.append(f"nx.json target default `{target}`")
+        elif not isinstance(defaults[target], dict):
+            raise WiringError(
+                f"{path}: target default `{target}` is not a JSON object\n"
+                f"      fix: make `targetDefaults.{target}` an object, then re-run "
+                "--wiring."
+            )
     return changes
 
 
@@ -736,8 +745,15 @@ def wire_onebudgetspec(repo: Path, skill_dir: Path) -> list[str]:
     return package_changes + nx_changes + just_changes
 
 
+class ToolWiring(Protocol):
+    """A tool's setup step: applied to ``repo`` from the skill at ``skill_dir``,
+    returning a note per change and raising ``WiringError`` to refuse."""
+
+    def __call__(self, repo: Path, skill_dir: Path) -> list[str]: ...
+
+
 # The setup step of each tool that has one, keyed by its `--tool` name.
-TOOL_WIRING = {"onebudgetspec": wire_onebudgetspec}
+TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 
 
 def build_parser(

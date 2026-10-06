@@ -562,12 +562,24 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
         ),
         ("nx.json", '{"targetDefaults": []}', "`targetDefaults` is not a JSON object"),
         ("nx.json", '{"namedInputs": "default"}', "`namedInputs` is not a JSON object"),
+        (
+            "nx.json",
+            '{"namedInputs": {"production": "src"}}',
+            "named input `production` is not a list",
+        ),
+        (
+            "nx.json",
+            '{"targetDefaults": {"budgets": true}}',
+            "target default `budgets` is not a JSON object",
+        ),
     ],
     ids=[
         "package not an object",
         "devDependencies a list",
         "targetDefaults a list",
         "namedInputs a string",
+        "production not a list",
+        "budgets default not an object",
     ],
 )
 def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, refusal):
@@ -583,8 +595,8 @@ def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, re
 
 
 def test_a_refused_justfile_leaves_every_manifest_untouched(tmp_path):
-    # The justfile is refused after the manifests could have been merged; the
-    # wiring validates all three before it writes any.
+    # The manifests are valid and would merge; nothing is written while any of
+    # the three files is refused.
     repo = tmp_path
     (repo / "justfile").write_text('check tier="affected":\n    echo gate\n')
     (repo / "package.json").write_text('{"private":true}', encoding="utf-8")
@@ -615,6 +627,28 @@ def test_wiring_leaves_an_already_pinned_manifest_byte_for_byte(tmp_path):
     result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     assert (repo / "package.json").read_text(encoding="utf-8") == compact
+
+
+def test_wiring_keeps_an_existing_budgets_recipe_and_puts_it_in_check(tmp_path):
+    repo = template_repo(tmp_path)
+    own = 'budgets tier="affected":\n    echo our own budgets {{tier}}\n'
+    justfile = repo / "justfile"
+    justfile.write_text(justfile.read_text(encoding="utf-8") + "\n" + own)
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    text = justfile.read_text(encoding="utf-8")
+    assert text.endswith(own)
+    assert text.count("budgets tier=") == 1
+    assert 'check tier="affected": && (test-e2e tier) (budgets tier)\n' in text
+
+
+def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):
+    missing = tmp_path / "nowhere"
+    result = compose_into(tmp_path, "--tool", "onebudgetspec", "--wiring", str(missing))
+    assert result.returncode == 2
+    assert f"--wiring {missing} is not a directory" in result.stderr
+    assert "fix: pass the root of the repository" in result.stderr
+    assert not missing.exists()
 
 
 def test_wiring_finds_a_capitalised_justfile(tmp_path):
