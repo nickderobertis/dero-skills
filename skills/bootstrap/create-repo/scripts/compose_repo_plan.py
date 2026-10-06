@@ -7,9 +7,9 @@
 Usage:
     uv run --script scripts/compose_repo_plan.py --shape SHAPE --language LANG \
         [--language LANG ...] [--releasing] \
-        [--intersection NAME ...] [-o OUT.md] \
+        [--intersection NAME ...] [--tool NAME ...] [-o OUT.md] \
         [--llmlint-config FILE] [--llmlint-buildout-config FILE] \
-        [--oneharness-config FILE]
+        [--oneharness-config FILE] [--wiring REPO_DIR]
     uv run --script scripts/compose_repo_plan.py --list
 
 You describe the repo with flags — its product shape, the language(s) it is
@@ -24,7 +24,10 @@ adding a reference file automatically extends the flags. ``base.md`` is always
 included first (the shape/language-agnostic invariants), immediately followed by
 ``project-graph.md`` (the project graph is mandatory in every repo, so there is
 no flag for it); ``ci.md`` is always included too (it applies on top of every
-shape); ``releasing.md`` is pulled in by ``--releasing``.
+shape); ``releasing.md`` is pulled in by ``--releasing``. ``--tool NAME`` opts
+the repo into a tool the baseline does not assume — ``references/tools/NAME.md``
+joins the plan and its ``tools/NAME.llmlint.yml`` fragment joins the ongoing
+``llmlint.yml`` — and nothing about a tool is emitted without it.
 
 Convenience derivations, each announced on stderr so the composition stays
 auditable:
@@ -47,6 +50,14 @@ no harness, so ``--llmlint-config`` also writes an ``oneharness.toml`` beside it
 selection (codex + gpt-5.5 primary, claude-code + opus-4.8 secondary) llmlint
 reads to pick a harness.
 
+``--wiring REPO_DIR`` applies the opted-in tools' setup step to the repository
+at REPO_DIR, idempotently. For ``onebudgetspec`` that is: pin
+``@onebudgetspec/cli`` exactly in ``package.json`` (the lockfile follows on the
+next install), add the ``budgets``/``budgets-host`` target defaults to
+``nx.json``, and add a ``budgets`` recipe to the justfile that ``check`` depends
+on — every project's budgets at the gate's tier, the root ``budgets.yaml`` on
+every run. The justfile must already exist (from ``assets/justfile.template``).
+
 The document goes to stdout (or ``-o FILE``); notes and errors go to stderr, so
 the two never mix. Self-contained via PEP 723 so it runs in any consuming repo
 with ``uv run --script`` — no dependency on this repo's authoring toolchain.
@@ -55,6 +66,7 @@ with ``uv run --script`` — no dependency on this repo's authoring toolchain.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass
@@ -102,6 +114,44 @@ LLMLINT_VERSION_RE = re.compile(r"^version:\s*(\S+)", re.MULTILINE)
 # pin is built from. Validated at the read boundary so a malformed value fails
 # loudly instead of emitting a broken pin.
 FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
+
+# --- tool wiring (`--tool` + `--wiring`) -------------------------------------
+# The onebudgetspec release a consumer is pinned to: the npm package its `budgets`
+# targets run, at the version references/tools/onebudgetspec.md documents (its
+# README link names the same tag; tests hold the two, and this repo's own
+# `onebudgetspec-cli` dev pin, in lockstep).
+ONEBUDGETSPEC_VERSION = "0.1.3"
+ONEBUDGETSPEC_NPM_PACKAGE = "@onebudgetspec/cli"
+# The Nx target defaults of the two budget targets, as the release's README lays
+# them out: deterministic budgets cached on their tree, the production sources
+# they measure, any telemetry a dependent test wrote, and the pinned release;
+# `elapsed` and host-reading budgets (labelled `host`) never cached.
+ONEBUDGETSPEC_TARGET_DEFAULTS: dict[str, dict[str, object]] = {
+    "budgets": {
+        "cache": True,
+        "inputs": [
+            "{projectRoot}/**/*",
+            "^production",
+            {"dependentTasksOutputFiles": "**/telemetry/*.json"},
+            {"externalDependencies": [ONEBUDGETSPEC_NPM_PACKAGE]},
+        ],
+    },
+    "budgets-host": {"cache": False},
+}
+# `^production` names an input that must exist; these are Nx's own conventional
+# definitions, added only where the workspace defines none of its own.
+NX_DEFAULT_NAMED_INPUTS: dict[str, list[str]] = {
+    "default": ["{projectRoot}/**/*"],
+    "production": ["default"],
+}
+BUDGETS_RECIPE_NAME = "budgets"
+# A justfile recipe header (see check_repo_baseline.RECIPE_RE): the name, its
+# parameters, and the dependency list after the single terminating colon.
+JUST_CHECK_HEADER_RE = re.compile(r"^check\b([^\n:]*):(?!=)(.*)$", re.MULTILINE)
+JUST_RECIPE_NAME_RE = re.compile(
+    r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)", re.MULTILINE
+)
+JUST_BASE_ASSIGNMENT_RE = re.compile(r"^base\s*:=", re.MULTILINE)
 
 
 # A shape can build on other shapes, composing their guidance first (base-most
@@ -207,13 +257,14 @@ def select_relpaths(
     intersections: list[str],
     releasing: bool,
     notes: list[str],
+    tools: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Resolve the flags into an ordered, de-duplicated list of reference relpaths.
 
     Returns the relpaths plus the resolved language list (which may have grown,
     e.g. TypeScript auto-added for a Next.js shape). Order mirrors how the skill
     says to compose: base, the mandatory project graph, shape(s), language(s),
-    intersection(s), then ci and the cross-cutting references.
+    intersection(s), then ci, the cross-cutting references, and the opted-in tools.
     """
     ordered: list[str] = ["base.md", "project-graph.md"]
 
@@ -251,6 +302,9 @@ def select_relpaths(
     ordered.append("llmlint.md")
     if releasing:
         ordered.append("releasing.md")
+    # A tool is opt-in: only the ones named by `--tool` join the plan, so their
+    # fragments reach the ongoing llmlint.yml through the same mapping as the rest.
+    ordered.extend(f"tools/{tool}.md" for tool in tools or [])
 
     seen: set[str] = set()
     deduped = [r for r in ordered if not (r in seen or seen.add(r))]
@@ -497,8 +551,179 @@ def render_oneharness_config(skill_dir: Path) -> str:
     return template.read_text(encoding="utf-8")
 
 
+class WiringError(Exception):
+    """The repository cannot take a tool's wiring as it stands.
+
+    The message names the problem and, on its own line, the concrete fix.
+    """
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    """Read ``path`` as a JSON object, or an empty one when it does not exist."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise WiringError(
+            f"{path} is not valid JSON ({exc.msg} at line {exc.lineno})\n"
+            "      fix: repair it, then re-run --wiring."
+        ) from exc
+    if not isinstance(data, dict):
+        raise WiringError(
+            f"{path} does not hold a JSON object\n"
+            "      fix: make its top level an object, then re-run --wiring."
+        )
+    return data
+
+
+def _json_table(data: dict[str, object], key: str, path: Path) -> dict[str, object]:
+    """``data[key]`` as an object, created when absent; refused when not an object."""
+    table = data.setdefault(key, {})
+    if not isinstance(table, dict):
+        raise WiringError(
+            f"{path}: `{key}` is not a JSON object\n"
+            f"      fix: make `{key}` an object, then re-run --wiring."
+        )
+    return table
+
+
+def _write_json(path: Path, data: dict[str, object]) -> None:
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def budgets_recipe(*, tiered: bool, has_base: bool) -> str:
+    """The justfile ``budgets`` recipe, shaped to the ``check`` it joins.
+
+    A ``check`` that takes the template's ``tier`` parameter gets the same tier
+    switch, so ``just check all`` sweeps every project's budgets too.
+    """
+    # The same just expression the template's `check` resolves its tier with.
+    affected = '"bunx nx affected --base=" + base' if has_base else '"bunx nx affected"'
+    lines = [
+        "# The onebudgetspec budgets (references/tools/onebudgetspec.md), which `check`",
+        "# depends on. Each budget domain's project checks its own `budgets.yaml` through",
+        "# its `budgets` target (deterministic, cached) and its `budgets-host` target",
+        "# (elapsed or host-reading, never cached); the root `budgets.yaml` holds what",
+        "# every change must stay within, so it is checked on every run.",
+    ]
+    if tiered:
+        unknown = (
+            "error(\"unknown tier '\" + tier + \"' — use 'affected' (the default) "
+            "or 'all'\")"
+        )
+        lines += [
+            'budgets tier="affected":',
+            '    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" '
+            f"{{ {affected} }} else {{ {unknown} }} }}}} -t budgets budgets-host",
+        ]
+    else:
+        target = "bunx nx affected --base={{base}}" if has_base else "bunx nx affected"
+        lines += ["budgets:", f"    {target} -t budgets budgets-host"]
+    lines.append("    [ ! -f budgets.yaml ] || bunx onebudgetspec check budgets.yaml")
+    return "\n".join(lines) + "\n"
+
+
+def wire_justfile(path: Path) -> list[str]:
+    """Add the ``budgets`` recipe to the justfile and make ``check`` depend on it."""
+    if not path.is_file():
+        raise WiringError(
+            f"no justfile at {path}\n"
+            "      fix: copy the skill's assets/justfile.template there first; the "
+            "wiring adds a `budgets` recipe that its `check` recipe depends on."
+        )
+    text = path.read_text(encoding="utf-8")
+    header = JUST_CHECK_HEADER_RE.search(text)
+    if header is None:
+        raise WiringError(
+            f"{path} defines no `check` recipe\n"
+            "      fix: add the gate's `check` recipe (assets/justfile.template), "
+            "then re-run --wiring."
+        )
+    changes: list[str] = []
+    tiered = "tier" in header.group(1)
+    deps, _, comment = header.group(2).partition("#")
+    if BUDGETS_RECIPE_NAME not in {tok.strip("()") for tok in deps.split()}:
+        call = f"({BUDGETS_RECIPE_NAME} tier)" if tiered else BUDGETS_RECIPE_NAME
+        new_deps = f"{deps.rstrip()} {call}"
+        rest = f" #{comment}" if comment else ""
+        line = f"check{header.group(1)}:{new_deps}{rest}"
+        text = text[: header.start()] + line + text[header.end() :]
+        changes.append(f"`check` depends on `{call}`")
+    names = {m.group(1) for m in JUST_RECIPE_NAME_RE.finditer(text)}
+    if BUDGETS_RECIPE_NAME not in names:
+        has_base = JUST_BASE_ASSIGNMENT_RE.search(text) is not None
+        text = (
+            text.rstrip("\n")
+            + "\n\n"
+            + budgets_recipe(tiered=tiered, has_base=has_base)
+        )
+        changes.append("added the `budgets` recipe")
+    path.write_text(text, encoding="utf-8")
+    return changes
+
+
+def wire_onebudgetspec(repo: Path) -> list[str]:
+    """Pin onebudgetspec, give Nx its budget targets, and put them in ``check``.
+
+    Idempotent: what is already wired is left as it is, so re-running it changes
+    nothing. Returns a note per change made.
+    """
+    changes: list[str] = []
+
+    package_json = repo / "package.json"
+    package = _read_json_object(package_json)
+    package.setdefault("private", True)
+    deps = package.get("dependencies")
+    table_name = (
+        "dependencies"
+        if isinstance(deps, dict) and ONEBUDGETSPEC_NPM_PACKAGE in deps
+        else "devDependencies"
+    )
+    table = _json_table(package, table_name, package_json)
+    if table.get(ONEBUDGETSPEC_NPM_PACKAGE) != ONEBUDGETSPEC_VERSION:
+        table[ONEBUDGETSPEC_NPM_PACKAGE] = ONEBUDGETSPEC_VERSION
+        changes.append(
+            f"package.json pins {ONEBUDGETSPEC_NPM_PACKAGE} {ONEBUDGETSPEC_VERSION} "
+            "(install to record it in the lockfile)"
+        )
+    _write_json(package_json, package)
+
+    nx_json = repo / "nx.json"
+    nx = _read_json_object(nx_json)
+    named = _json_table(nx, "namedInputs", nx_json)
+    for name, inputs in NX_DEFAULT_NAMED_INPUTS.items():
+        if name not in named:
+            named[name] = list(inputs)
+            changes.append(f"nx.json defines the `{name}` named input")
+    defaults = _json_table(nx, "targetDefaults", nx_json)
+    for target, config in ONEBUDGETSPEC_TARGET_DEFAULTS.items():
+        if target not in defaults:
+            defaults[target] = json.loads(json.dumps(config))
+            changes.append(f"nx.json target default `{target}`")
+    _write_json(nx_json, nx)
+
+    justfile = next(
+        (
+            repo / name
+            for name in ("justfile", "Justfile", ".justfile")
+            if (repo / name).is_file()
+        ),
+        repo / "justfile",
+    )
+    changes += wire_justfile(justfile)
+    return changes
+
+
+# The setup step of each tool that has one, keyed by its `--tool` name.
+TOOL_WIRING = {"onebudgetspec": wire_onebudgetspec}
+
+
 def build_parser(
-    shapes: list[str], languages: list[str], intersections: list[str]
+    shapes: list[str],
+    languages: list[str],
+    intersections: list[str],
+    tools: list[str] | None = None,
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="compose_repo_plan.py",
@@ -524,6 +749,21 @@ def build_parser(
         "--releasing",
         action="store_true",
         help="the repo ships a versioned artifact (pull in releasing.md)",
+    )
+    parser.add_argument(
+        "--tool",
+        action="append",
+        choices=tools or [],
+        default=[],
+        metavar="NAME",
+        help="opt into a tool the baseline does not assume (repeatable): pulls in "
+        "references/tools/NAME.md and its llmlint fragment",
+    )
+    parser.add_argument(
+        "--wiring",
+        metavar="REPO_DIR",
+        help="apply the opted-in tools' setup step to the repository at REPO_DIR "
+        "(idempotent); needs a --tool that has one",
     )
     parser.add_argument(
         "-o",
@@ -572,8 +812,9 @@ def main(argv: list[str]) -> int:
     shapes = discover(refs_dir, "shapes")
     languages = discover(refs_dir, "languages")
     intersections = discover(refs_dir, "intersections")
+    tools = discover(refs_dir, "tools")
 
-    parser = build_parser(shapes, languages, intersections)
+    parser = build_parser(shapes, languages, intersections, tools)
     # `--monorepo` was removed rather than renamed, so an invocation carrying it
     # fails. Parse leniently to name the concrete fix instead of leaving argparse
     # to report only that the flag is unknown.
@@ -602,6 +843,7 @@ def main(argv: list[str]) -> int:
         print(f"  --language      {', '.join(languages)}")
         print(f"  --intersection  {', '.join(intersections) or '(none)'}")
         print("  --releasing     ships a versioned artifact (releasing.md)")
+        print(f"  --tool          {', '.join(tools) or '(none)'}")
         return 0
 
     missing = [
@@ -611,6 +853,12 @@ def main(argv: list[str]) -> int:
     ]
     if missing:
         parser.error(f"the following arguments are required: {', '.join(missing)}")
+    wired = [tool for tool in args.tool if tool in TOOL_WIRING]
+    if args.wiring and not wired:
+        parser.error(
+            "--wiring needs a --tool that has a setup step"
+            f"\n      fix: pass --tool {' / '.join(sorted(TOOL_WIRING))} with it."
+        )
 
     notes: list[str] = []
     relpaths, resolved_langs = select_relpaths(
@@ -620,6 +868,7 @@ def main(argv: list[str]) -> int:
         args.intersection,
         args.releasing,
         notes,
+        args.tool,
     )
 
     try:
@@ -638,6 +887,7 @@ def main(argv: list[str]) -> int:
     flags += [f"--intersection {name}" for name in args.intersection]
     if args.releasing:
         flags.append("--releasing")
+    flags += [f"--tool {tool}" for tool in args.tool]
     invocation = "compose_repo_plan.py " + " ".join(flags)
 
     document = render_plan(args.shape, resolved_langs, refs, invocation)
@@ -695,6 +945,23 @@ def main(argv: list[str]) -> int:
             f"{', '.join(included) or 'none'})",
             file=sys.stderr,
         )
+    if args.wiring:
+        repo = Path(args.wiring)
+        if not repo.is_dir():
+            print(
+                f"ERROR --wiring {repo} is not a directory\n"
+                "      fix: pass the root of the repository being set up.",
+                file=sys.stderr,
+            )
+            return 2
+        for tool in dict.fromkeys(wired):
+            try:
+                changes = TOOL_WIRING[tool](repo)
+            except WiringError as exc:
+                print(f"ERROR {tool} wiring: {exc}", file=sys.stderr)
+                return 2
+            summary = "; ".join(changes) if changes else "already wired"
+            print(f"wired {tool} into {repo}: {summary}", file=sys.stderr)
     return 0
 
 

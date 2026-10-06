@@ -1,9 +1,11 @@
 """The opt-in onebudgetspec llmlint fragment: its contract, held offline.
 
 `assets/llmlint/tools/onebudgetspec.llmlint.yml` is adopted by URL — `@1` — by
-repos that register budgets, and by nothing else. Its path, major and five rule
-names are what those consumers pin, and keeping it out of every always-on config
-is what keeps repos without budgets from loading it. Both are silent to break:
+repos that register budgets (the composer's `--tool onebudgetspec` opt-in lists
+it), and by nothing else. Its path, major and five rule names are what those
+consumers pin, and keeping it out of every always-on config is what keeps repos
+without budgets from loading it. The opt-in's own composition is held in
+test_compose_repo_plan.py. Both are silent to break:
 a renamed rule leaves a consumer's override dangling, and a stray reference
 loads budget rules everywhere. The judged half (do the rules judge budgets
 correctly?) lives in the `skilltest` project, since it needs a harness.
@@ -95,9 +97,11 @@ def test_this_repos_own_llmlint_config_does_not_name_it() -> None:
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-def test_the_composer_never_wires_it(shape: str, tmp_path: Path) -> None:
-    # Every shape with every language and every optional concern: the widest
-    # selection the composer can make for that shape, in both tiers.
+def test_the_composer_never_wires_it_without_the_opt_in(
+    shape: str, tmp_path: Path
+) -> None:
+    # Every shape with every language and every optional concern bar `--tool`:
+    # the widest selection short of the opt-in, in both tiers.
     ongoing = tmp_path / "llmlint.yml"
     buildout = tmp_path / "llmlint.buildout.yml"
     languages = [arg for lang in LANGUAGES for arg in ("--language", lang)]

@@ -16,6 +16,7 @@ subprocess and asserting on exit code / stdout / stderr across the real
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -66,14 +67,11 @@ def test_base_llmlint_fragment_exists():
 
 def test_every_composable_llmlint_fragment_maps_to_a_reference():
     # A fragment's path mirrors a reference relpath (buildout/ stripped), so every
-    # fragment must correspond to a real references/<...>.md — no orphans. The
-    # exception is `tools/`: opt-in fragments a consumer adopts by URL, which the
-    # composer never selects (test_onebudgetspec_fragment.py holds that).
+    # fragment must correspond to a real references/<...>.md — no orphans. That
+    # includes `tools/`: an opt-in fragment joins through its tool's reference.
     missing: list[str] = []
     for frag in _llmlint_fragments():
         rel = frag.relative_to(LLMLINT_ASSETS).as_posix()
-        if rel.startswith("tools/"):
-            continue
         if rel.startswith("buildout/"):
             rel = rel[len("buildout/") :]
         ref_rel = rel[: -len(".llmlint.yml")] + ".md"
@@ -374,3 +372,177 @@ def test_buildout_pins_track_each_fragment_current_major(tmp_path):
     assert pinned.get("shapes/react.llmlint.yml") == declared_major(
         "shapes/react.llmlint.yml"
     )
+
+
+# --- the onebudgetspec opt-in (`--tool onebudgetspec`, `--wiring`) ------------
+# Driven through the real CLI over real files. The wiring's behaviour in a real
+# Nx workspace — budgets measured, scoped, failed and cached — is the e2e tier's
+# (e2e/test_onebudgetspec_wiring_e2e.py).
+
+ONEBUDGETSPEC_URL = (
+    "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
+    "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
+)
+REPO_ROOT = SKILL_DIR.parents[2]
+
+
+def compose_into(repo: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+    """Compose a Rust CLI's plan and llmlint.yml into ``repo``, plus ``extra`` flags."""
+    return run(
+        "--shape",
+        "cli",
+        "--language",
+        "rust",
+        "-o",
+        str(repo / "plan.md"),
+        "--llmlint-config",
+        str(repo / "llmlint.yml"),
+        *extra,
+    )
+
+
+def template_repo(tmp_path: Path) -> Path:
+    """A repository at the setup step's starting point: the template justfile."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "justfile").write_text(
+        (SKILL_DIR / "assets" / "justfile.template").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    return repo
+
+
+def test_the_opt_in_composes_the_reference_and_adopts_the_lint_file(tmp_path):
+    result = compose_into(tmp_path, "--tool", "onebudgetspec")
+    assert result.returncode == 0, result.stderr
+    plan = (tmp_path / "plan.md").read_text(encoding="utf-8")
+    assert "tools/onebudgetspec.md" in plan
+    assert "--tool onebudgetspec" in plan  # the recorded invocation
+    llmlint = (tmp_path / "llmlint.yml").read_text(encoding="utf-8")
+    assert f'  - "{ONEBUDGETSPEC_URL}"' in llmlint.splitlines()
+
+
+def test_without_the_opt_in_nothing_names_onebudgetspec(tmp_path):
+    repo = template_repo(tmp_path)
+    before = (repo / "justfile").read_text(encoding="utf-8")
+    result = compose_into(repo)
+    assert result.returncode == 0, result.stderr
+    for written in ("plan.md", "llmlint.yml"):
+        assert "onebudgetspec" not in (repo / written).read_text(encoding="utf-8")
+    # And no wiring: the repository is left as the template made it.
+    assert (repo / "justfile").read_text(encoding="utf-8") == before
+    assert not (repo / "package.json").exists()
+    assert not (repo / "nx.json").exists()
+
+
+def test_wiring_pins_the_release_and_adds_both_targets_to_the_gate(tmp_path):
+    repo = template_repo(tmp_path)
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+
+    package = json.loads((repo / "package.json").read_text(encoding="utf-8"))
+    assert package["devDependencies"] == {
+        "@onebudgetspec/cli": crp.ONEBUDGETSPEC_VERSION
+    }
+    nx = json.loads((repo / "nx.json").read_text(encoding="utf-8"))
+    budgets = nx["targetDefaults"]["budgets"]
+    assert budgets["cache"] is True
+    assert {"externalDependencies": ["@onebudgetspec/cli"]} in budgets["inputs"]
+    assert "^production" in budgets["inputs"]
+    assert nx["namedInputs"]["production"] == ["default"]
+    assert nx["targetDefaults"]["budgets-host"] == {"cache": False}
+
+    justfile = (repo / "justfile").read_text(encoding="utf-8")
+    assert 'check tier="affected": && (test-e2e tier) (budgets tier)\n' in justfile
+    assert "-t budgets budgets-host" in justfile
+    assert "bunx onebudgetspec check budgets.yaml" in justfile
+
+
+def test_wiring_is_idempotent_and_keeps_what_the_repo_already_has(tmp_path):
+    repo = template_repo(tmp_path)
+    (repo / "package.json").write_text(
+        json.dumps({"name": "x", "devDependencies": {"nx": "23.2.1"}}),
+        encoding="utf-8",
+    )
+    (repo / "nx.json").write_text(
+        json.dumps({"namedInputs": {"production": ["{projectRoot}/src/**/*"]}}),
+        encoding="utf-8",
+    )
+    args = ("--tool", "onebudgetspec", "--wiring", str(repo))
+    assert compose_into(repo, *args).returncode == 0
+    wired = {
+        name: (repo / name).read_text(encoding="utf-8")
+        for name in ("package.json", "nx.json", "justfile")
+    }
+    second = compose_into(repo, *args)
+    assert second.returncode == 0, second.stderr
+    assert "already wired" in second.stderr
+    for name, text in wired.items():
+        assert (repo / name).read_text(encoding="utf-8") == text, name
+
+    package = json.loads(wired["package.json"])
+    assert package["devDependencies"]["nx"] == "23.2.1"
+    nx = json.loads(wired["nx.json"])
+    assert nx["namedInputs"]["production"] == ["{projectRoot}/src/**/*"]
+
+
+def test_wiring_moves_an_older_pin_to_the_release(tmp_path):
+    repo = template_repo(tmp_path)
+    (repo / "package.json").write_text(
+        json.dumps({"dependencies": {"@onebudgetspec/cli": "^0.1.0"}}),
+        encoding="utf-8",
+    )
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    package = json.loads((repo / "package.json").read_text(encoding="utf-8"))
+    assert package["dependencies"] == {"@onebudgetspec/cli": crp.ONEBUDGETSPEC_VERSION}
+    assert "devDependencies" not in package
+
+
+def test_wiring_without_a_tool_is_refused(tmp_path):
+    repo = template_repo(tmp_path)
+    result = compose_into(repo, "--wiring", str(repo))
+    assert result.returncode == 2
+    assert "--wiring needs a --tool" in result.stderr
+    assert not (repo / "package.json").exists()
+
+
+def test_wiring_without_a_justfile_names_the_template(tmp_path):
+    result = compose_into(
+        tmp_path, "--tool", "onebudgetspec", "--wiring", str(tmp_path)
+    )
+    assert result.returncode == 2
+    assert "no justfile" in result.stderr
+    assert "assets/justfile.template" in result.stderr
+
+
+def test_wiring_refuses_a_package_json_it_cannot_read(tmp_path):
+    repo = template_repo(tmp_path)
+    (repo / "package.json").write_text("{not json", encoding="utf-8")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 2
+    assert "package.json is not valid JSON" in result.stderr
+    assert (repo / "package.json").read_text(encoding="utf-8") == "{not json"
+
+
+def test_wiring_a_plain_check_recipe_runs_the_affected_budgets(tmp_path):
+    repo = tmp_path
+    (repo / "justfile").write_text(
+        "check: lint test\n    echo gate\n", encoding="utf-8"
+    )
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    justfile = (repo / "justfile").read_text(encoding="utf-8")
+    assert justfile.startswith("check: lint test budgets\n")
+    assert "budgets:\n    bunx nx affected -t budgets budgets-host\n" in justfile
+
+
+def test_the_onebudgetspec_release_is_named_once_in_lockstep():
+    # The composer's pin, the reference's README link and this repo's own dev pin
+    # (the CLI the judged fixtures run through) all name one release.
+    version = crp.ONEBUDGETSPEC_VERSION
+    reference = (REFS / "tools" / "onebudgetspec.md").read_text(encoding="utf-8")
+    tags = set(re.findall(r"onebudgetspec/blob/v([\d.]+)/", reference))
+    assert tags == {version}, tags
+    pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert re.findall(r'"onebudgetspec-cli==([\d.]+)"', pyproject) == [version]
