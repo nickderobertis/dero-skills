@@ -1,0 +1,274 @@
+"""The baseline checker's onebudgetspec section, over repos the composer wired.
+
+A repo declares onebudgetspec by recording `tools/onebudgetspec.md` among the
+references it composed. Each fixture starts from the conformant baseline repo,
+has the real composer (`--tool onebudgetspec --wiring`) apply the setup step,
+adds budget domains the way a consumer would, and then breaks one of the three
+things the checker holds: the pin, a file's reach from `check`, the lint rules.
+Whether the wired repo actually measures is the e2e tier's
+(e2e/test_onebudgetspec_wiring_e2e.py).
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+
+import pytest
+from test_check_repo_baseline import CONFORMANT_AGENTS, crb, levels, make_repo
+
+SKILL_DIR = Path(__file__).resolve().parents[1]
+COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
+
+DECLARING_AGENTS = CONFORMANT_AGENTS.replace(
+    "+ ci.md", "+ ci.md + tools/onebudgetspec.md"
+)
+# What `bun install` records for the pinned release (trimmed to its entry).
+BUN_LOCK = (
+    '{\n  "lockfileVersion": 1,\n  "packages": {\n'
+    '    "@onebudgetspec/cli": ["@onebudgetspec/cli@0.1.3", "", {}, "sha512-x"],\n'
+    "  }\n}\n"
+)
+API_BUDGETS = """\
+schema_version: 1
+budgets:
+  - id: api-requests-per-sync
+    description: "Upstream requests one sync of the recorded fixture makes"
+    measure: reported
+    command: ["node", "budgets/measure.mjs"]
+    unit: requests
+    direction: max
+    threshold: 40
+"""
+ROOT_BUDGETS = """\
+schema_version: 1
+budgets:
+  - id: gate-time
+    description: "Wall clock of the full gate"
+    measure: elapsed
+    command: ["just", "check"]
+    unit: seconds
+    direction: max
+    threshold: 1800
+"""
+
+
+def api_project(budgets_target: str = "budgets") -> dict[str, object]:
+    return {
+        "name": "api",
+        "targets": {
+            budgets_target: {
+                "command": "onebudgetspec check services/api/budgets.yaml "
+                "--exclude-label host"
+            },
+            "budgets-host": {
+                "command": "onebudgetspec check {projectRoot}/budgets.yaml --label host"
+            },
+        },
+    }
+
+
+def wired_repo(tmp_path: Path) -> Path:
+    """A baseline repo declaring onebudgetspec, set up by the composer's wiring."""
+    repo = make_repo(tmp_path, composition=DECLARING_AGENTS)
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--script",
+            str(COMPOSER),
+            "--shape",
+            "cli",
+            "--language",
+            "python",
+            "--tool",
+            "onebudgetspec",
+            "-o",
+            str(tmp_path / "plan.md"),
+            "--llmlint-config",
+            str(repo / "llmlint.yml"),
+            "--wiring",
+            str(repo),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    (repo / "bun.lock").write_text(BUN_LOCK, encoding="utf-8")
+    api = repo / "services" / "api"
+    api.mkdir(parents=True)
+    (api / "budgets.yaml").write_text(API_BUDGETS, encoding="utf-8")
+    (api / "project.json").write_text(json.dumps(api_project()), encoding="utf-8")
+    (repo / "budgets.yaml").write_text(ROOT_BUDGETS, encoding="utf-8")
+    return repo
+
+
+def budget_findings(repo: Path) -> list[crb.Finding]:
+    return crb.check_onebudgetspec(repo)
+
+
+def test_a_wired_repo_passes(tmp_path):
+    repo = wired_repo(tmp_path)
+    findings = budget_findings(repo)
+    assert levels(findings, "ERROR") == []
+    assert levels(findings, "OK") == [
+        "onebudgetspec pinned, 2 budgets file(s) reached by check, lint rules adopted"
+    ]
+    # And the whole baseline holds with it.
+    assert levels(crb.audit(repo), "ERROR") == []
+
+
+# --- not pinned -------------------------------------------------------------
+
+
+def test_no_pin_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert error == "onebudgetspec is not pinned: no manifest pins onebudgetspec"
+
+
+def test_a_version_range_is_not_a_pin(tmp_path):
+    repo = wired_repo(tmp_path)
+    package = json.loads((repo / "package.json").read_text(encoding="utf-8"))
+    package["devDependencies"]["@onebudgetspec/cli"] = "^0.1.3"
+    (repo / "package.json").write_text(json.dumps(package), encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "@onebudgetspec/cli '^0.1.3', not one exact version" in error
+
+
+def test_a_pin_no_lockfile_records_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    (repo / "bun.lock").unlink()
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "no lockfile records it" in error
+
+
+def test_a_uv_pin_recorded_in_uv_lock_passes(tmp_path):
+    repo = wired_repo(tmp_path)
+    (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
+    (repo / "bun.lock").unlink()
+    (repo / "pyproject.toml").write_text(
+        '[dependency-groups]\ndev = ["onebudgetspec-cli==0.1.3"]\n', encoding="utf-8"
+    )
+    (repo / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "onebudgetspec-cli"\nversion = "0.1.3"\n',
+        encoding="utf-8",
+    )
+    assert levels(budget_findings(repo), "ERROR") == []
+    (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "uv.lock does not record it" in error
+
+
+# --- a budgets.yaml no target `check` runs ------------------------------------
+
+
+def test_a_project_file_checked_by_a_target_check_does_not_run_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    project = api_project(budgets_target="measure")
+    del project["targets"]["budgets-host"]
+    (repo / "services" / "api" / "project.json").write_text(
+        json.dumps(project), encoding="utf-8"
+    )
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert error == (
+        "a budgets file is not in the gate: services/api/budgets.yaml is checked "
+        "by services/api's measure target(s), which `check` does not run"
+    )
+
+
+def test_a_project_file_no_target_checks_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    (repo / "services" / "api" / "project.json").write_text(
+        json.dumps({"name": "api", "targets": {"test": {"command": "node t.mjs"}}}),
+        encoding="utf-8",
+    )
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "no target in services/api/project.json runs `onebudgetspec check`" in error
+
+
+def test_a_file_outside_every_project_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    stray = repo / "scripts" / "budgets.yaml"
+    stray.write_text(API_BUDGETS, encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "scripts/budgets.yaml sits in no Nx project" in error
+
+
+def test_a_root_file_check_never_reads_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    justfile = repo / "justfile"
+    text = justfile.read_text(encoding="utf-8")
+    root_line = "    [ ! -f budgets.yaml ] || bunx onebudgetspec check budgets.yaml\n"
+    assert root_line in text
+    justfile.write_text(text.replace(root_line, ""), encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert error == (
+        "a budgets file is not in the gate: budgets.yaml is checked by no "
+        "`onebudgetspec check` in a recipe `check` runs"
+    )
+
+
+def test_a_check_that_no_longer_depends_on_budgets_leaves_every_file_out(tmp_path):
+    repo = wired_repo(tmp_path)
+    justfile = repo / "justfile"
+    text = justfile.read_text(encoding="utf-8")
+    justfile.write_text(text.replace(" (budgets tier)", ""), encoding="utf-8")
+    errors = levels(budget_findings(repo), "ERROR")
+    assert len(errors) == 2
+    assert all(e.startswith("a budgets file is not in the gate") for e in errors)
+
+
+# --- the lint rules not adopted ----------------------------------------------
+
+
+def test_lint_rules_not_adopted_fails(tmp_path):
+    repo = wired_repo(tmp_path)
+    config = repo / "llmlint.yml"
+    text = config.read_text(encoding="utf-8")
+    kept = [line for line in text.splitlines() if "onebudgetspec" not in line]
+    config.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "the onebudgetspec lint rules are not adopted" in error
+
+
+# --- not declared ------------------------------------------------------------
+
+
+def test_a_repo_that_does_not_declare_it_is_not_checked(tmp_path):
+    # Every one of the three broken at once, and still nothing to report.
+    repo = make_repo(tmp_path)
+    api = repo / "services" / "api"
+    api.mkdir(parents=True)
+    (api / "budgets.yaml").write_text(API_BUDGETS, encoding="utf-8")
+    (repo / "budgets.yaml").write_text(ROOT_BUDGETS, encoding="utf-8")
+    assert budget_findings(repo) == []
+    assert levels(crb.audit(repo), "ERROR") == []
+
+
+# --- what `onebudgetspec check` reads ------------------------------------------
+
+
+ROOT = "budgets.yaml"
+API = "services/api/budgets.yaml"
+
+
+@pytest.mark.parametrize(
+    ("command", "cwd", "target", "reaches"),
+    [
+        ("onebudgetspec check", ".", ROOT, True),
+        ("onebudgetspec check", "services/api", API, True),
+        ("onebudgetspec check --label host budgets.yaml", ".", ROOT, True),
+        ("onebudgetspec check --label budgets.yaml", ".", ROOT, True),  # a value
+        ("onebudgetspec check other.yaml", ".", ROOT, False),
+        ("onebudgetspec check budgets.yaml", ".", API, False),
+        ("onebudgetspec check --recursive .", ".", API, True),
+        ("onebudgetspec check --recursive services", ".", API, True),
+        ("onebudgetspec check --recursive web", ".", API, False),
+        ("onebudgetspec validate services/api/budgets.yaml", ".", API, False),
+    ],
+)
+def test_onebudgetspec_reaches(command, cwd, target, reaches):
+    assert crb.onebudgetspec_reaches(command, cwd, target) is reaches
