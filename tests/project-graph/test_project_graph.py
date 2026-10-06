@@ -258,6 +258,15 @@ def test_editing_the_eval_rechecks_the_wiring_the_fast_tier_asserts():
     )
 
 
+def test_a_change_to_the_onebudgetspec_pin_reruns_the_skill_fast_tier():
+    # tests/test_eval_wiring.py runs the judged onebudgetspec fixtures through the
+    # `onebudgetspec-cli` release the root dev group pins. nx.json's
+    # `onebudgetspecRelease` input keeps both manifests in that project's graph,
+    # so moving the pin reruns it instead of replaying a pass against the old one.
+    for manifest in ("pyproject.toml", "uv.lock"):
+        assert "bootstrap-create-repo" in affected_test_projects(manifest), manifest
+
+
 def test_the_eval_still_depends_on_the_skill_it_evaluates():
     # The edge the worked example prescribes: the expensive tier depends on what
     # it actually tests, so it runs when that changes and never otherwise.

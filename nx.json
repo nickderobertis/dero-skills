@@ -46,6 +46,10 @@
       "{workspaceRoot}/pyproject.toml",
       "{workspaceRoot}/uv.lock"
     ],
+    "onebudgetspecRelease": [
+      "{workspaceRoot}/pyproject.toml",
+      "{workspaceRoot}/uv.lock"
+    ],
     "skillEval": [
       "{workspaceRoot}/skills/bootstrap/create-repo/tests/skilltest/**/*"
     ]

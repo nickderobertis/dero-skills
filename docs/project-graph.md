@@ -53,7 +53,9 @@ What is not obvious from the table:
   the suite that drives the recipes and guards the gate's one target list,
   `oneharnessRelease` attaches the root `pyproject.toml` and `uv.lock` — where
   the `oneharness-cli` bound lives — to the create-repo e2e tier that parses the
-  composed config with that release, and
+  composed config with that release, `onebudgetspecRelease` attaches the same two
+  files — where the `onebudgetspec-cli` pin lives — to the create-repo fast tier
+  that runs the judged onebudgetspec fixtures through that release, and
   `skillEval` attaches the harness-driven eval to the fast tier
   that checks its path constants (`tests/test_eval_wiring.py` — the eval never
   runs in the gate, so a broken constant inside it is otherwise invisible). An input is the only thing keeping a cached pass from outliving an
