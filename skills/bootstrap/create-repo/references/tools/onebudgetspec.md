@@ -97,11 +97,11 @@ convention and the wiring's defaults, not a lint rule.
 ## End-to-end journeys live with the crate they exercise
 
 A budget domain's project can only contain its budgets if the journeys feeding
-them sit beside the code they exercise. In a Rust workspace that is the
-`binary_e2e_is_its_own_crate` rule of `intersections/rust-cli.md`, on its terms:
-one test-only `publish = false` member per crate exercised, each its own project,
-sharing one support crate for the harness. A single e2e crate exercising every
-crate would pull every domain's telemetry, and so its budgets, into one project.
+them sit beside the code they exercise. A single e2e suite exercising every
+crate or package would pull every domain's telemetry, and so its budgets, into
+one project. In a Rust workspace, `intersections/rust-cli.md` ("Journeys live
+with the crate they exercise") states the layout: an e2e member on the terms of
+the buildout rule `binary_e2e_is_its_own_crate`, one per crate exercised.
 
 ## The setup step: pinned and wired
 

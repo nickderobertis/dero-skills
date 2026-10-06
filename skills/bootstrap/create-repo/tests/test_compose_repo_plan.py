@@ -693,6 +693,42 @@ def test_wiring_refuses_a_budgets_recipe_check_cannot_pass_its_tier(
     assert justfile.read_text(encoding="utf-8") == text
 
 
+def test_wiring_keeps_a_comment_on_the_check_header(tmp_path):
+    repo = template_repo(tmp_path)
+    justfile = repo / "justfile"
+    text = justfile.read_text(encoding="utf-8")
+    header = 'check tier="affected": && (test-e2e tier)\n'
+    justfile.write_text(
+        text.replace(header, header.rstrip("\n") + "  # the one gate\n"),
+        encoding="utf-8",
+    )
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    wired = justfile.read_text(encoding="utf-8")
+    header = 'check tier="affected": && (test-e2e tier) (budgets tier) # the one gate\n'
+    assert header in wired, wired
+
+
+def test_a_repeated_tool_is_wired_once(tmp_path):
+    repo = template_repo(tmp_path)
+    result = compose_into(
+        repo,
+        "--tool",
+        "onebudgetspec",
+        "--tool",
+        "onebudgetspec",
+        "--wiring",
+        str(repo),
+    )
+    assert result.returncode == 0, result.stderr
+    [summary] = [line for line in result.stderr.splitlines() if "wired " in line]
+    assert "already wired" not in summary
+    assert result.stderr.count("(budgets tier)") == 1
+    assert (repo / "justfile").read_text(encoding="utf-8").count("(budgets tier)") == 1
+    llmlint = (repo / "llmlint.yml").read_text(encoding="utf-8")
+    assert llmlint.count("tools/onebudgetspec.llmlint.yml@1") == 1
+
+
 def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):
     missing = tmp_path / "nowhere"
     result = compose_into(tmp_path, "--tool", "onebudgetspec", "--wiring", str(missing))

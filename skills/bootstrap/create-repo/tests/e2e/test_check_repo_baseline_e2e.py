@@ -13,21 +13,25 @@ defined in exactly one place.
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import subprocess
 from pathlib import Path
 
+import pytest
 from test_check_repo_baseline import (
     CONFORMANT_CARGO_CONFIG,
     FULL_JUSTFILE,
     NO_ORCHESTRATOR_JUSTFILE,
     SCRIPT,
     _buildout_repo,
+    crb,
     make_repo,
     write_cargo_repo,
     write_package,
 )
+from test_ci_llmlint_selection_e2e import llmlint_bin
 
 # The gate delegating with Nx's comma-separated target list (`--targets=a,b`)
 # rather than the spaced `-t a b` of FULL_JUSTFILE. Both spellings reach the
@@ -267,3 +271,56 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     assert [line for line in result.stdout.splitlines() if line.strip()] == [
         f"OK    baseline invariants satisfied: {repo.resolve()}"
     ]
+
+
+# The `plugins` spellings an llmlint.yml can carry, and malformed ones near them.
+# The checker's light scan decides whether the onebudgetspec rules are adopted;
+# real llmlint is the parser it must agree with, on what is listed and on what
+# is no config at all.
+PLUGINS_CORPUS = {
+    "block, quoted, commented": 'plugins:\n  - "./a.llmlint.yml"  # a\n  - ./b.llmlint.yml\n',
+    "block, single-quoted": "plugins:\n  - './a.llmlint.yml'\n",
+    "inline": 'plugins: ["./a.llmlint.yml", "./b.llmlint.yml"]\n',
+    "inline, commented": "plugins: ['./b.llmlint.yml']  # composed\n",
+    "content after a quote": 'plugins:\n  - "./a.llmlint.yml" trailing\n',
+    "an unclosed inline list": 'plugins: ["./a.llmlint.yml"\n',
+    "an unterminated quote": 'plugins:\n  - "./a.llmlint.yml\n',
+}
+PLUGIN_FRAGMENT = """\
+version: 1.0.0
+rules:
+  - name: {name}
+    description: true when the file says yes. false when it says no.
+    files:
+      include: ["**/*.md"]
+"""
+
+
+@pytest.mark.parametrize("config", PLUGINS_CORPUS.values(), ids=PLUGINS_CORPUS)
+def test_the_plugins_scan_agrees_with_llmlint(tmp_path, config):
+    for name in ("a", "b"):
+        (tmp_path / f"{name}.llmlint.yml").write_text(
+            PLUGIN_FRAGMENT.format(name=f"rule_{name}"), encoding="utf-8"
+        )
+    (tmp_path / "llmlint.yml").write_text(config, encoding="utf-8")
+    real = subprocess.run(
+        [llmlint_bin(), "config", "--sources"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    scanned = [
+        str((tmp_path / plugin).resolve()) for plugin in crb.llmlint_plugins(config)
+    ]
+    if real.returncode != 0:
+        assert "llmlint.yml" in real.stderr, real.stderr
+        assert scanned == [], scanned
+        return
+    loaded = [
+        path
+        for path in json.loads(real.stdout)["config_files"]
+        if Path(path).parent == tmp_path and Path(path).name != "llmlint.yml"
+    ]
+    assert loaded, real.stdout
+    assert scanned == loaded
