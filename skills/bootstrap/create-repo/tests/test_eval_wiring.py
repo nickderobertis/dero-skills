@@ -14,6 +14,9 @@ against the real tree.
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -65,3 +68,63 @@ def test_the_judged_rules_eval_adopts_real_files(judged_rules_module) -> None:
     # case error out only after a credentialed run.
     assert judged_rules_module.FRAGMENT.is_file(), judged_rules_module.FRAGMENT
     assert judged_rules_module.ONEHARNESS_TEMPLATE.is_file()
+
+
+def _llmlint() -> str:
+    # `just bootstrap` installs llmlint via `uv tool`, into ~/.local/bin.
+    installed = Path.home() / ".local" / "bin" / "llmlint"
+    found = str(installed) if installed.is_file() else shutil.which("llmlint")
+    assert found is not None, "llmlint is not installed — run `just bootstrap`"
+    return found
+
+
+def test_the_judged_rules_eval_proves_every_fragment_rule_both_ways(
+    judged_rules_module, tmp_path: Path
+) -> None:
+    # The eval selects rules by name. Renaming one in the fragment would leave its
+    # cases selecting nothing, and a new rule would go unproven — both found only
+    # after a credentialed run. The names come from llmlint's own reading.
+    consumer = tmp_path / "llmlint.yml"
+    consumer.write_text(
+        f'plugins:\n  - "{judged_rules_module.FRAGMENT}"\n', encoding="utf-8"
+    )
+    result = subprocess.run(
+        [_llmlint(), "config", "--cwd", str(tmp_path), "-c", str(consumer)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    declared = {rule["name"] for rule in json.loads(result.stdout)["config"]["rules"]}
+    expected = judged_rules_module.Expected
+    for outcome in (expected.PASS, expected.FAIL):
+        proven = {c.rule for c in judged_rules_module.CASES if c.expected == outcome}
+        assert proven == declared, (
+            f"rules with a {outcome!r} case: {sorted(proven)}; "
+            f"the fragment declares {sorted(declared)}"
+        )
+
+
+def test_the_judged_rules_eval_reads_llmlints_real_report(
+    judged_rules_module, tmp_path: Path
+) -> None:
+    # The eval reads each verdict out of llmlint's JSON report, a shape llmlint
+    # publishes no schema for. A run whose rule matches no file is offline and
+    # still emits the whole report, so the eval's reader is held to the real one
+    # here rather than first meeting a changed envelope after a credentialed run.
+    found = _llmlint()
+    rule = "budgets_scoped_to_minimal_tree"
+    (tmp_path / "llmlint.yml").write_text(
+        f'plugins:\n  - "{judged_rules_module.FRAGMENT}"\n', encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text("No budgets here.\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    result = subprocess.run(
+        [found, "--format", "json", "--progress", "never", "--no-history"]
+        + ["--rule", rule],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+    verdict = judged_rules_module._verdict(rule, result)
+    assert verdict.outcome == "skipped", verdict.report
+    assert verdict.violation_files == [], verdict.report

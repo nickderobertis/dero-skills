@@ -54,7 +54,7 @@ rules:
         - "**/e2e/**"
         - "**/benches/**"
     relevance: |
-      the target file is a `budgets.yaml`, or a script, test or fixture that a
+      the target file declares budgets, or is a script, test or fixture that a
       budget's `command` runs or reads
     # Not line-attributed: a misplaced file is a fact about where it lives, and a
     # budget-only fixture outside the tree need not hold any offending line.
@@ -75,8 +75,8 @@ rules:
         - "**/e2e/**"
         - "**/benches/**"
     relevance: |
-      the target file is a `budgets.yaml`, code a budget's `command` runs to
-      produce its figure, or code that reads a `budgets.yaml`
+      the target file declares budgets, or is code a budget's `command` runs to
+      produce its figure
     require_line_attribution: true
 
   - name: budget_commands_measure_directly
@@ -95,7 +95,7 @@ rules:
         - "**/e2e/**"
         - "**/benches/**"
     relevance: |
-      the target file is a `budgets.yaml`, or a script or program a budget's
+      the target file declares budgets, or is a script or program a budget's
       `command` names
     require_line_attribution: true
 
@@ -119,6 +119,7 @@ rules:
         - "**/e2e/**"
         - "**/benches/**"
     relevance: |
-      the target file is a `budgets.yaml`, code a budget's `command` runs, or a
+      the target file declares budgets, or is code a budget's `command` runs, or a
       test exercising behaviour a budget measures
-    require_line_attribution: true
+    # Not line-attributed: a rerun is judged against what an existing test already
+    # exercises and what recording there would cost, a comparison across files.

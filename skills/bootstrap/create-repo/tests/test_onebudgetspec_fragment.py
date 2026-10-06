@@ -15,7 +15,6 @@ consumer would, so "parses" means "llmlint accepts it", not "a YAML library does
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -45,10 +44,8 @@ NEEDLE = "onebudgetspec"
 
 def _llmlint() -> str:
     # `just bootstrap` installs llmlint via `uv tool`, into ~/.local/bin.
-    found = shutil.which(
-        "llmlint",
-        path=f"{Path.home() / '.local' / 'bin'}{os.pathsep}{os.environ['PATH']}",
-    )
+    installed = Path.home() / ".local" / "bin" / "llmlint"
+    found = str(installed) if installed.is_file() else shutil.which("llmlint")
     if found is None:
         pytest.fail("llmlint is not installed — run `just bootstrap`")
     return found

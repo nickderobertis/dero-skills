@@ -18,7 +18,6 @@ is one independent judge call. Run with `just skilltest -k onebudgetspec`.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -33,10 +32,9 @@ FRAGMENT = SKILL / "assets" / "llmlint" / "tools" / "onebudgetspec.llmlint.yml"
 # What the composer writes beside a consumer's llmlint.yml: the harness selection.
 ONEHARNESS_TEMPLATE = SKILL / "assets" / "oneharness.toml.template"
 
-_LLMLINT = shutil.which(
-    "llmlint",
-    path=f"{Path.home() / '.local' / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
-)
+# `just bootstrap` installs llmlint via `uv tool`, into ~/.local/bin.
+_INSTALLED = Path.home() / ".local" / "bin" / "llmlint"
+_LLMLINT = str(_INSTALLED) if _INSTALLED.is_file() else shutil.which("llmlint")
 
 pytestmark = [
     pytest.mark.skilltest_e2e,
@@ -46,6 +44,7 @@ pytestmark = [
 ]
 
 
+# llmlint: ignore[contracts_have_one_source_or_a_drift_gate] llmlint publishes no schema for its report's outcome values, and no offline run can emit `pass`, `fail` or `not_relevant` — only a judge does. The drift gate for these three spellings is this module's cases, each of which expects one and fails on a misspelling against the real engine; the report envelope around them is held offline by test_eval_wiring.py.
 class Expected(StrEnum):
     """The verdicts these cases expect, spelled as llmlint reports them. Not the
     report's whole vocabulary: any other outcome simply fails to match."""
@@ -569,6 +568,33 @@ def _standalone_cheaper_than_recording() -> dict[str, str]:
     return tree
 
 
+def _shared_fixture_outside() -> dict[str, str]:
+    """The measuring script is in the tree; the recorded pages it reads sit in the
+    repo-root fixtures/, where a repo-level sync test reads them too."""
+    tree = _budget_only_fixture_outside()
+    del tree["fixtures/linear_sync_budget_pages.json"]
+    tree[f"{ROOT}/budgets/measure_sync_requests.py"] = _MEASURE.replace(
+        'Path(__file__).parent / "fixtures" / "issues_two_pages.json"',
+        'Path(__file__).parents[3] / "fixtures" / "issues_two_pages.json"',
+    )
+    tree["fixtures/issues_two_pages.json"] = _ISSUES_FIXTURE
+    tree["tests/test_sync_pages.py"] = _JOURNEY_TEST.replace(
+        'Path(__file__).parent / "fixtures"', 'Path(__file__).parents[1] / "fixtures"'
+    )
+    return tree
+
+
+def _telemetry_outside() -> dict[str, str]:
+    """The budget is rooted at budgets/; the recording it analyses was added to
+    the existing journey test under tests/, outside that tree."""
+    tree = _analyses_test_telemetry()
+    del tree[f"{ROOT}/budgets.yaml"]
+    tree[f"{ROOT}/budgets/budgets.yaml"] = _budgets_yaml(
+        _budget('["uv", "run", "python", "analyse_sync_requests.py"]')
+    )
+    return tree
+
+
 def _no_budgets() -> dict[str, str]:
     """A repo registering no budgets whose files still match every rule's globs:
     a release script, a unit test, and a rate limiter named for its budget."""
@@ -646,6 +672,15 @@ CASES = [
         MINIMAL_TREE,
         "shared-harness-and-measured-code-outside",
         _shared_harness_outside(),
+        Expected.PASS,
+    ),
+    Case(
+        MINIMAL_TREE, "shared-fixture-outside", _shared_fixture_outside(), Expected.PASS
+    ),
+    Case(
+        MINIMAL_TREE,
+        "telemetry-in-existing-test-outside",
+        _telemetry_outside(),
         Expected.PASS,
     ),
     Case(
