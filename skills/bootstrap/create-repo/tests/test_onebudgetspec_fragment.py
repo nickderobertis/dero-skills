@@ -1,7 +1,7 @@
 """The opt-in onebudgetspec llmlint fragment: its contract, held offline.
 
 `assets/llmlint/tools/onebudgetspec.llmlint.yml` is adopted by URL — `@1` — by
-repos that register budgets, and by nothing else. Its path, major and four rule
+repos that register budgets, and by nothing else. Its path, major and five rule
 names are what those consumers pin, and keeping it out of every always-on config
 is what keeps repos without budgets from loading it. Both are silent to break:
 a renamed rule leaves a consumer's override dangling, and a stray reference
@@ -37,6 +37,7 @@ RULES = {
     "budgets_scoped_to_minimal_tree",
     "onebudgetspec_is_the_only_judge",
     "budget_commands_measure_directly",
+    "budgets_reuse_gate_telemetry",
 }
 # What any reference to the fragment would contain: its file name, or the tool's.
 NEEDLE = "onebudgetspec"
@@ -53,7 +54,7 @@ def _llmlint() -> str:
     return found
 
 
-def test_the_fragment_parses_and_declares_exactly_its_four_rules(
+def test_the_fragment_parses_and_declares_exactly_its_five_rules(
     tmp_path: Path,
 ) -> None:
     consumer = tmp_path / "llmlint.yml"

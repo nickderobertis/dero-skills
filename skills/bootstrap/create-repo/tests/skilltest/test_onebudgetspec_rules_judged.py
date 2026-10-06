@@ -57,7 +57,8 @@ class Expected(StrEnum):
 
 # The baseline every tree varies from: one budget counting the Linear requests a
 # full issue sync makes, reported through ONEBUDGETSPEC_RESULT, all under
-# packages/linear-sync/. It conforms to all four rules.
+# packages/linear-sync/. It conforms to all five rules: no test runs the sync,
+# so the budget's standalone run is the only gate exercising it.
 ROOT = "packages/linear-sync"
 
 _TERSE_DESCRIPTION = (
@@ -453,6 +454,121 @@ fi
 """)
 
 
+_JOURNEY_TEST = """\
+from pathlib import Path
+
+from linear_sync.client import RecordingTransport
+from linear_sync.sync import sync_issues
+
+PAGES = Path(__file__).parent / "fixtures" / "issues_two_pages.json"
+
+
+def test_sync_pulls_every_issue_across_pages():
+    transport = RecordingTransport.replaying(PAGES)
+    issues = sync_issues(transport)
+    assert [i["id"] for i in issues] == ["LIN-1", "LIN-2", "LIN-3"]
+"""
+
+_PROJECT_JSON = """\
+{
+  "name": "linear-sync",
+  "targets": {
+    "test": {
+      "command": "uv run pytest -n auto tests",
+      "options": {"cwd": "packages/linear-sync"},
+      "outputs": ["{projectRoot}/.telemetry"]
+    },
+    "budgets": {
+      "command": "onebudgetspec check",
+      "options": {"cwd": "packages/linear-sync"},
+      "dependsOn": ["test"]
+    }
+  }
+}
+"""
+
+
+def _with_journey_test() -> dict[str, str]:
+    """The baseline plus an existing gate: a journey test that already runs a full
+    sync over the same recorded pages, in the project's `test` target."""
+    return _with(
+        **{
+            "project.json": _PROJECT_JSON,
+            "tests/test_sync_journey.py": _JOURNEY_TEST,
+            "tests/fixtures/issues_two_pages.json": _ISSUES_FIXTURE,
+        }
+    )
+
+
+def _analyses_test_telemetry() -> dict[str, str]:
+    tree = _with_journey_test()
+    del tree[f"{ROOT}/budgets/measure_sync_requests.py"]
+    del tree[f"{ROOT}/budgets/fixtures/issues_two_pages.json"]
+    tree[f"{ROOT}/tests/test_sync_journey.py"] = (
+        _JOURNEY_TEST.replace(
+            "from linear_sync.sync import sync_issues\n",
+            "from linear_sync.sync import sync_issues\nfrom telemetry import record\n",
+        )
+        + '    record("sync_journey", requests=len(transport.requests))\n'
+    )
+    tree[f"{ROOT}/tests/telemetry.py"] = '''\
+"""Save a journey's figures under .telemetry/, the `test` target's output."""
+
+import json
+from pathlib import Path
+
+TELEMETRY = Path(__file__).parents[1] / ".telemetry"
+
+
+def record(journey, **figures):
+    TELEMETRY.mkdir(exist_ok=True)
+    (TELEMETRY / f"{journey}.json").write_text(json.dumps(figures))
+'''
+    tree[f"{ROOT}/budgets.yaml"] = _budgets_yaml(
+        _budget('["uv", "run", "python", "budgets/analyse_sync_requests.py"]')
+    )
+    tree[f"{ROOT}/budgets/analyse_sync_requests.py"] = '''\
+"""Report the requests the sync journey test recorded, for onebudgetspec."""
+
+import json
+import os
+from pathlib import Path
+
+recorded = json.loads(
+    (Path(__file__).parents[1] / ".telemetry" / "sync_journey.json").read_text()
+)
+Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(
+    json.dumps({"value": recorded["requests"]})
+)
+'''
+    return tree
+
+
+def _reruns_test_scenario() -> dict[str, str]:
+    """The journey test already syncs these pages; the budget syncs them again
+    only to count the requests."""
+    return _with_journey_test()
+
+
+def _standalone_cheaper_than_recording() -> dict[str, str]:
+    """The journey test runs the sync, but under `pytest -n auto` beside the whole
+    suite, where its wall clock measures contention rather than the sync."""
+    tree = _with_journey_test()
+    timed = _elapsed_budget()
+    tree[f"{ROOT}/budgets.yaml"] = timed[f"{ROOT}/budgets.yaml"]
+    tree[f"{ROOT}/budgets/sync_fixture_pages.py"] = timed[
+        f"{ROOT}/budgets/sync_fixture_pages.py"
+    ].replace(
+        '"""One full issue sync against recorded pages; onebudgetspec times the run."""',
+        '"""One full issue sync against recorded pages; onebudgetspec times the run.\n\n'
+        "Timed alone: the journey test shares its gate run with every other test\n"
+        "under pytest-xdist, so a duration recorded there would need repeated runs\n"
+        'to mean anything — dearer than this one standalone sync."""',
+    )
+    del tree[f"{ROOT}/budgets/measure_sync_requests.py"]
+    return tree
+
+
 def _no_budgets() -> dict[str, str]:
     """A repo registering no budgets whose files still match every rule's globs:
     a release script, a unit test, and a rate limiter named for its budget."""
@@ -507,6 +623,7 @@ DESCRIPTIONS = "budget_descriptions_durable_and_terse"
 MINIMAL_TREE = "budgets_scoped_to_minimal_tree"
 ONLY_JUDGE = "onebudgetspec_is_the_only_judge"
 DIRECT = "budget_commands_measure_directly"
+TELEMETRY = "budgets_reuse_gate_telemetry"
 
 CASES = [
     Case(DESCRIPTIONS, "terse", _conforming(), Expected.PASS),
@@ -563,10 +680,21 @@ CASES = [
     Case(DIRECT, "generic-runner", _generic_runner(), Expected.PASS),
     Case(DIRECT, "wrapper-relists-ids", _WRAPPER_RELISTS_IDS, Expected.FAIL),
     Case(DIRECT, "wrapper-rechecks-result", _WRAPPER_RECHECKS_RESULT, Expected.FAIL),
+    Case(
+        TELEMETRY, "analyses-test-telemetry", _analyses_test_telemetry(), Expected.PASS
+    ),
+    Case(TELEMETRY, "no-gate-exercises-it", _conforming(), Expected.PASS),
+    Case(
+        TELEMETRY,
+        "standalone-cheaper-than-recording",
+        _standalone_cheaper_than_recording(),
+        Expected.PASS,
+    ),
+    Case(TELEMETRY, "reruns-test-scenario", _reruns_test_scenario(), Expected.FAIL),
     # Every rule's relevance clause drops matched files no budget reaches.
     *(
         Case(rule, "no-budgets", _no_budgets(), Expected.NOT_RELEVANT)
-        for rule in (DESCRIPTIONS, MINIMAL_TREE, ONLY_JUDGE, DIRECT)
+        for rule in (DESCRIPTIONS, MINIMAL_TREE, ONLY_JUDGE, DIRECT, TELEMETRY)
     ),
 ]
 

@@ -40,8 +40,9 @@ rules:
       true when everything specific to a `budgets.yaml`'s measurements lives in the
       tree that file's directory roots: the commands it names, the tests they run,
       and budget-only fixtures. Calling shared code that lives elsewhere is fine —
-      a common harness, the code under measurement, or a fixture other tests also
-      use. false only when something that exists solely to serve one of its budgets
+      a common harness, the code under measurement, a fixture other tests also
+      use, or telemetry recording added to an existing test or runtime code. false
+      only when something that exists solely to serve one of its budgets
       lives outside that tree.
     files:
       include:
@@ -96,4 +97,28 @@ rules:
     relevance: |
       the target file is a `budgets.yaml`, or a script or program a budget's
       `command` names
+    require_line_attribution: true
+
+  - name: budgets_reuse_gate_telemetry
+    description: |
+      true when a budget whose behaviour an existing gate's tests or runtime already
+      exercise takes its figure from telemetry those runs record and save
+      temporarily (for example as the test target's output), its `command` only
+      analysing that data. Also true when no existing gate exercises the measured
+      behaviour, or when recording it there would cost more than a standalone
+      measurement. false when a budget re-runs a scenario an existing test already
+      runs, only to count or time it, where adding telemetry to that test or its
+      runtime code would be cheaper than the extra gate time.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file is a `budgets.yaml`, code a budget's `command` runs, or a
+      test exercising behaviour a budget measures
     require_line_attribution: true
