@@ -27,13 +27,11 @@ says a command ran, as opposed to Nx replaying it from cache.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -305,6 +303,7 @@ def generated(tmp_path: Path) -> tuple[Generated, str]:
     _write(web / "budgets.yaml", WEB_BUDGETS)
     _write(web / "budgets" / "start.mjs", WEB_START)
 
+    # llmlint: ignore[async_typed_clients_at_boundaries] this journey proves the consumer's own install of what the wiring pinned, so it runs the real `bun install` the generated repo's setup runs; an async client to the registry would test a different install than the one consumers get.
     installed = repo.run("bun", "install")
     assert installed.returncode == 0, installed.stderr
     lock = (root / "bun.lock").read_text(encoding="utf-8")
@@ -334,6 +333,20 @@ def test_the_affected_run_reaches_only_the_changed_project_and_the_root(generate
     assert result.returncode == 0, result.stdout + result.stderr
     assert repo.take_measured() == {"web-cold-start", "workspace-walk"}
     assert "api:" not in result.stdout
+
+
+def test_check_all_reaches_every_domain_after_a_change_confined_to_one(generated):
+    # The broader tier the gate's `tier` parameter passes on: the same change as
+    # above, but `check all` runs the unchanged api domain's budgets too.
+    repo, _base = generated
+    before = repo.run("git", "rev-parse", "HEAD").stdout.strip()
+    start = repo.root / "services" / "web" / "budgets" / "start.mjs"
+    start.write_text(start.read_text(encoding="utf-8") + "// tuned\n", encoding="utf-8")
+    repo.commit("perf(web): tune the cold start")
+
+    result = repo.run("just", "check", "all", NX_BASE=before, NX_SKIP_NX_CACHE="true")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert repo.take_measured() == ALL_BUDGETS
 
 
 def test_an_over_budget_figure_fails_check_and_the_affected_run(generated):
@@ -371,18 +384,10 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     assert "cache" in cached, second.stdout
 
 
-def _load(script: Path, name: str):
-    spec = importlib.util.spec_from_file_location(name, script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def _release_readme(version: str, workdir: Path) -> str:
     """The README at the release's tag, read with git (one blob, no checkout)."""
     clone = workdir / "onebudgetspec"
+    # llmlint: ignore[async_typed_clients_at_boundaries] a test-time read of one file at a release tag, done once per run by the git CLI the suite already drives everywhere; there is no service client to type, and the README is the source the reference is held to.
     fetched = subprocess.run(
         [
             "git",
@@ -453,23 +458,38 @@ def test_the_reference_and_wiring_name_the_pinned_releases_surface(generated, tm
 
 
 def test_the_baseline_checker_reads_the_generated_repo_as_wired(generated):
-    # The checker's reading of a bun-written bun.lock, project targets and the
-    # composed llmlint.yml, on the repository the wiring produced.
+    # The checker's CLI, run the way a consumer runs it, reads the bun-written
+    # bun.lock, the project targets and the composed llmlint.yml as wired. The
+    # generated tree is no whole baseline repo, so other sections still report;
+    # none of them is onebudgetspec's until its lint file is dropped.
     repo, _base = generated
     (repo.root / "AGENTS.md").write_text(
         "# AGENTS\n\n## Stack and composition\n\n- **References composed:** "
         "base.md, ci.md, tools/onebudgetspec.md\n",
         encoding="utf-8",
     )
-    crb = _load(SKILL_DIR / "scripts" / "check_repo_baseline.py", "crb_e2e")
-    findings = crb.check_onebudgetspec(repo.root)
-    assert [(f.level, f.message) for f in findings] == [
-        (
-            "OK",
-            "onebudgetspec pinned, 3 budgets file(s) reached by check, "
-            "lint rules adopted",
-        )
-    ]
+    checker = SKILL_DIR / "scripts" / "check_repo_baseline.py"
+
+    def audit() -> str:
+        done = repo.run("uv", "run", "--script", str(checker), str(repo.root))
+        output = done.stdout + done.stderr
+        assert f"FAIL  {repo.root}" in output, output
+        return output
+
+    wired = audit()
+    assert "onebudgetspec" not in wired, wired
+
+    config = repo.root / "llmlint.yml"
+    config.write_text(
+        "".join(
+            line
+            for line in config.read_text(encoding="utf-8").splitlines(keepends=True)
+            if "onebudgetspec" not in line
+        ),
+        encoding="utf-8",
+    )
+    dropped = audit()
+    assert "the onebudgetspec lint rules are not adopted" in dropped, dropped
 
 
 def test_the_typescript_reporter_writes_only_inside_a_check(generated, tmp_path):

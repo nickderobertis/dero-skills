@@ -642,6 +642,42 @@ def test_wiring_keeps_an_existing_budgets_recipe_and_puts_it_in_check(tmp_path):
     assert 'check tier="affected": && (test-e2e tier) (budgets tier)\n' in text
 
 
+@pytest.mark.parametrize(
+    ("edit", "refusal"),
+    [
+        (
+            lambda text: text + "\nbudgets:\n    echo our own budgets\n",
+            "a `budgets` recipe without a `tier` parameter",
+        ),
+        (
+            lambda text: (
+                text.replace(
+                    'check tier="affected": &&', 'check tier="affected": budgets &&'
+                )
+                + '\nbudgets tier="affected":\n    echo {{tier}}\n'
+            ),
+            "`check` depends on `budgets` without passing its tier",
+        ),
+    ],
+    ids=["budgets without a tier", "check's budgets dependency drops the tier"],
+)
+def test_wiring_refuses_a_budgets_recipe_check_cannot_pass_its_tier(
+    tmp_path, edit, refusal
+):
+    # `check all` has to reach every domain's budgets; a recipe or dependency
+    # that drops the tier would quietly keep the affected tier instead.
+    repo = template_repo(tmp_path)
+    justfile = repo / "justfile"
+    justfile.write_text(edit(justfile.read_text(encoding="utf-8")), encoding="utf-8")
+    before = justfile.read_text(encoding="utf-8")
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 2
+    assert refusal in result.stderr
+    assert "fix:" in result.stderr
+    assert justfile.read_text(encoding="utf-8") == before
+    assert not (repo / "package.json").exists()
+
+
 def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):
     missing = tmp_path / "nowhere"
     result = compose_into(tmp_path, "--tool", "onebudgetspec", "--wiring", str(missing))

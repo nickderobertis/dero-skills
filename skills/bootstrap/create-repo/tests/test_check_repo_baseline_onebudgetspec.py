@@ -303,13 +303,18 @@ def test_an_inline_plugins_list_adopts_the_rules(tmp_path):
     assert levels(budget_findings(repo), "ERROR") == []
 
 
-def test_a_uv_lock_without_a_package_list_records_nothing(tmp_path):
+@pytest.mark.parametrize(
+    "lock",
+    ["package = 1\n", '[[package]]\nname = ["onebudgetspec-sdk"]\nversion = "0.1.3"\n'],
+    ids=["package not a list", "entry name not a string"],
+)
+def test_a_uv_lock_it_cannot_read_records_nothing(tmp_path, lock):
     repo = wired_repo(tmp_path)
     (repo / "package.json").write_text('{"private": true}', encoding="utf-8")
     (repo / "pyproject.toml").write_text(
         '[project]\ndependencies = ["onebudgetspec-sdk==0.1.3"]\n', encoding="utf-8"
     )
-    (repo / "uv.lock").write_text("package = 1\n", encoding="utf-8")
+    (repo / "uv.lock").write_text(lock, encoding="utf-8")
     [error] = levels(budget_findings(repo), "ERROR")
     assert "onebudgetspec-sdk==0.1.3 but uv.lock does not record it" in error
 

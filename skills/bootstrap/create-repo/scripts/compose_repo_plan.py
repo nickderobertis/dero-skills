@@ -645,9 +645,26 @@ def plan_justfile(path: Path, recipe: str) -> tuple[str, list[str]]:
             f"      fix: add the `base :=` assignment {template} declares, then "
             "re-run --wiring."
         )
+    own = headers.get(BUDGETS_RECIPE_NAME)
+    if own is not None and "tier" not in parameter_names(own.params):
+        raise WiringError(
+            f"{path} has a `{BUDGETS_RECIPE_NAME}` recipe without a `tier` "
+            "parameter for `check` to pass\n"
+            f'      fix: give it `tier="affected"` (or remove it so the wiring adds '
+            "its own), then re-run --wiring."
+        )
     changes: list[str] = []
     call = f"({BUDGETS_RECIPE_NAME} tier)"
-    if BUDGETS_RECIPE_NAME not in {tok.strip("()") for tok in check.deps.split()}:
+    wired = call in " ".join(check.deps.split())
+    if not wired and BUDGETS_RECIPE_NAME in {
+        tok.strip("()") for tok in check.deps.split()
+    }:
+        raise WiringError(
+            f"{path}: `check` depends on `{BUDGETS_RECIPE_NAME}` without passing "
+            "its tier, so `check all` would still run only the affected budgets\n"
+            f"      fix: make that dependency `{call}`, then re-run --wiring."
+        )
+    if not wired:
         lines = text.splitlines(keepends=True)
         comment = f" #{check.comment.rstrip()}" if check.comment else ""
         lines[check.index] = (

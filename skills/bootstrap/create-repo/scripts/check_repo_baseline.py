@@ -1874,9 +1874,9 @@ def _uv_pin_problem(repo: Path, pins: dict[str, str]) -> str | None:
     if not isinstance(packages, list):
         packages = []
     locked = {
-        entry.get("name"): entry.get("version")
+        entry["name"]: entry.get("version")
         for entry in packages
-        if isinstance(entry, dict)
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str)
     }
     unrecorded = sorted(
         f"{name}=={version}"
@@ -1939,14 +1939,15 @@ def onebudgetspec_check_args(args: str) -> CheckArgs:
     recursive = False
     skip_value = False
     for token in (token.strip("\"'") for token in args.split()):
-        if skip_value:
-            skip_value = False
-        elif token == "--recursive":
-            recursive = True
-        elif token in ONEBUDGETSPEC_VALUE_FLAGS:
-            skip_value = True
-        elif not token.startswith("-"):
-            paths.append(token)
+        match token:
+            case _ if skip_value:
+                skip_value = False
+            case "--recursive":
+                recursive = True
+            case flag if flag in ONEBUDGETSPEC_VALUE_FLAGS:
+                skip_value = True
+            case path if not path.startswith("-"):
+                paths.append(path)
     return CheckArgs(paths, recursive)
 
 
