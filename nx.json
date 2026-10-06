@@ -50,6 +50,10 @@
       "{workspaceRoot}/pyproject.toml",
       "{workspaceRoot}/uv.lock"
     ],
+    "nxRelease": [
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/bun.lock"
+    ],
     "skillEval": [
       "{workspaceRoot}/skills/bootstrap/create-repo/tests/skilltest/**/*"
     ]
@@ -94,6 +98,9 @@
       ]
     },
     "skilltest": {
+      "cache": false
+    },
+    "external": {
       "cache": false
     },
     "lint-llm": {

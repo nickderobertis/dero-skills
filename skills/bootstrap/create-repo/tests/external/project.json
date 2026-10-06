@@ -1,0 +1,21 @@
+{
+  "name": "bootstrap-create-repo-external",
+  "root": "skills/bootstrap/create-repo/tests/external",
+  "projectType": "library",
+  "tags": ["type:external", "lang:python"],
+  "implicitDependencies": ["bootstrap-create-repo"],
+  "targets": {
+    "format": {
+      "command": "uv run ruff format skills/bootstrap/create-repo/tests/external"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check skills/bootstrap/create-repo/tests/external"
+    },
+    "lint": {
+      "command": "uv run ruff check skills/bootstrap/create-repo/tests/external"
+    },
+    "external": {
+      "command": "uv run pytest skills/bootstrap/create-repo/tests/external"
+    }
+  }
+}

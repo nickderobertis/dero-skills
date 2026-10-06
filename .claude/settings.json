@@ -24,6 +24,7 @@
       "Bash(just check-versions)",
       "Bash(just test)",
       "Bash(just skilltest)",
+      "Bash(just external)",
       "Bash(just baseline)",
       "Bash(just check all)",
       "Bash(just lint-llm:*)",

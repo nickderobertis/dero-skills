@@ -1,6 +1,6 @@
 # create-repo tests
 
-Three tiers live here, and each is a project of its own so a change pays only
+Four tiers live here, and each is a project of its own so a change pays only
 for the tiers it can reach:
 
 - **The fast script tests** (`test_*.py` in this directory) — `bootstrap-create-repo`'s
@@ -10,6 +10,16 @@ for the tiers it can reach:
   Both are un-mocked and part of the gate — they run under `just check` (and
   `just test`), embodying the "Tests are context engineering" mandate: real
   subprocesses over real temp files, never a mocked stand-in.
+  Both stay offline. `test_onebudgetspec_release.py` holds what the skill
+  restates of onebudgetspec, Nx and `bun.lock` to the installed releases' own
+  README, schema and lockfile, so that drift gate runs here too.
+- **The external journeys** (`external/`) — the `bootstrap-create-repo-external`
+  project, for journeys that reach an external service.
+  `external/test_onebudgetspec_wiring_e2e.py` installs the pinned onebudgetspec
+  from the npm registry, so it declares an `external` target no gate tier fans out over (`just external`): external
+  contact promotes it out of the affected tier unconditionally
+  (`references/ci.md`). Offline it fails rather than skips, on purpose: a
+  stand-in for the release would prove nothing about the wiring.
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
@@ -19,7 +29,7 @@ for the tiers it can reach:
   onebudgetspec`), for the same reason — it needs a harness credential.
 
 The `conftest.py` here puts this directory on `sys.path` for the whole subtree,
-so all three tiers share the repo-builder fixtures defined once in the fast
+so every tier shares the repo-builder fixtures defined once in the fast
 tier's modules.
 
 ## The skilltest skill eval

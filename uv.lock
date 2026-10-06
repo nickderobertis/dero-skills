@@ -41,7 +41,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "notignored-sdk", specifier = "==0.1.5" },
-    { name = "onebudgetspec-cli", specifier = "==0.1.2" },
+    { name = "onebudgetspec-cli", specifier = "==0.1.3" },
     { name = "oneharness-cli", specifier = ">=0.16,<0.17" },
     { name = "packaging", specifier = ">=24" },
     { name = "pytest", specifier = ">=8.0" },
@@ -84,15 +84,15 @@ wheels = [
 
 [[package]]
 name = "onebudgetspec-cli"
-version = "0.1.2"
+version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/1d/8cc1211b50d18dfdbbf6b0e746ddb8b05c35c3440f98bf0cea37bf90c1cb/onebudgetspec_cli-0.1.2-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:58a685ba343fc492056a708816b71e300754a95f4316f6f51e8577e554495a50", size = 1472917, upload-time = "2026-10-06T10:30:17.58Z" },
-    { url = "https://files.pythonhosted.org/packages/9c/08/2b82e82ce8a5dfd5a3fd25d709004df87d26f5a46a085a1ffe9c824e30f3/onebudgetspec_cli-0.1.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:3c382b95fbdd49a6f5361c25224ba66fe03a4f86eaaad445add8f2053affd151", size = 1392520, upload-time = "2026-10-06T10:30:19.318Z" },
-    { url = "https://files.pythonhosted.org/packages/fc/9b/e4dfd557a538c161df6bccfcf25ed0b199f9b5be6e1dd458af27d2420f03/onebudgetspec_cli-0.1.2-py3-none-manylinux_2_39_aarch64.whl", hash = "sha256:88664ef5ba110fd2b7fead00e048b0fced108a8073970c5dd7ab1cff350f83ee", size = 1452756, upload-time = "2026-10-06T10:30:20.903Z" },
-    { url = "https://files.pythonhosted.org/packages/22/a4/67fe9a0dfc8dff275b90811e99ce3e1424180c201c9ce22a97510a822297/onebudgetspec_cli-0.1.2-py3-none-manylinux_2_39_x86_64.whl", hash = "sha256:5b532d81f788a241b3d90e63529905f6c5c40201446e2b28284ef00ce2799c4f", size = 1558110, upload-time = "2026-10-06T10:30:22.277Z" },
-    { url = "https://files.pythonhosted.org/packages/aa/81/241118b3a3b64e5686052de79b0a072b7eac8073bda375ac1ba24b359b3b/onebudgetspec_cli-0.1.2-py3-none-win_amd64.whl", hash = "sha256:58f020009f6a01854c52b4d1a447f4b5f742f2b9b5fda80e13ca90397286c341", size = 1451434, upload-time = "2026-10-06T10:30:23.708Z" },
-    { url = "https://files.pythonhosted.org/packages/a6/49/3c3d9f144e709d94d8b55d9bd54263fa654a2ff9315d668d95f96952c7a8/onebudgetspec_cli-0.1.2-py3-none-win_arm64.whl", hash = "sha256:d53cd499e3c727a46f5a9fa7641dc4893a5efe3a48bb92ac034336088bffcd23", size = 1353375, upload-time = "2026-10-06T10:30:24.999Z" },
+    { url = "https://files.pythonhosted.org/packages/c3/f0/ed1b6188de1f72e98960302205ff8e4cdbb30bf578c271a5159e98b1095f/onebudgetspec_cli-0.1.3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:9fa8c76b49f8ec3f09c884a528cb3201828d42332e0f4cccba57a9ea554a5548", size = 1476128, upload-time = "2026-10-06T12:29:03.549Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/93/c3bcda1fdbc2172519a29690e8a49fce4d4489e4771f8fb639df65ed39bf/onebudgetspec_cli-0.1.3-py3-none-macosx_11_0_arm64.whl", hash = "sha256:ac1a24bc5630e71ec61034697ca110c3afa0ea01fec14d99f887933340eec6a7", size = 1397348, upload-time = "2026-10-06T12:29:05.315Z" },
+    { url = "https://files.pythonhosted.org/packages/17/0b/47c7f356e50f78c46f9be07dc85c99d918dd9b210d8a7a80bbbc66a1bfd1/onebudgetspec_cli-0.1.3-py3-none-manylinux_2_39_aarch64.whl", hash = "sha256:5a35db3f1fb8ff110bd90c46e4d3701b9391fe47ff32d841219bd04f2d9840e8", size = 1454205, upload-time = "2026-10-06T12:29:06.494Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/56/598481b9c0944ed954750c5f6572057231d18103c8fe61402ec64694a112/onebudgetspec_cli-0.1.3-py3-none-manylinux_2_39_x86_64.whl", hash = "sha256:a891d46679aa2a56289b96696e58bfbcf0e0b83e0f2639a09e755fa837c97389", size = 1560948, upload-time = "2026-10-06T12:29:07.857Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/08/502e2d66a04606522be2272947ec03792dd56ef79ac181816dd0166a9ed1/onebudgetspec_cli-0.1.3-py3-none-win_amd64.whl", hash = "sha256:fbf124f9df53eb593dfe8048f08c216905befe05affdf5ce2c707dc81322e4e0", size = 1455476, upload-time = "2026-10-06T12:29:09.251Z" },
+    { url = "https://files.pythonhosted.org/packages/eb/ca/305fad63a9190f81d6e898899f55c7022efeaa2ef5c5265a69ead4eeb4fc/onebudgetspec_cli-0.1.3-py3-none-win_arm64.whl", hash = "sha256:49a53fb2fbf241112d7e4d7e6364222f0fa6500f07ea32808e76861d13048108", size = 1358256, upload-time = "2026-10-06T12:29:10.396Z" },
 ]
 
 [[package]]

@@ -194,7 +194,7 @@ def test_a_change_to_the_root_command_surface_reruns_the_baseline_audit():
 
 
 def test_the_gate_never_fans_out_over_the_expensive_target_names():
-    """`skilltest` and `lint-llm` are declared on projects, but on no gate tier.
+    """`skilltest`, `lint-llm` and `external` are declared, but on no gate tier.
 
     This is the load-bearing half of "expensive work sits behind an unreachable
     edge": the graph edges below keep an unrelated change from selecting those
@@ -202,7 +202,7 @@ def test_the_gate_never_fans_out_over_the_expensive_target_names():
     tier inside `just check`. `GATE_TARGETS` is read off `just -n check`, so
     this fails the moment somebody adds an expensive name to the real gate.
     """
-    for expensive in ("skilltest", "lint-llm"):
+    for expensive in ("skilltest", "lint-llm", "external"):
         assert expensive not in GATE_TARGETS, GATE_TARGETS
         # The target exists — it is promoted out of the gate, not deleted.
         result = nx("show", "projects", "-t", expensive)
@@ -248,6 +248,29 @@ def test_an_unrelated_change_never_runs_the_harness_driven_eval(unrelated):
     )
 
 
+@pytest.mark.parametrize(
+    "unrelated",
+    [
+        "tools/check_tool_versions.py",
+        "tests/project-graph/test_project_graph.py",
+        "consumer-bootstrap/scripts/install-agent-skills.sh",
+    ],
+)
+def test_an_unrelated_change_never_runs_the_external_journeys(unrelated):
+    assert "bootstrap-create-repo-external" not in affected_projects(
+        ("external",), unrelated
+    )
+
+
+def test_the_external_journeys_never_ride_the_gate():
+    # They install from the npm registry, so even a change to the skill they
+    # drive runs them only under their own target name; the
+    # gate still formats and lints them, which contacts nothing.
+    changed = "skills/bootstrap/create-repo/scripts/compose_repo_plan.py"
+    assert "bootstrap-create-repo-external" not in affected_test_projects(changed)
+    assert "bootstrap-create-repo-external" in affected_projects(("external",), changed)
+
+
 def test_editing_the_eval_rechecks_the_wiring_the_fast_tier_asserts():
     # The fast tier reads the eval's path constants across a project boundary
     # (tests/test_eval_wiring.py), so `nx.json`'s `skillEval` input has to keep
@@ -256,6 +279,14 @@ def test_editing_the_eval_rechecks_the_wiring_the_fast_tier_asserts():
     assert "bootstrap-create-repo" in affected_test_projects(
         "skills/bootstrap/create-repo/tests/skilltest/test_create_repo_skilltest.py"
     )
+
+
+def test_a_change_to_the_node_install_reruns_the_skill_fast_tier():
+    # tests/test_onebudgetspec_release.py reads Nx's schema, `semver` and the
+    # bun-written lock from what `bun install` put in node_modules; nx.json's
+    # `nxRelease` input keeps the manifests that decide it in that project's graph.
+    for manifest in ("package.json", "bun.lock"):
+        assert "bootstrap-create-repo" in affected_test_projects(manifest), manifest
 
 
 def test_a_change_to_the_onebudgetspec_pin_reruns_the_skill_fast_tier():

@@ -90,6 +90,14 @@ Checks:
     Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
     `--buildout` flag additionally composes and runs the one-time buildout tier —
     non-deterministic, so opt-in and never part of `audit()`; see run_buildout.)
+  * onebudgetspec, for a repo that declares it (its AGENTS.md "References
+    composed" line names `tools/onebudgetspec.md`, as `compose_repo_plan.py --tool
+    onebudgetspec` records it): onebudgetspec is pinned to one exact version and
+    recorded in the lockfile; every `budgets.yaml` is reached by a target `check`
+    runs — a project's file through a target of its owning `project.json` that
+    `check` fans out over, the root file by an `onebudgetspec check` in a recipe
+    `check` runs; and the composed `llmlint.yml` adopts the `@1` budget rules.
+    Silent for a repo that does not declare it.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -116,6 +124,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1401,30 +1410,59 @@ def oneharness_fallback_harnesses(text: str) -> list[str] | None:
     return ids or None
 
 
-def llmlint_config_has_plugins(text: str) -> bool:
-    """True when an llmlint config declares at least one plugin.
+def _yaml_scalar(text: str) -> str:
+    """A flow scalar's value: a quoted string's contents, else up to a comment.
+
+    A quote left open, or followed by anything but a comment, is malformed YAML
+    and so no value.
+    """
+    text = text.strip()
+    if text[:1] in ("'", '"'):
+        end = text.find(text[0], 1)
+        trailing = text[end + 1 :].strip() if end > 0 else "#"
+        return text[1:end] if end > 0 and trailing[:1] in ("", "#") else ""
+    return text.split(" #", 1)[0].strip()
+
+
+def llmlint_plugins(text: str) -> list[str]:
+    """The entries of an llmlint config's top-level ``plugins`` list.
 
     Handles the block form (``plugins:`` then indented ``- ...`` entries) and the
-    inline form (``plugins: ["..."]``). A light scan, not a YAML parse — enough to
-    tell a composed config from an empty ``plugins: []`` or a missing key.
+    inline form (``plugins: ["...", "..."]``); comments are not entries. A light
+    scan, not a YAML parse.
     """
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped.startswith("plugins:"):
+        if not line.startswith("plugins:"):
             continue
-        rest = stripped[len("plugins:") :].strip()
+        rest = line[len("plugins:") :].split(" #", 1)[0].strip()
         if rest.startswith("["):
-            return rest not in ("[]", "[ ]")
-        # Block form: an indented list entry before the next top-level key.
+            if not rest.endswith("]"):
+                return []  # an unclosed flow list is malformed, so lists nothing
+            inner = rest[1:-1]
+            return [v for v in (_yaml_scalar(part) for part in inner.split(",")) if v]
+        if rest:
+            return []  # a scalar is no list, whatever is indented below it
+        entries: list[str] = []
         for nxt in lines[i + 1 :]:
-            if not nxt.strip():
+            if not nxt.strip() or nxt.lstrip().startswith("#"):
                 continue
-            if re.match(r"^\s+-\s+\S", nxt):
-                return True
             if not nxt.startswith((" ", "\t")):
                 break
-    return False
+            entry = re.match(r"^\s+-\s+(\S.*)$", nxt)
+            if entry and (value := _yaml_scalar(entry.group(1))):
+                entries.append(value)
+        return entries
+    return []
+
+
+def llmlint_config_has_plugins(text: str) -> bool:
+    """True when an llmlint config declares at least one plugin.
+
+    Enough to tell a composed config from an empty ``plugins: []`` or a missing
+    key.
+    """
+    return bool(llmlint_plugins(text))
 
 
 def ci_references_llmlint(repo: Path) -> bool:
@@ -1754,6 +1792,409 @@ def check_llmlint(repo: Path) -> list[Finding]:
     ]
 
 
+# onebudgetspec, a declared tool: the setup step `compose_repo_plan.py --tool
+# onebudgetspec --wiring` performs, verified for a repo whose recorded composition
+# names references/tools/onebudgetspec.md. Deterministic: nothing here runs a budget.
+
+ONEBUDGETSPEC_REFERENCE = "tools/onebudgetspec.md"
+BUDGETS_FILE = "budgets.yaml"
+# The release's npm packages (the SDK installs the CLI at its own version) and
+# their PyPI counterparts. A pin is exact when the manifest's spec is the version
+# the lockfile resolves, so no npm range or PEP 508 specifier grammar is restated
+# here; what a lockfile resolves is read only if it has the shape of one release
+# version — SemVer 2.0 for bun.lock (semver.org's own pattern), PEP 440's
+# normalized form, which uv writes, for uv.lock — so an empty or garbled entry
+# resolves nothing. tests/test_onebudgetspec_release.py holds the two patterns to
+# node's `semver.valid` and `packaging`'s `Version`.
+ONEBUDGETSPEC_NPM_PACKAGES = ("@onebudgetspec/cli", "@onebudgetspec/sdk")
+ONEBUDGETSPEC_PYPI_PACKAGES = ("onebudgetspec-cli", "onebudgetspec-sdk")
+# The lockfile of the bun workspace the skill's justfile drives Nx through: JSON
+# that allows trailing commas, which are dropped before parsing.
+BUN_LOCKFILE = "bun.lock"
+JSON_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+_SEMVER_PRERELEASE_ID = r"(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)"
+NPM_VERSION_RE = re.compile(
+    r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
+    rf"(?:-{_SEMVER_PRERELEASE_ID}(?:\.{_SEMVER_PRERELEASE_ID})*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
+_PEP440_NUMBER = r"(?:0|[1-9]\d*)"
+PEP440_NORMALIZED_RE = re.compile(
+    rf"(?:{_PEP440_NUMBER}!)?{_PEP440_NUMBER}(?:\.{_PEP440_NUMBER})*"
+    rf"(?:(?:a|b|rc){_PEP440_NUMBER})?(?:\.post{_PEP440_NUMBER})?"
+    rf"(?:\.dev{_PEP440_NUMBER})?(?:\+[a-z0-9]+(?:\.[a-z0-9]+)*)?"
+)
+ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
+ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
+# The `check` options that take a value, so that value is not read as a PATH —
+# `onebudgetspec check --help` is their source, which the test suite reconciles.
+ONEBUDGETSPEC_VALUE_FLAGS = frozenset(
+    {"--id", "--label", "--exclude-label", "--output"}
+)
+# The `check` options that take none, from the same source.
+ONEBUDGETSPEC_SWITCHES = frozenset({"--recursive", "--json"})
+
+
+class CheckArgs(NamedTuple):
+    """The PATH arguments of one ``onebudgetspec check``, and whether it recurses."""
+
+    paths: list[str]
+    recursive: bool
+
+
+class TargetCommand(NamedTuple):
+    """A command an Nx target runs, and the repo-relative directory it runs in."""
+
+    command: str
+    cwd: str
+
+
+def declares_onebudgetspec(repo: Path) -> bool:
+    agents = repo / "AGENTS.md"
+    if not agents.is_file():
+        return False
+    refs = parse_composed_references(agents.read_text(encoding="utf-8"))
+    return ONEBUDGETSPEC_REFERENCE in refs
+
+
+def bun_lock_resolution(lock: Path, name: str) -> str | None:
+    """The version ``bun.lock`` resolves package ``name`` to, or None.
+
+    Its ``packages`` table keys each package by name to an array that opens with
+    the package's resolution, ``"name@version"``.
+    """
+    if not lock.is_file():
+        return None
+    text = JSON_TRAILING_COMMA_RE.sub(r"\1", lock.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    packages = data.get("packages") if isinstance(data, dict) else None
+    entry = packages.get(name) if isinstance(packages, dict) else None
+    match entry:
+        case [str(resolution), *_] if resolution.startswith(f"{name}@"):
+            version = resolution.removeprefix(f"{name}@")
+            return version if NPM_VERSION_RE.fullmatch(version) else None
+    return None
+
+
+def _npm_pin_problem(repo: Path, declared: dict[str, object]) -> str | None:
+    problems = []
+    for name, spec in sorted(declared.items()):
+        resolved = bun_lock_resolution(repo / BUN_LOCKFILE, name)
+        if resolved is None:
+            problems.append(
+                f"package.json pins {name} {spec} but bun.lock does not record it"
+            )
+        elif spec != resolved:
+            problems.append(
+                f"package.json declares {name} {spec!r}, which is not the exact "
+                f"version bun.lock resolves ({resolved})"
+            )
+    return "; ".join(problems) or None
+
+
+def _uv_lock_packages(repo: Path) -> list[dict[str, object]]:
+    lock = repo / "uv.lock"
+    try:
+        data = tomllib.loads(lock.read_text(encoding="utf-8")) if lock.is_file() else {}
+    except tomllib.TOMLDecodeError:
+        data = {}
+    packages = data.get("package", [])
+    return (
+        [p for p in packages if isinstance(p, dict)]
+        if isinstance(packages, list)
+        else []
+    )
+
+
+class Requirement(NamedTuple):
+    """One requirement a uv.lock workspace member records, as uv wrote it."""
+
+    name: str
+    specifier: object
+
+
+def uv_lock_requirements(packages: list[dict[str, object]]) -> list[Requirement]:
+    """Each requirement a workspace member records on a onebudgetspec package.
+
+    uv.lock records a member's dependencies and dependency groups under its
+    ``metadata``, names normalized, so pyproject.toml's PEP 508 strings are not
+    parsed here.
+    """
+    requirements: list[Requirement] = []
+    for entry in packages:
+        source, metadata = entry.get("source"), entry.get("metadata")
+        if not (isinstance(source, dict) and {"virtual", "editable"} & source.keys()):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        dev = metadata.get("requires-dev")
+        groups = [
+            metadata.get("requires-dist"),
+            *(dev.values() if isinstance(dev, dict) else []),
+        ]
+        requirements += [
+            Requirement(req["name"], req.get("specifier"))
+            for group in groups
+            if isinstance(group, list)
+            for req in group
+            if isinstance(req, dict) and req.get("name") in ONEBUDGETSPEC_PYPI_PACKAGES
+        ]
+    return requirements
+
+
+def _uv_pin_problem(
+    packages: list[dict[str, object]], requirements: list[Requirement]
+) -> str | None:
+    resolved = {
+        entry["name"]: entry["version"]
+        for entry in packages
+        if isinstance(entry.get("name"), str)
+        and isinstance(entry.get("version"), str)
+        and PEP440_NORMALIZED_RE.fullmatch(entry["version"])
+    }
+    problems = []
+    for name, specifier in sorted(requirements, key=str):
+        version = resolved.get(name)
+        if version is None:
+            problems.append(f"uv.lock requires {name} but does not resolve it")
+        elif specifier != f"=={version}":
+            problems.append(
+                f"uv.lock records {name} {specifier or 'unbounded'}, not `==` the "
+                f"version it resolves ({version})"
+            )
+    return "; ".join(dict.fromkeys(problems)) or None
+
+
+def onebudgetspec_pin_problem(repo: Path) -> str | None:
+    """Why onebudgetspec is not pinned in a lockfile, or None when it is."""
+    package_json = repo / "package.json"
+    try:
+        package = (
+            json.loads(package_json.read_text(encoding="utf-8"))
+            if package_json.is_file()
+            else {}
+        )
+    except json.JSONDecodeError:
+        package = {}
+    declared = {
+        name: spec
+        for table in ("dependencies", "devDependencies")
+        if isinstance(package, dict) and isinstance(package.get(table), dict)
+        for name, spec in package[table].items()
+        if name in ONEBUDGETSPEC_NPM_PACKAGES
+    }
+    if declared:
+        return _npm_pin_problem(repo, declared)
+    packages = _uv_lock_packages(repo)
+    requirements = uv_lock_requirements(packages)
+    if requirements:
+        return _uv_pin_problem(packages, requirements)
+    return "neither package.json nor uv.lock pins onebudgetspec"
+
+
+def onebudgetspec_check_args(args: str) -> CheckArgs | None:
+    """Read the PATH arguments and ``--recursive`` out of a ``check``'s arguments.
+
+    None when the CLI would refuse them — an option it does not take, or one
+    missing its value — or the shell could not split them, so that command
+    checks no file.
+    """
+    try:
+        tokens = shlex.split(args)
+    except ValueError:
+        return None
+    paths: list[str] = []
+    recursive = False
+    skip_value = False
+    for token in tokens:
+        match token.partition("="):
+            case _ if skip_value and token.startswith("-"):
+                return None
+            case _ if skip_value:
+                skip_value = False
+            case ("--recursive", "", ""):
+                recursive = True
+            case (switch, "", "") if switch in ONEBUDGETSPEC_SWITCHES:
+                pass
+            case (flag, "", "") if flag in ONEBUDGETSPEC_VALUE_FLAGS:
+                skip_value = True
+            case (flag, "=", _) if flag in ONEBUDGETSPEC_VALUE_FLAGS:
+                pass
+            case _ if token.startswith("-"):
+                return None
+            case _:
+                paths.append(token)
+    return None if skip_value else CheckArgs(paths, recursive)
+
+
+def onebudgetspec_reaches(command: str, cwd: str, target: str) -> bool:
+    """Whether ``command``, run from repo-relative ``cwd``, checks ``target``.
+
+    ``target`` is a repo-relative ``budgets.yaml``. No PATH reads the working
+    directory's file; ``--recursive`` reads every file under a PATH directory.
+    """
+    for match in ONEBUDGETSPEC_CHECK_RE.finditer(command):
+        args = onebudgetspec_check_args(match.group(1))
+        if args is None:
+            continue
+        for path in args.paths or [BUDGETS_FILE]:
+            resolved = os.path.normpath(os.path.join(cwd, path))
+            if resolved == target:
+                return True
+            if args.recursive and (
+                resolved == "." or target.startswith(resolved.rstrip("/") + "/")
+            ):
+                return True
+    return False
+
+
+def target_commands(target: object) -> list[TargetCommand]:
+    """The commands an Nx target in project.json runs: its ``command``, or its
+    ``options.command``/``options.commands`` from ``options.cwd``."""
+    if not isinstance(target, dict):
+        return []
+    options = target.get("options")
+    options = options if isinstance(options, dict) else {}
+    cwd = options.get("cwd") if isinstance(options.get("cwd"), str) else "."
+    commands: list[object] = [target.get("command"), options.get("command")]
+    listed = options.get("commands")
+    if isinstance(listed, list):
+        commands += [
+            item.get("command") if isinstance(item, dict) else item for item in listed
+        ]
+    return [
+        TargetCommand(command, cwd) for command in commands if isinstance(command, str)
+    ]
+
+
+def owning_project(repo: Path, directory: Path) -> Path | None:
+    """The nearest ``project.json`` at or above ``directory``, inside ``repo``."""
+    current = directory
+    while True:
+        candidate = current / "project.json"
+        if candidate.is_file():
+            return candidate
+        if current == repo:
+            return None
+        current = current.parent
+
+
+def budgets_file_reach_problem(
+    repo: Path, budgets: Path, check_lines: list[str], fanout: set[str]
+) -> str | None:
+    """Why ``check`` does not reach ``budgets``, or None when it does."""
+    rel = budgets.relative_to(repo).as_posix()
+    if budgets.parent == repo:
+        if any(onebudgetspec_reaches(line, ".", rel) for line in check_lines):
+            return None
+        return f"{rel} is checked by no `onebudgetspec check` in a recipe `check` runs"
+    project_json = owning_project(repo, budgets.parent)
+    if project_json is None:
+        return f"{rel} sits in no Nx project (no project.json at or above it)"
+    project_rel = project_json.parent.relative_to(repo).as_posix()
+    try:
+        project = json.loads(project_json.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        project = {}
+    targets = project.get("targets") if isinstance(project, dict) else None
+    targets = targets if isinstance(targets, dict) else {}
+    checking = sorted(
+        name
+        for name, target in targets.items()
+        if any(
+            onebudgetspec_reaches(
+                command.replace("{projectRoot}", project_rel), cwd, rel
+            )
+            for command, cwd in target_commands(target)
+        )
+    )
+    if not checking:
+        return f"no target in {project_rel}/project.json runs `onebudgetspec check` on {rel}"
+    if not fanout.intersection(checking):
+        return (
+            f"{rel} is checked by {project_rel}'s {', '.join(checking)} target(s), "
+            "which `check` does not run"
+        )
+    return None
+
+
+def check_onebudgetspec(repo: Path) -> list[Finding]:
+    """For a repo declaring onebudgetspec: pinned, every file reached, rules adopted.
+
+    The setup step of references/tools/onebudgetspec.md, verified deterministically
+    — never by running a budget. Silent for a repo that does not declare the tool.
+    """
+    if not declares_onebudgetspec(repo):
+        return []
+    problems: list[Finding] = []
+    wiring = (
+        "compose_repo_plan.py --tool onebudgetspec --wiring <repo> performs the "
+        "setup step (references/tools/onebudgetspec.md)"
+    )
+
+    pin = onebudgetspec_pin_problem(repo)
+    if pin is not None:
+        problems.append(
+            Finding(
+                "ERROR",
+                f"onebudgetspec is not pinned: {pin}",
+                "pin @onebudgetspec/cli to one exact version in package.json and "
+                f"`just bootstrap` so bun.lock records it; {wiring}",
+            )
+        )
+
+    justfile = find_justfile(repo)
+    details = (
+        parse_just_recipe_details(justfile.read_text(encoding="utf-8"))
+        if justfile is not None
+        else {}
+    )
+    check_lines = recipe_lines(details, "check")
+    fanout = {target for line in check_lines for target in orchestrator_targets(line)}
+    budgets_files = sorted(
+        directory / BUDGETS_FILE
+        for directory, _dirnames, filenames in _walk_tree(repo)
+        if BUDGETS_FILE in filenames
+    )
+    for budgets in budgets_files:
+        reach = budgets_file_reach_problem(repo, budgets, check_lines, fanout)
+        if reach is not None:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"a budgets file is not in the gate: {reach}",
+                    "give each domain's project `budgets`/`budgets-host` targets "
+                    "running `onebudgetspec check <project>/budgets.yaml`, which "
+                    "`check` fans out over, and check the root budgets.yaml in a "
+                    f"recipe `check` runs; {wiring}",
+                )
+            )
+
+    cfg = find_llmlint_config(repo)
+    plugins = llmlint_plugins(cfg.read_text(encoding="utf-8")) if cfg else []
+    if not any(plugin.endswith(ONEBUDGETSPEC_PLUGIN_SUFFIX) for plugin in plugins):
+        problems.append(
+            Finding(
+                "ERROR",
+                "the onebudgetspec lint rules are not adopted (llmlint.yml lists no "
+                "`tools/onebudgetspec.llmlint.yml@1` plugin)",
+                "re-compose llmlint.yml with `compose_repo_plan.py --tool "
+                "onebudgetspec --llmlint-config llmlint.yml`, or add the plugin URL",
+            )
+        )
+
+    return problems or [
+        Finding(
+            "OK",
+            f"onebudgetspec pinned, {len(budgets_files)} budgets file(s) reached by "
+            "check, lint rules adopted",
+        )
+    ]
+
+
 # --- buildout llmlint tier (opt-in, non-deterministic) ---------------------
 # The `--buildout` mode composes the one-time llmlint *buildout* config for this
 # repo's stack and RUNS it. Unlike everything in audit(), this is non-deterministic
@@ -2041,6 +2482,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_notignored(repo)
     findings += check_session_setup(repo)
     findings += check_llmlint(repo)
+    findings += check_onebudgetspec(repo)
     return findings
 
 

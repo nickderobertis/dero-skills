@@ -8,13 +8,13 @@
   ],
   "targets": {
     "format": {
-      "command": "uv run ruff format skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest"
+      "command": "uv run ruff format skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest --exclude skills/bootstrap/create-repo/tests/external"
     },
     "format-check": {
-      "command": "uv run ruff format --check skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest"
+      "command": "uv run ruff format --check skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest --exclude skills/bootstrap/create-repo/tests/external"
     },
     "lint": {
-      "command": "uv run ruff check skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest"
+      "command": "uv run ruff check skills/bootstrap/create-repo --exclude skills/bootstrap/create-repo/tests/e2e --exclude skills/bootstrap/create-repo/tests/skilltest --exclude skills/bootstrap/create-repo/tests/external"
     },
     "validate": {
       "command": "uv run python tools/validate_skill.py skills/bootstrap/create-repo"
@@ -23,11 +23,12 @@
       "command": "uv run python tools/smoke_skill_scripts.py skills/bootstrap/create-repo"
     },
     "test": {
-      "command": "uv run pytest skills/bootstrap/create-repo/tests --ignore skills/bootstrap/create-repo/tests/e2e --ignore skills/bootstrap/create-repo/tests/skilltest",
+      "command": "uv run pytest skills/bootstrap/create-repo/tests --ignore skills/bootstrap/create-repo/tests/e2e --ignore skills/bootstrap/create-repo/tests/skilltest --ignore skills/bootstrap/create-repo/tests/external",
       "inputs": [
         "default",
         "skillEval",
-        "onebudgetspecRelease"
+        "onebudgetspecRelease",
+        "nxRelease"
       ]
     }
   }

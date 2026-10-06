@@ -13,11 +13,13 @@ defined in exactly one place.
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import subprocess
 from pathlib import Path
 
+import pytest
 from test_check_repo_baseline import (
     CONFORMANT_CARGO_CONFIG,
     FULL_JUSTFILE,
@@ -28,6 +30,8 @@ from test_check_repo_baseline import (
     write_cargo_repo,
     write_package,
 )
+from test_check_repo_baseline_onebudgetspec import API_BUDGETS, wired_repo
+from test_ci_llmlint_selection_e2e import llmlint_bin
 
 # The gate delegating with Nx's comma-separated target list (`--targets=a,b`)
 # rather than the spaced `-t a b` of FULL_JUSTFILE. Both spellings reach the
@@ -267,3 +271,127 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     assert [line for line in result.stdout.splitlines() if line.strip()] == [
         f"OK    baseline invariants satisfied: {repo.resolve()}"
     ]
+
+
+# The `plugins` spellings an llmlint.yml can carry, malformed ones near them, and
+# whether real llmlint — the parser the checker's light scan must agree with —
+# loads the plugin each one names.
+PLUGINS_CORPUS = {
+    "block, quoted, commented": (
+        'plugins:\n  - "{plugin}"  # a\n  - ./b.llmlint.yml\n',
+        True,
+    ),
+    "block, single-quoted": ("plugins:\n  - '{plugin}'\n", True),
+    "block, plain": ("plugins:\n  - {plugin}\n", True),
+    "inline": ('plugins: ["./b.llmlint.yml", "{plugin}"]\n', True),
+    "inline, commented": ("plugins: ['{plugin}']  # composed\n", True),
+    "content after a quote": ('plugins:\n  - "{plugin}" trailing\n', False),
+    "an unclosed inline list": ('plugins: ["{plugin}"\n', False),
+    "an unterminated quote": ('plugins:\n  - "{plugin}\n', False),
+    "a scalar before the entries": ('plugins: invalid\n  - "{plugin}"\n', False),
+}
+PLUGIN_FRAGMENT = """\
+version: 1.0.0
+rules:
+  - name: {name}
+    description: true when the file says yes. false when it says no.
+    files:
+      include: ["**/*.md"]
+"""
+ONEBUDGETSPEC_PLUGIN = (
+    "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
+    "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
+)
+
+
+def llmlint_loads(tree: Path, config: str) -> bool:
+    """Whether real llmlint, reading ``config`` in ``tree``, loads ./a.llmlint.yml."""
+    for name in ("a", "b"):
+        (tree / f"{name}.llmlint.yml").write_text(
+            PLUGIN_FRAGMENT.format(name=f"rule_{name}"), encoding="utf-8"
+        )
+    (tree / "llmlint.yml").write_text(
+        config.format(plugin="./a.llmlint.yml"), encoding="utf-8"
+    )
+    real = subprocess.run(
+        [llmlint_bin(), "config", "--sources"],
+        cwd=tree,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if real.returncode != 0:
+        assert "llmlint.yml" in real.stderr, real.stderr
+        return False
+    loaded = json.loads(real.stdout)["config_files"]
+    return str((tree / "a.llmlint.yml").resolve()) in loaded
+
+
+@pytest.mark.parametrize(
+    ("config", "listed"), PLUGINS_CORPUS.values(), ids=PLUGINS_CORPUS
+)
+def test_the_checker_reads_plugins_as_llmlint_does(tmp_path, config, listed):
+    oracle = tmp_path / "oracle"
+    oracle.mkdir()
+    assert llmlint_loads(oracle, config) is listed
+
+    # The same spelling naming the onebudgetspec rules, in a wired repo, through
+    # the checker's own command line.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    repo = wired_repo(repo)
+    (repo / "llmlint.yml").write_text(
+        config.format(plugin=ONEBUDGETSPEC_PLUGIN), encoding="utf-8"
+    )
+    done = subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), str(repo)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    output = done.stdout + done.stderr
+    assert done.returncode in (0, 1), output
+    adopted = "the onebudgetspec lint rules are not adopted" not in output
+    assert adopted is listed, output
+
+
+def test_a_recursive_check_reaches_the_files_under_its_directory_only(tmp_path):
+    # A domain whose targets check a directory with `--recursive`, audited
+    # through the checker's command line: every budgets file under that
+    # directory is in the gate, and one outside it is reported.
+    repo = wired_repo(tmp_path)
+    api = repo / "services" / "api"
+    nested = api / "budgets" / "pages" / "budgets.yaml"
+    nested.parent.mkdir(parents=True)
+    nested.write_text(API_BUDGETS.replace("api-requests", "api-pages"), "utf-8")
+
+    def audit(directory: str) -> str:
+        project = {
+            "name": "api",
+            "targets": {
+                "budgets": {
+                    "command": f"onebudgetspec check --recursive {directory} "
+                    "--exclude-label host"
+                },
+                "budgets-host": {
+                    "command": f"onebudgetspec check --recursive {directory} "
+                    "--label host"
+                },
+            },
+        }
+        (api / "project.json").write_text(json.dumps(project), encoding="utf-8")
+        done = subprocess.run(
+            ["uv", "run", "--script", str(SCRIPT), str(repo)],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert done.returncode in (0, 1), done.stdout + done.stderr
+        return done.stdout + done.stderr
+
+    whole = audit("{projectRoot}")
+    assert "budgets file is not in the gate" not in whole, whole
+
+    narrowed = audit("{projectRoot}/budgets")
+    [unreached] = [line for line in narrowed.splitlines() if "not in the gate" in line]
+    assert "on services/api/budgets.yaml" in unreached, narrowed

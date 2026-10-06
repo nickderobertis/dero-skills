@@ -45,6 +45,9 @@ def test_list_prints_catalog():
     assert "cli" in result.stdout
     assert "python" in result.stdout
     assert "python-cli" in result.stdout
+    # references/tools/ is discovered the same way, and is what --tool takes.
+    [tools] = [line for line in result.stdout.splitlines() if "--tool" in line]
+    assert tools.split() == ["--tool", "onebudgetspec"]
 
 
 def test_cli_python_composes_guidance_and_checklist():

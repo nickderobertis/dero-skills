@@ -46,7 +46,7 @@ clone, run one command, and trust.
 
    ```bash
    uv run --script scripts/compose_repo_plan.py --shape cli --language python \
-     [--releasing] [--intersection <name>] -o REPO_PLAN.md
+     [--releasing] [--intersection <name>] [--tool onebudgetspec] -o REPO_PLAN.md
    ```
 
    It always pulls in `base.md` (the always-applied invariants),
@@ -403,6 +403,10 @@ composer's `--intersection` choices automatically.
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
 - **Cross-cutting (flagged)** — `releasing` (Conventional Commits → automated
   release), via `--releasing` when the repo ships a versioned artifact.
+- **Tools (opt-in)** — `onebudgetspec` (measured budgets), via `--tool
+  onebudgetspec`: composes `references/tools/onebudgetspec.md`, adopts its `@1`
+  lint rules, and `--wiring <repo>` applies its setup step (pinned, and every
+  `budgets.yaml` in `check`), which the baseline checker verifies.
 - **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
   needed where a shape and a language meet.
 
@@ -410,7 +414,8 @@ composer's `--intersection` choices automatically.
 
 - [`scripts/compose_repo_plan.py`](./scripts/compose_repo_plan.py) — the
   composer (step 2). Takes `--shape`, `--language` (repeatable), `--releasing`,
-  and `--intersection`, and emits one document for that stack: the
+  `--intersection` and `--tool` (an opt-in tool, plus `--wiring <repo>` for its
+  setup step), and emits one document for that stack: the
   composed guidance plus a single verification checklist assembled from each
   reference's `## Verification` items. Discovers the available flags by scanning
   `references/`, auto-derives intersections (`cli` + `python` → `python-cli`) and

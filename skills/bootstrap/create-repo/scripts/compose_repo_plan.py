@@ -7,9 +7,9 @@
 Usage:
     uv run --script scripts/compose_repo_plan.py --shape SHAPE --language LANG \
         [--language LANG ...] [--releasing] \
-        [--intersection NAME ...] [-o OUT.md] \
+        [--intersection NAME ...] [--tool NAME ...] [-o OUT.md] \
         [--llmlint-config FILE] [--llmlint-buildout-config FILE] \
-        [--oneharness-config FILE]
+        [--oneharness-config FILE] [--wiring REPO_DIR]
     uv run --script scripts/compose_repo_plan.py --list
 
 You describe the repo with flags — its product shape, the language(s) it is
@@ -24,7 +24,10 @@ adding a reference file automatically extends the flags. ``base.md`` is always
 included first (the shape/language-agnostic invariants), immediately followed by
 ``project-graph.md`` (the project graph is mandatory in every repo, so there is
 no flag for it); ``ci.md`` is always included too (it applies on top of every
-shape); ``releasing.md`` is pulled in by ``--releasing``.
+shape); ``releasing.md`` is pulled in by ``--releasing``. ``--tool NAME`` opts
+the repo into a tool the baseline does not assume — ``references/tools/NAME.md``
+joins the plan and its ``tools/NAME.llmlint.yml`` fragment joins the ongoing
+``llmlint.yml`` — and nothing about a tool is emitted without it.
 
 Convenience derivations, each announced on stderr so the composition stays
 auditable:
@@ -47,6 +50,14 @@ no harness, so ``--llmlint-config`` also writes an ``oneharness.toml`` beside it
 selection (codex + gpt-5.5 primary, claude-code + opus-4.8 secondary) llmlint
 reads to pick a harness.
 
+``--wiring REPO_DIR`` applies the opted-in tools' setup step to the repository
+at REPO_DIR, idempotently. For ``onebudgetspec`` that is: pin
+``@onebudgetspec/cli`` exactly in ``package.json`` (the lockfile follows on the
+next install), add the ``budgets``/``budgets-host`` target defaults to
+``nx.json``, and add a ``budgets`` recipe to the justfile that ``check`` depends
+on — every project's budgets at the gate's tier, the root ``budgets.yaml`` on
+every run. The justfile must already exist (from ``assets/justfile.template``).
+
 The document goes to stdout (or ``-o FILE``); notes and errors go to stderr, so
 the two never mix. Self-contained via PEP 723 so it runs in any consuming repo
 with ``uv run --script`` — no dependency on this repo's authoring toolchain.
@@ -55,10 +66,12 @@ with ``uv run --script`` — no dependency on this repo's authoring toolchain.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple, Protocol
 
 # The Verification section heading every composable reference carries. Its body
 # (the ``- [ ]`` checklist items) is lifted out of the guidance and assembled
@@ -102,6 +115,63 @@ LLMLINT_VERSION_RE = re.compile(r"^version:\s*(\S+)", re.MULTILINE)
 # pin is built from. Validated at the read boundary so a malformed value fails
 # loudly instead of emitting a broken pin.
 FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
+
+# The onebudgetspec release a consumer is pinned to: the npm package its `budgets`
+# targets run, at the version references/tools/onebudgetspec.md documents (its
+# README link names the same tag; tests hold the two, and this repo's own
+# `onebudgetspec-cli` dev pin, in lockstep).
+ONEBUDGETSPEC_VERSION = "0.1.3"
+ONEBUDGETSPEC_NPM_PACKAGE = "@onebudgetspec/cli"
+# The Nx target defaults of the two budget targets, copied from the release
+# README's Nx example (tests/test_onebudgetspec_release.py holds it to the README
+# the pinned release ships).
+ONEBUDGETSPEC_TARGET_DEFAULTS: dict[str, dict[str, object]] = {
+    "budgets": {
+        "cache": True,
+        "inputs": [
+            "{projectRoot}/**/*",
+            "^production",
+            {"dependentTasksOutputFiles": "**/telemetry/*.json"},
+            {"externalDependencies": [ONEBUDGETSPEC_NPM_PACKAGE]},
+        ],
+    },
+    "budgets-host": {"cache": False},
+}
+# `^production` names an input that must exist; these are Nx's own conventional
+# definitions, added only where the workspace defines none of its own.
+NX_DEFAULT_NAMED_INPUTS: dict[str, list[str]] = {
+    "default": ["{projectRoot}/**/*"],
+    "production": ["default"],
+}
+# The input objects Nx accepts, each keyed by the one property that names its
+# kind, to every property it may carry and the JSON types that property takes
+# (an array is always of strings). An `input` object names `projects` or
+# `dependencies`, never both. Nx's own `nx-schema.json` is the source, which
+# tests/test_onebudgetspec_release.py reconciles this with.
+NX_INPUT_OBJECTS: dict[str, dict[str, frozenset[str]]] = {
+    "fileset": {"fileset": frozenset({"string"})},
+    "input": {
+        "input": frozenset({"string"}),
+        "projects": frozenset({"string", "array"}),
+        "dependencies": frozenset({"boolean"}),
+    },
+    "runtime": {"runtime": frozenset({"string"})},
+    "env": {"env": frozenset({"string"})},
+    "externalDependencies": {"externalDependencies": frozenset({"array"})},
+    "dependentTasksOutputFiles": {
+        "dependentTasksOutputFiles": frozenset({"string"}),
+        "transitive": frozenset({"boolean"}),
+    },
+}
+NX_INPUT_EXCLUSIVE = frozenset({"projects", "dependencies"})
+BUDGETS_RECIPE_NAME = "budgets"
+# The recipe itself, an asset so this script carries no orchestrator command.
+ONEBUDGETSPEC_RECIPE = "assets/tools/onebudgetspec.justfile"
+# A justfile recipe header: its name, then its parameters up to the single
+# terminating colon, dependencies after it. The baseline checker reads recipes
+# with the same pattern (its RECIPE_RE); the test suite holds the two equal.
+JUST_RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
+JUST_BASE_ASSIGNMENT_RE = re.compile(r"^base\s*:=", re.MULTILINE)
 
 
 # A shape can build on other shapes, composing their guidance first (base-most
@@ -207,13 +277,14 @@ def select_relpaths(
     intersections: list[str],
     releasing: bool,
     notes: list[str],
+    tools: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Resolve the flags into an ordered, de-duplicated list of reference relpaths.
 
     Returns the relpaths plus the resolved language list (which may have grown,
     e.g. TypeScript auto-added for a Next.js shape). Order mirrors how the skill
     says to compose: base, the mandatory project graph, shape(s), language(s),
-    intersection(s), then ci and the cross-cutting references.
+    intersection(s), then ci, the cross-cutting references, and the opted-in tools.
     """
     ordered: list[str] = ["base.md", "project-graph.md"]
 
@@ -251,6 +322,9 @@ def select_relpaths(
     ordered.append("llmlint.md")
     if releasing:
         ordered.append("releasing.md")
+    # A tool is opt-in: only the ones named by `--tool` join the plan, so their
+    # fragments reach the ongoing llmlint.yml through the same mapping as the rest.
+    ordered.extend(f"tools/{tool}.md" for tool in tools or [])
 
     seen: set[str] = set()
     deduped = [r for r in ordered if not (r in seen or seen.add(r))]
@@ -497,8 +571,279 @@ def render_oneharness_config(skill_dir: Path) -> str:
     return template.read_text(encoding="utf-8")
 
 
+class WiringError(Exception):
+    """The repository cannot take a tool's wiring as it stands.
+
+    The message names the problem and, on its own line, the concrete fix.
+    """
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    """Read ``path`` as a JSON object, or an empty one when it does not exist."""
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise WiringError(
+            f"{path} is not valid JSON ({exc.msg} at line {exc.lineno})\n"
+            "      fix: repair it, then re-run --wiring."
+        ) from exc
+    if not isinstance(data, dict):
+        raise WiringError(
+            f"{path} does not hold a JSON object\n"
+            "      fix: make its top level an object, then re-run --wiring."
+        )
+    return data
+
+
+def _json_table(data: dict[str, object], key: str, path: Path) -> dict[str, object]:
+    """``data[key]`` as an object, created when absent; refused when not an object."""
+    table = data.setdefault(key, {})
+    if not isinstance(table, dict):
+        raise WiringError(
+            f"{path}: `{key}` is not a JSON object\n"
+            f"      fix: make `{key}` an object, then re-run --wiring."
+        )
+    return table
+
+
+def _write_json(path: Path, data: dict[str, object]) -> None:
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+class RecipeHeader(NamedTuple):
+    """A justfile recipe's header line, split where just splits it."""
+
+    index: int  # its line number
+    params: str  # between the name and the colon
+    deps: str  # after the colon, without a trailing comment
+    comment: str  # the trailing comment's text, or ""
+
+
+def recipe_headers(text: str) -> dict[str, RecipeHeader]:
+    headers: dict[str, RecipeHeader] = {}
+    for index, line in enumerate(text.splitlines()):
+        match = JUST_RECIPE_RE.match(line)
+        if match:
+            name = match.group(1)
+            deps, _, comment = line[match.end() :].partition("#")
+            params = line[len(name) : match.end() - 1]
+            headers[name] = RecipeHeader(index, params, deps, comment)
+    return headers
+
+
+def parameter_names(params: str) -> set[str]:
+    """The names of a recipe's parameters (``tier="affected"`` names ``tier``)."""
+    return {token.split("=", 1)[0].lstrip("+*$") for token in params.split()}
+
+
+class JustfilePlan(NamedTuple):
+    """The justfile's new text, and a note per change it makes."""
+
+    text: str
+    changes: list[str]
+
+
+def plan_justfile(path: Path, recipe: str) -> JustfilePlan:
+    """The justfile with the ``budgets`` ``recipe`` added and ``check`` depending on it.
+
+    The recipe runs at ``check``'s tier against the merge base, so the justfile
+    must carry the template's ``tier`` parameter and ``base`` assignment. Returns
+    the new text and a note per change; writes nothing.
+    """
+    template = "assets/justfile.template"
+    if not path.is_file():
+        raise WiringError(
+            f"no justfile at {path}\n"
+            f"      fix: copy the skill's {template} there first; the wiring adds a "
+            "`budgets` recipe that its `check` recipe depends on."
+        )
+    text = path.read_text(encoding="utf-8")
+    headers = recipe_headers(text)
+    check = headers.get("check")
+    if check is None or "tier" not in parameter_names(check.params):
+        raise WiringError(
+            f"{path} has no `check tier=...` recipe to run the budgets at\n"
+            f"      fix: give `check` the tier parameter {template} declares, then "
+            "re-run --wiring."
+        )
+    if JUST_BASE_ASSIGNMENT_RE.search(text) is None:
+        raise WiringError(
+            f"{path} has no `base` assignment for the affected tier to key off\n"
+            f"      fix: add the `base :=` assignment {template} declares, then "
+            "re-run --wiring."
+        )
+    own = headers.get(BUDGETS_RECIPE_NAME)
+    if own is not None and "tier" not in parameter_names(own.params):
+        raise WiringError(
+            f"{path} has a `{BUDGETS_RECIPE_NAME}` recipe without a `tier` "
+            "parameter for `check` to pass\n"
+            f'      fix: give it `tier="affected"` (or remove it so the wiring adds '
+            "its own), then re-run --wiring."
+        )
+    changes: list[str] = []
+    call = f"({BUDGETS_RECIPE_NAME} tier)"
+    wired = call in " ".join(check.deps.split())
+    if not wired and BUDGETS_RECIPE_NAME in {
+        tok.strip("()") for tok in check.deps.split()
+    }:
+        raise WiringError(
+            f"{path}: `check` depends on `{BUDGETS_RECIPE_NAME}` without passing "
+            "its tier, so `check all` would still run only the affected budgets\n"
+            f"      fix: make that dependency `{call}`, then re-run --wiring."
+        )
+    if not wired:
+        lines = text.splitlines(keepends=True)
+        comment = f" #{check.comment.rstrip()}" if check.comment else ""
+        lines[check.index] = (
+            f"check{check.params}:{check.deps.rstrip()} {call}{comment}\n"
+        )
+        text = "".join(lines)
+        changes.append(f"`check` depends on `{call}`")
+    if BUDGETS_RECIPE_NAME not in headers:
+        text = text.rstrip("\n") + "\n\n" + recipe
+        changes.append("added the `budgets` recipe")
+    return JustfilePlan(text, changes)
+
+
+def plan_package_json(package: dict[str, object], path: Path) -> list[str]:
+    """Pin the release in ``package`` (in place); a note per change."""
+    deps = package.get("dependencies")
+    if deps is not None and not isinstance(deps, dict):
+        raise WiringError(
+            f"{path}: `dependencies` is not a JSON object\n"
+            "      fix: make `dependencies` an object, then re-run --wiring."
+        )
+    table_name = (
+        "dependencies"
+        if isinstance(deps, dict) and ONEBUDGETSPEC_NPM_PACKAGE in deps
+        else "devDependencies"
+    )
+    table = _json_table(package, table_name, path)
+    if table.get(ONEBUDGETSPEC_NPM_PACKAGE) == ONEBUDGETSPEC_VERSION:
+        return []
+    table[ONEBUDGETSPEC_NPM_PACKAGE] = ONEBUDGETSPEC_VERSION
+    package.setdefault("private", True)
+    return [
+        f"package.json pins {ONEBUDGETSPEC_NPM_PACKAGE} {ONEBUDGETSPEC_VERSION} "
+        "(install to record it in the lockfile)"
+    ]
+
+
+def _json_type(value: object) -> str | None:
+    """The JSON-schema type of ``value`` an Nx input property can take, or None."""
+    match value:
+        case bool():
+            return "boolean"
+        case str():
+            return "string"
+        case list() if all(isinstance(item, str) for item in value):
+            return "array"
+    return None
+
+
+def _is_nx_input(entry: object) -> bool:
+    """Whether ``entry`` is an Nx input: a path pattern or a valid input object."""
+    if isinstance(entry, str):
+        return bool(entry)
+    if not isinstance(entry, dict):
+        return False
+    kinds = NX_INPUT_OBJECTS.keys() & entry.keys()
+    if len(kinds) != 1 or NX_INPUT_EXCLUSIVE <= entry.keys():
+        return False
+    [kind] = kinds
+    properties = NX_INPUT_OBJECTS[kind]
+    return all(
+        _json_type(value) in properties.get(key, ()) for key, value in entry.items()
+    )
+
+
+def plan_nx_json(nx: dict[str, object], path: Path) -> list[str]:
+    """Add the budget targets' defaults to ``nx`` (in place); a note per change.
+
+    What the workspace already defines is kept as it is.
+    """
+    changes: list[str] = []
+    named = _json_table(nx, "namedInputs", path)
+    for name, inputs in NX_DEFAULT_NAMED_INPUTS.items():
+        if name not in named:
+            named[name] = list(inputs)
+            changes.append(f"nx.json defines the `{name}` named input")
+        elif not isinstance(named[name], list) or not all(
+            map(_is_nx_input, named[name])
+        ):
+            raise WiringError(
+                f"{path}: named input `{name}` is not a list of inputs (each a "
+                "path pattern or an input object)\n"
+                f"      fix: make `namedInputs.{name}` such a list, then re-run "
+                "--wiring."
+            )
+    defaults = _json_table(nx, "targetDefaults", path)
+    for target, config in ONEBUDGETSPEC_TARGET_DEFAULTS.items():
+        if target not in defaults:
+            defaults[target] = json.loads(json.dumps(config))
+            changes.append(f"nx.json target default `{target}`")
+        elif not isinstance(defaults[target], dict):
+            raise WiringError(
+                f"{path}: target default `{target}` is not a JSON object\n"
+                f"      fix: make `targetDefaults.{target}` an object, then re-run "
+                "--wiring."
+            )
+    return changes
+
+
+def wire_onebudgetspec(repo: Path, skill_dir: Path) -> list[str]:
+    """Pin onebudgetspec, give Nx its budget targets, and put them in ``check``.
+
+    Every file is validated before any is written, so a refusal leaves the repo
+    as it was. Idempotent: an already-wired repo is left byte-for-byte as it is.
+    Returns a note per change made.
+    """
+    justfile = next(
+        (
+            repo / name
+            for name in ("justfile", "Justfile", ".justfile")
+            if (repo / name).is_file()
+        ),
+        repo / "justfile",
+    )
+    recipe = (skill_dir / ONEBUDGETSPEC_RECIPE).read_text(encoding="utf-8")
+    just_text, just_changes = plan_justfile(justfile, recipe)
+
+    package_json = repo / "package.json"
+    package = _read_json_object(package_json)
+    package_changes = plan_package_json(package, package_json)
+
+    nx_json = repo / "nx.json"
+    nx = _read_json_object(nx_json)
+    nx_changes = plan_nx_json(nx, nx_json)
+
+    if package_changes:
+        _write_json(package_json, package)
+    if nx_changes:
+        _write_json(nx_json, nx)
+    if just_changes:
+        justfile.write_text(just_text, encoding="utf-8")
+    return package_changes + nx_changes + just_changes
+
+
+class ToolWiring(Protocol):
+    """A tool's setup step: applied to ``repo`` from the skill at ``skill_dir``,
+    returning a note per change and raising ``WiringError`` to refuse."""
+
+    def __call__(self, repo: Path, skill_dir: Path) -> list[str]: ...
+
+
+# The setup step of each tool that has one, keyed by its `--tool` name.
+TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
+
+
 def build_parser(
-    shapes: list[str], languages: list[str], intersections: list[str]
+    shapes: list[str],
+    languages: list[str],
+    intersections: list[str],
+    tools: list[str] | None = None,
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="compose_repo_plan.py",
@@ -524,6 +869,21 @@ def build_parser(
         "--releasing",
         action="store_true",
         help="the repo ships a versioned artifact (pull in releasing.md)",
+    )
+    parser.add_argument(
+        "--tool",
+        action="append",
+        choices=tools or [],
+        default=[],
+        metavar="NAME",
+        help="opt into a tool the baseline does not assume (repeatable): pulls in "
+        "references/tools/NAME.md and its llmlint fragment",
+    )
+    parser.add_argument(
+        "--wiring",
+        metavar="REPO_DIR",
+        help="apply the opted-in tools' setup step to the repository at REPO_DIR "
+        "(idempotent); needs a --tool that has one",
     )
     parser.add_argument(
         "-o",
@@ -572,8 +932,9 @@ def main(argv: list[str]) -> int:
     shapes = discover(refs_dir, "shapes")
     languages = discover(refs_dir, "languages")
     intersections = discover(refs_dir, "intersections")
+    tools = discover(refs_dir, "tools")
 
-    parser = build_parser(shapes, languages, intersections)
+    parser = build_parser(shapes, languages, intersections, tools)
     # `--monorepo` was removed rather than renamed, so an invocation carrying it
     # fails. Parse leniently to name the concrete fix instead of leaving argparse
     # to report only that the flag is unknown.
@@ -602,6 +963,7 @@ def main(argv: list[str]) -> int:
         print(f"  --language      {', '.join(languages)}")
         print(f"  --intersection  {', '.join(intersections) or '(none)'}")
         print("  --releasing     ships a versioned artifact (releasing.md)")
+        print(f"  --tool          {', '.join(tools) or '(none)'}")
         return 0
 
     missing = [
@@ -611,6 +973,12 @@ def main(argv: list[str]) -> int:
     ]
     if missing:
         parser.error(f"the following arguments are required: {', '.join(missing)}")
+    wired = [tool for tool in args.tool if tool in TOOL_WIRING]
+    if args.wiring and not wired:
+        parser.error(
+            "--wiring needs a --tool that has a setup step"
+            f"\n      fix: pass --tool {' / '.join(sorted(TOOL_WIRING))} with it."
+        )
 
     notes: list[str] = []
     relpaths, resolved_langs = select_relpaths(
@@ -620,6 +988,7 @@ def main(argv: list[str]) -> int:
         args.intersection,
         args.releasing,
         notes,
+        args.tool,
     )
 
     try:
@@ -638,6 +1007,7 @@ def main(argv: list[str]) -> int:
     flags += [f"--intersection {name}" for name in args.intersection]
     if args.releasing:
         flags.append("--releasing")
+    flags += [f"--tool {tool}" for tool in args.tool]
     invocation = "compose_repo_plan.py " + " ".join(flags)
 
     document = render_plan(args.shape, resolved_langs, refs, invocation)
@@ -695,6 +1065,23 @@ def main(argv: list[str]) -> int:
             f"{', '.join(included) or 'none'})",
             file=sys.stderr,
         )
+    if args.wiring:
+        repo = Path(args.wiring)
+        if not repo.is_dir():
+            print(
+                f"ERROR --wiring {repo} is not a directory\n"
+                "      fix: pass the root of the repository being set up.",
+                file=sys.stderr,
+            )
+            return 2
+        for tool in dict.fromkeys(wired):
+            try:
+                changes = TOOL_WIRING[tool](repo, skill_dir)
+            except WiringError as exc:
+                print(f"ERROR {tool} wiring: {exc}", file=sys.stderr)
+                return 2
+            summary = "; ".join(changes) if changes else "already wired"
+            print(f"wired {tool} into {repo}: {summary}", file=sys.stderr)
     return 0
 
 
