@@ -1,0 +1,97 @@
+# onebudgetspec ongoing rules (plugin). Opt-in, unlike every other fragment here:
+# only a repo that registers budgets in `budgets.yaml` files adopts it, by listing
+# its `@1`-pinned URL in its own llmlint.yml. The composer never selects it and no
+# always-on fragment names it, so a repo without budgets never loads these rules.
+#
+# Every rule shares one file set: the `budgets.yaml` files and the places a
+# budget's command plausibly reaches (scripts, tests, budget-named files), with a
+# `relevance` clause dropping the matched files that do not exercise its premise.
+# A judge anchored on a `budgets.yaml` follows its commands from there.
+#
+# Version classification and consumer pinning: see references/llmlint.md
+# ("Fragment versioning").
+version: 1.0.0
+
+rules:
+  - name: budget_descriptions_durable_and_terse
+    description: |
+      Judged on the terms of `agents_md_durable_and_terse` and
+      `comments_earn_their_place`. true when each budget's `description` in the
+      target `budgets.yaml` says, in one or two sentences, what is measured and what
+      it protects. false when a description reads as session or changelog
+      narrative — base figures from an old commit, a history of the figure, or what
+      each journey did — or restates the budget's own fields: its command, unit,
+      direction or threshold.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: the target file is a `budgets.yaml` declaring a budget with a `description`
+    require_line_attribution: true
+
+  - name: budgets_scoped_to_minimal_tree
+    description: |
+      true when everything specific to a `budgets.yaml`'s measurements lives in the
+      tree that file's directory roots: the commands it names, the tests they run,
+      and budget-only fixtures. Calling shared code that lives elsewhere is fine —
+      a common harness, the code under measurement, or a fixture other tests also
+      use. false only when something that exists solely to serve one of its budgets
+      lives outside that tree.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file is a `budgets.yaml`, or a script, test or fixture that a
+      budget's `command` runs or reads
+    require_line_attribution: true
+
+  - name: onebudgetspec_is_the_only_judge
+    description: |
+      true when the code a budget's `command` runs reports its figure (to the file
+      `ONEBUDGETSPEC_RESULT` names, or as its elapsed run) and leaves the comparison
+      with the threshold to onebudgetspec. false when that code reads a
+      `budgets.yaml`, or asserts the figure against a threshold itself.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file is a `budgets.yaml`, code a budget's `command` runs to
+      produce its figure, or code that reads a `budgets.yaml`
+    require_line_attribution: true
+
+  - name: budget_commands_measure_directly
+    description: |
+      true when each budget's `command` runs its measurement directly, or through
+      one generic runner shared by every budget. false when it goes through a
+      per-budget wrapper that re-lists budget ids or re-checks that a result was
+      written — work onebudgetspec already does.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file is a `budgets.yaml`, or a script or program a budget's
+      `command` names
+    require_line_attribution: true
