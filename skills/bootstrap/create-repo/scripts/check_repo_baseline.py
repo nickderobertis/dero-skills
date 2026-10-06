@@ -1410,12 +1410,16 @@ def oneharness_fallback_harnesses(text: str) -> list[str] | None:
 
 
 def _yaml_scalar(text: str) -> str:
-    """A flow scalar's value: a quoted string's contents, else up to a comment."""
+    """A flow scalar's value: a quoted string's contents, else up to a comment.
+
+    A quote left open, or followed by anything but a comment, is malformed YAML
+    and so no value.
+    """
     text = text.strip()
     if text[:1] in ("'", '"'):
         end = text.find(text[0], 1)
-        # An unterminated quote is malformed YAML, not a value.
-        return text[1:end] if end > 0 else ""
+        trailing = text[end + 1 :].strip() if end > 0 else "#"
+        return text[1:end] if end > 0 and trailing[:1] in ("", "#") else ""
     return text.split(" #", 1)[0].strip()
 
 
@@ -1432,7 +1436,9 @@ def llmlint_plugins(text: str) -> list[str]:
             continue
         rest = line[len("plugins:") :].split(" #", 1)[0].strip()
         if rest.startswith("["):
-            inner = rest.strip("[]")
+            if not rest.endswith("]"):
+                return []  # an unclosed flow list is malformed, so lists nothing
+            inner = rest[1:-1]
             return [v for v in (_yaml_scalar(part) for part in inner.split(",")) if v]
         entries: list[str] = []
         for nxt in lines[i + 1 :]:
@@ -1882,14 +1888,21 @@ def _uv_lock_packages(repo: Path) -> list[dict[str, object]]:
     )
 
 
-def uv_lock_requirements(packages: list[dict[str, object]]) -> list[tuple[str, object]]:
-    """Each ``(name, specifier)`` a workspace member requires of onebudgetspec.
+class Requirement(NamedTuple):
+    """One requirement a uv.lock workspace member records, as uv wrote it."""
+
+    name: str
+    specifier: object
+
+
+def uv_lock_requirements(packages: list[dict[str, object]]) -> list[Requirement]:
+    """Each requirement a workspace member records on a onebudgetspec package.
 
     uv.lock records a member's dependencies and dependency groups under its
     ``metadata``, names normalized, so pyproject.toml's PEP 508 strings are not
     parsed here.
     """
-    requirements: list[tuple[str, object]] = []
+    requirements: list[Requirement] = []
     for entry in packages:
         source, metadata = entry.get("source"), entry.get("metadata")
         if not (isinstance(source, dict) and {"virtual", "editable"} & source.keys()):
@@ -1902,7 +1915,7 @@ def uv_lock_requirements(packages: list[dict[str, object]]) -> list[tuple[str, o
             *(dev.values() if isinstance(dev, dict) else []),
         ]
         requirements += [
-            (req["name"], req.get("specifier"))
+            Requirement(req["name"], req.get("specifier"))
             for group in groups
             if isinstance(group, list)
             for req in group
@@ -1912,7 +1925,7 @@ def uv_lock_requirements(packages: list[dict[str, object]]) -> list[tuple[str, o
 
 
 def _uv_pin_problem(
-    packages: list[dict[str, object]], requirements: list[tuple[str, object]]
+    packages: list[dict[str, object]], requirements: list[Requirement]
 ) -> str | None:
     resolved = {
         entry["name"]: entry.get("version")

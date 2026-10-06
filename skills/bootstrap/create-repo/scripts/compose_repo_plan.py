@@ -616,7 +616,14 @@ def parameter_names(params: str) -> set[str]:
     return {token.split("=", 1)[0].lstrip("+*$") for token in params.split()}
 
 
-def plan_justfile(path: Path, recipe: str) -> tuple[str, list[str]]:
+class JustfilePlan(NamedTuple):
+    """The justfile's new text, and a note per change it makes."""
+
+    text: str
+    changes: list[str]
+
+
+def plan_justfile(path: Path, recipe: str) -> JustfilePlan:
     """The justfile with the ``budgets`` ``recipe`` added and ``check`` depending on it.
 
     The recipe runs at ``check``'s tier against the merge base, so the justfile
@@ -675,7 +682,7 @@ def plan_justfile(path: Path, recipe: str) -> tuple[str, list[str]]:
     if BUDGETS_RECIPE_NAME not in headers:
         text = text.rstrip("\n") + "\n\n" + recipe
         changes.append("added the `budgets` recipe")
-    return text, changes
+    return JustfilePlan(text, changes)
 
 
 def plan_package_json(package: dict[str, object], path: Path) -> list[str]:

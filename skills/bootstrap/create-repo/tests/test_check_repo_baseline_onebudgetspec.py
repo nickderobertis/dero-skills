@@ -450,6 +450,27 @@ def test_an_unterminated_quoted_plugin_is_not_adoption(tmp_path):
     assert "the onebudgetspec lint rules are not adopted" in error
 
 
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        lambda url: f'plugins:\n  - "{url}" trailing\n',
+        lambda url: f'plugins: ["https://example.com/base.llmlint.yml@1", "{url}"\n',
+    ],
+    ids=["content after the quoted url", "an unclosed flow list"],
+)
+def test_a_malformed_plugins_entry_is_not_adoption(tmp_path, malformed):
+    repo = wired_repo(tmp_path)
+    config = repo / "llmlint.yml"
+    url = next(
+        line.strip().strip("- ").strip('"')
+        for line in config.read_text(encoding="utf-8").splitlines()
+        if "onebudgetspec" in line
+    )
+    config.write_text(malformed(url), encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "the onebudgetspec lint rules are not adopted" in error
+
+
 def test_a_commented_out_plugin_is_not_adoption(tmp_path):
     repo = wired_repo(tmp_path)
     config = repo / "llmlint.yml"
