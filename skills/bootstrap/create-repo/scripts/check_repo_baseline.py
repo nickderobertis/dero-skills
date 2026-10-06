@@ -124,6 +124,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1998,12 +1999,17 @@ def onebudgetspec_check_args(args: str) -> CheckArgs | None:
     """Read the PATH arguments and ``--recursive`` out of a ``check``'s arguments.
 
     None when the CLI would refuse them — an option it does not take, or one
-    missing its value — so that command checks no file.
+    missing its value — or the shell could not split them, so that command
+    checks no file.
     """
+    try:
+        tokens = shlex.split(args)
+    except ValueError:
+        return None
     paths: list[str] = []
     recursive = False
     skip_value = False
-    for token in (token.strip("\"'") for token in args.split()):
+    for token in tokens:
         match token.partition("="):
             case _ if skip_value and token.startswith("-"):
                 return None

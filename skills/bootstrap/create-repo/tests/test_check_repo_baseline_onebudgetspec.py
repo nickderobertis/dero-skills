@@ -356,6 +356,8 @@ def test_a_bun_lock_that_resolves_no_such_package_fails(tmp_path, lock):
         ("onebudgetspec check --bogus services/api/budgets.yaml", False),
         ("onebudgetspec check --label --bogus services/api/budgets.yaml", False),
         ("onebudgetspec check --help", False),
+        ("onebudgetspec check 'services/api/budgets.yaml'", True),
+        ('onebudgetspec check "services/api/budgets.yaml', False),
     ],
     ids=[
         "--flag=value",
@@ -364,6 +366,8 @@ def test_a_bun_lock_that_resolves_no_such_package_fails(tmp_path, lock):
         "unknown option",
         "an option as a value",
         "--help",
+        "a quoted path",
+        "an unterminated quote",
     ],
 )
 def test_check_arguments_the_cli_refuses_reach_no_file(tmp_path, command, reached):
