@@ -64,8 +64,10 @@ def test_the_fragment_parses_and_declares_exactly_its_four_rules(
         text=True,
     )
     assert result.returncode == 0, f"llmlint refused the fragment:\n{result.stderr}"
-    config = json.loads(result.stdout)["config"]
-    names = [rule["name"] for rule in config["rules"]]
+    config = json.loads(result.stdout).get("config")
+    assert isinstance(config, dict) and isinstance(config.get("rules"), list), config
+    names = [rule.get("name") for rule in config["rules"] if isinstance(rule, dict)]
+    assert len(names) == len(config["rules"]), config["rules"]
     assert sorted(names) == sorted(RULES), (
         f"{FRAGMENT.name} declares {names}; consumers pin exactly {sorted(RULES)} — "
         "renaming or adding one is a contract change, not an edit"

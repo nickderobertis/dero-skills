@@ -453,6 +453,46 @@ fi
 """)
 
 
+def _no_budgets() -> dict[str, str]:
+    """A repo registering no budgets whose files still match every rule's globs:
+    a release script, a unit test, and a rate limiter named for its budget."""
+    return {
+        "src/linear_sync/sync.py": _SYNC,
+        "src/linear_sync/rate_budget.py": '''\
+"""Linear's request budget: a token bucket refilled once a minute."""
+
+import time
+
+
+class RateBudget:
+    def __init__(self, per_minute):
+        self.per_minute = per_minute
+        self.tokens = per_minute
+        self.refilled_at = time.monotonic()
+
+    def take(self):
+        if time.monotonic() - self.refilled_at >= 60:
+            self.tokens, self.refilled_at = self.per_minute, time.monotonic()
+        if self.tokens == 0:
+            return False
+        self.tokens -= 1
+        return True
+''',
+        "scripts/release.sh": (
+            '#!/bin/sh\nset -eu\ngit tag "v$1"\ngit push origin "v$1"\n'
+        ),
+        "tests/test_rate_budget.py": """\
+from linear_sync.rate_budget import RateBudget
+
+
+def test_refuses_once_spent():
+    budget = RateBudget(per_minute=1)
+    assert budget.take() is True
+    assert budget.take() is False
+""",
+    }
+
+
 @dataclass(frozen=True)
 class Case:
     rule: str
@@ -523,6 +563,11 @@ CASES = [
     Case(DIRECT, "generic-runner", _generic_runner(), Outcome.PASS),
     Case(DIRECT, "wrapper-relists-ids", _WRAPPER_RELISTS_IDS, Outcome.FAIL),
     Case(DIRECT, "wrapper-rechecks-result", _WRAPPER_RECHECKS_RESULT, Outcome.FAIL),
+    # Every rule's relevance clause drops matched files no budget reaches.
+    *(
+        Case(rule, "no-budgets", _no_budgets(), Outcome.NOT_RELEVANT)
+        for rule in (DESCRIPTIONS, MINIMAL_TREE, ONLY_JUDGE, DIRECT)
+    ),
 ]
 
 
@@ -559,15 +604,29 @@ def _judge(case: Case, root: Path) -> Verdict:
         capture_output=True,
         text=True,
     )
+    return _verdict(case.rule, result)
+
+
+def _verdict(rule_name: str, result: subprocess.CompletedProcess[str]) -> Verdict:
+    """Read one rule's verdict out of llmlint's JSON report, checking its shape."""
     try:
         report = json.loads(result.stdout)
     except json.JSONDecodeError:
         pytest.fail(f"llmlint printed no JSON report:\n{result.stderr}")
-    assert not report["errors"], report["errors"]
-    (rule,) = [r for r in report["rules"] if r["name"] == case.rule]
+    assert isinstance(report, dict), report
+    assert report.get("errors") == [], report.get("errors")
+    rules = report.get("rules")
+    assert isinstance(rules, list), report
+    matches = [r for r in rules if isinstance(r, dict) and r.get("name") == rule_name]
+    assert len(matches) == 1, f"no single verdict for {rule_name}: {rules}"
+    (rule,) = matches
+    violations = rule.get("violations") or []
+    assert isinstance(violations, list), rule
+    files = [v.get("file") for v in violations if isinstance(v, dict)]
+    assert all(isinstance(f, str) for f in files), rule
     return Verdict(
-        outcome=Outcome(rule["outcome"]),
-        violation_files=[v["file"] for v in rule.get("violations") or []],
+        outcome=Outcome(rule.get("outcome")),
+        violation_files=files,
         report=json.dumps(rule, indent=2),
     )
 
