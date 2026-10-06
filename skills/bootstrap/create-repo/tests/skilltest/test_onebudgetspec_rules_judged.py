@@ -741,15 +741,20 @@ class Verdict:
     report: str
 
 
-def _judge(case: Case, root: Path) -> Verdict:
-    root.mkdir(parents=True)
-    for rel, body in case.tree.items():
+def write_tree(tree: dict[str, str], root: Path) -> None:
+    """Write a case's consumer repo to disk, as a git work tree."""
+    root.mkdir(parents=True, exist_ok=True)
+    for rel, body in tree.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+
+
+def _judge(case: Case, root: Path) -> Verdict:
+    write_tree(case.tree, root)
     (root / "llmlint.yml").write_text(f'plugins:\n  - "{FRAGMENT}"\n', encoding="utf-8")
     shutil.copy(ONEHARNESS_TEMPLATE, root / "oneharness.toml")
-    subprocess.run(["git", "init", "-q", str(root)], check=True)
 
     assert _LLMLINT is not None
     result = subprocess.run(

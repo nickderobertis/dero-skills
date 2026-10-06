@@ -8,13 +8,16 @@ started resolving to the `tests/` directory instead of the skill root.
 
 So the constants are asserted from the fast tier. The module is loaded from its
 real path — the way pytest loads it — and the paths it derives are resolved
-against the real tree.
+against the real tree. The onebudgetspec judged eval is held further: what it
+restates of llmlint (rule names, report envelope) and of onebudgetspec (budgets
+files, result protocol) is reconciled here against the real binaries, offline.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -94,7 +97,12 @@ def test_the_judged_rules_eval_proves_every_fragment_rule_both_ways(
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    declared = {rule["name"] for rule in json.loads(result.stdout)["config"]["rules"]}
+    printed = json.loads(result.stdout)
+    assert isinstance(printed, dict), printed
+    config = printed.get("config")
+    assert isinstance(config, dict) and isinstance(config.get("rules"), list), config
+    declared = {rule.get("name") for rule in config["rules"] if isinstance(rule, dict)}
+    assert len(declared) == len(config["rules"]), config["rules"]
     expected = judged_rules_module.Expected
     for outcome in (expected.PASS, expected.FAIL):
         proven = {c.rule for c in judged_rules_module.CASES if c.expected == outcome}
@@ -128,3 +136,92 @@ def test_the_judged_rules_eval_reads_llmlints_real_report(
     verdict = judged_rules_module._verdict(rule, result)
     assert verdict.outcome == "skipped", verdict.report
     assert verdict.violation_files == [], verdict.report
+
+
+def _onebudgetspec() -> str:
+    # A dev dependency (`onebudgetspec-cli`), so it sits beside this interpreter.
+    beside = Path(sys.executable).parent / "onebudgetspec"
+    found = str(beside) if beside.is_file() else shutil.which("onebudgetspec")
+    assert found is not None, "onebudgetspec is not installed — run `just bootstrap`"
+    return found
+
+
+# Needs PyYAML, which a consumer reading its own budgets.yaml would depend on and
+# this repo does not; its budgets file is still validated below.
+_UNMEASURABLE_HERE = {"reads-budgets-yaml"}
+
+
+def test_the_judged_rules_fixtures_are_real_onebudgetspec_consumers(
+    judged_rules_module, tmp_path: Path
+) -> None:
+    # The judged cases restate onebudgetspec's budgets-file schema and its result
+    # protocol (`ONEBUDGETSPEC_RESULT`, `{"value": ...}`). Each tree goes through
+    # the real CLI the way its consumer runs it — the test target first where the
+    # budget analyses that target's telemetry — so a fixture that drifted from
+    # onebudgetspec fails here instead of being judged as if it were valid.
+    onebudgetspec = _onebudgetspec()
+    module = judged_rules_module
+    trees = {c.fixture: c.tree for c in module.CASES}
+    for fixture, tree in trees.items():
+        root = tmp_path / fixture
+        module.write_tree(tree, root)
+        validated = subprocess.run(
+            [onebudgetspec, "validate", "--recursive", "."],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        assert validated.returncode == 0, (
+            f"{fixture}: onebudgetspec refused its budgets files:\n"
+            f"{validated.stdout}{validated.stderr}"
+        )
+        if fixture in _UNMEASURABLE_HERE:
+            continue
+        sources = (f"{module.ROOT}/src", "src", "testkit")
+        env = {
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(str(root / s) for s in sources),
+        }
+        if (root / module.ROOT / "tests" / "telemetry.py").is_file():
+            tested = subprocess.run(
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+                + [f"{module.ROOT}/tests"],
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            assert tested.returncode == 0, f"{fixture}:\n{tested.stdout}"
+        checked = subprocess.run(
+            [onebudgetspec, "check", "--recursive", ".", "--json"],
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+        assert checked.returncode == 0, (
+            f"{fixture}: onebudgetspec could not measure it within budget:\n"
+            f"{checked.stdout}{checked.stderr}"
+        )
+        listed = subprocess.run(
+            [onebudgetspec, "list", "--recursive", ".", "--json"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        assert listed.returncode == 0, listed.stderr
+        declared = _ids(json.loads(listed.stdout), "budgets")
+        within = _ids(json.loads(checked.stdout), "results", verdict="within")
+        assert within == declared, (
+            f"{fixture}: declares {declared}, measured within budget {within}"
+        )
+
+
+def _ids(report: object, key: str, **match: str) -> list[str]:
+    """The ids of a onebudgetspec JSON report's entries, checking its shape."""
+    assert isinstance(report, dict) and isinstance(report.get(key), list), report
+    entries = report[key]
+    assert all(isinstance(e, dict) and isinstance(e.get("id"), str) for e in entries)
+    return sorted(
+        e["id"] for e in entries if all(e.get(k) == v for k, v in match.items())
+    )
