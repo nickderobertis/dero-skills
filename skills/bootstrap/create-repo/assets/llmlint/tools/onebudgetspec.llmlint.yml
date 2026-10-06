@@ -1,0 +1,125 @@
+# onebudgetspec ongoing rules (plugin). Opt-in, unlike every other fragment here:
+# only a repo that registers budgets in `budgets.yaml` files adopts it, by listing
+# its `@1`-pinned URL in its own llmlint.yml. The composer never selects it and no
+# always-on fragment names it, so a repo without budgets never loads these rules.
+#
+# Every rule shares one file set: the `budgets.yaml` files and the places a
+# budget's command plausibly reaches (scripts, tests, budget-named files), with a
+# `relevance` clause dropping the matched files that do not exercise its premise.
+# A judge anchored on a `budgets.yaml` follows its commands from there.
+#
+# Version classification and consumer pinning: see references/llmlint.md
+# ("Fragment versioning").
+version: 1.0.0
+
+rules:
+  # The terms of base's `agents_md_durable_and_terse` and
+  # `comments_earn_their_place`, applied to a budget's `description`.
+  - name: budget_descriptions_durable_and_terse
+    description: |
+      true when each budget's `description` says, in one or two sentences, what is
+      measured and what it protects. false when a description reads as session or
+      changelog narrative — base figures from an old commit, a history of the
+      figure, or what each journey did — or restates the budget's own fields: its
+      command, unit, direction or threshold.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: the target file declares a budget with a `description`
+    require_line_attribution: true
+
+  - name: budgets_scoped_to_minimal_tree
+    # llmlint: ignore[description_and_relevance_are_concise] the "false only when" sentence is the user's non-pedantic bound, not a restated inverse: it confines a violation to what exists solely for a budget, so shared code outside the tree never is one.
+    description: |
+      true when everything specific to a `budgets.yaml`'s measurements lives in the
+      tree that file's directory roots: the commands it names, the tests they run,
+      and budget-only fixtures. Calling shared code that lives elsewhere is fine —
+      a common harness, the code under measurement, a fixture other tests also
+      use, or telemetry recording added to an existing test or runtime code. false
+      only when something that exists solely to serve one of its budgets
+      lives outside that tree.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file declares budgets, or is a script, test or fixture that a
+      budget's `command` runs or reads
+    # Not line-attributed: a misplaced file is a fact about where it lives, and a
+    # budget-only fixture outside the tree need not hold any offending line.
+
+  - name: onebudgetspec_is_the_only_judge
+    description: |
+      true when the code a budget's `command` runs reports its figure (to the file
+      `ONEBUDGETSPEC_RESULT` names, or as its elapsed run) and leaves the comparison
+      with the threshold to onebudgetspec. false when that code reads a
+      `budgets.yaml`, or asserts the figure against a threshold itself.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file declares budgets, or is code a budget's `command` runs to
+      produce its figure
+    require_line_attribution: true
+
+  - name: budget_commands_measure_directly
+    description: |
+      true when each budget's `command` runs its measurement directly, or through
+      one generic runner shared by every budget. false when it goes through a
+      per-budget wrapper that re-lists budget ids or re-checks that a result was
+      written — work onebudgetspec already does.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file declares budgets, or is a script or program a budget's
+      `command` names
+    require_line_attribution: true
+
+  - name: budgets_reuse_gate_telemetry
+    description: |
+      true when a budget whose behaviour an existing gate's tests or runtime already
+      exercise takes its figure from telemetry those runs record and save
+      temporarily (for example as the test target's output), its `command` only
+      analysing that data. Also true when no existing gate exercises the measured
+      behaviour, or when recording it there would cost more than a standalone
+      measurement. false when a budget re-runs a scenario an existing test already
+      runs, only to count or time it, where adding telemetry to that test or its
+      runtime code would be cheaper than the extra gate time.
+    files:
+      include:
+        - "**/budgets.yaml"
+        - "**/*budget*"
+        - "**/scripts/**"
+        - "**/*.sh"
+        - "**/tests/**"
+        - "**/e2e/**"
+        - "**/benches/**"
+    relevance: |
+      the target file declares budgets, or is code a budget's `command` runs, or a
+      test exercising behaviour a budget measures
+    # Not line-attributed: a rerun is judged against what an existing test already
+    # exercises and what recording there would cost, a comparison across files.
