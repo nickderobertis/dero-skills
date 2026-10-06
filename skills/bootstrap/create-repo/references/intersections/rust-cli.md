@@ -23,6 +23,12 @@ reference implementations of this intersection.
   `cargo test` skips ignored tests, which silently makes realistic coverage
   opt-in — and unlike the project split, it saves nothing, since the tests are
   still compiled and collected.
+- **Journeys live with the crate they exercise.** In a workspace of several
+  crates, that is one test-only member per crate exercised, each its own project
+  on the terms above, sharing one support crate for the harness — not one e2e
+  crate for the whole workspace. This is the buildout rule
+  `binary_e2e_is_its_own_crate`, and it is what lets a domain's project contain
+  its budgets when the repo uses onebudgetspec (`tools/onebudgetspec.md`).
 - **Deterministic e2e is offline and tempdir-isolated.** A *live* tier that needs
   real services or credentials is the one sanctioned use of `#[ignore]` /
   env-gating — keep it compiling (don't `#[cfg]` it out), and run it in a
