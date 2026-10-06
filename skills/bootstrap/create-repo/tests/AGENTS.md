@@ -13,7 +13,10 @@ for the tiers it can reach:
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
-  ever reaching it.
+  ever reaching it. The same project holds the judged proof of the opt-in
+  `assets/llmlint/tools/onebudgetspec.llmlint.yml` rules
+  (`skilltest/test_onebudgetspec_rules_judged.py`, ~2 min: `just skilltest -k
+  onebudgetspec`), for the same reason — it needs a harness credential.
 
 The `conftest.py` here puts this directory on `sys.path` for the whole subtree,
 so all three tiers share the repo-builder fixtures defined once in the fast

@@ -21,11 +21,11 @@ import pytest
 
 SKILL = Path(__file__).resolve().parent.parent
 EVAL = SKILL / "tests" / "skilltest" / "test_create_repo_skilltest.py"
+JUDGED_RULES = SKILL / "tests" / "skilltest" / "test_onebudgetspec_rules_judged.py"
 
 
-@pytest.fixture(scope="module")
-def eval_module():
-    spec = importlib.util.spec_from_file_location("create_repo_eval_wiring", EVAL)
+def _load(path: Path, name: str):
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -34,6 +34,16 @@ def eval_module():
         yield module
     finally:
         sys.modules.pop(spec.name, None)
+
+
+@pytest.fixture(scope="module")
+def eval_module():
+    yield from _load(EVAL, "create_repo_eval_wiring")
+
+
+@pytest.fixture(scope="module")
+def judged_rules_module():
+    yield from _load(JUDGED_RULES, "onebudgetspec_judged_wiring")
 
 
 def test_the_eval_points_at_the_skill_root(eval_module) -> None:
@@ -48,3 +58,10 @@ def test_the_eval_can_find_the_checker_it_asserts_with(eval_module) -> None:
     # against the produced repo. A path that does not exist would fail the run
     # long after the harness had done its work.
     assert eval_module.BASELINE_CHECKER.is_file(), eval_module.BASELINE_CHECKER
+
+
+def test_the_judged_rules_eval_adopts_real_files(judged_rules_module) -> None:
+    # A consumer fixture adopting a path that does not exist would have every
+    # case error out only after a credentialed run.
+    assert judged_rules_module.FRAGMENT.is_file(), judged_rules_module.FRAGMENT
+    assert judged_rules_module.ONEHARNESS_TEMPLATE.is_file()
