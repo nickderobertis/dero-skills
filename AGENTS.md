@@ -49,9 +49,9 @@ so the baseline checker runs against this very section):
   per-language (PEP 723 Python, Node built-ins, Bash) and must not depend on
   this repo's toolchain.
 - **References composed:** `shapes/skills-repo.md` + `languages/python.md` +
-  `languages/bash.md` + `ci.md` + `project-graph.md`. Nx is **mandatory**, not an
-  accelerator: the repo is a project graph and every root recipe delegates to it,
-  so the gate needs bun/node as well as uv. Consumers still never run Nx.
+  `languages/bash.md` + `ci.md` + `project-graph.md` + `releasing.md`. Nx is
+  **mandatory**: the repo is a project graph and every root recipe delegates to
+  it, so the gate needs bun/node as well as uv. Consumers still never run Nx.
 - **Project graph:** ten projects split by test tier and by cost (see "Project
   graph" below). Fast tiers live with the code they cover; the three expensive
   ones — the judged llmlint tier, the `skilltest` eval and the `external`
@@ -129,9 +129,9 @@ cases skip even under a bare repo-wide `pytest`. `create-repo`'s is documented i
 
 ## Commits, releases, and merging
 
-- **Conventional Commits are required.** The type drives releases: `feat:` →
-  minor, `fix:` → patch, `feat!:`/`BREAKING CHANGE:` → major; other types
-  (`chore`, `ci`, `docs`, `refactor`, `test`, `build`, `perf`) ship no release.
+- **Conventional Commits are required.** Post-1.0, so the type drives releases:
+  `feat:` → minor, `fix:`/`perf:` → patch, `feat!:`/`BREAKING CHANGE:` → major;
+  `chore`, `ci`, `docs`, `refactor`, `test` and `build` ship no release.
   Enforced locally by the husky `commit-msg` hook (activated by `just bootstrap`)
   and in CI by the `commitlint` job.
 - **Squash-merge only, via PR, with auto-merge.** `main` is protected: merge
