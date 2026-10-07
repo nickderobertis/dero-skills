@@ -650,3 +650,104 @@ def test_a_hook_path_through_the_project_dir_variable_resolves(tmp_path):
         == (repo / "scripts" / "ci" / "session-setup.sh").resolve()
     )
     assert not crb.has_errors(crb.audit(repo))
+
+
+# llmlint: ignore[comments_earn_their_place] a section banner, as above: it names where the oneharness fleet shapes begin.
+# --- oneharness extends chains ---------------------------------------------
+
+# ai-orchestrator's three-file chain: the root config names the harnesses as
+# variants, the dispatch layer adds nothing the check reads, and the identities
+# parent sets the run mode.
+CHAIN = {
+    "oneharness.toml": (
+        'extends = "oneharness.dispatch.toml"\n'
+        'harnesses = ["claude-code:alternate", "claude-code:alternate2", "codex:primary",'
+        ' "codex:alternate", "claude-code:primary-backup", "claude-code:primary"]\n'
+    ),
+    "oneharness.dispatch.toml": (
+        'extends = "oneharness.identities.toml"\n\n[harness.codex]\ntimeout = 600\n'
+    ),
+    "oneharness.identities.toml": (
+        'run_mode = "fallback"\n\n[harness.claude-code]\nmodel = "claude-opus-4-8"\n'
+    ),
+}
+
+
+def oneharness_repo(tmp_path: Path, files: dict[str, str]) -> Path:
+    repo = make_repo(tmp_path, oneharness=False)
+    for name, text in files.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(text, encoding="utf-8")
+    return repo
+
+
+def llmlint_errors(repo: Path) -> list[str]:
+    return levels(crb.check_llmlint(repo), "ERROR")
+
+
+def test_a_fallback_mode_inherited_through_extends_passes(tmp_path):
+    assert llmlint_errors(oneharness_repo(tmp_path, CHAIN)) == []
+
+
+def test_extends_resolves_against_the_declaring_files_directory(tmp_path):
+    files = {
+        "oneharness.toml": CHAIN["oneharness.toml"].replace(
+            '"oneharness.dispatch.toml"', '"config/dispatch.toml"'
+        ),
+        "config/dispatch.toml": 'extends = "identities.toml"\n',
+        "config/identities.toml": 'run_mode = "fallback"\n',
+    }
+    assert llmlint_errors(oneharness_repo(tmp_path, files)) == []
+
+
+def test_a_child_overriding_the_run_mode_is_not_fallback(tmp_path):
+    files = {**CHAIN}
+    files["oneharness.toml"] += 'run_mode = "parallel"\n'
+    assert llmlint_errors(oneharness_repo(tmp_path, files)) == [
+        "oneharness.toml is not in fallback mode with a harness list"
+    ]
+
+
+def test_a_chain_setting_no_run_mode_is_not_fallback(tmp_path):
+    files = {**CHAIN, "oneharness.identities.toml": "# identities only\n"}
+    assert llmlint_errors(oneharness_repo(tmp_path, files)) == [
+        "oneharness.toml is not in fallback mode with a harness list"
+    ]
+
+
+def test_variants_of_other_harnesses_are_no_claude_code_target(tmp_path):
+    files = {
+        **CHAIN,
+        "oneharness.toml": 'extends = "oneharness.dispatch.toml"\n'
+        'harnesses = ["codex:primary", "goose:alternate", "claude-codex:primary"]\n',
+    }
+    errors = llmlint_errors(oneharness_repo(tmp_path, files))
+    assert len(errors) == 1 and "has no `claude-code` target" in errors[0], errors
+
+
+def test_a_missing_parent_is_an_error_naming_the_file(tmp_path):
+    files = {k: v for k, v in CHAIN.items() if k != "oneharness.identities.toml"}
+    assert llmlint_errors(oneharness_repo(tmp_path, files)) == [
+        "oneharness.toml cannot be resolved: oneharness.dispatch.toml extends "
+        "'oneharness.identities.toml', which does not exist"
+    ]
+
+
+def test_an_extends_cycle_is_an_error_naming_the_file(tmp_path):
+    files = {
+        **CHAIN,
+        "oneharness.identities.toml": 'extends = "oneharness.toml"\nrun_mode = "fallback"\n',
+    }
+    assert llmlint_errors(oneharness_repo(tmp_path, files)) == [
+        "oneharness.toml cannot be resolved: the `extends` chain of oneharness.toml "
+        "returns to oneharness.toml, a cycle"
+    ]
+
+
+def test_an_unparseable_parent_is_an_error_naming_the_file(tmp_path):
+    files = {**CHAIN, "oneharness.identities.toml": 'run_mode = "fallback\n'}
+    errors = llmlint_errors(oneharness_repo(tmp_path, files))
+    assert len(errors) == 1, errors
+    assert errors[0].startswith(
+        "oneharness.toml cannot be resolved: oneharness.identities.toml does not parse"
+    )

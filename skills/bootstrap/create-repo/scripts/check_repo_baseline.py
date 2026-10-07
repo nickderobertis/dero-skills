@@ -87,8 +87,9 @@ Checks:
     so a high-level review sees the checks the change switched off.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
-    fallback-mode `oneharness.toml` selecting the harness the pinless config drives
-    (a primary plus a required `claude-code` fallback), a `lint-llm` recipe and the diff-scoped
+    fallback-mode `oneharness.toml` (its `extends` chain followed) selecting the
+    harness the pinless config drives (a primary plus a required `claude-code`
+    fallback, bare or as a `claude-code:<variant>`), a `lint-llm` recipe and the diff-scoped
     `lint-llm-diff` recipe (the blocking PR check), an automated install
     (`scripts/setup-llmlint.sh`, or one beside the hook's session-setup script,
     wired into a SessionStart hook — directly or via `session-setup.sh`), and a
@@ -1569,22 +1570,85 @@ def find_oneharness_config(repo: Path) -> Path | None:
     return None
 
 
-def oneharness_fallback_harnesses(text: str) -> list[str] | None:
-    """Return the `harnesses` list when oneharness.toml is in fallback mode.
+class OneharnessConfig(NamedTuple):
+    """An oneharness config with its ``extends`` chain resolved, or why it is not.
 
-    A light scan, not a full TOML parse (stdlib-only, no tomllib guarantee on the
-    consuming repo's runtime): find `run_mode = "fallback"` and read the inline
-    `harnesses = [...]` array. Returns the ordered harness ids, or ``None`` when
-    the config is not in fallback mode / declares no harness list — enough to tell
-    a composed fallback config from a hand-rolled single-harness one.
+    ``data`` holds the merged keys (``{}`` when ``problem`` is set); ``problem``
+    names the file whose chain could not be followed, and why.
     """
-    if not re.search(r'^\s*run_mode\s*=\s*["\']fallback["\']', text, re.MULTILINE):
+
+    data: dict
+    problem: str | None = None
+
+
+def _merge_toml(parent: dict, child: dict) -> dict:
+    """``child`` over ``parent``: a key the child sets wins, tables merge by key."""
+    merged = dict(parent)
+    for key, value in child.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_toml(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def resolve_oneharness_config(repo: Path, path: Path) -> OneharnessConfig:
+    """Read ``path`` with its ``extends`` chain followed, child keys over parent's.
+
+    Each ``extends`` is resolved against the directory of the file declaring it,
+    the way oneharness resolves it. A parent that is missing or does not parse,
+    or a chain that returns to a file it already read, is reported as a problem
+    naming the file rather than raised.
+    """
+    layers: list[dict] = []
+    seen: list[Path] = []
+    current = path
+    while True:
+        rel = os.path.relpath(current, repo)
+        if current.resolve() in seen:
+            return OneharnessConfig(
+                {}, f"the `extends` chain of {path.name} returns to {rel}, a cycle"
+            )
+        seen.append(current.resolve())
+        try:
+            data = tomllib.loads(current.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+            return OneharnessConfig({}, f"{rel} does not parse as TOML ({exc})")
+        layers.append(data)
+        parent = data.get("extends")
+        if not isinstance(parent, str):
+            break
+        following = current.parent / parent
+        if not following.is_file():
+            return OneharnessConfig(
+                {}, f"{rel} extends {parent!r}, which does not exist"
+            )
+        current = following
+    merged: dict = {}
+    for layer in reversed(layers):
+        merged = _merge_toml(merged, layer)
+    return OneharnessConfig(merged)
+
+
+def oneharness_fallback_harnesses(config: dict) -> list[str] | None:
+    """Return the `harnesses` list when a resolved oneharness config is in fallback mode.
+
+    Returns the ordered harness ids, or ``None`` when the config is not in
+    fallback mode / declares no harness list — enough to tell a composed fallback
+    config from a hand-rolled single-harness one.
+    """
+    if config.get("run_mode") != "fallback":
         return None
-    match = re.search(r"^\s*harnesses\s*=\s*\[([^\]]*)\]", text, re.MULTILINE)
-    if not match:
+    harnesses = config.get("harnesses")
+    if not isinstance(harnesses, list):
         return None
-    ids = re.findall(r'["\']([^"\']+)["\']', match.group(1))
+    ids = [h for h in harnesses if isinstance(h, str) and h]
     return ids or None
+
+
+def is_claude_code_target(harness: str) -> bool:
+    """Whether a harness id selects claude-code: bare, or a ``claude-code:<variant>``."""
+    return harness.split(":", 1)[0] == "claude-code"
 
 
 def _yaml_scalar(text: str) -> str:
@@ -1891,8 +1955,19 @@ def check_llmlint(repo: Path) -> list[Finding]:
             )
         )
     else:
-        harnesses = oneharness_fallback_harnesses(oh.read_text(encoding="utf-8"))
-        if harnesses is None:
+        resolved = resolve_oneharness_config(repo, oh)
+        harnesses = oneharness_fallback_harnesses(resolved.data)
+        if resolved.problem is not None:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{oh.name} cannot be resolved: {resolved.problem}",
+                    "point each `extends` at an existing oneharness config, relative "
+                    "to the file that declares it, without returning to a file "
+                    "already in the chain",
+                )
+            )
+        elif harnesses is None:
             problems.append(
                 Finding(
                     "ERROR",
@@ -1912,7 +1987,7 @@ def check_llmlint(repo: Path) -> list[Finding]:
                     "so a session without the primary still runs the tier",
                 )
             )
-        elif "claude-code" not in harnesses:
+        elif not any(is_claude_code_target(h) for h in harnesses):
             # The load-bearing invariant, validated on the repo-owned config: the
             # fallback must include claude-code so a Claude Code web/cloud session —
             # where the primary (e.g. codex) is absent — still has a harness it can
