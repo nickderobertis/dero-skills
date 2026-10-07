@@ -36,6 +36,8 @@ plugins:
   - "skills/bootstrap/create-repo/assets/llmlint/languages/python.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/languages/bash.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
+  - "skills/bootstrap/create-repo/assets/llmlint/project-graph.llmlint.yml"
+  - "skills/bootstrap/create-repo/assets/llmlint/releasing.llmlint.yml"
 
 # No `agents` block: all rules run on the default agent. Harness/model are left
 # unset so `oneharness.toml`'s fallback mode selects them — codex + gpt-5.5 primary,

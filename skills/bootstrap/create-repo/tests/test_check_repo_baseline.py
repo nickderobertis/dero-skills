@@ -1080,6 +1080,10 @@ def test_backend_set_and_literals_match_the_reference_invariant():
             "`[tool.uv] package = false`",
             "no `[build-system]`",
             "maturin",
+            "`[tool.poetry].classifiers`",
+            "valid distribution name",
+            "`test`/`tests` directory",
+            "git",
         ):
             assert literal in statement, (literal, statement)
 

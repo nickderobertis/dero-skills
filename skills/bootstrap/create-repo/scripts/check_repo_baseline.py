@@ -46,10 +46,15 @@ Checks:
     backend (`hatchling.build`, `uv_build`, `setuptools.build_meta`,
     `flit_core.buildapi`, `pdm.backend`, `poetry.core.masonry.api`) ships a
     `py.typed` marker beside an `__init__.py` under its directory AND declares
-    the `Typing :: Typed` classifier, so the wheel it publishes is typed for its
+    the `Typing :: Typed` classifier (in `[project].classifiers`, or for a
+    `poetry.core.masonry.api` manifest whose `[project]` declares none,
+    `[tool.poetry].classifiers` — the list poetry-core writes), so the wheel it publishes is typed for its
     consumers (PEP 561). Exempt: no `[build-system]`, a backend outside that set
-    (maturin under any bindings), `[tool.uv] package = false`, or the
-    `Private :: Do Not Upload` classifier. Presence-only: it reads the tree and
+    (maturin under any bindings), `[tool.uv] package = false`, the
+    `Private :: Do Not Upload` classifier (read from the same two tables), or a
+    declared name that is not a valid distribution name (an unrendered template).
+    Not audited: a manifest under a `test`/`tests` directory, or one git ignores
+    in a git work tree. Presence-only: it reads the tree and
     the manifest and never builds a wheel — the wheel-level proof is the repo's
     own gate (references/languages/python.md, the one statement of the invariant;
     the test suite holds this inventory and the checker's constants to it).
@@ -69,23 +74,27 @@ Checks:
     or the root/docs variants GitHub also renders) AND names both a What and a
     Why section — so every PR states the behavior change and its driver, not a
     walkthrough of the diff. An empty or unrelated file fails.
-  * The session provisioner, when present, is correct: `scripts/session-setup.sh`
-    provisions `just` (a cloud image often ships the language runtime but not
+  * The session provisioner, when present, is correct: the session-setup script
+    (at the path the SessionStart hook names; `scripts/session-setup.sh` by
+    default) provisions `just` (a cloud image often ships the language runtime but not
     `just`, and has no version manager there to read `.tool-versions`) and is wired
     into the SessionStart hook. Optional, so silent when neither shipped nor wired.
   * The suppressions review comment is wired: a workflow under
-    .github/workflows/ uses the `nickderobertis/notignored` action, triggered on
+    .github/workflows/ uses the `nickderobertis/notignored` action (outside a
+    comment; in notignored's own repository, `uses: ./`), triggered on
     `pull_request`, with the `pull-requests: write` permission and the
     `fetch-depth: 0` checkout it needs to work, and the fork-PR skip guard that
     keeps it off the required-checks set. It posts every suppression a PR adds,
     so a high-level review sees the checks the change switched off.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
-    fallback-mode `oneharness.toml` selecting the harness the pinless config drives
-    (a primary plus a required `claude-code` fallback), a `lint-llm` recipe and the diff-scoped
+    fallback-mode `oneharness.toml` (its `extends` chain followed) selecting the
+    harness the pinless config drives (a primary plus a required `claude-code`
+    fallback, bare or as a `claude-code:<variant>`), a `lint-llm` recipe and the diff-scoped
     `lint-llm-diff` recipe (the blocking PR check), an automated install
-    (`scripts/setup-llmlint.sh` wired into a SessionStart hook — directly or via
-    `session-setup.sh`), and a CI workflow that invokes it. The tier runs OUTSIDE
+    (`scripts/setup-llmlint.sh`, or one beside the hook's session-setup script,
+    wired into a SessionStart hook — directly or via `session-setup.sh`), and a
+    CI workflow that invokes it. The tier runs OUTSIDE
     `just check` (it is non-deterministic) but is a required PR check.
     Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
     `--buildout` flag additionally composes and runs the one-time buildout tier —
@@ -153,7 +162,9 @@ GATE_COMMAND = "just check"
 # lookahead — the ':' before '=' fails `(?!=)` — so only the terminating recipe
 # colon matches. The parameter span allows '=' so a defaulted parameter does not
 # hide the recipe (it must, or e.g. `lint-llm-diff base="origin/main":` is missed).
-RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
+# A leading '@' is just's quiet-recipe prefix (`@lint-llm-diff *args:`), not part
+# of the name.
+RECIPE_RE = re.compile(r"^@?([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
 
 JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 
@@ -162,14 +173,36 @@ JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 # it can reach (references/project-graph.md).
 PROJECT_GRAPH_FILES = ("nx.json",)
 
-# An invocation of that orchestrator: `nx` fanning targets out over the graph,
-# run directly or through a package runner (`bunx nx`, `npx nx`, ...).
-ORCHESTRATOR_RUN_RE = re.compile(r"\bnx\s+(?:affected|run-many|run)\b")
+# The command word of an orchestrator invocation: `nx` run directly, by path
+# (`node_modules/.bin/nx`) or through a package runner (`bunx nx`, `pnpm exec
+# nx`), or a repository script named for it (`scripts/nx.sh`,
+# `scripts/nx-affected.sh`). It must stand as a word of its own, so `nx.json`,
+# `onyx` or `scripts/nxfoo.sh` are not one. Justfile variables are expanded
+# before this is read (`parse_just_recipe_details`), so `{{nx}}` holding one of
+# these counts too.
+ORCHESTRATOR_INVOKER_RE = re.compile(
+    r"(?<![^\s\"'(=;&|@`])(?:[\w.-]*/)*(?:nx(?:-[\w.-]+)?\.sh|nx)(?=$|[\s\"');&|`])"
+)
 
-# The `-t/--target(s)` list of such an invocation. Targets run to the next flag,
-# so a delegating `check` shows which targets it actually fans out over.
-ORCHESTRATOR_TARGETS_RE = re.compile(
-    r"\bnx\s+(?:affected|run-many|run)\b[^\n]*?(?:-t|--targets?)[=\s]\s*([^\n]*)"
+# The subcommands that fan targets out over the graph. An invocation carrying a
+# `-t/--targets` list delegates too, whatever its subcommand slot holds — a
+# justfile `{{ if ... }}` expression or a shell array expansion picks the
+# subcommand at run time.
+ORCHESTRATOR_SUBCOMMANDS = frozenset({"affected", "run-many", "run"})
+
+# A `-t/--target(s)` flag, standing as a word of its own; its list follows.
+ORCHESTRATOR_TARGETS_FLAG_RE = re.compile(r"(?<![\w-])(?:-t|--targets?)(?:=|\s+)")
+
+# Shell control operators and redirections (`2>&1`, `>>"$log"`): a target
+# list ends where the next command or a redirection begins.
+SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&"})
+SHELL_REDIRECT_RE = re.compile(r"\d*[<>]")
+
+# A justfile assignment whose value is one quoted string (`nx := "pnpm exec nx"`),
+# the shape a recipe body's `{{nx}}` is expanded from. A value built from an
+# expression (`"--exclude=" + NAME`, a backtick) is left unexpanded.
+JUST_STRING_ASSIGNMENT_RE = re.compile(
+    r"""^(?:export\s+)?([A-Za-z_][A-Za-z0-9_-]*)\s*:=\s*(?:"([^"\\]*)"|'([^']*)')\s*(?:#.*)?$"""
 )
 
 # The recipes that make up the gate; the project-graph check asks whether any of
@@ -201,9 +234,12 @@ PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
 # mode. Stack-agnostic: spans Python (unittest.mock, monkeypatch, pytest-mock,
 # @patch), JS/TS (vi.mock, jest.mock, sinon, nock), and others (mockito). Used
 # only for an advisory WARN, so a stub of a genuinely external third party (the
-# one sanctioned use) costing a nudge is an acceptable trade.
+# one sanctioned use) costing a nudge is an acceptable trade. The `mock` package is
+# matched as Python imports it (`from mock import ...`, `import mock`), so prose
+# naming something `mock-server/...` is not read as an import.
 MOCK_RE = re.compile(
-    r"unittest\.mock|from\s+mock\b|import\s+mock\b|\bMagicMock\b|\bmonkeypatch\b|"
+    r"unittest\.mock|from\s+mock(?:\.\w+)*\s+import\b|import\s+mock\b(?![-/])|"
+    r"\bMagicMock\b|\bmonkeypatch\b|"
     r"pytest[_-]mock|\bmocker\b|@patch\b|\bvi\.mock\b|\bjest\.mock\b|\bsinon\b|"
     r"\bnock\b|\bmockito\b",
     re.IGNORECASE,
@@ -260,6 +296,7 @@ COVERAGE_CONFIG_NAMES = (
 # holds, verbatim from it; the test suite fails when the two drift. The name says
 # "held", not "pure Python": setuptools can drive a compiled extension too, and
 # such a wheel still ships importable packages that owe the marker.
+POETRY_BACKEND = "poetry.core.masonry.api"
 TYPED_PACKAGING_BACKENDS = frozenset(
     {
         "hatchling.build",
@@ -267,7 +304,7 @@ TYPED_PACKAGING_BACKENDS = frozenset(
         "setuptools.build_meta",
         "flit_core.buildapi",
         "pdm.backend",
-        "poetry.core.masonry.api",
+        POETRY_BACKEND,
     }
 )
 
@@ -280,8 +317,15 @@ PRIVATE_CLASSIFIER = "Private :: Do Not Upload"
 TYPED_MARKER = "py.typed"
 
 # Test trees are never what the wheel ships, so a `py.typed` found under one sits
-# beside test helpers rather than the distributed package and does not count.
+# beside test helpers rather than the distributed package and does not count, and
+# a manifest under one is a fixture or golden, not a distribution the repo ships.
 TEST_DIR_NAMES = frozenset({"test", "tests"})
+
+# A valid distribution name (the PyPA core-metadata name rule): ASCII letters,
+# digits, `.`, `_` and `-`, beginning and ending with a letter or digit. A
+# manifest whose name breaks it — a template's `@@NAME@@` or `{{ name }}` — is
+# not one any build would publish, so the invariant does not hold it.
+DISTRIBUTION_NAME_RE = re.compile(r"[A-Z0-9](?:[A-Z0-9._-]*[A-Z0-9])?", re.IGNORECASE)
 
 # The cargo build configuration every Rust repository carries, verbatim from
 # references/languages/rust.md (the test suite fails when the two drift). Each
@@ -324,6 +368,12 @@ COMPOSITION_HEADING_RE = re.compile(r"\b(composition|composed|stack)\b", re.IGNO
 # section (the AGENTS.md template marks fill-in spots with `<like this>`).
 ANGLE_PLACEHOLDER_RE = re.compile(r"<[^>\n]+>")
 
+# Markdown text whose `<...>` is literal rather than a fill-in spot: an inline code
+# span (a path or URL template such as `apps/<app>/`, which may wrap across
+# lines) and an HTML comment. Both are removed before placeholders are sought.
+CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1)[\s\S])+?\1")
+HTML_COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")
+
 # GitHub renders a default pull-request template from a file named
 # pull_request_template.* (case-insensitive, .md/.txt/extensionless) in the repo
 # root, .github/, or docs/ — or from any file inside a PULL_REQUEST_TEMPLATE/
@@ -341,6 +391,20 @@ PR_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
 # The suppressions review comment: the notignored action, however it is pinned
 # (the floating `@v0` major tag the skill templates, or an exact `@v0.1.11`).
 NOTIGNORED_ACTION_RE = re.compile(r"uses:\s*nickderobertis/notignored@")
+
+# notignored's own repository dogfoods the action built from the branch under
+# review (`uses: ./`), which runs it exactly as the published ref would. That
+# spelling counts only where the root `action.yml` is the notignored action.
+LOCAL_ACTION_RE = re.compile(r"""uses:\s*(["']?)\./?\1\s*$""", re.MULTILINE)
+ACTION_MANIFEST_NAMES = ("action.yml", "action.yaml")
+NOTIGNORED_ACTION_NAME_RE = re.compile(
+    r"""^name:\s*(["']?)notignored\1\s*(?:#.*)?$""", re.MULTILINE
+)
+
+# A YAML comment: a whole-line one, or a `#` after whitespace ending a line's
+# content. Comment text configures nothing, so it is dropped before any of the
+# workflow's properties are read.
+YAML_COMMENT_RE = re.compile(r"(?:^|\s)#.*$", re.MULTILINE)
 
 # What the action needs to do its job, and what keeps it off the required set:
 #   * a `pull_request` trigger — the comment only exists on a pull request, so a
@@ -395,7 +459,24 @@ def parse_just_recipe_details(text: str) -> dict[str, Recipe]:
     blanks and surrounding whitespace removed. This is intentionally a light
     parser: it captures enough to tell a filled-in recipe from a placeholder
     and to see whether ``check`` wires in ``test``, not to emulate just.
+
+    Body lines have each ``{{name}}`` of a variable assigned one quoted string
+    expanded to its value, so ``nx := "pnpm exec nx"`` with ``{{nx}} affected -t test`` reads
+    as the invocation it runs. Any other interpolation is left as written.
     """
+    variables = {
+        match.group(1): match.group(2) if match.group(2) is not None else match.group(3)
+        for match in map(JUST_STRING_ASSIGNMENT_RE.match, text.splitlines())
+        if match
+    }
+
+    def expand(line: str) -> str:
+        return re.sub(
+            r"\{\{\s*([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}",
+            lambda m: variables.get(m.group(1), m.group(0)),
+            line,
+        )
+
     recipes: dict[str, Recipe] = {}
     current: Recipe | None = None
     for line in text.splitlines():
@@ -411,7 +492,7 @@ def parse_just_recipe_details(text: str) -> dict[str, Recipe]:
             else:
                 current = None  # assignment or other non-recipe line
         elif current is not None and line.strip():
-            current.body.append(line.strip())
+            current.body.append(expand(line.strip()))
     return recipes
 
 
@@ -437,19 +518,63 @@ def recipe_lines(details: dict[str, Recipe], name: str) -> list[str]:
     return lines
 
 
+def orchestrator_invocations(line: str) -> list[str]:
+    """The argument text of each orchestrator invocation in ``line``.
+
+    Each runs from just after its command word to the next invocation, so a line
+    chaining several with ``&&`` yields each one's arguments rather than only the
+    first's.
+    """
+    starts = list(ORCHESTRATOR_INVOKER_RE.finditer(line))
+    return [
+        line[match.end() : nxt.start() if nxt else len(line)]
+        for match, nxt in zip(starts, [*starts[1:], None])
+    ]
+
+
+def _target_list(args: str) -> set[str]:
+    """The targets named by every ``-t/--targets`` flag in invocation ``args``."""
+    targets: set[str] = set()
+    for flag in ORCHESTRATOR_TARGETS_FLAG_RE.finditer(args):
+        for token in args[flag.end() :].split():
+            if (
+                token.startswith("-")
+                or token.rstrip(";") in SHELL_OPERATORS
+                or SHELL_REDIRECT_RE.match(token)
+            ):
+                break  # the target list ends at the next flag, command or redirect
+            names = token.strip("\"'")
+            targets.update(part for part in names.rstrip(";").split(",") if part)
+            if token.endswith(";"):
+                break
+    return targets
+
+
 def orchestrator_targets(line: str) -> set[str]:
-    """The target names an orchestrator invocation in ``line`` fans out over.
+    """The target names the orchestrator invocations in ``line`` fan out over.
 
     Both spellings Nx accepts are unpacked: the space-separated list (``-t lint
-    test``) and the comma-separated one (``--targets=lint,test``).
+    test``) and the comma-separated one (``--targets=lint,test``). Every
+    invocation on the line counts, whatever its subcommand slot holds.
     """
-    targets: set[str] = set()
-    for match in ORCHESTRATOR_TARGETS_RE.finditer(line):
-        for token in match.group(1).split():
-            if token.startswith("-"):
-                break  # the target list ends at the next flag
-            targets.update(part for part in token.strip("\"'").split(",") if part)
-    return targets
+    return {
+        target
+        for args in orchestrator_invocations(line)
+        for target in _target_list(args)
+    }
+
+
+def delegates_to_orchestrator(line: str) -> bool:
+    """Whether ``line`` runs targets through the orchestrator's project graph.
+
+    An invocation delegates when its first argument is a fan-out subcommand
+    (``affected``, ``run-many``, ``run``) or when it carries a target list, which
+    covers a subcommand chosen by an expression at run time.
+    """
+    return any(
+        (args.split() or [""])[0] in ORCHESTRATOR_SUBCOMMANDS or _target_list(args)
+        for args in orchestrator_invocations(line)
+    )
 
 
 def find_justfile(repo: Path) -> Path | None:
@@ -648,7 +773,7 @@ def check_project_graph(repo: Path) -> list[Finding]:
     if justfile is not None:
         details = parse_just_recipe_details(justfile.read_text(encoding="utf-8"))
         delegates = any(
-            ORCHESTRATOR_RUN_RE.search(line)
+            delegates_to_orchestrator(line)
             for name in GATE_RECIPES
             for line in recipe_lines(details, name)
         )
@@ -825,13 +950,92 @@ def _walk_tree(root: Path):
         yield Path(dirpath), dirnames, filenames
 
 
+class GitIgnored(NamedTuple):
+    """What git ignores under a repo, or why it could not say.
+
+    ``entries`` are repo-relative paths, a wholly ignored directory once with a
+    trailing ``/``. It is ``None`` outside a git work tree, where git is not
+    installed, or when git failed — ``problem`` then carries git's own error.
+    """
+
+    entries: frozenset[str] | None
+    problem: str | None = None
+
+    def covers(self, rel: str) -> bool:
+        """Whether git ignores the file at repo-relative ``rel``."""
+        return self.entries is not None and (
+            rel in self.entries
+            or any(rel.startswith(e) for e in self.entries if e.endswith("/"))
+        )
+
+
+def git_ignored(repo: Path) -> GitIgnored:
+    """Ask ``git ls-files`` which untracked paths under ``repo`` it ignores.
+
+    A tracked file is never in the answer, whatever the ignore patterns say, as
+    for git itself; neither is a submodule's content, which git does not walk.
+    """
+    try:
+        inside = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if inside.returncode != 0:
+            if "not a git repository" in inside.stderr:
+                return GitIgnored(None)
+            detail = inside.stderr.strip() or f"exit {inside.returncode}"
+            return GitIgnored(None, f"`git rev-parse` failed in {repo}: {detail}")
+        if inside.stdout.strip() != "true":
+            return GitIgnored(None)
+        listed = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "-z", "--others", "--ignored"]
+            + ["--exclude-standard", "--directory"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return GitIgnored(None)  # no git installed: a plain directory walk
+    except OSError as exc:
+        return GitIgnored(None, f"git could not be run: {exc}")
+    if listed.returncode != 0:
+        detail = listed.stderr.strip() or f"exit {listed.returncode}"
+        return GitIgnored(None, f"`git ls-files` failed in {repo}: {detail}")
+    return GitIgnored(frozenset(rel for rel in listed.stdout.split("\0") if rel))
+
+
+class ManifestDiscovery(NamedTuple):
+    """The manifests the typed-packaging check audits, and why git could not filter them."""
+
+    manifests: list[Path]
+    problem: str | None = None
+
+
+def discover_pyproject_manifests(repo: Path) -> ManifestDiscovery:
+    """Every ``pyproject.toml`` the repo ships, outside vendored, build and test trees.
+
+    In a git work tree a manifest git ignores (a scratch run, a generated
+    checkout) is not the repo's, so it is left out too. Where git cannot list
+    what it ignores, every walked manifest is kept and git's error is returned
+    beside them.
+    """
+    manifests: list[Path] = []
+    for directory, dirnames, filenames in _walk_tree(repo):
+        dirnames[:] = [d for d in dirnames if d not in TEST_DIR_NAMES]
+        if "pyproject.toml" in filenames:
+            manifests.append(directory / "pyproject.toml")
+    ignored = git_ignored(repo)
+    return ManifestDiscovery(
+        [m for m in manifests if not ignored.covers(m.relative_to(repo).as_posix())],
+        ignored.problem,
+    )
+
+
 def iter_pyproject_manifests(repo: Path) -> list[Path]:
-    """Every ``pyproject.toml`` in the repo, outside vendored and build trees."""
-    return [
-        directory / "pyproject.toml"
-        for directory, _dirnames, filenames in _walk_tree(repo)
-        if "pyproject.toml" in filenames
-    ]
+    """The manifests ``discover_pyproject_manifests`` finds, without git's error."""
+    return discover_pyproject_manifests(repo).manifests
 
 
 def has_typed_marker(project_dir: Path) -> bool:
@@ -851,30 +1055,37 @@ class PyprojectManifest(NamedTuple):
     """The fields of a ``pyproject.toml`` the typed-packaging check reads.
 
     ``backend`` is ``[build-system].build-backend`` (``None`` when the manifest
-    has no ``[build-system]``), ``classifiers`` the string entries of
-    ``[project].classifiers``, and ``uv_package`` the ``[tool.uv] package``
-    flag (``None`` when unset).
+    has no ``[build-system]``), ``classifiers`` the string entries of the list
+    the wheel's METADATA is written from — ``[project].classifiers``, or for a
+    poetry-core manifest whose ``[project]`` declares none,
+    ``[tool.poetry].classifiers`` — ``uv_package`` the ``[tool.uv]
+    package`` flag (``None`` when unset), and ``name`` ``[project].name``, else
+    ``[tool.poetry].name`` (``None`` when neither declares a string).
     """
 
     path: Path
     backend: str | None
     classifiers: tuple[str, ...]
     uv_package: bool | None
+    name: str | None = None
 
     @property
     def owes_typed_packaging(self) -> bool:
         """Whether the typed-packaging invariant holds this manifest to its terms.
 
         True names a manifest the check audits, not one that already satisfies
-        it. The four exemptions are read here: no ``[build-system]`` (nothing is
+        it. The exemptions are read here: no ``[build-system]`` (nothing is
         built), a backend outside ``TYPED_PACKAGING_BACKENDS``, ``[tool.uv]
-        package = false`` (a workspace root or a tests-only member), and
-        ``Private :: Do Not Upload``.
+        package = false`` (a workspace root or a tests-only member),
+        ``Private :: Do Not Upload``, and a declared name that is not a valid
+        distribution name (an unrendered template). A manifest declaring no name
+        is held as before.
         """
         return (
             self.backend in TYPED_PACKAGING_BACKENDS
             and self.uv_package is not False
             and PRIVATE_CLASSIFIER not in self.classifiers
+            and (self.name is None or bool(DISTRIBUTION_NAME_RE.fullmatch(self.name)))
         )
 
 
@@ -900,7 +1111,16 @@ def parse_pyproject(path: Path) -> PyprojectManifest | None:
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return None
     backend = _table(data, "build-system").get("build-backend")
-    classifiers = _table(data, "project").get("classifiers")
+    project, poetry = _table(data, "project"), _table(data, "tool", "poetry")
+    # poetry-core writes `[tool.poetry].classifiers` into METADATA only where
+    # `[project]` declares none; any other backend never reads that table.
+    source = (
+        poetry
+        if "classifiers" not in project and backend == POETRY_BACKEND
+        else project
+    )
+    classifiers = source.get("classifiers")
+    names = [n for n in (project.get("name"), poetry.get("name")) if isinstance(n, str)]
     uv_package = _table(data, "tool", "uv").get("package")
     return PyprojectManifest(
         path=path,
@@ -912,6 +1132,7 @@ def parse_pyproject(path: Path) -> PyprojectManifest | None:
             if isinstance(c, str)
         ),
         uv_package=uv_package if isinstance(uv_package, bool) else None,
+        name=names[0] if names else None,
     )
 
 
@@ -932,7 +1153,19 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
     """
     findings: list[Finding] = []
     qualifying = 0
-    for path in iter_pyproject_manifests(repo):
+    discovery = discover_pyproject_manifests(repo)
+    if discovery.problem is not None:
+        findings.append(
+            Finding(
+                "ERROR",
+                f"typed packaging: git could not list the manifests it ignores "
+                f"({discovery.problem}), so every pyproject.toml was audited",
+                "fix what git reports (run `git status` in the repo to see it; a "
+                "`git` that cannot be executed needs reinstalling), then re-run the "
+                "checker",
+            )
+        )
+    for path in discovery.manifests:
         manifest = parse_pyproject(path)
         if manifest is None or not manifest.owes_typed_packaging:
             continue
@@ -1134,9 +1367,9 @@ def check_composition(repo: Path) -> list[Finding]:
                 "and what you excluded and why",
             )
         ]
-    if any(
-        ANGLE_PLACEHOLDER_RE.search(line) or PLACEHOLDER_RE.search(line)
-        for line in content
+    prose = HTML_COMMENT_RE.sub("", CODE_SPAN_RE.sub("", "\n".join(content)))
+    if ANGLE_PLACEHOLDER_RE.search(prose) or any(
+        PLACEHOLDER_RE.search(line) for line in content
     ):
         return [
             Finding(
@@ -1308,14 +1541,32 @@ def check_notignored(repo: Path) -> list[Finding]:
     fork-PR skip guard is checked too — it is what justifies leaving
     the workflow *out* of the required-checks set, since a fork's read-only token
     can never upsert the comment.
+
+    Comments are read as nothing, so a workflow that only mentions the action in
+    one is not chosen; and in notignored's own repository a local ``uses: ./``
+    runs the action, so its dogfood workflow is the one checked.
     """
-    workflow = next(
+    is_notignored_repo = any(
+        (repo / name).is_file()
+        and NOTIGNORED_ACTION_NAME_RE.search((repo / name).read_text(encoding="utf-8"))
+        for name in ACTION_MANIFEST_NAMES
+    )
+
+    def runs_notignored(text: str) -> bool:
+        return bool(
+            NOTIGNORED_ACTION_RE.search(text)
+            or (is_notignored_repo and LOCAL_ACTION_RE.search(text))
+        )
+
+    workflow, text = next(
         (
-            p
+            (p, text)
             for p in workflow_files(repo)
-            if NOTIGNORED_ACTION_RE.search(p.read_text(encoding="utf-8"))
+            if runs_notignored(
+                text := YAML_COMMENT_RE.sub("", p.read_text(encoding="utf-8"))
+            )
         ),
-        None,
+        (None, ""),
     )
     if workflow is None:
         return [
@@ -1329,7 +1580,6 @@ def check_notignored(repo: Path) -> list[Finding]:
         ]
 
     rel = workflow.relative_to(repo).as_posix()
-    text = workflow.read_text(encoding="utf-8")
     problems: list[Finding] = []
     if not workflow_triggers_on_pull_request(text):
         problems.append(
@@ -1392,22 +1642,110 @@ def find_oneharness_config(repo: Path) -> Path | None:
     return None
 
 
-def oneharness_fallback_harnesses(text: str) -> list[str] | None:
-    """Return the `harnesses` list when oneharness.toml is in fallback mode.
+class OneharnessConfig(NamedTuple):
+    """An oneharness config with its ``extends`` chain resolved, or why it is not.
 
-    A light scan, not a full TOML parse (stdlib-only, no tomllib guarantee on the
-    consuming repo's runtime): find `run_mode = "fallback"` and read the inline
-    `harnesses = [...]` array. Returns the ordered harness ids, or ``None`` when
-    the config is not in fallback mode / declares no harness list — enough to tell
-    a composed fallback config from a hand-rolled single-harness one.
+    ``data`` holds the merged keys (``{}`` when ``problem`` is set); ``problem``
+    names the file whose chain could not be followed, and why, and ``fix`` the
+    action that repairs that failure.
     """
-    if not re.search(r'^\s*run_mode\s*=\s*["\']fallback["\']', text, re.MULTILINE):
+
+    data: dict
+    problem: str | None = None
+    fix: str = ""
+
+
+def _merge_toml(parent: dict, child: dict) -> dict:
+    """``child`` over ``parent``: a key the child sets wins, tables merge by key."""
+    merged = dict(parent)
+    for key, value in child.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_toml(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def resolve_oneharness_config(repo: Path, path: Path) -> OneharnessConfig:
+    """Read ``path`` with its ``extends`` chain followed, child keys over parent's.
+
+    Each ``extends`` is resolved against the directory of the file declaring it,
+    the way oneharness resolves it. A parent that is missing or does not parse,
+    or a chain that returns to a file it already read, is reported as a problem
+    naming the file rather than raised.
+    """
+    layers: list[dict] = []
+    seen: list[Path] = []
+    current = path
+    while True:
+        rel = os.path.relpath(current, repo)
+        if current.resolve() in seen:
+            return OneharnessConfig(
+                {},
+                f"the `extends` chain of {path.name} returns to {rel}, a cycle",
+                f"remove the `extends` that points back at {rel}, so the chain ends "
+                "at a config that extends nothing",
+            )
+        seen.append(current.resolve())
+        try:
+            data = tomllib.loads(current.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+            return OneharnessConfig(
+                {},
+                f"{rel} does not parse as TOML ({exc})",
+                f"fix {rel} so it reads as TOML (the error names the line)",
+            )
+        layers.append(data)
+        if "extends" not in data:
+            break
+        parent = data["extends"]
+        if not isinstance(parent, str):
+            return OneharnessConfig(
+                {},
+                f"{rel} sets `extends` to {parent!r}, which is not a file path",
+                f"set `extends` in {rel} to the parent config's path as a string, "
+                f"relative to {rel}'s directory",
+            )
+        following = current.parent / parent
+        if not following.is_file():
+            return OneharnessConfig(
+                {},
+                f"{rel} extends {parent!r}, which does not exist",
+                f"create {parent!r} beside {rel}, or point `extends` at an existing "
+                f"config, relative to {rel}'s directory",
+            )
+        current = following
+    merged: dict = {}
+    for layer in reversed(layers):
+        merged = _merge_toml(merged, layer)
+    harnesses = merged.get("harnesses")
+    if harnesses is not None and not (
+        isinstance(harnesses, list) and all(isinstance(h, str) and h for h in harnesses)
+    ):
+        return OneharnessConfig(
+            {},
+            f"`harnesses` is {harnesses!r}, not a list of harness ids",
+            'set `harnesses` to a list of harness ids, e.g. ["codex", "claude-code"]',
+        )
+    return OneharnessConfig(merged)
+
+
+def oneharness_fallback_harnesses(config: dict) -> list[str] | None:
+    """Return the `harnesses` list when a resolved oneharness config is in fallback mode.
+
+    Returns the ordered harness ids, or ``None`` when the config is not in
+    fallback mode / declares no harness list — enough to tell a composed fallback
+    config from a hand-rolled single-harness one.
+    """
+    if config.get("run_mode") != "fallback":
         return None
-    match = re.search(r"^\s*harnesses\s*=\s*\[([^\]]*)\]", text, re.MULTILINE)
-    if not match:
-        return None
-    ids = re.findall(r'["\']([^"\']+)["\']', match.group(1))
-    return ids or None
+    harnesses = config.get("harnesses")
+    return list(harnesses) if isinstance(harnesses, list) and harnesses else None
+
+
+def is_claude_code_target(harness: str) -> bool:
+    """Whether a harness id selects claude-code: bare, or a ``claude-code:<variant>``."""
+    return harness.split(":", 1)[0] == "claude-code"
 
 
 def _yaml_scalar(text: str) -> str:
@@ -1470,39 +1808,81 @@ def ci_references_llmlint(repo: Path) -> bool:
     return any("llmlint" in p.read_text(encoding="utf-8") for p in workflow_files(repo))
 
 
-def find_setup_llmlint_script(repo: Path) -> Path | None:
-    """Return the idempotent llmlint toolchain installer, or None.
+# A SessionStart hook command's reference to the project directory, which Claude
+# Code exports; a script path after it is repository-relative.
+CLAUDE_PROJECT_DIR_RE = re.compile(r"""["']?\$\{?CLAUDE_PROJECT_DIR\}?["']?/""")
 
-    The skill drops it at ``scripts/setup-llmlint.sh``; accept a couple of nearby
-    spellings so the check is about the automation existing, not the exact path.
+# The provisioner scripts, under either separator.
+SESSION_SETUP_SCRIPT_NAME = r"session[-_]setup\.sh"
+SETUP_LLMLINT_SCRIPT_NAME = r"setup[-_]llmlint\.sh"
+
+
+def hook_script_paths(repo: Path, script_name: str) -> list[Path]:
+    """The scripts named ``script_name`` the SessionStart hooks run, by their path.
+
+    Each is read from the hook command as a repository-relative path (``bash
+    scripts/ci/session-setup.sh``, ``"$CLAUDE_PROJECT_DIR"/scripts/...``),
+    whether or not it exists — the hook is what provisions a session, so the path
+    it names is the one that counts. A path leaving the repository is not one.
     """
-    for rel in (
-        "scripts/setup-llmlint.sh",
-        "scripts/setup_llmlint.sh",
-        "setup-llmlint.sh",
-    ):
-        candidate = repo / rel
-        if candidate.is_file():
-            return candidate
-    return None
+    path_re = re.compile(rf"(?<![\w.$/-])((?:\.{{1,2}}/)?(?:[\w.-]+/)*{script_name})")
+    root = repo.resolve()
+    paths: list[Path] = []
+    for command in sessionstart_hook_commands(repo):
+        for match in path_re.finditer(CLAUDE_PROJECT_DIR_RE.sub("", command)):
+            path = (repo / match.group(1)).resolve()
+            if path.is_relative_to(root) and path not in paths:
+                paths.append(path)
+    return paths
 
 
 def find_session_setup_script(repo: Path) -> Path | None:
     """Return the idempotent session/dev-toolchain provisioner, or None.
 
-    The skill drops it at ``scripts/session-setup.sh`` (from
-    ``assets/session-setup.sh.template``); accept a couple of nearby spellings so
-    the check is about the automation existing, not the exact path.
+    Where a SessionStart hook names one by path, that path is the script: the
+    first such that exists, or None when none does (the hook points at nothing).
+    Otherwise the skill's recommended ``scripts/session-setup.sh`` (from
+    ``assets/session-setup.sh.template``) or a couple of nearby spellings, so the
+    check is about the automation existing, not the exact path.
     """
-    for rel in (
-        "scripts/session-setup.sh",
-        "scripts/session_setup.sh",
-        "session-setup.sh",
-    ):
-        candidate = repo / rel
-        if candidate.is_file():
-            return candidate
-    return None
+    named = hook_script_paths(repo, SESSION_SETUP_SCRIPT_NAME)
+    candidates = named or [
+        repo / rel
+        for rel in (
+            "scripts/session-setup.sh",
+            "scripts/session_setup.sh",
+            "session-setup.sh",
+        )
+    ]
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def find_setup_llmlint_script(repo: Path) -> Path | None:
+    """Return the idempotent llmlint toolchain installer, or None.
+
+    The skill drops it at ``scripts/setup-llmlint.sh``. Also accepted: one a
+    SessionStart hook names by path, one beside the session provisioner the hook
+    runs (which hands off to it), and a couple of nearby spellings — the check
+    is about the automation existing, not the exact path.
+    """
+    session_setup = find_session_setup_script(repo)
+    candidates = [
+        *hook_script_paths(repo, SETUP_LLMLINT_SCRIPT_NAME),
+        *(
+            [session_setup.parent / "setup-llmlint.sh"]
+            if session_setup is not None
+            else []
+        ),
+        *(
+            repo / rel
+            for rel in (
+                "scripts/setup-llmlint.sh",
+                "scripts/setup_llmlint.sh",
+                "setup-llmlint.sh",
+            )
+        ),
+    ]
+    return next((path for path in candidates if path.is_file()), None)
 
 
 # A deterministic signal that session-setup.sh actually provisions ``just``: the
@@ -1563,7 +1943,8 @@ def settings_sessionstart_runs_setup(repo: Path) -> bool:
 def check_session_setup(repo: Path) -> list[Finding]:
     """Verify the session/dev-toolchain provisioner, when present.
 
-    ``scripts/session-setup.sh`` is the idempotent SessionStart provisioner that
+    The session-setup script (the path the SessionStart hook names, else
+    ``scripts/session-setup.sh``) is the idempotent provisioner that
     makes a fresh web/cloud session able to run the ``just`` command surface: it
     must ensure ``just`` itself, since a cloud image often ships the language
     runtime but not ``just`` and has no version manager to read ``.tool-versions``,
@@ -1671,8 +2052,17 @@ def check_llmlint(repo: Path) -> list[Finding]:
             )
         )
     else:
-        harnesses = oneharness_fallback_harnesses(oh.read_text(encoding="utf-8"))
-        if harnesses is None:
+        resolved = resolve_oneharness_config(repo, oh)
+        harnesses = oneharness_fallback_harnesses(resolved.data)
+        if resolved.problem is not None:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{oh.name} cannot be resolved: {resolved.problem}",
+                    resolved.fix,
+                )
+            )
+        elif harnesses is None:
             problems.append(
                 Finding(
                     "ERROR",
@@ -1692,7 +2082,7 @@ def check_llmlint(repo: Path) -> list[Finding]:
                     "so a session without the primary still runs the tier",
                 )
             )
-        elif "claude-code" not in harnesses:
+        elif not any(is_claude_code_target(h) for h in harnesses):
             # The load-bearing invariant, validated on the repo-owned config: the
             # fallback must include claude-code so a Claude Code web/cloud session —
             # where the primary (e.g. codex) is absent — still has a harness it can

@@ -11,8 +11,8 @@ tiers (see the header in `llmlint.yml`):
   `@version`-pinned hosted URLs the composer emits for a consuming repo — so a
   fragment edit takes effect here immediately. We pull the fragments applicable
   to this repo's stack (`base` + `shapes/skills-repo` + `languages/python` +
-  `languages/bash` + `ci`); the one-time `buildout/` fragments are excluded
-  because they don't persist.
+  `languages/bash` + `ci` + `project-graph` + `releasing`); the one-time
+  `buildout/` fragments are excluded because they don't persist.
 - **The repo's bespoke cross-language launch conventions**, defined inline:
   **Python and Python packages run through `uv`** (`uv run`/`uv run --script`/
   `uvx`/`uv add`), **TypeScript and npm packages run through `bun`** (`bun run`/
