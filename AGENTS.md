@@ -129,9 +129,9 @@ cases skip even under a bare repo-wide `pytest`. `create-repo`'s is documented i
 
 ## Commits, releases, and merging
 
-- **Conventional Commits are required.** Post-1.0, so the type drives releases:
-  `feat:` → minor, `fix:`/`perf:` → patch, `feat!:`/`BREAKING CHANGE:` → major;
-  `chore`, `ci`, `docs`, `refactor`, `test` and `build` ship no release.
+- **Conventional Commits are required.** Post-1.0: `feat:` → minor, `fix:`/`perf:`
+  → patch, a `BREAKING CHANGE:` footer → major (a bare `!` is not read); `chore`,
+  `ci`, `docs`, `refactor`, `test` and `build` ship no release.
   Enforced locally by the husky `commit-msg` hook (activated by `just bootstrap`)
   and in CI by the `commitlint` job.
 - **Squash-merge only, via PR, with auto-merge.** `main` is protected: merge

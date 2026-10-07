@@ -306,6 +306,29 @@ def test_without_git_installed_every_manifest_is_walked(tmp_path, monkeypatch):
     assert not any("git could not list" in m for m in levels(findings, "ERROR"))
 
 
+@pytest.mark.parametrize("broken", ["unreadable-config", "unexecutable-git"])
+def test_a_git_that_fails_for_another_reason_is_reported(tmp_path, monkeypatch, broken):
+    # Neither "no repository" nor "no git": a global config git refuses, or a
+    # `git` on PATH that cannot be executed. The walk is kept and the cause named.
+    (tmp_path / "repo").mkdir()
+    repo = make_repo(tmp_path / "repo")
+    git(repo, "init", "-q")
+    write_package(repo, project_dir="packages/typed")
+    if broken == "unreadable-config":
+        config = tmp_path / "gitconfig"
+        config.write_text("[core\n", encoding="utf-8")
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+        cause = "bad config line 1"
+    else:
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text("#!/bin/sh\n", encoding="utf-8")  # not executable
+        monkeypatch.setenv("PATH", str(bin_dir))
+        cause = "git could not be run"
+    [failure] = [f for f in crb.audit(repo) if "git could not list" in f.message]
+    assert failure.level == "ERROR" and cause in failure.message, failure.message
+
+
 def test_manifests_under_test_directories_are_not_audited(tmp_path):
     # crozier's generator goldens: `tests/fixtures/<case>/expected/pyproject.toml`.
     repo = make_repo(tmp_path)

@@ -60,7 +60,8 @@ What is not obvious from the table:
   that runs the judged onebudgetspec fixtures through that release and reads its
   README, `nxRelease` attaches the root `package.json` and `bun.lock` — what
   `node_modules` installs — to the same tier, which reads Nx's schema, `semver`
-  and that lock, and `skillEval` attaches the harness-driven eval to the fast tier
+  and that lock, and to `repo-baseline`, which runs the installed commit-analyzer
+  to hold `AGENTS.md`'s bump policy to `.releaserc.json`, and `skillEval` attaches the harness-driven eval to the fast tier
   that checks its path constants (`tests/test_eval_wiring.py` — the eval never
   runs in the gate, so a broken constant inside it is otherwise invisible). An input is the only thing keeping a cached pass from outliving an
   edit to a file outside the project — add one whenever a target reads across a

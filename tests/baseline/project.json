@@ -20,7 +20,8 @@
       "command": "uv run pytest tests/baseline",
       "inputs": [
         "default",
-        "repoBaseline"
+        "repoBaseline",
+        "nxRelease"
       ]
     }
   }

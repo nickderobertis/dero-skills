@@ -13,7 +13,6 @@ to the classifiers the wheel ships.
 from __future__ import annotations
 
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
@@ -24,6 +23,9 @@ from test_check_repo_baseline_fleet import POETRY_MANIFEST, write_manifest
 TYPED = '"Typing :: Typed",'
 PRIVATE = '"Private :: Do Not Upload",'
 PROJECT_CLASSIFIERS = 'dynamic = ["version"]\nclassifiers = [{}]\n'
+
+# This repository, whose dev group pins the poetry-core the wheels are built with.
+REPO_ROOT = Path(__file__).resolve().parents[5]
 
 # PEP 517's `build_wheel` hook, run in the project directory as a frontend runs it.
 BUILD_WHEEL = (
@@ -50,7 +52,8 @@ def wheel_classifiers(project: Path, out: Path) -> set[str]:
     """Build ``project``'s wheel with its real backend; return its METADATA classifiers."""
     out.mkdir()
     built = subprocess.run(
-        [sys.executable, "-c", BUILD_WHEEL, str(out)],
+        ["uv", "run", "--project", str(REPO_ROOT), "python", "-c", BUILD_WHEEL]
+        + [str(out)],
         cwd=project,
         capture_output=True,
         text=True,

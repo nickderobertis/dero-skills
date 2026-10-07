@@ -955,8 +955,7 @@ class GitIgnored(NamedTuple):
 
     ``entries`` are repo-relative paths, a wholly ignored directory once with a
     trailing ``/``. It is ``None`` outside a git work tree, where git is not
-    installed, or when the listing failed — ``problem`` then carries git's own
-    error for the failure case.
+    installed, or when git failed — ``problem`` then carries git's own error.
     """
 
     entries: frozenset[str] | None
@@ -983,7 +982,12 @@ def git_ignored(repo: Path) -> GitIgnored:
             text=True,
             check=False,
         )
-        if inside.returncode != 0 or inside.stdout.strip() != "true":
+        if inside.returncode != 0:
+            if "not a git repository" in inside.stderr:
+                return GitIgnored(None)
+            detail = inside.stderr.strip() or f"exit {inside.returncode}"
+            return GitIgnored(None, f"`git rev-parse` failed in {repo}: {detail}")
+        if inside.stdout.strip() != "true":
             return GitIgnored(None)
         listed = subprocess.run(
             ["git", "-C", str(repo), "ls-files", "-z", "--others", "--ignored"]
@@ -992,8 +996,10 @@ def git_ignored(repo: Path) -> GitIgnored:
             text=True,
             check=False,
         )
-    except OSError:
-        return GitIgnored(None)
+    except FileNotFoundError:
+        return GitIgnored(None)  # no git installed: a plain directory walk
+    except OSError as exc:
+        return GitIgnored(None, f"git could not be run: {exc}")
     if listed.returncode != 0:
         detail = listed.stderr.strip() or f"exit {listed.returncode}"
         return GitIgnored(None, f"`git ls-files` failed in {repo}: {detail}")
@@ -1154,8 +1160,9 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
                 "ERROR",
                 f"typed packaging: git could not list the manifests it ignores "
                 f"({discovery.problem}), so every pyproject.toml was audited",
-                "fix what git reports (run `git status` in the repo to see it), "
-                "then re-run the checker",
+                "fix what git reports (run `git status` in the repo to see it; a "
+                "`git` that cannot be executed needs reinstalling), then re-run the "
+                "checker",
             )
         )
     for path in discovery.manifests:
