@@ -233,9 +233,12 @@ PLACEHOLDER_RE = re.compile(r"\bTODO\b", re.IGNORECASE)
 # mode. Stack-agnostic: spans Python (unittest.mock, monkeypatch, pytest-mock,
 # @patch), JS/TS (vi.mock, jest.mock, sinon, nock), and others (mockito). Used
 # only for an advisory WARN, so a stub of a genuinely external third party (the
-# one sanctioned use) costing a nudge is an acceptable trade.
+# one sanctioned use) costing a nudge is an acceptable trade. The `mock` package is
+# matched as Python imports it (`from mock import ...`, `import mock`), so prose
+# naming something `mock-server/...` is not read as an import.
 MOCK_RE = re.compile(
-    r"unittest\.mock|from\s+mock\b|import\s+mock\b|\bMagicMock\b|\bmonkeypatch\b|"
+    r"unittest\.mock|from\s+mock(?:\.\w+)*\s+import\b|import\s+mock\b(?![-/])|"
+    r"\bMagicMock\b|\bmonkeypatch\b|"
     r"pytest[_-]mock|\bmocker\b|@patch\b|\bvi\.mock\b|\bjest\.mock\b|\bsinon\b|"
     r"\bnock\b|\bmockito\b",
     re.IGNORECASE,
@@ -362,6 +365,12 @@ COMPOSITION_HEADING_RE = re.compile(r"\b(composition|composed|stack)\b", re.IGNO
 # An unfilled `<...>` angle-bracket placeholder left over from a template
 # section (the AGENTS.md template marks fill-in spots with `<like this>`).
 ANGLE_PLACEHOLDER_RE = re.compile(r"<[^>\n]+>")
+
+# Markdown text whose `<...>` is literal rather than a fill-in spot: an inline code
+# span (a path or URL template such as `apps/<app>/`, which may wrap across
+# lines) and an HTML comment. Both are removed before placeholders are sought.
+CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1)[\s\S])+?\1")
+HTML_COMMENT_RE = re.compile(r"<!--[\s\S]*?-->")
 
 # GitHub renders a default pull-request template from a file named
 # pull_request_template.* (case-insensitive, .md/.txt/extensionless) in the repo
@@ -1295,9 +1304,9 @@ def check_composition(repo: Path) -> list[Finding]:
                 "and what you excluded and why",
             )
         ]
-    if any(
-        ANGLE_PLACEHOLDER_RE.search(line) or PLACEHOLDER_RE.search(line)
-        for line in content
+    prose = HTML_COMMENT_RE.sub("", CODE_SPAN_RE.sub("", "\n".join(content)))
+    if ANGLE_PLACEHOLDER_RE.search(prose) or any(
+        PLACEHOLDER_RE.search(line) for line in content
     ):
         return [
             Finding(

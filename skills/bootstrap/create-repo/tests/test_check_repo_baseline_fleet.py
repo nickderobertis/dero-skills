@@ -751,3 +751,100 @@ def test_an_unparseable_parent_is_an_error_naming_the_file(tmp_path):
     assert errors[0].startswith(
         "oneharness.toml cannot be resolved: oneharness.identities.toml does not parse"
     )
+
+
+# llmlint: ignore[comments_earn_their_place] a section banner, as above: it names where the composition-section fleet shapes begin.
+# --- composition placeholders ----------------------------------------------
+
+SKILL_DIR = Path(crb.__file__).resolve().parents[1]
+
+# nick-derobertis-site's composition section: literal path and URL templates in
+# code spans (one wrapping across lines), and a maintainer's HTML comment.
+LITERAL_TEMPLATES_AGENTS = """\
+# AGENTS
+
+## Stack and composition
+
+- References composed: `shapes/web-app.md` + `languages/typescript.md` + `ci.md`.
+Each lane is pinned to its own `apps/<app>/visual/baseline/x86_64.json` manifest,
+equivalent to `screencomp classify --include project=<app>` scoping. Galleries
+publish at `https://example.github.io/site-visual-docs/<project>/x86_64/` and
+previews at `https://example.github.io/site-visual-docs/pr-<number>/<project>/x86_64/`;
+the content-store branch holds the `apps/<app>/
+` subtree only, as ``nx affected --with-target <target>`` selects it.
+<!-- keep <project> paths in step with scripts/visual/verify.mjs -->
+
+## Workflow
+
+Run `just check`.
+"""
+
+
+def test_angle_text_in_code_spans_and_comments_is_no_placeholder(tmp_path):
+    findings = crb.check_composition(
+        make_repo(tmp_path, composition=LITERAL_TEMPLATES_AGENTS)
+    )
+    assert levels(findings, "OK") == ["AGENTS.md records the reference composition"]
+
+
+def test_angle_text_in_the_prose_beside_a_code_span_is_still_a_placeholder(tmp_path):
+    agents = LITERAL_TEMPLATES_AGENTS.replace(
+        "- References composed:",
+        "- Product shape: <cli / web-app> and `<kept>`\n- References composed:",
+    )
+    findings = crb.check_composition(make_repo(tmp_path, composition=agents))
+    assert levels(findings, "ERROR") == [
+        "the AGENTS.md composition section still holds template placeholders"
+    ]
+
+
+def test_the_shipped_template_composition_section_is_still_a_placeholder(tmp_path):
+    template = (SKILL_DIR / "assets" / "AGENTS.md.template").read_text(encoding="utf-8")
+    findings = crb.check_composition(make_repo(tmp_path, composition=template))
+    assert levels(findings, "ERROR") == [
+        "the AGENTS.md composition section still holds template placeholders"
+    ]
+
+
+# llmlint: ignore[comments_earn_their_place] a section banner, as above: it names where the e2e-realism fleet shapes begin.
+# --- e2e mocking signal ----------------------------------------------------
+
+
+def e2e_mock_warnings(tmp_path: Path, name: str, source: str) -> list[str]:
+    repo = make_repo(tmp_path)
+    (repo / "tests").mkdir(exist_ok=True)
+    (repo / "tests" / name).write_text(source, encoding="utf-8")
+    return [m for m in levels(crb.audit(repo), "WARN") if "mocking library" in m]
+
+
+def test_prose_naming_a_mock_server_is_no_mocking_import(tmp_path):
+    # crozier's e2e suite cites where a meta-schema came from in a doc comment.
+    source = (
+        "/// from mock-server/mockserver-monorepo, whose draft-04 meta-schema `$ref` is\n"
+        "/// fetched once and vendored; import mock/fixtures are not used here.\n"
+        "#[test]\nfn generates() {}\n"
+    )
+    assert e2e_mock_warnings(tmp_path, "e2e.rs", source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from mock import patch\n",
+        "import mock\n",
+        "from mock.mock import MagicMock\n",
+        "from unittest.mock import patch\n",
+        "import unittest.mock\n",
+        "def test_x(monkeypatch):\n    pass\n",
+        "def test_x(mocker):\n    pass\n",
+        "@patch('mod.fn')\ndef test_x(_):\n    pass\n",
+        "# requires pytest-mock\n",
+        "vi.mock('node:fs')\n",
+        "jest.mock('fs')\n",
+        "import sinon from 'sinon'\n",
+        "import nock from 'nock'\n",
+        "// uses mockito\n",
+    ],
+)
+def test_every_mocking_import_still_warns(tmp_path, source):
+    assert len(e2e_mock_warnings(tmp_path, "test_e2e_journey.py", source)) == 1
