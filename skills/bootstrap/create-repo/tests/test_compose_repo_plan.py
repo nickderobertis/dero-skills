@@ -795,6 +795,23 @@ def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):
     assert not missing.exists()
 
 
+def test_wiring_keeps_a_quiet_check_header_quiet(tmp_path):
+    # just's `@` prefix makes the recipe quiet; it is not part of the name, so
+    # the wiring finds `check` behind it and writes the prefix back.
+    repo = template_repo(tmp_path)
+    justfile = repo / "justfile"
+    text = justfile.read_text(encoding="utf-8")
+    assert '\ncheck tier="affected":' in text
+    justfile.write_text(
+        text.replace('\ncheck tier="affected":', '\n@check tier="affected":'),
+        encoding="utf-8",
+    )
+    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    wired = justfile.read_text(encoding="utf-8")
+    assert '\n@check tier="affected": && (test-e2e tier) (budgets tier)\n' in wired
+
+
 @pytest.mark.parametrize("name", ["Justfile", ".justfile"])
 def test_wiring_finds_each_justfile_name_just_reads(tmp_path, name):
     repo = template_repo(tmp_path)

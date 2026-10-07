@@ -168,9 +168,10 @@ BUDGETS_RECIPE_NAME = "budgets"
 # The recipe itself, an asset so this script carries no orchestrator command.
 ONEBUDGETSPEC_RECIPE = "assets/tools/onebudgetspec.justfile"
 # A justfile recipe header: its name, then its parameters up to the single
-# terminating colon, dependencies after it. The baseline checker reads recipes
+# terminating colon, dependencies after it; a leading `@` is just's quiet prefix,
+# not part of the name. The baseline checker reads recipes
 # with the same pattern (its RECIPE_RE); the test suite holds the two equal.
-JUST_RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
+JUST_RECIPE_RE = re.compile(r"^@?([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
 JUST_BASE_ASSIGNMENT_RE = re.compile(r"^base\s*:=", re.MULTILINE)
 
 
@@ -616,6 +617,7 @@ class RecipeHeader(NamedTuple):
     """A justfile recipe's header line, split where just splits it."""
 
     index: int  # its line number
+    head: str  # the name, with just's quiet `@` prefix where it has one
     params: str  # between the name and the colon
     deps: str  # after the colon, without a trailing comment
     comment: str  # the trailing comment's text, or ""
@@ -628,8 +630,9 @@ def recipe_headers(text: str) -> dict[str, RecipeHeader]:
         if match:
             name = match.group(1)
             deps, _, comment = line[match.end() :].partition("#")
-            params = line[len(name) : match.end() - 1]
-            headers[name] = RecipeHeader(index, params, deps, comment)
+            params = line[match.end(1) : match.end() - 1]
+            head = line[: match.end(1)]
+            headers[name] = RecipeHeader(index, head, params, deps, comment)
     return headers
 
 
@@ -697,7 +700,7 @@ def plan_justfile(path: Path, recipe: str) -> JustfilePlan:
         lines = text.splitlines(keepends=True)
         comment = f" #{check.comment.rstrip()}" if check.comment else ""
         lines[check.index] = (
-            f"check{check.params}:{check.deps.rstrip()} {call}{comment}\n"
+            f"{check.head}{check.params}:{check.deps.rstrip()} {call}{comment}\n"
         )
         text = "".join(lines)
         changes.append(f"`check` depends on `{call}`")
