@@ -153,7 +153,9 @@ GATE_COMMAND = "just check"
 # lookahead — the ':' before '=' fails `(?!=)` — so only the terminating recipe
 # colon matches. The parameter span allows '=' so a defaulted parameter does not
 # hide the recipe (it must, or e.g. `lint-llm-diff base="origin/main":` is missed).
-RECIPE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
+# A leading '@' is just's quiet-recipe prefix (`@lint-llm-diff *args:`), not part
+# of the name.
+RECIPE_RE = re.compile(r"^@?([A-Za-z_][A-Za-z0-9_-]*)[^\n:]*:(?!=)")
 
 JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 
@@ -162,14 +164,36 @@ JUSTFILE_NAMES = ("justfile", "Justfile", ".justfile")
 # it can reach (references/project-graph.md).
 PROJECT_GRAPH_FILES = ("nx.json",)
 
-# An invocation of that orchestrator: `nx` fanning targets out over the graph,
-# run directly or through a package runner (`bunx nx`, `npx nx`, ...).
-ORCHESTRATOR_RUN_RE = re.compile(r"\bnx\s+(?:affected|run-many|run)\b")
+# The command word of an orchestrator invocation: `nx` run directly, by path
+# (`node_modules/.bin/nx`) or through a package runner (`bunx nx`, `pnpm exec
+# nx`), or a repository script named for it (`scripts/nx.sh`,
+# `scripts/nx-affected.sh`). It must stand as a word of its own, so `nx.json`,
+# `onyx` or `scripts/nxfoo.sh` are not one. Justfile variables are expanded
+# before this is read (`parse_just_recipe_details`), so `{{nx}}` holding one of
+# these counts too.
+ORCHESTRATOR_INVOKER_RE = re.compile(
+    r"(?<![^\s\"'(=;&|@`])(?:[\w.-]*/)*(?:nx(?:-[\w.-]+)?\.sh|nx)(?=$|[\s\"');&|`])"
+)
 
-# The `-t/--target(s)` list of such an invocation. Targets run to the next flag,
-# so a delegating `check` shows which targets it actually fans out over.
-ORCHESTRATOR_TARGETS_RE = re.compile(
-    r"\bnx\s+(?:affected|run-many|run)\b[^\n]*?(?:-t|--targets?)[=\s]\s*([^\n]*)"
+# The subcommands that fan targets out over the graph. An invocation carrying a
+# `-t/--targets` list delegates too, whatever its subcommand slot holds — a
+# justfile `{{ if ... }}` expression or a shell array expansion picks the
+# subcommand at run time.
+ORCHESTRATOR_SUBCOMMANDS = frozenset({"affected", "run-many", "run"})
+
+# A `-t/--target(s)` flag, standing as a word of its own; its list follows.
+ORCHESTRATOR_TARGETS_FLAG_RE = re.compile(r"(?<![\w-])(?:-t|--targets?)(?:=|\s+)")
+
+# Shell control operators and redirections (`2>&1`, `>>"$log"`): a target
+# list ends where the next command or a redirection begins.
+SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&"})
+SHELL_REDIRECT_RE = re.compile(r"\d*[<>]")
+
+# A justfile assignment whose value is one quoted string (`nx := "pnpm exec nx"`),
+# the shape a recipe body's `{{nx}}` is expanded from. A value built from an
+# expression (`"--exclude=" + NAME`, a backtick) is left unexpanded.
+JUST_STRING_ASSIGNMENT_RE = re.compile(
+    r"""^(?:export\s+)?([A-Za-z_][A-Za-z0-9_-]*)\s*:=\s*(?:"([^"\\]*)"|'([^']*)')\s*(?:#.*)?$"""
 )
 
 # The recipes that make up the gate; the project-graph check asks whether any of
@@ -395,7 +419,24 @@ def parse_just_recipe_details(text: str) -> dict[str, Recipe]:
     blanks and surrounding whitespace removed. This is intentionally a light
     parser: it captures enough to tell a filled-in recipe from a placeholder
     and to see whether ``check`` wires in ``test``, not to emulate just.
+
+    Body lines have each ``{{name}}`` of a variable assigned one quoted string
+    expanded to its value, so ``nx := "pnpm exec nx"`` with ``{{nx}} affected -t test`` reads
+    as the invocation it runs. Any other interpolation is left as written.
     """
+    variables = {
+        match.group(1): match.group(2) if match.group(2) is not None else match.group(3)
+        for match in map(JUST_STRING_ASSIGNMENT_RE.match, text.splitlines())
+        if match
+    }
+
+    def expand(line: str) -> str:
+        return re.sub(
+            r"\{\{\s*([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}",
+            lambda m: variables.get(m.group(1), m.group(0)),
+            line,
+        )
+
     recipes: dict[str, Recipe] = {}
     current: Recipe | None = None
     for line in text.splitlines():
@@ -411,7 +452,7 @@ def parse_just_recipe_details(text: str) -> dict[str, Recipe]:
             else:
                 current = None  # assignment or other non-recipe line
         elif current is not None and line.strip():
-            current.body.append(line.strip())
+            current.body.append(expand(line.strip()))
     return recipes
 
 
@@ -437,19 +478,63 @@ def recipe_lines(details: dict[str, Recipe], name: str) -> list[str]:
     return lines
 
 
+def orchestrator_invocations(line: str) -> list[str]:
+    """The argument text of each orchestrator invocation in ``line``.
+
+    Each runs from just after its command word to the next invocation, so a line
+    chaining several (``nx affected -t lint && nx affected -t test``) yields each
+    one's arguments rather than only the first's.
+    """
+    starts = list(ORCHESTRATOR_INVOKER_RE.finditer(line))
+    return [
+        line[match.end() : nxt.start() if nxt else len(line)]
+        for match, nxt in zip(starts, [*starts[1:], None])
+    ]
+
+
+def _target_list(args: str) -> set[str]:
+    """The targets named by every ``-t/--targets`` flag in invocation ``args``."""
+    targets: set[str] = set()
+    for flag in ORCHESTRATOR_TARGETS_FLAG_RE.finditer(args):
+        for token in args[flag.end() :].split():
+            if (
+                token.startswith("-")
+                or token.rstrip(";") in SHELL_OPERATORS
+                or SHELL_REDIRECT_RE.match(token)
+            ):
+                break  # the target list ends at the next flag, command or redirect
+            names = token.strip("\"'")
+            targets.update(part for part in names.rstrip(";").split(",") if part)
+            if token.endswith(";"):
+                break
+    return targets
+
+
 def orchestrator_targets(line: str) -> set[str]:
-    """The target names an orchestrator invocation in ``line`` fans out over.
+    """The target names the orchestrator invocations in ``line`` fan out over.
 
     Both spellings Nx accepts are unpacked: the space-separated list (``-t lint
-    test``) and the comma-separated one (``--targets=lint,test``).
+    test``) and the comma-separated one (``--targets=lint,test``). Every
+    invocation on the line counts, whatever its subcommand slot holds.
     """
-    targets: set[str] = set()
-    for match in ORCHESTRATOR_TARGETS_RE.finditer(line):
-        for token in match.group(1).split():
-            if token.startswith("-"):
-                break  # the target list ends at the next flag
-            targets.update(part for part in token.strip("\"'").split(",") if part)
-    return targets
+    return {
+        target
+        for args in orchestrator_invocations(line)
+        for target in _target_list(args)
+    }
+
+
+def delegates_to_orchestrator(line: str) -> bool:
+    """Whether ``line`` runs targets through the orchestrator's project graph.
+
+    An invocation delegates when its first argument is a fan-out subcommand
+    (``affected``, ``run-many``, ``run``) or when it carries a target list, which
+    covers a subcommand chosen by an expression at run time.
+    """
+    return any(
+        (args.split() or [""])[0] in ORCHESTRATOR_SUBCOMMANDS or _target_list(args)
+        for args in orchestrator_invocations(line)
+    )
 
 
 def find_justfile(repo: Path) -> Path | None:
@@ -648,7 +733,7 @@ def check_project_graph(repo: Path) -> list[Finding]:
     if justfile is not None:
         details = parse_just_recipe_details(justfile.read_text(encoding="utf-8"))
         delegates = any(
-            ORCHESTRATOR_RUN_RE.search(line)
+            delegates_to_orchestrator(line)
             for name in GATE_RECIPES
             for line in recipe_lines(details, name)
         )
