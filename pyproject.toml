@@ -27,6 +27,9 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.8",
     "skilltest-pytest>=0.8.0",
+    # The build backend whose METADATA the typed-packaging check's Poetry reading
+    # is held to: tests/e2e/test_poetry_classifiers_e2e.py builds wheels with it.
+    "poetry-core>=2,<3",
 ]
 
 [tool.uv]

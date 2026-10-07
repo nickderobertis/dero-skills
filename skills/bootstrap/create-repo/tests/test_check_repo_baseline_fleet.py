@@ -287,6 +287,25 @@ def test_outside_a_git_work_tree_every_manifest_is_walked(tmp_path):
     assert len(typed_packaging_errors(crb.audit(repo))) == 1
 
 
+def test_without_git_installed_every_manifest_is_walked(tmp_path, monkeypatch):
+    # A work tree on a machine with no git binary: nothing can say what is
+    # ignored, so the walk is kept whole and nothing is reported about git.
+    (tmp_path / "repo").mkdir()
+    repo = make_repo(tmp_path / "repo")
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_text("runs/\n", encoding="utf-8")
+    write_package(
+        repo, marker=False, classifiers=(), project_dir="runs/plan-1/checkout"
+    )
+    (tmp_path / "no-git").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "no-git"))
+    findings = crb.audit(repo)
+    assert [e.message.split(" ")[0] for e in typed_packaging_errors(findings)] == [
+        "runs/plan-1/checkout/pyproject.toml"
+    ]
+    assert not any("git could not list" in m for m in levels(findings, "ERROR"))
+
+
 def test_manifests_under_test_directories_are_not_audited(tmp_path):
     # crozier's generator goldens: `tests/fixtures/<case>/expected/pyproject.toml`.
     repo = make_repo(tmp_path)
@@ -728,6 +747,34 @@ def test_without_setup_llmlint_beside_the_provisioner_the_install_is_missing(tmp
     assert "no scripts/setup-llmlint.sh (the automated llmlint toolchain install)" in (
         levels(crb.audit(repo), "ERROR")
     )
+
+
+@pytest.mark.parametrize("escape", ["dot-dot", "symlink"])
+def test_a_hook_path_leaving_the_repository_is_not_the_repos_script(tmp_path, escape):
+    # A provisioner outside the clone is not one the repository ships: the hook
+    # names nothing in the repo, so the script is missing.
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "session-setup.sh").write_text(PROVISIONS_JUST, encoding="utf-8")
+    (tmp_path / "repo").mkdir()
+    repo = make_repo(tmp_path / "repo")
+    if escape == "dot-dot":
+        command = "bash ../outside/session-setup.sh"
+    else:
+        (repo / "scripts" / "shared").symlink_to(outside)
+        command = "bash scripts/shared/session-setup.sh"
+    (repo / ".claude" / "settings.json").write_text(
+        CI_DIR_HOOK_SETTINGS.replace(
+            "./scripts/ci/session-setup.sh # provisions just, then hands off to "
+            "setup-llmlint.sh",
+            command,
+        ),
+        encoding="utf-8",
+    )
+    assert crb.find_session_setup_script(repo) is None
+    assert levels(crb.check_session_setup(repo), "ERROR") == [
+        "SessionStart hook runs session-setup.sh but the script is missing"
+    ]
 
 
 def test_a_hook_path_through_the_project_dir_variable_resolves(tmp_path):

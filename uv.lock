@@ -31,6 +31,7 @@ dev = [
     { name = "onebudgetspec-cli" },
     { name = "oneharness-cli" },
     { name = "packaging" },
+    { name = "poetry-core" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "skilltest-pytest" },
@@ -44,6 +45,7 @@ dev = [
     { name = "onebudgetspec-cli", specifier = "==0.1.3" },
     { name = "oneharness-cli", specifier = ">=0.16,<0.17" },
     { name = "packaging", specifier = ">=24" },
+    { name = "poetry-core", specifier = ">=2,<3" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "skilltest-pytest", specifier = ">=0.8.0" },
@@ -123,6 +125,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
+name = "poetry-core"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/42/b5/50f1fda26c4fe5b1d6ce5cdf0391bdfa1ca12fdcb8ad68344d5cf678fc90/poetry_core-2.5.0.tar.gz", hash = "sha256:81d04c9253b19d0604718268d781867c8f7b2128e5b25bbf1e84141eec6b89c4", size = 455721, upload-time = "2026-09-19T17:47:10.23Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/25/7ed0a2ea4fe12f7fd0394387b5debbcd6fdbd06e5ac9daab96ba11471da8/poetry_core-2.5.0-py3-none-any.whl", hash = "sha256:98ee465b66f7e14bb9fbe68fb5e00d0cff184f036993ec94610ae4b5612f3add", size = 413562, upload-time = "2026-09-19T17:47:08.728Z" },
 ]
 
 [[package]]

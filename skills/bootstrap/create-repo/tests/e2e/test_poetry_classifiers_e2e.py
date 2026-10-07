@@ -4,14 +4,16 @@ The typed-packaging check reads `Typing :: Typed` and `Private :: Do Not Upload`
 from the list a wheel's METADATA is written from — `[project].classifiers`, or
 for a poetry-core manifest whose `[project]` declares none,
 `[tool.poetry].classifiers`. That is poetry-core's contract, not the checker's,
-so each case here builds the manifest's wheel with the real backend (`uv build`,
-which fetches poetry-core from PyPI — the reason this sits in the external tier)
-and holds the checker's command-line verdict to the classifiers the wheel ships.
+so each case here builds the manifest's wheel with the real backend — poetry-core
+from this repo's dev group, called through the PEP 517 hook a build frontend
+calls, so no registry is reached — and holds the checker's command-line verdict
+to the classifiers the wheel ships.
 """
 
 from __future__ import annotations
 
 import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -22,6 +24,12 @@ from test_check_repo_baseline_fleet import POETRY_MANIFEST, write_manifest
 TYPED = '"Typing :: Typed",'
 PRIVATE = '"Private :: Do Not Upload",'
 PROJECT_CLASSIFIERS = 'dynamic = ["version"]\nclassifiers = [{}]\n'
+
+# PEP 517's `build_wheel` hook, run in the project directory as a frontend runs it.
+BUILD_WHEEL = (
+    "import sys; from poetry.core.masonry.api import build_wheel; "
+    "print(build_wheel(sys.argv[1]))"
+)
 
 MANIFESTS = {
     # crozier's shape: the classifiers only under [tool.poetry].
@@ -40,8 +48,10 @@ MANIFESTS = {
 
 def wheel_classifiers(project: Path, out: Path) -> set[str]:
     """Build ``project``'s wheel with its real backend; return its METADATA classifiers."""
+    out.mkdir()
     built = subprocess.run(
-        ["uv", "build", "--wheel", "--out-dir", str(out), str(project)],
+        [sys.executable, "-c", BUILD_WHEEL, str(out)],
+        cwd=project,
         capture_output=True,
         text=True,
     )
