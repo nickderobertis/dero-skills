@@ -450,3 +450,122 @@ def test_an_unpublished_workspace_member_owes_a_stated_exemption(tmp_path):
     assert [e.message.split(" ")[0] for e in errors] == [
         "packages/tooling/pyproject.toml"
     ]
+
+
+# llmlint: ignore[comments_earn_their_place] a section banner, as above: it names where the notignored fleet shapes begin.
+# --- notignored ------------------------------------------------------------
+
+# notignored's tag-triggered release workflow, which names the action's
+# consumption ref only in a comment above its `major-tag` job.
+RELEASE_WORKFLOW_MENTIONING_THE_ACTION = """\
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions: {}
+jobs:
+  # The GitHub Action's consumption ref. `uses: nickderobertis/notignored@v0` is
+  # what the README tells consumers to write.
+  major-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - run: git tag -f v0
+"""
+
+# notignored's dogfood workflow: the action built from the branch (`uses: ./`).
+DOGFOOD_WORKFLOW = """\
+name: notignored
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  suppressions:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # --diff resolves the base branch, which a shallow checkout omits.
+          fetch-depth: 0
+      - uses: ./
+        with:
+          version: local
+"""
+
+NOTIGNORED_ACTION_MANIFEST = (
+    "name: notignored\ndescription: Comment on a pull request with its suppressions.\n"
+)
+
+
+def notignored_repo(tmp_path: Path, dogfood: str, action: str | None) -> Path:
+    repo = make_repo(tmp_path, notignored=dogfood)
+    workflows = repo / ".github" / "workflows"
+    (workflows / "release.yml").write_text(
+        RELEASE_WORKFLOW_MENTIONING_THE_ACTION, encoding="utf-8"
+    )
+    if action is not None:
+        (repo / "action.yml").write_text(action, encoding="utf-8")
+    return repo
+
+
+def test_notignored_dogfooding_its_own_action_passes(tmp_path):
+    findings = crb.check_notignored(
+        notignored_repo(tmp_path, DOGFOOD_WORKFLOW, NOTIGNORED_ACTION_MANIFEST)
+    )
+    assert levels(findings, "OK") == [
+        ".github/workflows/notignored.yml posts the suppressions review comment on "
+        "pull requests"
+    ], findings
+    assert not any("release.yml" in f.message for f in findings)
+
+
+@pytest.mark.parametrize(
+    "action",
+    [None, "name: some-other-action\ndescription: notignored-alike\n"],
+    ids=["no-action-manifest", "another-action"],
+)
+def test_a_local_action_elsewhere_is_not_the_notignored_action(tmp_path, action):
+    # Outside notignored's own repository `uses: ./` runs some other action, and
+    # the comment in release.yml runs nothing: no workflow posts the comment.
+    findings = crb.check_notignored(notignored_repo(tmp_path, DOGFOOD_WORKFLOW, action))
+    assert levels(findings, "ERROR") == [
+        "no workflow runs the notignored suppressions review comment"
+    ]
+
+
+def test_the_dogfood_workflow_is_still_held_to_every_property(tmp_path):
+    # Choosing the workflow is all `uses: ./` changes: a shallow, unguarded,
+    # push-only dogfood workflow without the comment permission still fails.
+    broken = (
+        DOGFOOD_WORKFLOW.replace("  pull_request:", "  push:")
+        .replace("  pull-requests: write\n", "")
+        .replace("          fetch-depth: 0\n", "")
+        .replace(
+            "    if: github.event.pull_request.head.repo.full_name == github.repository\n",
+            "",
+        )
+    )
+    findings = crb.check_notignored(
+        notignored_repo(tmp_path, broken, NOTIGNORED_ACTION_MANIFEST)
+    )
+    errors = levels(findings, "ERROR")
+    assert len(errors) == 4, errors
+    assert all(m.startswith(".github/workflows/notignored.yml ") for m in errors)
+
+
+def test_a_property_named_only_in_a_comment_is_not_met(tmp_path):
+    # Comment text configures nothing, for the properties as for the action.
+    commented = make_repo(tmp_path).joinpath(".github/workflows/notignored.yml")
+    commented.write_text(
+        commented.read_text(encoding="utf-8").replace(
+            "fetch-depth: 0", "fetch-depth: 1  # was fetch-depth: 0"
+        ),
+        encoding="utf-8",
+    )
+    errors = levels(crb.check_notignored(commented.parents[2]), "ERROR")
+    assert errors == [
+        ".github/workflows/notignored.yml checks out shallowly, so there is no base "
+        "branch to diff against and the comment reports nothing"
+    ]

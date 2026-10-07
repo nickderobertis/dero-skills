@@ -78,7 +78,8 @@ Checks:
     `just`, and has no version manager there to read `.tool-versions`) and is wired
     into the SessionStart hook. Optional, so silent when neither shipped nor wired.
   * The suppressions review comment is wired: a workflow under
-    .github/workflows/ uses the `nickderobertis/notignored` action, triggered on
+    .github/workflows/ uses the `nickderobertis/notignored` action (outside a
+    comment; in notignored's own repository, `uses: ./`), triggered on
     `pull_request`, with the `pull-requests: write` permission and the
     `fetch-depth: 0` checkout it needs to work, and the fork-PR skip guard that
     keeps it off the required-checks set. It posts every suppression a PR adds,
@@ -376,6 +377,20 @@ PR_WHY_RE = re.compile(r"\bwhy\b", re.IGNORECASE)
 # The suppressions review comment: the notignored action, however it is pinned
 # (the floating `@v0` major tag the skill templates, or an exact `@v0.1.11`).
 NOTIGNORED_ACTION_RE = re.compile(r"uses:\s*nickderobertis/notignored@")
+
+# notignored's own repository dogfoods the action built from the branch under
+# review (`uses: ./`), which runs it exactly as the published ref would. That
+# spelling counts only where the root `action.yml` is the notignored action.
+LOCAL_ACTION_RE = re.compile(r"""uses:\s*(["']?)\./?\1\s*$""", re.MULTILINE)
+ACTION_MANIFEST_NAMES = ("action.yml", "action.yaml")
+NOTIGNORED_ACTION_NAME_RE = re.compile(
+    r"""^name:\s*(["']?)notignored\1\s*(?:#.*)?$""", re.MULTILINE
+)
+
+# A YAML comment: a whole-line one, or a `#` after whitespace ending a line's
+# content. Comment text configures nothing, so it is dropped before any of the
+# workflow's properties are read.
+YAML_COMMENT_RE = re.compile(r"(?:^|\s)#.*$", re.MULTILINE)
 
 # What the action needs to do its job, and what keeps it off the required set:
 #   * a `pull_request` trigger — the comment only exists on a pull request, so a
@@ -1451,14 +1466,32 @@ def check_notignored(repo: Path) -> list[Finding]:
     fork-PR skip guard is checked too — it is what justifies leaving
     the workflow *out* of the required-checks set, since a fork's read-only token
     can never upsert the comment.
+
+    Comments are read as nothing, so a workflow that only mentions the action in
+    one is not chosen; and in notignored's own repository a local ``uses: ./``
+    runs the action, so its dogfood workflow is the one checked.
     """
-    workflow = next(
+    is_notignored_repo = any(
+        (repo / name).is_file()
+        and NOTIGNORED_ACTION_NAME_RE.search((repo / name).read_text(encoding="utf-8"))
+        for name in ACTION_MANIFEST_NAMES
+    )
+
+    def runs_notignored(text: str) -> bool:
+        return bool(
+            NOTIGNORED_ACTION_RE.search(text)
+            or (is_notignored_repo and LOCAL_ACTION_RE.search(text))
+        )
+
+    workflow, text = next(
         (
-            p
+            (p, text)
             for p in workflow_files(repo)
-            if NOTIGNORED_ACTION_RE.search(p.read_text(encoding="utf-8"))
+            if runs_notignored(
+                text := YAML_COMMENT_RE.sub("", p.read_text(encoding="utf-8"))
+            )
         ),
-        None,
+        (None, ""),
     )
     if workflow is None:
         return [
@@ -1472,7 +1505,6 @@ def check_notignored(repo: Path) -> list[Finding]:
         ]
 
     rel = workflow.relative_to(repo).as_posix()
-    text = workflow.read_text(encoding="utf-8")
     problems: list[Finding] = []
     if not workflow_triggers_on_pull_request(text):
         problems.append(
