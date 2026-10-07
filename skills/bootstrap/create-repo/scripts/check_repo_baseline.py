@@ -46,9 +46,9 @@ Checks:
     backend (`hatchling.build`, `uv_build`, `setuptools.build_meta`,
     `flit_core.buildapi`, `pdm.backend`, `poetry.core.masonry.api`) ships a
     `py.typed` marker beside an `__init__.py` under its directory AND declares
-    the `Typing :: Typed` classifier (in `[project].classifiers`, or for a Poetry
-    manifest whose `[project]` declares none, `[tool.poetry].classifiers` — the
-    list poetry-core writes), so the wheel it publishes is typed for its
+    the `Typing :: Typed` classifier (in `[project].classifiers`, or for a
+    `poetry.core.masonry.api` manifest whose `[project]` declares none,
+    `[tool.poetry].classifiers` — the list poetry-core writes), so the wheel it publishes is typed for its
     consumers (PEP 561). Exempt: no `[build-system]`, a backend outside that set
     (maturin under any bindings), `[tool.uv] package = false`, the
     `Private :: Do Not Upload` classifier (read from the same two tables), or a

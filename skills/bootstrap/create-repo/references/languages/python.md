@@ -38,8 +38,9 @@ Language-level conventions for any Python repo. Combine with a product shape
   inside every package directory it distributes, so the built wheel carries
   `<package>/py.typed` for each importable package (PEP 561), and declares the
   `Typing :: Typed` trove classifier in `[project].classifiers` (or, for a
-  Poetry manifest whose `[project]` declares no classifiers, in
-  `[tool.poetry].classifiers`, the list poetry-core then writes into `METADATA`).
+  manifest built by `poetry.core.masonry.api` whose `[project]` declares no
+  classifiers, in `[tool.poetry].classifiers`, the list poetry-core then writes
+  into `METADATA`; with both tables declared it writes `[project]`'s alone).
   Without the
   marker a consumer's type checker degrades every imported name to `Any`,
   however fully the package is annotated. The proof is the **built wheel**: a
@@ -182,8 +183,8 @@ one aggregate and carries the same name in every language.
   distribution name, or a manifest under a `test`/`tests` directory or ignored
   by git — ships an empty `py.typed` inside each importable package its wheel
   carries and declares `Typing :: Typed` (in `[project].classifiers`, or in
-  `[tool.poetry].classifiers` where a Poetry manifest's `[project]` declares
-  none); a check
+  `[tool.poetry].classifiers` where a `poetry.core.masonry.api` manifest's
+  `[project]` declares none); a check
   in the repo's own gate builds the wheel the way the release does and fails
   when the wheel lacks the marker or its `METADATA` lacks the classifier; and
   where a generator writes the package, the marker lives outside what it owns
