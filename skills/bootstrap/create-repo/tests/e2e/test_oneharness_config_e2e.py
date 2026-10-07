@@ -373,8 +373,15 @@ def test_the_checker_resolves_extends_as_the_release_does(tmp_path, chain):
     result = read_effective_config(repo / "oneharness.toml")
     assert result.returncode == 0, result.stderr
     effective = json.loads(result.stdout)
+    assert isinstance(effective, dict), (
+        f"the effective config is no object: {effective!r}"
+    )
     run_mode = reported_field(effective.get("run_mode"), "`run_mode`").value
     harnesses = reported_field(effective.get("harnesses"), "`harnesses`").value
+    assert isinstance(run_mode, str), f"`run_mode` is not a string: {run_mode!r}"
+    assert isinstance(harnesses, list) and all(isinstance(h, str) for h in harnesses), (
+        f"`harnesses` is not a list of harness ids: {harnesses!r}"
+    )
     released_fallback = (
         run_mode == "fallback"
         and len(harnesses) >= 2

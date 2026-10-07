@@ -50,7 +50,10 @@ def analyzed(messages: list[str]) -> dict[str, str | None]:
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout)
+    types = json.loads(result.stdout)
+    assert isinstance(types, dict) and set(types) == set(messages), types
+    assert set(types.values()) <= {"major", "minor", "patch", None}, types
+    return types
 
 
 def test_the_bump_policy_in_agents_md_is_what_semantic_release_does():
