@@ -55,9 +55,21 @@ def analyzed(messages: list[str]) -> dict[str, str | None]:
 
 def test_the_bump_policy_in_agents_md_is_what_semantic_release_does():
     stated = policy()
-    # Every release type, and some types that release nothing, are stated.
+    # A bullet the parser stopped reading would compare an empty policy and pass,
+    # so the policy must state every release level before it is compared.
     assert {"major", "minor", "patch", None} <= set(stated.values()), stated
     assert analyzed(list(stated)) == stated
+
+
+def test_a_malformed_request_is_refused_with_its_cause():
+    result = subprocess.run(
+        ["bun", "run", str(ANALYZE), '{"feat: x": 1}'],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "one JSON array of strings" in result.stderr
 
 
 def test_a_policy_line_the_configuration_contradicts_is_caught():
