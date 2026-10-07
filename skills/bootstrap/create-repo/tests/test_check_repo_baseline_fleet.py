@@ -569,3 +569,84 @@ def test_a_property_named_only_in_a_comment_is_not_met(tmp_path):
         ".github/workflows/notignored.yml checks out shallowly, so there is no base "
         "branch to diff against and the comment reports nothing"
     ]
+
+
+# llmlint: ignore[comments_earn_their_place] a section banner, as above: it names where the session-provisioner fleet shapes begin.
+# --- session provisioner outside scripts/ ----------------------------------
+
+# nick-derobertis-site's hook: the provisioner kept under scripts/ci/, with a
+# trailing shell comment on the command.
+CI_DIR_HOOK_SETTINGS = (
+    '{"hooks": {"SessionStart": [{"matcher": "startup|resume", "hooks": '
+    '[{"type": "command", "command": "./scripts/ci/session-setup.sh '
+    '# provisions just, then hands off to setup-llmlint.sh"}]}]}, '
+    '"permissions": {"allow": []}}'
+)
+PROVISIONS_JUST = '#!/usr/bin/env bash\nuv tool install rust-just\nbash "$(dirname "$0")/setup-llmlint.sh"\n'
+
+
+def ci_dir_repo(
+    tmp_path: Path, *, session_setup: str | None, setup_llmlint: bool
+) -> Path:
+    repo = make_repo(tmp_path, settings=CI_DIR_HOOK_SETTINGS)
+    (repo / "scripts" / "setup-llmlint.sh").unlink()  # only the scripts/ci/ copies
+    ci = repo / "scripts" / "ci"
+    ci.mkdir(parents=True)
+    if session_setup is not None:
+        (ci / "session-setup.sh").write_text(session_setup, encoding="utf-8")
+    if setup_llmlint:
+        (ci / "setup-llmlint.sh").write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    return repo
+
+
+def test_a_hook_naming_a_provisioner_outside_scripts_resolves_to_it(tmp_path):
+    repo = ci_dir_repo(tmp_path, session_setup=PROVISIONS_JUST, setup_llmlint=True)
+    findings = crb.audit(repo)
+    assert not crb.has_errors(findings), levels(findings, "ERROR")
+    assert "session-setup.sh provisions the toolchain (`just`) and is wired" in levels(
+        findings, "OK"
+    )
+    assert any("llmlint tier configured" in m for m in levels(findings, "OK"))
+
+
+def test_the_provisioner_the_hook_names_must_still_provision_just(tmp_path):
+    repo = ci_dir_repo(
+        tmp_path, session_setup="#!/usr/bin/env bash\n", setup_llmlint=True
+    )
+    assert levels(crb.check_session_setup(repo), "ERROR") == [
+        "session-setup.sh does not provision `just` (the command-surface entry point)"
+    ]
+
+
+def test_a_hook_naming_a_missing_provisioner_still_errors(tmp_path):
+    # A scripts/session-setup.sh elsewhere does not stand in for the one the hook
+    # runs: a session would still be provisioned by nothing.
+    repo = ci_dir_repo(tmp_path, session_setup=None, setup_llmlint=True)
+    (repo / "scripts" / "session-setup.sh").write_text(
+        PROVISIONS_JUST, encoding="utf-8"
+    )
+    assert levels(crb.check_session_setup(repo), "ERROR") == [
+        "SessionStart hook runs session-setup.sh but the script is missing"
+    ]
+
+
+def test_without_setup_llmlint_beside_the_provisioner_the_install_is_missing(tmp_path):
+    repo = ci_dir_repo(tmp_path, session_setup=PROVISIONS_JUST, setup_llmlint=False)
+    assert "no scripts/setup-llmlint.sh (the automated llmlint toolchain install)" in (
+        levels(crb.audit(repo), "ERROR")
+    )
+
+
+def test_a_hook_path_through_the_project_dir_variable_resolves(tmp_path):
+    # The shape this repository's own hook takes.
+    settings = CI_DIR_HOOK_SETTINGS.replace(
+        "./scripts/ci/session-setup.sh",
+        'bash \\"$CLAUDE_PROJECT_DIR/scripts/ci/session-setup.sh\\"',
+    )
+    repo = ci_dir_repo(tmp_path, session_setup=PROVISIONS_JUST, setup_llmlint=True)
+    (repo / ".claude" / "settings.json").write_text(settings, encoding="utf-8")
+    assert (
+        crb.find_session_setup_script(repo)
+        == (repo / "scripts" / "ci" / "session-setup.sh").resolve()
+    )
+    assert not crb.has_errors(crb.audit(repo))

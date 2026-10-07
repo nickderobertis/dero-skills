@@ -24,7 +24,8 @@ clone, run one command, and trust.
    nor cleanly scoped to one folder belongs in a reference doc linked from
    `AGENTS.md`, not inlined (see Principle 5). Optionally add a `SessionStart`
    hook in `.claude/settings.json` pointing at an idempotent, non-blocking
-   `scripts/session-setup.sh` (from
+   `scripts/session-setup.sh` (the recommended path — the baseline audit reads
+   whichever repository path the hook names; from
    [`assets/session-setup.sh.template`](./assets/session-setup.sh.template)) that
    provisions the dev toolchain — at minimum `just` itself, since a web/cloud
    session's image often ships the language runtime but not `just` and has no

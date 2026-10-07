@@ -73,8 +73,9 @@ Checks:
     or the root/docs variants GitHub also renders) AND names both a What and a
     Why section — so every PR states the behavior change and its driver, not a
     walkthrough of the diff. An empty or unrelated file fails.
-  * The session provisioner, when present, is correct: `scripts/session-setup.sh`
-    provisions `just` (a cloud image often ships the language runtime but not
+  * The session provisioner, when present, is correct: the session-setup script
+    (at the path the SessionStart hook names; `scripts/session-setup.sh` by
+    default) provisions `just` (a cloud image often ships the language runtime but not
     `just`, and has no version manager there to read `.tool-versions`) and is wired
     into the SessionStart hook. Optional, so silent when neither shipped nor wired.
   * The suppressions review comment is wired: a workflow under
@@ -89,8 +90,9 @@ Checks:
     fallback-mode `oneharness.toml` selecting the harness the pinless config drives
     (a primary plus a required `claude-code` fallback), a `lint-llm` recipe and the diff-scoped
     `lint-llm-diff` recipe (the blocking PR check), an automated install
-    (`scripts/setup-llmlint.sh` wired into a SessionStart hook — directly or via
-    `session-setup.sh`), and a CI workflow that invokes it. The tier runs OUTSIDE
+    (`scripts/setup-llmlint.sh`, or one beside the hook's session-setup script,
+    wired into a SessionStart hook — directly or via `session-setup.sh`), and a
+    CI workflow that invokes it. The tier runs OUTSIDE
     `just check` (it is non-deterministic) but is a required PR check.
     Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
     `--buildout` flag additionally composes and runs the one-time buildout tier —
@@ -508,8 +510,8 @@ def orchestrator_invocations(line: str) -> list[str]:
     """The argument text of each orchestrator invocation in ``line``.
 
     Each runs from just after its command word to the next invocation, so a line
-    chaining several (``nx affected -t lint && nx affected -t test``) yields each
-    one's arguments rather than only the first's.
+    chaining several with ``&&`` yields each one's arguments rather than only the
+    first's.
     """
     starts = list(ORCHESTRATOR_INVOKER_RE.finditer(line))
     return [
@@ -1645,39 +1647,81 @@ def ci_references_llmlint(repo: Path) -> bool:
     return any("llmlint" in p.read_text(encoding="utf-8") for p in workflow_files(repo))
 
 
-def find_setup_llmlint_script(repo: Path) -> Path | None:
-    """Return the idempotent llmlint toolchain installer, or None.
+# A SessionStart hook command's reference to the project directory, which Claude
+# Code exports; a script path after it is repository-relative.
+CLAUDE_PROJECT_DIR_RE = re.compile(r"""["']?\$\{?CLAUDE_PROJECT_DIR\}?["']?/""")
 
-    The skill drops it at ``scripts/setup-llmlint.sh``; accept a couple of nearby
-    spellings so the check is about the automation existing, not the exact path.
+# The provisioner scripts, under either separator.
+SESSION_SETUP_SCRIPT_NAME = r"session[-_]setup\.sh"
+SETUP_LLMLINT_SCRIPT_NAME = r"setup[-_]llmlint\.sh"
+
+
+def hook_script_paths(repo: Path, script_name: str) -> list[Path]:
+    """The scripts named ``script_name`` the SessionStart hooks run, by their path.
+
+    Each is read from the hook command as a repository-relative path (``bash
+    scripts/ci/session-setup.sh``, ``"$CLAUDE_PROJECT_DIR"/scripts/...``),
+    whether or not it exists — the hook is what provisions a session, so the path
+    it names is the one that counts. A path leaving the repository is not one.
     """
-    for rel in (
-        "scripts/setup-llmlint.sh",
-        "scripts/setup_llmlint.sh",
-        "setup-llmlint.sh",
-    ):
-        candidate = repo / rel
-        if candidate.is_file():
-            return candidate
-    return None
+    path_re = re.compile(rf"(?<![\w.$/-])((?:\.{{1,2}}/)?(?:[\w.-]+/)*{script_name})")
+    root = repo.resolve()
+    paths: list[Path] = []
+    for command in sessionstart_hook_commands(repo):
+        for match in path_re.finditer(CLAUDE_PROJECT_DIR_RE.sub("", command)):
+            path = (repo / match.group(1)).resolve()
+            if path.is_relative_to(root) and path not in paths:
+                paths.append(path)
+    return paths
 
 
 def find_session_setup_script(repo: Path) -> Path | None:
     """Return the idempotent session/dev-toolchain provisioner, or None.
 
-    The skill drops it at ``scripts/session-setup.sh`` (from
-    ``assets/session-setup.sh.template``); accept a couple of nearby spellings so
-    the check is about the automation existing, not the exact path.
+    Where a SessionStart hook names one by path, that path is the script: the
+    first such that exists, or None when none does (the hook points at nothing).
+    Otherwise the skill's recommended ``scripts/session-setup.sh`` (from
+    ``assets/session-setup.sh.template``) or a couple of nearby spellings, so the
+    check is about the automation existing, not the exact path.
     """
-    for rel in (
-        "scripts/session-setup.sh",
-        "scripts/session_setup.sh",
-        "session-setup.sh",
-    ):
-        candidate = repo / rel
-        if candidate.is_file():
-            return candidate
-    return None
+    named = hook_script_paths(repo, SESSION_SETUP_SCRIPT_NAME)
+    candidates = named or [
+        repo / rel
+        for rel in (
+            "scripts/session-setup.sh",
+            "scripts/session_setup.sh",
+            "session-setup.sh",
+        )
+    ]
+    return next((path for path in candidates if path.is_file()), None)
+
+
+def find_setup_llmlint_script(repo: Path) -> Path | None:
+    """Return the idempotent llmlint toolchain installer, or None.
+
+    The skill drops it at ``scripts/setup-llmlint.sh``. Also accepted: one a
+    SessionStart hook names by path, one beside the session provisioner the hook
+    runs (which hands off to it), and a couple of nearby spellings — the check
+    is about the automation existing, not the exact path.
+    """
+    session_setup = find_session_setup_script(repo)
+    candidates = [
+        *hook_script_paths(repo, SETUP_LLMLINT_SCRIPT_NAME),
+        *(
+            [session_setup.parent / "setup-llmlint.sh"]
+            if session_setup is not None
+            else []
+        ),
+        *(
+            repo / rel
+            for rel in (
+                "scripts/setup-llmlint.sh",
+                "scripts/setup_llmlint.sh",
+                "setup-llmlint.sh",
+            )
+        ),
+    ]
+    return next((path for path in candidates if path.is_file()), None)
 
 
 # A deterministic signal that session-setup.sh actually provisions ``just``: the
@@ -1738,7 +1782,8 @@ def settings_sessionstart_runs_setup(repo: Path) -> bool:
 def check_session_setup(repo: Path) -> list[Finding]:
     """Verify the session/dev-toolchain provisioner, when present.
 
-    ``scripts/session-setup.sh`` is the idempotent SessionStart provisioner that
+    The session-setup script (the path the SessionStart hook names, else
+    ``scripts/session-setup.sh``) is the idempotent provisioner that
     makes a fresh web/cloud session able to run the ``just`` command surface: it
     must ensure ``just`` itself, since a cloud image often ships the language
     runtime but not ``just`` and has no version manager to read ``.tool-versions``,

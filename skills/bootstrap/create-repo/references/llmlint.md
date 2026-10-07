@@ -154,11 +154,14 @@ everything they already check, and reach for llmlint only for the judgment calls
   lint-llm-validate --diff-base origin/main` (no credential, no model) before the
   model-based `lint-llm-diff` step, so a config/suppression/version-bump slip fails
   fast without spending a harness call.
-- [ ] **Install automated.** `scripts/setup-llmlint.sh` exists (idempotent
-  toolchain install) and `just setup-llmlint` runs it. The Claude Code
-  `SessionStart` hook in `.claude/settings.json` invokes it — directly, or (the
-  recommended layout) via `scripts/session-setup.sh`, which provisions `just`
-  first, then hands off to `setup-llmlint.sh`.
+- [ ] **Install automated.** An idempotent `setup-llmlint.sh` exists (toolchain
+  install; `scripts/setup-llmlint.sh` by default) and `just setup-llmlint` runs
+  it. The Claude Code `SessionStart` hook in `.claude/settings.json` invokes it —
+  directly, or (the recommended layout) via `scripts/session-setup.sh`, which
+  provisions `just` first, then hands off to `setup-llmlint.sh`. The hook is what
+  provisions a session, so the repository path it names is the script that
+  counts: a provisioner kept elsewhere (say `scripts/ci/session-setup.sh`) passes
+  when the hook points at it and its `setup-llmlint.sh` sits beside it.
 - [ ] **Blocking PR check.** A CI workflow runs `just lint-llm-diff` as its own
   job, separate from the `check` gate; it requires the harness credential and
   fails fast without it (fork PRs are gated by the repo's
