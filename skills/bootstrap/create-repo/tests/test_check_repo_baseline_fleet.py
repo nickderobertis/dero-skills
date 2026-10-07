@@ -10,8 +10,17 @@ reporting, so a fix that only silences the check fails here.
 
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
 import pytest
-from test_check_repo_baseline import crb, levels, make_repo
+from test_check_repo_baseline import (
+    crb,
+    levels,
+    make_repo,
+    typed_packaging_errors,
+    write_package,
+)
 
 
 def surface(check: str, *, test: str, lint: str, preamble: str = "") -> str:
@@ -220,3 +229,224 @@ def test_a_quiet_recipe_header_is_a_recipe(tmp_path):
     assert not any("lint-llm-diff" in m for m in levels(findings, "ERROR")), levels(
         findings, "ERROR"
     )
+
+
+# llmlint: ignore[comments_earn_their_place] a section banner, as above: it names where the typed-packaging fleet shapes begin.
+# --- typed packaging -------------------------------------------------------
+
+
+def git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+
+def write_manifest(
+    repo: Path, project_dir: str, manifest: str, *, marker: bool, package: str
+) -> Path:
+    """Write ``manifest`` verbatim at ``project_dir`` beside package ``package``."""
+    pkg = repo / project_dir / package
+    pkg.mkdir(parents=True, exist_ok=True)
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    if marker:
+        (pkg / "py.typed").write_text("", encoding="utf-8")
+    path = repo / project_dir / "pyproject.toml"
+    path.write_text(manifest, encoding="utf-8")
+    return path
+
+
+def untyped_manifest(name_line: str, table: str = "project") -> str:
+    """A qualifying uv_build manifest with no classifier, naming itself as given."""
+    return f'[{table}]\n{name_line}\nversion = "0.1.0"\n\n[build-system]\nbuild-backend = "uv_build"\n'
+
+
+def test_a_manifest_git_ignores_is_not_audited_until_it_is_tracked(tmp_path):
+    # ai-orchestrator's ignored `runs/` tree holds scratch checkouts whose
+    # manifests are not the repo's; the same manifest tracked is the repo's.
+    repo = make_repo(tmp_path)
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_text("runs/\nscratch/\n", encoding="utf-8")
+    manifest = write_package(
+        repo, marker=False, classifiers=(), project_dir="runs/plan-1/checkout"
+    )
+    assert not typed_packaging_errors(crb.audit(repo))
+
+    git(repo, "add", "-f", manifest.relative_to(repo).as_posix())
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == [
+        "runs/plan-1/checkout/pyproject.toml"
+    ]
+
+
+def test_outside_a_git_work_tree_every_manifest_is_walked(tmp_path):
+    # With no git to ask, an ignore file is just a file: nothing is left out.
+    repo = make_repo(tmp_path)
+    (repo / ".gitignore").write_text("runs/\n", encoding="utf-8")
+    write_package(
+        repo, marker=False, classifiers=(), project_dir="runs/plan-1/checkout"
+    )
+    assert len(typed_packaging_errors(crb.audit(repo))) == 1
+
+
+def test_manifests_under_test_directories_are_not_audited(tmp_path):
+    # crozier's generator goldens: `tests/fixtures/<case>/expected/pyproject.toml`.
+    repo = make_repo(tmp_path)
+    for project_dir in ("tests/fixtures/zoonk/expected", "pkg/test/golden"):
+        write_package(repo, marker=False, classifiers=(), project_dir=project_dir)
+    write_package(repo, marker=False, classifiers=(), project_dir="packages/real")
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == ["packages/real/pyproject.toml"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "@@CROZIER_SDK_NAME@@",  # crozier's scaffolding template
+        "{{ project_name }}",  # a Jinja/cookiecutter placeholder
+        "${NAME}",  # a shell-style placeholder
+        "<name>",  # an angle-bracket placeholder
+        "my package",  # a space
+        "-demo",  # a leading separator
+        "demo-",  # a trailing separator
+        ".demo",
+        "demo.",
+        "_demo",
+        "démo",  # not ASCII
+    ],
+)
+def test_a_manifest_whose_name_is_no_distribution_name_is_not_audited(tmp_path, name):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "assets/scaffolding",
+        untyped_manifest(f'name = "{name}"'),
+        marker=False,
+        package="sdk",
+    )
+    assert not typed_packaging_errors(crb.audit(repo))
+
+
+@pytest.mark.parametrize(
+    "name", ["a", "7", "MyPackage", "my.pkg_name-x", "Zope.Interface", "a-b_c.d9"]
+)
+def test_a_manifest_with_a_valid_name_is_still_audited(tmp_path, name):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "packages/demo",
+        untyped_manifest(f'name = "{name}"'),
+        marker=False,
+        package="demo",
+    )
+    assert len(typed_packaging_errors(crb.audit(repo))) == 1
+
+
+def test_the_poetry_name_decides_where_project_declares_none(tmp_path):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "packages/template",
+        untyped_manifest('name = "@@SDK_NAME@@"', table="tool.poetry"),
+        marker=False,
+        package="sdk",
+    )
+    write_manifest(
+        repo,
+        "packages/real",
+        untyped_manifest('name = "real-sdk"', table="tool.poetry"),
+        marker=False,
+        package="real",
+    )
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == ["packages/real/pyproject.toml"]
+
+
+def test_a_manifest_declaring_no_name_is_still_audited(tmp_path):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "packages/anon",
+        untyped_manifest('description = "x"'),
+        marker=False,
+        package="anon",
+    )
+    assert len(typed_packaging_errors(crb.audit(repo))) == 1
+
+
+# crozier's generated SDK manifest: the name in `[project]`, the classifiers only
+# under `[tool.poetry]`, built by poetry-core.
+POETRY_MANIFEST = """\
+[project]
+name = "fern-sdk"
+dynamic = ["version"]
+
+[tool.poetry]
+version = "0.0.1"
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    {classifier}
+]
+packages = [{{ include = "fern", from = "src" }}]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+"""
+
+
+def test_a_poetry_manifest_typed_through_tool_poetry_passes(tmp_path):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "sdks/fern",
+        POETRY_MANIFEST.format(classifier='"Typing :: Typed",'),
+        marker=True,
+        package="src/fern",
+    )
+    findings = crb.audit(repo)
+    assert not typed_packaging_errors(findings), levels(findings, "ERROR")
+    assert any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
+
+
+def test_a_poetry_manifest_kept_private_through_tool_poetry_is_exempt(tmp_path):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "sdks/fern",
+        POETRY_MANIFEST.format(classifier='"Private :: Do Not Upload",'),
+        marker=False,
+        package="src/fern",
+    )
+    assert not typed_packaging_errors(crb.audit(repo))
+
+
+def test_a_poetry_manifest_without_the_classifier_still_errors(tmp_path):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "sdks/fern",
+        POETRY_MANIFEST.format(classifier=""),
+        marker=True,
+        package="src/fern",
+    )
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1 and "Typing :: Typed" in errors[0].message
+
+
+def test_an_unpublished_workspace_member_owes_a_stated_exemption(tmp_path):
+    # vibe-stl's tooling member is never uploaded, but says so only in prose: the
+    # checker reads the stated exemptions, nothing else, so it is still held.
+    repo = make_repo(tmp_path)
+    (repo / "README.md").write_text(
+        "packages/tooling is never published.\n", encoding="utf-8"
+    )
+    write_package(
+        repo,
+        backend="uv_build",
+        marker=False,
+        classifiers=(),
+        project_dir="packages/tooling",
+    )
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == [
+        "packages/tooling/pyproject.toml"
+    ]

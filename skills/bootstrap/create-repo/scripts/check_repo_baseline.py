@@ -46,10 +46,14 @@ Checks:
     backend (`hatchling.build`, `uv_build`, `setuptools.build_meta`,
     `flit_core.buildapi`, `pdm.backend`, `poetry.core.masonry.api`) ships a
     `py.typed` marker beside an `__init__.py` under its directory AND declares
-    the `Typing :: Typed` classifier, so the wheel it publishes is typed for its
+    the `Typing :: Typed` classifier (in `[project].classifiers` or
+    `[tool.poetry].classifiers`), so the wheel it publishes is typed for its
     consumers (PEP 561). Exempt: no `[build-system]`, a backend outside that set
-    (maturin under any bindings), `[tool.uv] package = false`, or the
-    `Private :: Do Not Upload` classifier. Presence-only: it reads the tree and
+    (maturin under any bindings), `[tool.uv] package = false`, the
+    `Private :: Do Not Upload` classifier (read from the same two tables), or a
+    declared name that is not a valid distribution name (an unrendered template).
+    Not audited: a manifest under a `test`/`tests` directory, or one git ignores
+    in a git work tree. Presence-only: it reads the tree and
     the manifest and never builds a wheel — the wheel-level proof is the repo's
     own gate (references/languages/python.md, the one statement of the invariant;
     the test suite holds this inventory and the checker's constants to it).
@@ -304,8 +308,15 @@ PRIVATE_CLASSIFIER = "Private :: Do Not Upload"
 TYPED_MARKER = "py.typed"
 
 # Test trees are never what the wheel ships, so a `py.typed` found under one sits
-# beside test helpers rather than the distributed package and does not count.
+# beside test helpers rather than the distributed package and does not count, and
+# a manifest under one is a fixture or golden, not a distribution the repo ships.
 TEST_DIR_NAMES = frozenset({"test", "tests"})
+
+# A valid distribution name (the PyPA core-metadata name rule): ASCII letters,
+# digits, `.`, `_` and `-`, beginning and ending with a letter or digit. A
+# manifest whose name breaks it — a template's `@@NAME@@` or `{{ name }}` — is
+# not one any build would publish, so the invariant does not hold it.
+DISTRIBUTION_NAME_RE = re.compile(r"[A-Z0-9](?:[A-Z0-9._-]*[A-Z0-9])?", re.IGNORECASE)
 
 # The cargo build configuration every Rust repository carries, verbatim from
 # references/languages/rust.md (the test suite fails when the two drift). Each
@@ -910,13 +921,50 @@ def _walk_tree(root: Path):
         yield Path(dirpath), dirnames, filenames
 
 
+def git_ignored(repo: Path, paths: list[Path]) -> set[Path]:
+    """The members of ``paths`` git ignores, when ``repo`` is in a git work tree.
+
+    Empty outside a work tree, or where git is not installed, so a plain
+    directory is read exactly as it is walked. A tracked file is never ignored,
+    whatever the patterns say — what ``git check-ignore`` itself reports.
+    """
+    if not paths:
+        return set()
+    try:
+        inside = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if inside.returncode != 0 or inside.stdout.strip() != "true":
+            return set()
+        relative = [path.relative_to(repo).as_posix() for path in paths]
+        ignored = subprocess.run(
+            ["git", "-C", str(repo), "check-ignore", "-z", "--stdin"],
+            input="\0".join(relative) + "\0",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return set()
+    return {repo / rel for rel in ignored.stdout.split("\0") if rel}
+
+
 def iter_pyproject_manifests(repo: Path) -> list[Path]:
-    """Every ``pyproject.toml`` in the repo, outside vendored and build trees."""
-    return [
-        directory / "pyproject.toml"
-        for directory, _dirnames, filenames in _walk_tree(repo)
-        if "pyproject.toml" in filenames
-    ]
+    """Every ``pyproject.toml`` the repo ships, outside vendored, build and test trees.
+
+    In a git work tree a manifest git ignores (a scratch run, a generated
+    checkout) is not the repo's, so it is left out too.
+    """
+    manifests: list[Path] = []
+    for directory, dirnames, filenames in _walk_tree(repo):
+        dirnames[:] = [d for d in dirnames if d not in TEST_DIR_NAMES]
+        if "pyproject.toml" in filenames:
+            manifests.append(directory / "pyproject.toml")
+    ignored = git_ignored(repo, manifests)
+    return [path for path in manifests if path not in ignored]
 
 
 def has_typed_marker(project_dir: Path) -> bool:
@@ -937,29 +985,35 @@ class PyprojectManifest(NamedTuple):
 
     ``backend`` is ``[build-system].build-backend`` (``None`` when the manifest
     has no ``[build-system]``), ``classifiers`` the string entries of
-    ``[project].classifiers``, and ``uv_package`` the ``[tool.uv] package``
-    flag (``None`` when unset).
+    ``[project].classifiers`` and ``[tool.poetry].classifiers`` (poetry-core
+    writes both into the wheel's METADATA), ``uv_package`` the ``[tool.uv]
+    package`` flag (``None`` when unset), and ``name`` ``[project].name``, else
+    ``[tool.poetry].name`` (``None`` when neither declares a string).
     """
 
     path: Path
     backend: str | None
     classifiers: tuple[str, ...]
     uv_package: bool | None
+    name: str | None = None
 
     @property
     def owes_typed_packaging(self) -> bool:
         """Whether the typed-packaging invariant holds this manifest to its terms.
 
         True names a manifest the check audits, not one that already satisfies
-        it. The four exemptions are read here: no ``[build-system]`` (nothing is
+        it. The exemptions are read here: no ``[build-system]`` (nothing is
         built), a backend outside ``TYPED_PACKAGING_BACKENDS``, ``[tool.uv]
-        package = false`` (a workspace root or a tests-only member), and
-        ``Private :: Do Not Upload``.
+        package = false`` (a workspace root or a tests-only member),
+        ``Private :: Do Not Upload``, and a declared name that is not a valid
+        distribution name (an unrendered template). A manifest declaring no name
+        is held as before.
         """
         return (
             self.backend in TYPED_PACKAGING_BACKENDS
             and self.uv_package is not False
             and PRIVATE_CLASSIFIER not in self.classifiers
+            and (self.name is None or bool(DISTRIBUTION_NAME_RE.fullmatch(self.name)))
         )
 
 
@@ -985,18 +1039,22 @@ def parse_pyproject(path: Path) -> PyprojectManifest | None:
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         return None
     backend = _table(data, "build-system").get("build-backend")
-    classifiers = _table(data, "project").get("classifiers")
+    project, poetry = _table(data, "project"), _table(data, "tool", "poetry")
+    classifiers = [
+        c
+        for table in (project, poetry)
+        if isinstance(listed := table.get("classifiers"), list)
+        for c in listed
+    ]
+    names = [n for n in (project.get("name"), poetry.get("name")) if isinstance(n, str)]
     uv_package = _table(data, "tool", "uv").get("package")
     return PyprojectManifest(
         path=path,
         # llmlint: ignore[boundary_inputs_validated, tool_output_is_signal] the invariant fires only for a string `build-backend` among the six it names; any other value is a backend outside that set, the exemption the invariant states, and the build frontend that reads the field is what rejects a non-string one.
         backend=backend if isinstance(backend, str) else None,
-        classifiers=tuple(
-            c
-            for c in (classifiers if isinstance(classifiers, list) else [])
-            if isinstance(c, str)
-        ),
+        classifiers=tuple(c for c in classifiers if isinstance(c, str)),
         uv_package=uv_package if isinstance(uv_package, bool) else None,
+        name=names[0] if names else None,
     )
 
 
