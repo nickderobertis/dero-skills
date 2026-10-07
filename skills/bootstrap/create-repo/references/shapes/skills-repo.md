@@ -44,12 +44,11 @@ worked reference implementation (and is where this skill itself lives).
   VS Code / Copilot.
 - **Tooling boundaries.** bun for JavaScript, uv for Python; keep the two
   toolchains cleanly separated. The Nx project graph is mandatory here as in
-  every repo ([`project-graph.md`](../project-graph.md)): the authoring gate —
-  validate, smoke and test across the skills — runs through it, and the
-  "Stack and composition" section records the projects it is split into. It is
-  authoring and CI tooling only: it must never become a runtime dependency of
-  the bundled scripts (see the runtime-independence invariant), since a
-  consuming repo never runs it.
+  every repo: the authoring gate — validate, smoke and test across the
+  skills — runs through it, and the "Stack and composition" section records
+  the projects it is split into. It is authoring and CI tooling only: it must
+  never become a runtime dependency of the bundled scripts (see the
+  runtime-independence invariant), since a consuming repo never runs it.
 - **Hooks.** Where JS exists, use husky; the pre-commit/pre-push hook should call
   `just check` and stay quiet on success.
 - **Docs.** Root and nested `AGENTS.md`; include `tests/AGENTS.md` when test
