@@ -848,6 +848,13 @@ def llmlint_errors(repo: Path) -> list[str]:
     return levels(crb.check_llmlint(repo), "ERROR")
 
 
+def oneharness_fix(repo: Path) -> str:
+    [finding] = [
+        f for f in crb.check_llmlint(repo) if "cannot be resolved" in f.message
+    ]
+    return finding.fix
+
+
 def test_a_fallback_mode_inherited_through_extends_passes(tmp_path):
     assert llmlint_errors(oneharness_repo(tmp_path, CHAIN)) == []
 
@@ -890,10 +897,14 @@ def test_variants_of_other_harnesses_are_no_claude_code_target(tmp_path):
 
 def test_a_missing_parent_is_an_error_naming_the_file(tmp_path):
     files = {k: v for k, v in CHAIN.items() if k != "oneharness.identities.toml"}
-    assert llmlint_errors(oneharness_repo(tmp_path, files)) == [
+    repo = oneharness_repo(tmp_path, files)
+    assert llmlint_errors(repo) == [
         "oneharness.toml cannot be resolved: oneharness.dispatch.toml extends "
         "'oneharness.identities.toml', which does not exist"
     ]
+    assert oneharness_fix(repo).startswith(
+        "create 'oneharness.identities.toml' beside oneharness.dispatch.toml"
+    )
 
 
 def test_an_extends_cycle_is_an_error_naming_the_file(tmp_path):
@@ -901,10 +912,14 @@ def test_an_extends_cycle_is_an_error_naming_the_file(tmp_path):
         **CHAIN,
         "oneharness.identities.toml": 'extends = "oneharness.toml"\nrun_mode = "fallback"\n',
     }
-    assert llmlint_errors(oneharness_repo(tmp_path, files)) == [
+    repo = oneharness_repo(tmp_path, files)
+    assert llmlint_errors(repo) == [
         "oneharness.toml cannot be resolved: the `extends` chain of oneharness.toml "
         "returns to oneharness.toml, a cycle"
     ]
+    assert oneharness_fix(repo).startswith(
+        "remove the `extends` that points back at oneharness.toml"
+    )
 
 
 @pytest.mark.parametrize(
@@ -931,8 +946,9 @@ def test_an_extends_cycle_is_an_error_naming_the_file(tmp_path):
 def test_a_malformed_chain_is_an_error_saying_what_is_wrong(
     tmp_path, override, problem
 ):
-    errors = llmlint_errors(oneharness_repo(tmp_path, {**CHAIN, **override}))
-    assert errors == [f"oneharness.toml cannot be resolved: {problem}"]
+    repo = oneharness_repo(tmp_path, {**CHAIN, **override})
+    assert llmlint_errors(repo) == [f"oneharness.toml cannot be resolved: {problem}"]
+    assert oneharness_fix(repo).startswith("set `")
 
 
 def test_an_unparseable_parent_is_an_error_naming_the_file(tmp_path):
@@ -941,6 +957,9 @@ def test_an_unparseable_parent_is_an_error_naming_the_file(tmp_path):
     assert len(errors) == 1, errors
     assert errors[0].startswith(
         "oneharness.toml cannot be resolved: oneharness.identities.toml does not parse"
+    )
+    assert oneharness_fix(tmp_path).startswith(
+        "fix oneharness.identities.toml so it reads as TOML"
     )
 
 

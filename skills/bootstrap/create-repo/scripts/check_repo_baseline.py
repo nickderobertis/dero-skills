@@ -1646,11 +1646,13 @@ class OneharnessConfig(NamedTuple):
     """An oneharness config with its ``extends`` chain resolved, or why it is not.
 
     ``data`` holds the merged keys (``{}`` when ``problem`` is set); ``problem``
-    names the file whose chain could not be followed, and why.
+    names the file whose chain could not be followed, and why, and ``fix`` the
+    action that repairs that failure.
     """
 
     data: dict
     problem: str | None = None
+    fix: str = ""
 
 
 def _merge_toml(parent: dict, child: dict) -> dict:
@@ -1679,25 +1681,38 @@ def resolve_oneharness_config(repo: Path, path: Path) -> OneharnessConfig:
         rel = os.path.relpath(current, repo)
         if current.resolve() in seen:
             return OneharnessConfig(
-                {}, f"the `extends` chain of {path.name} returns to {rel}, a cycle"
+                {},
+                f"the `extends` chain of {path.name} returns to {rel}, a cycle",
+                f"remove the `extends` that points back at {rel}, so the chain ends "
+                "at a config that extends nothing",
             )
         seen.append(current.resolve())
         try:
             data = tomllib.loads(current.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-            return OneharnessConfig({}, f"{rel} does not parse as TOML ({exc})")
+            return OneharnessConfig(
+                {},
+                f"{rel} does not parse as TOML ({exc})",
+                f"fix {rel} so it reads as TOML (the error names the line)",
+            )
         layers.append(data)
         if "extends" not in data:
             break
         parent = data["extends"]
         if not isinstance(parent, str):
             return OneharnessConfig(
-                {}, f"{rel} sets `extends` to {parent!r}, which is not a file path"
+                {},
+                f"{rel} sets `extends` to {parent!r}, which is not a file path",
+                f"set `extends` in {rel} to the parent config's path as a string, "
+                f"relative to {rel}'s directory",
             )
         following = current.parent / parent
         if not following.is_file():
             return OneharnessConfig(
-                {}, f"{rel} extends {parent!r}, which does not exist"
+                {},
+                f"{rel} extends {parent!r}, which does not exist",
+                f"create {parent!r} beside {rel}, or point `extends` at an existing "
+                f"config, relative to {rel}'s directory",
             )
         current = following
     merged: dict = {}
@@ -1708,7 +1723,9 @@ def resolve_oneharness_config(repo: Path, path: Path) -> OneharnessConfig:
         isinstance(harnesses, list) and all(isinstance(h, str) and h for h in harnesses)
     ):
         return OneharnessConfig(
-            {}, f"`harnesses` is {harnesses!r}, not a list of harness ids"
+            {},
+            f"`harnesses` is {harnesses!r}, not a list of harness ids",
+            'set `harnesses` to a list of harness ids, e.g. ["codex", "claude-code"]',
         )
     return OneharnessConfig(merged)
 
@@ -2042,9 +2059,7 @@ def check_llmlint(repo: Path) -> list[Finding]:
                 Finding(
                     "ERROR",
                     f"{oh.name} cannot be resolved: {resolved.problem}",
-                    "point each `extends` at an existing oneharness config, relative "
-                    "to the file that declares it, without returning to a file "
-                    "already in the chain",
+                    resolved.fix,
                 )
             )
         elif harnesses is None:
