@@ -8,11 +8,13 @@ the bundled oneharness release rejects is not a lint finding — it fails every
 
 The existing guards cannot see that. ``tools/test_oneharness_dogfood.py`` compares
 two files with ``tomllib``, ``test_compose_repo_plan_e2e.py`` checks the file is
-emitted with the expected lines, and ``check_repo_baseline.py`` regex-scans for
-``run_mode`` — none of them knows what the release's config schema accepts. This
+emitted with the expected lines, and ``check_repo_baseline.py`` resolves the
+``extends`` chain and reads ``run_mode`` on its own — none of them knows what the
+release's config schema accepts. This
 module closes that gap by generating the config the way the skill does and handing
 it to the real binary's ``config --config`` (the effective-configuration contract),
-which fails, naming the key, on anything the schema does not know.
+which fails, naming the key, on anything the schema does not know. The same
+contract holds the checker's own ``extends`` resolution to the release's.
 
 **Which release, and where the bound lives.** The root ``pyproject.toml``'s dev
 group declares ``oneharness-cli``, and that entry is the one place the bound is
@@ -39,9 +41,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import NamedTuple
 
+import pytest
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
+from test_check_repo_baseline import crb
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[5]
@@ -298,3 +302,66 @@ def test_a_key_the_release_rejects_fails_and_names_it(tmp_path):
     assert REJECTED_KEY in result.stderr, (
         f"the refusal did not name `{REJECTED_KEY}`:\n{result.stderr}"
     )
+
+
+# The baseline checker resolves `extends` chains itself (stdlib only, so it runs
+# where oneharness is not installed). These chains hold that resolution to the
+# release's: the effective `run_mode` and `harnesses` must be the ones the
+# checker reads, and a chain the release refuses must be one it reports.
+IDENTITIES = (
+    'run_mode = "fallback"\n\n'
+    '[harness.codex]\nmodel = "gpt-5.5"\n\n'
+    '[harness.claude-code.variant.primary]\nmodel = "claude-opus-4-8"\n\n'
+    '[harness.claude-code.variant.alternate]\nmodel = "claude-opus-4-8"\n'
+)
+EXTENDS_CHAINS = {
+    # ai-orchestrator's shape: variants named at the root, the mode two parents up.
+    "inherited-mode": {
+        "oneharness.toml": 'extends = "oneharness.dispatch.toml"\n'
+        'harnesses = ["claude-code:alternate", "codex", "claude-code:primary"]\n',
+        "oneharness.dispatch.toml": 'extends = "oneharness.identities.toml"\n',
+        "oneharness.identities.toml": IDENTITIES,
+    },
+    # Each `extends` resolved against its own file's directory; the nearer file wins.
+    "nested-override": {
+        "oneharness.toml": 'extends = "config/dispatch.toml"\nrun_mode = "parallel"\n',
+        "config/dispatch.toml": 'extends = "identities.toml"\n'
+        'harnesses = ["codex", "claude-code:primary"]\n',
+        "config/identities.toml": IDENTITIES,
+    },
+}
+REFUSED_CHAINS = {
+    "missing-parent": {"oneharness.toml": 'extends = "absent.toml"\n'},
+    "cycle": {
+        "oneharness.toml": 'extends = "b.toml"\n',
+        "b.toml": 'extends = "oneharness.toml"\nrun_mode = "fallback"\n',
+    },
+    "non-string": {"oneharness.toml": "extends = 5\n"},
+}
+
+
+def write_chain(root: Path, files: dict[str, str]) -> Path:
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text, encoding="utf-8")
+    return root / "oneharness.toml"
+
+
+@pytest.mark.parametrize("chain", sorted(EXTENDS_CHAINS))
+def test_the_checker_resolves_extends_as_the_release_does(tmp_path, chain):
+    config = write_chain(tmp_path, EXTENDS_CHAINS[chain])
+    result = read_effective_config(config)
+    assert result.returncode == 0, result.stderr
+    effective = json.loads(result.stdout)
+    resolved = crb.resolve_oneharness_config(tmp_path, config)
+    assert resolved.problem is None, resolved.problem
+    for key in ("run_mode", "harnesses"):
+        released = reported_field(effective.get(key), f"`{key}`").value
+        assert resolved.data.get(key) == released, (key, resolved.data.get(key))
+
+
+@pytest.mark.parametrize("chain", sorted(REFUSED_CHAINS))
+def test_a_chain_the_release_refuses_is_one_the_checker_reports(tmp_path, chain):
+    config = write_chain(tmp_path, REFUSED_CHAINS[chain])
+    assert read_effective_config(config).returncode != 0
+    assert crb.resolve_oneharness_config(tmp_path, config).problem is not None

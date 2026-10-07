@@ -948,15 +948,32 @@ def _walk_tree(root: Path):
         yield Path(dirpath), dirnames, filenames
 
 
-def git_ignored(repo: Path, paths: list[Path]) -> set[Path]:
-    """The members of ``paths`` git ignores, when ``repo`` is in a git work tree.
+class GitIgnored(NamedTuple):
+    """What git ignores under a repo, or why it could not say.
 
-    Empty outside a work tree, or where git is not installed, so a plain
-    directory is read exactly as it is walked. A tracked file is never ignored,
-    whatever the patterns say — what ``git check-ignore`` itself reports.
+    ``entries`` are repo-relative paths, a wholly ignored directory once with a
+    trailing ``/``. It is ``None`` outside a git work tree, where git is not
+    installed, or when the listing failed — ``problem`` then carries git's own
+    error for the failure case.
     """
-    if not paths:
-        return set()
+
+    entries: frozenset[str] | None
+    problem: str | None = None
+
+    def covers(self, rel: str) -> bool:
+        """Whether git ignores the file at repo-relative ``rel``."""
+        return self.entries is not None and (
+            rel in self.entries
+            or any(rel.startswith(e) for e in self.entries if e.endswith("/"))
+        )
+
+
+def git_ignored(repo: Path) -> GitIgnored:
+    """Ask ``git ls-files`` which untracked paths under ``repo`` it ignores.
+
+    A tracked file is never in the answer, whatever the ignore patterns say, as
+    for git itself; neither is a submodule's content, which git does not walk.
+    """
     try:
         inside = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
@@ -965,33 +982,52 @@ def git_ignored(repo: Path, paths: list[Path]) -> set[Path]:
             check=False,
         )
         if inside.returncode != 0 or inside.stdout.strip() != "true":
-            return set()
-        relative = [path.relative_to(repo).as_posix() for path in paths]
-        ignored = subprocess.run(
-            ["git", "-C", str(repo), "check-ignore", "-z", "--stdin"],
-            input="\0".join(relative) + "\0",
+            return GitIgnored(None)
+        listed = subprocess.run(
+            ["git", "-C", str(repo), "ls-files", "-z", "--others", "--ignored"]
+            + ["--exclude-standard", "--directory"],
             capture_output=True,
             text=True,
             check=False,
         )
     except OSError:
-        return set()
-    return {repo / rel for rel in ignored.stdout.split("\0") if rel}
+        return GitIgnored(None)
+    if listed.returncode != 0:
+        detail = listed.stderr.strip() or f"exit {listed.returncode}"
+        return GitIgnored(None, f"`git ls-files` failed in {repo}: {detail}")
+    return GitIgnored(frozenset(rel for rel in listed.stdout.split("\0") if rel))
 
 
-def iter_pyproject_manifests(repo: Path) -> list[Path]:
+class ManifestDiscovery(NamedTuple):
+    """The manifests the typed-packaging check audits, and why git could not filter them."""
+
+    manifests: list[Path]
+    problem: str | None = None
+
+
+def discover_pyproject_manifests(repo: Path) -> ManifestDiscovery:
     """Every ``pyproject.toml`` the repo ships, outside vendored, build and test trees.
 
     In a git work tree a manifest git ignores (a scratch run, a generated
-    checkout) is not the repo's, so it is left out too.
+    checkout) is not the repo's, so it is left out too. Where git cannot list
+    what it ignores, every walked manifest is kept and git's error is returned
+    beside them.
     """
     manifests: list[Path] = []
     for directory, dirnames, filenames in _walk_tree(repo):
         dirnames[:] = [d for d in dirnames if d not in TEST_DIR_NAMES]
         if "pyproject.toml" in filenames:
             manifests.append(directory / "pyproject.toml")
-    ignored = git_ignored(repo, manifests)
-    return [path for path in manifests if path not in ignored]
+    ignored = git_ignored(repo)
+    return ManifestDiscovery(
+        [m for m in manifests if not ignored.covers(m.relative_to(repo).as_posix())],
+        ignored.problem,
+    )
+
+
+def iter_pyproject_manifests(repo: Path) -> list[Path]:
+    """The manifests ``discover_pyproject_manifests`` finds, without git's error."""
+    return discover_pyproject_manifests(repo).manifests
 
 
 def has_typed_marker(project_dir: Path) -> bool:
@@ -1102,7 +1138,18 @@ def check_typed_packaging(repo: Path) -> list[Finding]:
     """
     findings: list[Finding] = []
     qualifying = 0
-    for path in iter_pyproject_manifests(repo):
+    discovery = discover_pyproject_manifests(repo)
+    if discovery.problem is not None:
+        findings.append(
+            Finding(
+                "ERROR",
+                f"typed packaging: git could not list the manifests it ignores "
+                f"({discovery.problem}), so every pyproject.toml was audited",
+                "fix what git reports (run `git status` in the repo to see it), "
+                "then re-run the checker",
+            )
+        )
+    for path in discovery.manifests:
         manifest = parse_pyproject(path)
         if manifest is None or not manifest.owes_typed_packaging:
             continue
@@ -1624,9 +1671,13 @@ def resolve_oneharness_config(repo: Path, path: Path) -> OneharnessConfig:
         except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
             return OneharnessConfig({}, f"{rel} does not parse as TOML ({exc})")
         layers.append(data)
-        parent = data.get("extends")
-        if not isinstance(parent, str):
+        if "extends" not in data:
             break
+        parent = data["extends"]
+        if not isinstance(parent, str):
+            return OneharnessConfig(
+                {}, f"{rel} sets `extends` to {parent!r}, which is not a file path"
+            )
         following = current.parent / parent
         if not following.is_file():
             return OneharnessConfig(
@@ -1636,6 +1687,13 @@ def resolve_oneharness_config(repo: Path, path: Path) -> OneharnessConfig:
     merged: dict = {}
     for layer in reversed(layers):
         merged = _merge_toml(merged, layer)
+    harnesses = merged.get("harnesses")
+    if harnesses is not None and not (
+        isinstance(harnesses, list) and all(isinstance(h, str) and h for h in harnesses)
+    ):
+        return OneharnessConfig(
+            {}, f"`harnesses` is {harnesses!r}, not a list of harness ids"
+        )
     return OneharnessConfig(merged)
 
 
@@ -1649,10 +1707,7 @@ def oneharness_fallback_harnesses(config: dict) -> list[str] | None:
     if config.get("run_mode") != "fallback":
         return None
     harnesses = config.get("harnesses")
-    if not isinstance(harnesses, list):
-        return None
-    ids = [h for h in harnesses if isinstance(h, str) and h]
-    return ids or None
+    return list(harnesses) if isinstance(harnesses, list) and harnesses else None
 
 
 def is_claude_code_target(harness: str) -> bool:

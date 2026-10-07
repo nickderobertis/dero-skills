@@ -296,6 +296,49 @@ def test_manifests_under_test_directories_are_not_audited(tmp_path):
     assert [e.message.split(" ")[0] for e in errors] == ["packages/real/pyproject.toml"]
 
 
+def test_a_manifest_in_a_submodule_is_not_ignored_and_still_audited(tmp_path):
+    # Leaving out what git ignores is all the git filter does: a submodule's
+    # content is not ignored, so its manifest is held as before.
+    source = tmp_path / "sdk-source"
+    write_package(source, marker=False, classifiers=(), project_dir="sdk")
+    git(source, "init", "-q")
+    git(source, "add", "-A")
+    git(source, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "sdk")
+    (tmp_path / "repo").mkdir()
+    repo = make_repo(tmp_path / "repo")
+    git(repo, "init", "-q")
+    git(
+        repo,
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "-q",
+        str(source),
+        "vendor/sdk",
+    )
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert [e.message.split(" ")[0] for e in errors] == [
+        "vendor/sdk/sdk/pyproject.toml"
+    ]
+
+
+def test_a_git_that_cannot_list_what_it_ignores_is_reported(tmp_path):
+    # A corrupt index: git still answers that this is a work tree, then fails to
+    # list. Every manifest is audited, and the failure is named with what to do.
+    repo = make_repo(tmp_path)
+    git(repo, "init", "-q")
+    (repo / ".gitignore").write_text("runs/\n", encoding="utf-8")
+    write_package(repo, project_dir="packages/typed")
+    (repo / ".git" / "index").write_bytes(b"garbage")
+    findings = crb.audit(repo)
+    [failure] = [f for f in findings if "git could not list" in f.message]
+    assert failure.level == "ERROR"
+    assert "index file smaller than expected" in failure.message
+    assert "git status" in failure.fix
+    assert not any("typed packaging: 1 publishing" in m for m in levels(findings, "OK"))
+
+
 @pytest.mark.parametrize(
     "name",
     [
@@ -742,6 +785,34 @@ def test_an_extends_cycle_is_an_error_naming_the_file(tmp_path):
         "oneharness.toml cannot be resolved: the `extends` chain of oneharness.toml "
         "returns to oneharness.toml, a cycle"
     ]
+
+
+@pytest.mark.parametrize(
+    ("override", "problem"),
+    [
+        (
+            {"oneharness.dispatch.toml": "extends = 5\n"},
+            "oneharness.dispatch.toml sets `extends` to 5, which is not a file path",
+        ),
+        (
+            {
+                "oneharness.toml": 'extends = "oneharness.dispatch.toml"\nharnesses = "codex"\n'
+            },
+            "`harnesses` is 'codex', not a list of harness ids",
+        ),
+        (
+            {
+                "oneharness.toml": 'extends = "oneharness.dispatch.toml"\nharnesses = ["codex", 1]\n'
+            },
+            "`harnesses` is ['codex', 1], not a list of harness ids",
+        ),
+    ],
+)
+def test_a_malformed_chain_is_an_error_saying_what_is_wrong(
+    tmp_path, override, problem
+):
+    errors = llmlint_errors(oneharness_repo(tmp_path, {**CHAIN, **override}))
+    assert errors == [f"oneharness.toml cannot be resolved: {problem}"]
 
 
 def test_an_unparseable_parent_is_an_error_naming_the_file(tmp_path):
