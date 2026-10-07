@@ -45,11 +45,12 @@ import pytest
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
-from test_check_repo_baseline import crb
+from test_check_repo_baseline import make_repo
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[5]
 COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
+CHECKER = SKILL_DIR / "scripts" / "check_repo_baseline.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 # The distribution whose declaration this suite is pinned to. Only the NAME lives
@@ -340,28 +341,54 @@ REFUSED_CHAINS = {
 }
 
 
-def write_chain(root: Path, files: dict[str, str]) -> Path:
+def chain_repo(root: Path, files: dict[str, str]) -> Path:
+    """A conformant baseline repo whose oneharness config is the chain ``files``."""
+    root.mkdir()
+    make_repo(root, oneharness=False)
     for name, text in files.items():
         (root / name).parent.mkdir(parents=True, exist_ok=True)
         (root / name).write_text(text, encoding="utf-8")
-    return root / "oneharness.toml"
+    return root
+
+
+def checker_oneharness_errors(repo: Path) -> list[str]:
+    """The oneharness findings of the real checker CLI over ``repo``."""
+    result = subprocess.run(
+        ["uv", "run", "--script", str(CHECKER), str(repo)],
+        capture_output=True,
+        text=True,
+    )
+    errors = [
+        line
+        for line in result.stderr.splitlines()
+        if line.startswith("ERROR") and "oneharness.toml" in line
+    ]
+    assert result.returncode == (1 if errors else 0), result.stderr
+    return errors
 
 
 @pytest.mark.parametrize("chain", sorted(EXTENDS_CHAINS))
 def test_the_checker_resolves_extends_as_the_release_does(tmp_path, chain):
-    config = write_chain(tmp_path, EXTENDS_CHAINS[chain])
-    result = read_effective_config(config)
+    repo = chain_repo(tmp_path / "repo", EXTENDS_CHAINS[chain])
+    result = read_effective_config(repo / "oneharness.toml")
     assert result.returncode == 0, result.stderr
     effective = json.loads(result.stdout)
-    resolved = crb.resolve_oneharness_config(tmp_path, config)
-    assert resolved.problem is None, resolved.problem
-    for key in ("run_mode", "harnesses"):
-        released = reported_field(effective.get(key), f"`{key}`").value
-        assert resolved.data.get(key) == released, (key, resolved.data.get(key))
+    run_mode = reported_field(effective.get("run_mode"), "`run_mode`").value
+    harnesses = reported_field(effective.get("harnesses"), "`harnesses`").value
+    released_fallback = (
+        run_mode == "fallback"
+        and len(harnesses) >= 2
+        and any(h.split(":", 1)[0] == "claude-code" for h in harnesses)
+    )
+    assert (checker_oneharness_errors(repo) == []) == released_fallback, (
+        run_mode,
+        harnesses,
+    )
 
 
 @pytest.mark.parametrize("chain", sorted(REFUSED_CHAINS))
 def test_a_chain_the_release_refuses_is_one_the_checker_reports(tmp_path, chain):
-    config = write_chain(tmp_path, REFUSED_CHAINS[chain])
-    assert read_effective_config(config).returncode != 0
-    assert crb.resolve_oneharness_config(tmp_path, config).problem is not None
+    repo = chain_repo(tmp_path / "repo", REFUSED_CHAINS[chain])
+    assert read_effective_config(repo / "oneharness.toml").returncode != 0
+    errors = checker_oneharness_errors(repo)
+    assert len(errors) == 1 and "oneharness.toml cannot be resolved" in errors[0]

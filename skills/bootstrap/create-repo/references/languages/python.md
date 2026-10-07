@@ -38,8 +38,9 @@ Language-level conventions for any Python repo. Combine with a product shape
   inside every package directory it distributes, so the built wheel carries
   `<package>/py.typed` for each importable package (PEP 561), and declares the
   `Typing :: Typed` trove classifier in `[project].classifiers` (or, for a
-  Poetry manifest, `[tool.poetry].classifiers`, which poetry-core writes into the
-  same `METADATA`). Without the
+  Poetry manifest whose `[project]` declares no classifiers, in
+  `[tool.poetry].classifiers`, the list poetry-core then writes into `METADATA`).
+  Without the
   marker a consumer's type checker degrades every imported name to `Any`,
   however fully the package is annotated. The proof is the **built wheel**: a
   check in the repo's own gate builds the wheel the way the release does and
@@ -48,7 +49,7 @@ Language-level conventions for any Python repo. Combine with a product shape
   generator owns and a test shows regeneration keeps it. Exempt: a manifest with
   no `[build-system]`, a backend outside that set (maturin under any bindings
   included), `[tool.uv] package = false`, the `Private :: Do Not Upload`
-  classifier (in either classifiers table), and a declared name (`[project].name`,
+  classifier (read from the same list), and a declared name (`[project].name`,
   else `[tool.poetry].name`) that is not a valid distribution name — an
   unrendered template such as `@@NAME@@` publishes nothing. A manifest under a
   `test`/`tests` directory is a fixture, and one git ignores is not the repo's,
@@ -180,8 +181,9 @@ one aggregate and carries the same name in every language.
   `Private :: Do Not Upload` classifier, a declared name that is not a valid
   distribution name, or a manifest under a `test`/`tests` directory or ignored
   by git — ships an empty `py.typed` inside each importable package its wheel
-  carries and declares `Typing :: Typed` (in `[project].classifiers` or
-  `[tool.poetry].classifiers`); a check
+  carries and declares `Typing :: Typed` (in `[project].classifiers`, or in
+  `[tool.poetry].classifiers` where a Poetry manifest's `[project]` declares
+  none); a check
   in the repo's own gate builds the wheel the way the release does and fails
   when the wheel lacks the marker or its `METADATA` lacks the classifier; and
   where a generator writes the package, the marker lives outside what it owns

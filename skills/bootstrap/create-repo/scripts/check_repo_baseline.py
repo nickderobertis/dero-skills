@@ -46,8 +46,9 @@ Checks:
     backend (`hatchling.build`, `uv_build`, `setuptools.build_meta`,
     `flit_core.buildapi`, `pdm.backend`, `poetry.core.masonry.api`) ships a
     `py.typed` marker beside an `__init__.py` under its directory AND declares
-    the `Typing :: Typed` classifier (in `[project].classifiers` or
-    `[tool.poetry].classifiers`), so the wheel it publishes is typed for its
+    the `Typing :: Typed` classifier (in `[project].classifiers`, or for a Poetry
+    manifest whose `[project]` declares none, `[tool.poetry].classifiers` — the
+    list poetry-core writes), so the wheel it publishes is typed for its
     consumers (PEP 561). Exempt: no `[build-system]`, a backend outside that set
     (maturin under any bindings), `[tool.uv] package = false`, the
     `Private :: Do Not Upload` classifier (read from the same two tables), or a
@@ -295,6 +296,7 @@ COVERAGE_CONFIG_NAMES = (
 # holds, verbatim from it; the test suite fails when the two drift. The name says
 # "held", not "pure Python": setuptools can drive a compiled extension too, and
 # such a wheel still ships importable packages that owe the marker.
+POETRY_BACKEND = "poetry.core.masonry.api"
 TYPED_PACKAGING_BACKENDS = frozenset(
     {
         "hatchling.build",
@@ -302,7 +304,7 @@ TYPED_PACKAGING_BACKENDS = frozenset(
         "setuptools.build_meta",
         "flit_core.buildapi",
         "pdm.backend",
-        "poetry.core.masonry.api",
+        POETRY_BACKEND,
     }
 )
 
@@ -1047,9 +1049,10 @@ class PyprojectManifest(NamedTuple):
     """The fields of a ``pyproject.toml`` the typed-packaging check reads.
 
     ``backend`` is ``[build-system].build-backend`` (``None`` when the manifest
-    has no ``[build-system]``), ``classifiers`` the string entries of
-    ``[project].classifiers`` and ``[tool.poetry].classifiers`` (poetry-core
-    writes both into the wheel's METADATA), ``uv_package`` the ``[tool.uv]
+    has no ``[build-system]``), ``classifiers`` the string entries of the list
+    the wheel's METADATA is written from — ``[project].classifiers``, or for a
+    poetry-core manifest whose ``[project]`` declares none,
+    ``[tool.poetry].classifiers`` — ``uv_package`` the ``[tool.uv]
     package`` flag (``None`` when unset), and ``name`` ``[project].name``, else
     ``[tool.poetry].name`` (``None`` when neither declares a string).
     """
@@ -1103,19 +1106,25 @@ def parse_pyproject(path: Path) -> PyprojectManifest | None:
         return None
     backend = _table(data, "build-system").get("build-backend")
     project, poetry = _table(data, "project"), _table(data, "tool", "poetry")
-    classifiers = [
-        c
-        for table in (project, poetry)
-        if isinstance(listed := table.get("classifiers"), list)
-        for c in listed
-    ]
+    # poetry-core writes `[tool.poetry].classifiers` into METADATA only where
+    # `[project]` declares none; any other backend never reads that table.
+    source = (
+        poetry
+        if "classifiers" not in project and backend == POETRY_BACKEND
+        else project
+    )
+    classifiers = source.get("classifiers")
     names = [n for n in (project.get("name"), poetry.get("name")) if isinstance(n, str)]
     uv_package = _table(data, "tool", "uv").get("package")
     return PyprojectManifest(
         path=path,
         # llmlint: ignore[boundary_inputs_validated, tool_output_is_signal] the invariant fires only for a string `build-backend` among the six it names; any other value is a backend outside that set, the exemption the invariant states, and the build frontend that reads the field is what rejects a non-string one.
         backend=backend if isinstance(backend, str) else None,
-        classifiers=tuple(c for c in classifiers if isinstance(c, str)),
+        classifiers=tuple(
+            c
+            for c in (classifiers if isinstance(classifiers, list) else [])
+            if isinstance(c, str)
+        ),
         uv_package=uv_package if isinstance(uv_package, bool) else None,
         name=names[0] if names else None,
     )

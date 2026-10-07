@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from packaging.utils import InvalidName, canonicalize_name
 from test_check_repo_baseline import (
     crb,
     levels,
@@ -367,6 +368,22 @@ def test_a_manifest_whose_name_is_no_distribution_name_is_not_audited(tmp_path, 
     assert not typed_packaging_errors(crb.audit(repo))
 
 
+def test_the_name_rule_is_the_one_packaging_enforces():
+    # `packaging` implements the PyPA name rule; every short name over an
+    # alphabet spanning each character class must be judged the same by both.
+    alphabet = ["a", "Z", "0", ".", "_", "-", " ", "@", "é", "{", "$"]
+    names = [""] + alphabet
+    names += [a + b for a in alphabet for b in alphabet]
+    names += [a + b + c for a in alphabet for b in alphabet for c in alphabet]
+    for name in names:
+        try:
+            canonicalize_name(name, validate=True)
+            valid = True
+        except InvalidName:
+            valid = False
+        assert bool(crb.DISTRIBUTION_NAME_RE.fullmatch(name)) == valid, name
+
+
 @pytest.mark.parametrize(
     "name", ["a", "7", "MyPackage", "my.pkg_name-x", "Zope.Interface", "a-b_c.d9"]
 )
@@ -468,6 +485,39 @@ def test_a_poetry_manifest_without_the_classifier_still_errors(tmp_path):
         repo,
         "sdks/fern",
         POETRY_MANIFEST.format(classifier=""),
+        marker=True,
+        package="src/fern",
+    )
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1 and "Typing :: Typed" in errors[0].message
+
+
+def test_project_classifiers_win_over_tool_poetry_ones(tmp_path):
+    # poetry-core writes `[tool.poetry].classifiers` only where `[project]`
+    # declares none, so a typed classifier left in the Poetry table is not shipped.
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "sdks/fern",
+        POETRY_MANIFEST.format(classifier='"Typing :: Typed",').replace(
+            'dynamic = ["version"]\n',
+            'dynamic = ["version"]\nclassifiers = ["Intended Audience :: Developers"]\n',
+        ),
+        marker=True,
+        package="src/fern",
+    )
+    errors = typed_packaging_errors(crb.audit(repo))
+    assert len(errors) == 1 and "Typing :: Typed" in errors[0].message
+
+
+def test_tool_poetry_classifiers_count_only_for_the_poetry_backend(tmp_path):
+    repo = make_repo(tmp_path)
+    write_manifest(
+        repo,
+        "sdks/fern",
+        POETRY_MANIFEST.format(classifier='"Typing :: Typed",').replace(
+            "poetry.core.masonry.api", "hatchling.build"
+        ),
         marker=True,
         package="src/fern",
     )
