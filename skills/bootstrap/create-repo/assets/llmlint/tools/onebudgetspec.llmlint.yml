@@ -130,15 +130,14 @@ rules:
 
   - name: tests_hold_no_nonfunctional_thresholds
     description: |
-      false when test code asserts a cost figure against a fixed bound — wall
+      false when the file asserts a cost figure against a fixed bound — wall
       clock, request, query or API-point count, payload or artifact size, memory
-      or money at a realistic workload — which belongs in a `budgets.yaml` budget
-      the test at most records telemetry for; or when it tells two behaviours
-      apart by elapsed time ("returned within 2 s, so it did not wait") rather
-      than holding a double and asserting the observable event. true otherwise,
-      including a configured timeout, deadline or backoff asserted near its value,
-      an exact count of an action, the absence of an operation, a limit the
-      product itself enforces, and a timeout that only guards against a hang.
+      or money at a realistic workload — or tells two behaviours apart by elapsed
+      time ("returned within 2 s, so it did not wait") rather than asserting the
+      observable event. true otherwise, including a configured timeout, deadline
+      or backoff asserted near its value, an exact count of an action, the
+      absence of an operation, a limit the product itself enforces, and a timeout
+      that only guards against a hang.
     files:
       include:
         - "**/tests/**"
@@ -164,12 +163,12 @@ rules:
 
   - name: budgets_track_product_owner_outcomes
     description: |
-      false when a `budgets.yaml` registers a budget whose figure is a part of
-      another budget's figure the repository registers — a step, phase or
-      operation of it — or the same concern as another budget in a second unit,
-      such as requests beside points for one quota. true otherwise, including a
-      file with a lone budget. Judge only whether one figure is a part or a second
-      unit of another, never whether a product owner would care about it.
+      Budgets track product-owner outcomes, with finer figures as their breakdown.
+      false when the file registers a budget whose figure is a part of another
+      budget's figure the repository registers — a step, phase or operation of it
+      — or the same concern as another budget in a second unit, such as requests
+      beside points for one quota. true otherwise. Whether a product owner would
+      care about a figure is never judged.
     files:
       include:
         - "**/budgets.yaml"

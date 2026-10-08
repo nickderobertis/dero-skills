@@ -856,6 +856,117 @@ def test_a_move_checks_the_board_exactly_once():
     }
 
 
+def _backoff_schedule() -> dict[str, str]:
+    """Case 3: a retry's backoff schedule, read off a recorded sleep."""
+    return {
+        "src/linear_client/retry.py": '''\
+"""Retry a call on a rate-limit refusal, doubling the wait each time."""
+
+
+class RateLimited(Exception):
+    pass
+
+
+def with_retries(call, sleep, attempts=4, first_wait=0.5):
+    wait = first_wait
+    for attempt in range(attempts):
+        try:
+            return call()
+        except RateLimited:
+            if attempt == attempts - 1:
+                raise
+            sleep(wait)
+            wait *= 2
+''',
+        "tests/test_retry.py": """\
+from linear_client.retry import RateLimited, with_retries
+
+
+def test_retries_back_off_by_doubling():
+    waits = []
+    outcomes = iter([RateLimited(), RateLimited(), RateLimited(), "ok"])
+
+    def call():
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    assert with_retries(call, sleep=waits.append) == "ok"
+    assert waits == [0.5, 1.0, 2.0]
+""",
+    }
+
+
+def _absent_operation() -> dict[str, str]:
+    """Case 3: moving a card never walks the whole board."""
+    tree = _exact_count()
+    tree["tests/test_move.py"] += """
+
+def test_a_move_never_walks_the_whole_board():
+    board = Board({f"LIN-{n}": "todo" for n in range(500)})
+    board.walk = lambda: (_ for _ in ()).throw(AssertionError("walked the board"))
+    move_card(board, "LIN-7", to="done")
+    assert board.cards["LIN-7"] == "done"
+"""
+    return tree
+
+
+def _product_enforced_limit() -> dict[str, str]:
+    """Case 3: a limit the product itself enforces — the comment it posts is cut
+    to Linear's body-size limit."""
+    return {
+        "src/linear_sync/comment.py": '''\
+"""Post a sync summary as a Linear comment, cut to the API's body-size limit."""
+
+LINEAR_COMMENT_LIMIT = 65_536
+MARKER = "\\n… (truncated)"
+
+
+def comment_body(summary):
+    if len(summary) <= LINEAR_COMMENT_LIMIT:
+        return summary
+    return summary[: LINEAR_COMMENT_LIMIT - len(MARKER)] + MARKER
+''',
+        "tests/test_comment.py": """\
+from linear_sync.comment import LINEAR_COMMENT_LIMIT, comment_body
+
+
+def test_a_long_summary_is_cut_to_linears_limit():
+    body = comment_body("x" * (LINEAR_COMMENT_LIMIT * 2))
+    assert len(body) == LINEAR_COMMENT_LIMIT
+    assert body.endswith("(truncated)")
+""",
+    }
+
+
+def _no_figure() -> dict[str, str]:
+    """Test code asserting no timing, size or count figure at all."""
+    return {
+        "src/linear_sync/sync.py": _SYNC,
+        "tests/test_sync.py": """\
+from linear_sync.sync import sync_issues
+
+
+class OnePage:
+    def post(self, path, body):
+        return {"issues": [{"id": "LIN-1"}], "next": None}
+
+
+def test_sync_returns_the_issues_it_pulled():
+    assert sync_issues(OnePage()) == [{"id": "LIN-1"}]
+""",
+    }
+
+
+def _empty_budgets_file() -> dict[str, str]:
+    """A project wired for budgets that registers none yet."""
+    return {
+        f"{ROOT}/budgets.yaml": _budgets_yaml().rstrip("\n") + " []\n",
+        f"{ROOT}/src/linear_sync/sync.py": _SYNC,
+    }
+
+
 # The level rule's trees: the reference's Linear-points example. The sync's
 # journey test records each phase's points and requests; budgets analyse that.
 _PHASES_JOURNEY_TEST = """\
@@ -1153,6 +1264,12 @@ CASES = [
     Case(THRESHOLDS, "event-driven-rewrite", _event_driven_rewrite(), Expected.PASS),
     Case(THRESHOLDS, "configured-timeout", _configured_timeout(), Expected.PASS),
     Case(THRESHOLDS, "exact-count", _exact_count(), Expected.PASS),
+    Case(THRESHOLDS, "backoff-schedule", _backoff_schedule(), Expected.PASS),
+    Case(THRESHOLDS, "absent-operation", _absent_operation(), Expected.PASS),
+    Case(
+        THRESHOLDS, "product-enforced-limit", _product_enforced_limit(), Expected.PASS
+    ),
+    Case(THRESHOLDS, "no-figure", _no_figure(), Expected.NOT_RELEVANT),
     Case(
         LEVEL,
         "total-beside-phases",
@@ -1174,6 +1291,7 @@ CASES = [
         Expected.PASS,
     ),
     Case(LEVEL, "distinct-concerns", _distinct_concerns(), Expected.PASS),
+    Case(LEVEL, "no-budgets-registered", _empty_budgets_file(), Expected.NOT_RELEVANT),
     # Every rule's relevance clause drops matched files no budget reaches.
     *(
         Case(rule, "no-budgets", _no_budgets(), Expected.NOT_RELEVANT)
