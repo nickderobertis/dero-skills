@@ -42,8 +42,9 @@ mechanics; the load-bearing rules:
 
 - **Deterministic-first.** The checks are in Python: the skill's own
   `check_repo_baseline.py` must pass against the produced repo, the expected
-  files exist (`Cargo.toml`, `src/main.rs`, `AGENTS.md`, the `CLAUDE.md` symlink),
-  and `cargo run` prints a greeting. The YAML-level `eval`s are deterministic
+  files exist (`Cargo.toml`, `AGENTS.md`, the `CLAUDE.md` symlink, a
+  `src/main.rs` in whichever crate holds the binary), and a binary `cargo
+  metadata` reports runs and prints a greeting. The YAML-level `eval`s are deterministic
   mock-call assertions (no LLM judge): the skill runs no destructive command
   (`not_called`) and does self-verify by running its own baseline checker,
   including the one-time `--buildout` tier (`called`). Add new deterministic

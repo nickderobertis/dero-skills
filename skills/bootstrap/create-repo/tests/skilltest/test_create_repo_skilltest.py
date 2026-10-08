@@ -14,7 +14,8 @@ code:
   outside the small allowlist in `produced_repo_suppressions.py` fails the test.
   A model that can't make the checker pass can always make it stop complaining;
   this is the only check that would notice;
-- the hello-world CLI actually **builds and prints a greeting** (`cargo run`);
+- the hello-world CLI actually **builds and prints a greeting** (`cargo run --bin`,
+  for whichever workspace member declares the binary);
 - **the run used the skill under test** — every tool call that names a
   create-repo skill directory names this one (`skill_copies`), never another
   checkout of dero-skills elsewhere on the host.
