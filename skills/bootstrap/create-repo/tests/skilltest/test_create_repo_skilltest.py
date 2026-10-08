@@ -359,6 +359,24 @@ def _remote_mocks(repo: str) -> list:
     ]
 
 
+def rust_binaries(repo: Path) -> list[str]:
+    """The bin targets ``repo``'s Cargo workspace declares, wherever its members
+    put them, as `cargo metadata` reports them."""
+    meta = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+    assert meta.returncode == 0, f"cargo metadata failed:\n{meta.stderr}"
+    return sorted(
+        target["name"]
+        for package in json.loads(meta.stdout)["packages"]
+        for target in package["targets"]
+        if "bin" in target["kind"] and Path(target["src_path"]).is_file()
+    )
+
+
 def _find_repo_root(workspace: Path) -> Path:
     if (workspace / "AGENTS.md").exists():
         return workspace
@@ -366,9 +384,16 @@ def _find_repo_root(workspace: Path) -> Path:
     return nested[0] if len(nested) == 1 else workspace
 
 
+# What a produced tree holds that is not its layout: build output, installed
+# packages, Nx's cache and git's own objects, which would fill the listing first.
+_TREE_SKIPPED = frozenset({"target", "node_modules", ".nx", ".git"})
+
+
 def _tree(root: Path, limit: int = 60) -> str:
     paths = sorted(
-        p for p in root.rglob("*") if "/target/" not in f"/{p.relative_to(root)}/"
+        p
+        for p in root.rglob("*")
+        if not _TREE_SKIPPED.intersection(p.relative_to(root).parts)
     )
     lines = [str(p.relative_to(root)) for p in paths[:limit]]
     if len(paths) > limit:
@@ -478,8 +503,15 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
     )
 
     # It is really a Rust CLI with the agent layer wired up.
-    for expected in ("Cargo.toml", "src/main.rs", "AGENTS.md"):
+    for expected in ("Cargo.toml", "AGENTS.md"):
         assert (repo / expected).exists(), f"missing {expected}\n{tree}"
+    # The binary's crate may be the root or a workspace member under `crates/`.
+    mains = [
+        p
+        for p in repo.glob("**/src/main.rs")
+        if not _TREE_SKIPPED.intersection(p.relative_to(repo).parts)
+    ]
+    assert mains, f"no src/main.rs in any crate\n{tree}"
     assert (repo / "CLAUDE.md").is_symlink(), f"CLAUDE.md not a symlink\n{tree}"
     assert os.readlink(repo / "CLAUDE.md") == "AGENTS.md"
     assert "rust" in (repo / "AGENTS.md").read_text(encoding="utf-8").lower()
@@ -495,11 +527,26 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
             ["cargo", "build", "--quiet"], cwd=repo, capture_output=True, text=True
         )
         assert build.returncode == 0, f"cargo build failed:\n{build.stderr}"
-        run = subprocess.run(
-            ["cargo", "run", "--quiet"], cwd=repo, capture_output=True, text=True
+        binaries = rust_binaries(repo)
+        assert binaries, f"the workspace declares no binary\n{tree}"
+        runs = {
+            name: subprocess.run(
+                ["cargo", "run", "--quiet", "--bin", name],
+                cwd=repo,
+                capture_output=True,
+                text=True,
+            )
+            for name in binaries
+        }
+        greeted = [
+            name
+            for name, run in runs.items()
+            if run.returncode == 0 and "hello" in run.stdout.lower()
+        ]
+        assert greeted, "no binary ran and greeted: " + "; ".join(
+            f"{name}: exit {run.returncode}, {run.stdout!r} {run.stderr[-300:]!r}"
+            for name, run in runs.items()
         )
-        assert run.returncode == 0, f"cargo run failed:\n{run.stderr}"
-        assert "hello" in run.stdout.lower(), f"CLI did not greet: {run.stdout!r}"
 
 
 @pytest.mark.skilltest_e2e  # opt-in only (slow real harness run); see conftest.py / tests/AGENTS.md

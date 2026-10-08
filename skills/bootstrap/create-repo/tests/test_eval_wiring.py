@@ -375,3 +375,43 @@ def test_the_simulated_developer_answers_like_a_user_and_tells_nothing(
     for tell in ("test", "mock", "eval", "sandbox", "baseline", "checker", "skill"):
         assert tell not in persona.lower(), tell
     assert "private" in persona and "carry on" in persona
+
+
+def test_a_failure_tree_shows_the_layout_not_gits_objects(eval_module, tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "crates" / "hello" / "src").mkdir(parents=True)
+    (repo / "crates" / "hello" / "src" / "main.rs").write_text("fn main() {}\n")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for skipped in ("node_modules/nx", ".nx/cache", "target/debug"):
+        (repo / skipped).mkdir(parents=True)
+    tree = eval_module._tree(repo).splitlines()
+    assert tree == [
+        "crates",
+        "crates/hello",
+        "crates/hello/src",
+        "crates/hello/src/main.rs",
+    ]
+
+
+@pytest.mark.skipif(shutil.which("cargo") is None, reason="needs cargo")
+def test_the_binary_is_found_in_whichever_member_declares_it(eval_module, tmp_path):
+    # A workspace like the skill's Rust guidance lays out: the binary in one
+    # member, a test-only e2e crate beside it, no root `src/main.rs`.
+    repo = tmp_path / "repo"
+    (repo / "crates" / "hello" / "src").mkdir(parents=True)
+    (repo / "crates" / "hello-e2e" / "tests").mkdir(parents=True)
+    (repo / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/hello", "crates/hello-e2e"]\nresolver = "2"\n'
+    )
+    (repo / "crates" / "hello" / "Cargo.toml").write_text(
+        '[package]\nname = "hello"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    (repo / "crates" / "hello" / "src" / "main.rs").write_text(
+        'fn main() { println!("Hello"); }\n'
+    )
+    (repo / "crates" / "hello-e2e" / "Cargo.toml").write_text(
+        '[package]\nname = "hello-e2e"\nversion = "0.1.0"\nedition = "2021"\n'
+        "publish = false\n"
+    )
+    (repo / "crates" / "hello-e2e" / "tests" / "cli.rs").write_text("")
+    assert eval_module.rust_binaries(repo) == ["hello"]
