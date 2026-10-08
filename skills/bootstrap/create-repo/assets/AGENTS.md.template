@@ -170,6 +170,10 @@ work. Realism and coverage are a rule, not a preference (see Invariants).
   proportional proof required by the criterion linked in Invariants.
   Name a journey here only when it is a non-obvious contract the suite alone
   wouldn't make clear — don't mirror the test list.
+- **A cost figure is a budget, never a test assertion, and a wall-clock bound
+  never tells two behaviours apart** (wait on the event instead). A budget is an
+  outcome the product owner tracks; finer figures are its reported breakdown
+  ([when a requirement is a budget](https://github.com/nickderobertis/dero-skills/blob/main/skills/bootstrap/create-repo/references/tools/onebudgetspec.md#when-is-a-requirement-a-budget)).
 
 ## Keeping the allowlist current
 

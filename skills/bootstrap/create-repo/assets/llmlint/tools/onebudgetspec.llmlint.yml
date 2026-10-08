@@ -4,14 +4,17 @@
 # the `--tool onebudgetspec` opt-in, never by default, and no always-on fragment
 # names it, so a repo without budgets never loads these rules.
 #
-# Every rule shares one file set: the `budgets.yaml` files and the places a
-# budget's command plausibly reaches (scripts, tests, budget-named files), with a
-# `relevance` clause dropping the matched files that do not exercise its premise.
-# A judge anchored on a `budgets.yaml` follows its commands from there.
+# The rules judging a budget and its measurement share one file set: the
+# `budgets.yaml` files and the places a budget's command plausibly reaches
+# (scripts, tests, budget-named files), with a `relevance` clause dropping the
+# matched files that do not exercise its premise. A judge anchored on a
+# `budgets.yaml` follows its commands from there. The last two judge where a
+# budget belongs at all — references/tools/onebudgetspec.md, "When is a
+# requirement a budget" — so each reads only the files that rule is about.
 #
 # Version classification and consumer pinning: see references/llmlint.md
 # ("Fragment versioning").
-version: 1.0.1
+version: 1.1.0
 
 rules:
   # The terms of base's `agents_md_durable_and_terse` and
@@ -124,3 +127,51 @@ rules:
       test exercising behaviour a budget measures
     # Not line-attributed: a rerun is judged against what an existing test already
     # exercises and what recording there would cost, a comparison across files.
+
+  - name: tests_hold_no_nonfunctional_thresholds
+    description: |
+      false when test code asserts a cost figure against a fixed bound — wall
+      clock, request, query or API-point count, payload or artifact size, memory
+      or money at a realistic workload — which belongs in a `budgets.yaml` budget
+      the test at most records telemetry for; or when it tells two behaviours
+      apart by elapsed time ("returned within 2 s, so it did not wait") rather
+      than holding a double and asserting the observable event. true otherwise,
+      including a configured timeout, deadline or backoff asserted near its value,
+      an exact count of an action, the absence of an operation, a limit the
+      product itself enforces, and a timeout that only guards against a hang.
+    files:
+      include:
+        - "**/tests/**"
+        - "**/test/**"
+        - "**/e2e/**"
+        - "**/__tests__/**"
+        - "**/test_*.py"
+        - "**/*_test.py"
+        - "**/*.test.ts"
+        - "**/*.test.tsx"
+        - "**/*.spec.ts"
+        - "**/*.spec.tsx"
+        # Rust keeps unit tests in inline `#[cfg(test)]` modules of any source file.
+        - "**/*.rs"
+        - "**/*.bats"
+        - "**/test_*.sh"
+        - "**/*_test.sh"
+    relevance: |
+      the target file is test code (a test file, or a Rust file with a
+      `#[cfg(test)]` module) that asserts, measures or records a timing, size or
+      count figure
+    require_line_attribution: true
+
+  - name: budgets_track_product_owner_outcomes
+    description: |
+      false when a `budgets.yaml` registers a budget whose figure is a part of
+      another budget's figure the repository registers — a step, phase or
+      operation of it — or the same concern as another budget in a second unit,
+      such as requests beside points for one quota. true otherwise, including a
+      file with a lone budget. Judge only whether one figure is a part or a second
+      unit of another, never whether a product owner would care about it.
+    files:
+      include:
+        - "**/budgets.yaml"
+    relevance: the target file declares budgets
+    require_line_attribution: true
