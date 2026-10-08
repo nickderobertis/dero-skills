@@ -654,6 +654,7 @@ def _asserted_cost_figure() -> dict[str, str]:
     return tree
 
 
+# llmlint: ignore[protocol_based_seams] this is string-literal consumer source handed to the judge as a fixture tree, never imported or run as a seam here, and each case keeps its tree to the minimum the budget rule under test reads, so a `Protocol` would add to the tree without being part of the case.
 _EXPORT_QUEUE = '''\
 """Run a board export on a worker thread and hand back the running job."""
 
@@ -856,6 +857,7 @@ def test_a_move_checks_the_board_exactly_once():
     }
 
 
+# llmlint: ignore[protocol_based_seams] this is string-literal consumer source handed to the judge as a fixture tree, never imported or run as a seam here, and each case keeps its tree to the minimum the budget rule under test reads, so a `Protocol` would add to the tree without being part of the case.
 def _backoff_schedule() -> dict[str, str]:
     """Case 3: a retry's backoff schedule, read off a recorded sleep."""
     return {
