@@ -103,11 +103,15 @@ ONEHARNESS = shutil.which("oneharness")
 # skill's relative `scripts/`/`assets/` paths against that directory.
 BASE_DIRECTORY_LINE = "Base directory for this skill: {}"
 # An absolute path naming a create-repo skill directory: it ends in `/create-repo`
-# (so the produced `create-repo-e2e-rust-cli` repo is no match) and stops at the
-# shell and JSON delimiters a tool call's input wraps it in.
+# (so the produced `create-repo-e2e-rust-cli` repo is no match), stops at the
+# shell and JSON delimiters a tool call's input wraps it in, and is no URL's path
+# (`https://github.com/.../create-repo` starts after a `:` or a `/`).
 _SKILL_COPY_RE = re.compile(
-    r"(/[^\s\"'\\$;&|()<>`]*/create-repo)(?=[/\s\"'\\;&|()<>`]|$)"
+    r"(?<![:/\w.~-])(/[^\s\"'\\$;&|()<>`]*/create-repo)(?=[/\s\"'\\;&|()<>`]|$)"
 )
+# The text a tool call writes into a file, rather than a path it runs or reads:
+# a README linking the skill's source names no copy the run used.
+_WRITTEN_TEXT_KEYS = frozenset({"content", "new_string", "old_string", "edits"})
 
 
 def stage_skill(dest: Path, skill: Path = SKILL) -> Path:
@@ -129,11 +133,18 @@ def stage_skill(dest: Path, skill: Path = SKILL) -> Path:
 
 
 def skill_copies(inputs: list[object]) -> set[str]:
-    """Every create-repo skill directory the tool-call ``inputs`` name by path."""
+    """Every create-repo skill directory the tool-call ``inputs`` run or touch by
+    path — not the text a call writes into a file."""
     return {
         match.group(1)
         for item in inputs
-        for match in _SKILL_COPY_RE.finditer(json.dumps(item))
+        for match in _SKILL_COPY_RE.finditer(
+            json.dumps(
+                {k: v for k, v in item.items() if k not in _WRITTEN_TEXT_KEYS}
+                if isinstance(item, dict)
+                else item
+            )
+        )
     }
 
 

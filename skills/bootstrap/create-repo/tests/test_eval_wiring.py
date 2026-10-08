@@ -296,6 +296,28 @@ def test_a_run_of_another_checkout_fails_naming_it(eval_module) -> None:
         )
 
 
+def test_a_link_to_the_skills_source_is_not_another_copy(eval_module) -> None:
+    # What the model wrote into the produced repo, and a command quoting a URL:
+    # neither runs or reads a copy of the skill. A failed run read one as such.
+    url = (
+        "https://github.com/nickderobertis/dero-skills/blob/main/skills/"
+        "bootstrap/create-repo"
+    )
+    calls = [
+        *under_test_run(SKILL),
+        {"file_path": "/tmp/w/create-repo-e2e-rust-cli/AGENTS.md", "content": url},
+        {"file_path": "/tmp/w/README.md", "old_string": STALE, "new_string": url},
+        {"command": f'gh repo create x --description "built with {url}"'},
+    ]
+    assert eval_module.skill_copies(calls) == {str(SKILL)}
+    eval_module.assert_ran_the_skill_under_test(calls)
+    # Writing INTO another copy still names it: the path is the call's target.
+    with pytest.raises(AssertionError, match="another copy of the skill"):
+        eval_module.assert_ran_the_skill_under_test(
+            [*calls, {"file_path": f"{STALE}/SKILL.md", "content": "x"}]
+        )
+
+
 def test_a_run_that_never_reaches_the_skill_fails(eval_module, tmp_path) -> None:
     staged = tmp_path / "create-repo"
     calls = [STALE_RUN[0], {"file_path": f"{staged}/SKILL.md"}]
