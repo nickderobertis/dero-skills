@@ -1013,7 +1013,8 @@ import sys
 from pathlib import Path
 
 TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
-phases = json.loads(TELEMETRY.read_text()).get("phases")
+recorded = json.loads(TELEMETRY.read_text())
+phases = recorded.get("phases") if isinstance(recorded, dict) else None
 if not isinstance(phases, dict) or not all(
     isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
     for p in phases.values()
@@ -1044,7 +1045,8 @@ from pathlib import Path
 PHASES = ("issues", "comments")
 
 TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
-phases = json.loads(TELEMETRY.read_text()).get("phases")
+recorded = json.loads(TELEMETRY.read_text())
+phases = recorded.get("phases") if isinstance(recorded, dict) else None
 if not isinstance(phases, dict) or not all(
     isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
     for p in phases.values()
