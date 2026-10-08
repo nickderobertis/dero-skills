@@ -69,6 +69,12 @@ mechanics; the load-bearing rules:
   skill: <dir>` line Claude Code itself adds, and `assert_ran_the_skill_under_test`
   fails the run when a tool call names any other create-repo directory or none
   names this one. Its unit tests are in `test_eval_wiring.py`, in the gate.
+- **A developer answers its questions.** The default case is multi-turn: a
+  skilltest simulated user (`DEVELOPER_PERSONA`, at most 3 turns) answers what
+  the model asks before an outward-facing step (public or private? that crate
+  name?) and tells it to carry on. Single-turn, such a run ended unanswered
+  before the self-verification the evals assert. The persona obeys the prompt's
+  stealth rule; `test_eval_wiring.py` holds it to that.
 - **The remote is never created.** skilltest `stub`s + a fake `gh` on `PATH` make
   `gh repo create`/`git push` return realistic success without touching GitHub.
 - **The harness timeout is a generous ceiling.** The model stops when the task is

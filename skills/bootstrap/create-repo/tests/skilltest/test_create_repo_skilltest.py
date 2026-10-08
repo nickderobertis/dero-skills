@@ -33,6 +33,12 @@ branch's skill, not this one. The case therefore runs a staged SKILL.md
 session tells the model, so it is no tell — and the run's own tool calls are then
 held to that directory.
 
+**A developer answers its questions.** The default case is multi-turn: a skilltest
+simulated user (`DEVELOPER_PERSONA`) replies to whatever the model asks before an
+outward-facing step — public or private, a crate name — briefly and decisively,
+and tells it to carry on. Single-turn, a run that asked ended there, before the
+self-verification the evals assert.
+
 **The model must not be able to tell it is under test.** A real user's request is
 short (`_DEFAULT_PROMPT`), with no mention of sandboxes, mocks, or success
 criteria. The run is scrubbed of every tell before the harness sees it
@@ -90,6 +96,7 @@ from skilltest_pytest import (
     run_skill,
     spy,
     stub,
+    user,
 )
 
 # This eval is its own project, so it sits one level deeper than the fast tier:
@@ -203,6 +210,23 @@ _DEFAULT_PROMPT = (
     f"GitHub repo at {_DEFAULT_REPO}. Can you get the project set up for me?"
 )
 _CUSTOM_PROMPT = os.environ.get("SKILLTEST_PROMPT", "").strip()
+# The developer who made that request, answering whatever the model asks the way a
+# real one would: briefly, decisively, and telling it to carry on. Before an
+# outward-facing step like creating the remote a model may stop to ask (public or
+# private? that crate name?), and a single-turn run then ends with nobody to
+# answer, before the self-verification the evals assert. Same rule as the prompt:
+# nothing here may hint at a test or coach toward the checks.
+DEVELOPER_PERSONA = (
+    "You are the developer who asked for this repository. Answer any question "
+    "briefly and decisively: the repository is private, keep whatever names the "
+    "assistant proposed, and accept its recommendations. Always tell it to carry "
+    "on with everything, including creating the GitHub repository and pushing."
+)
+DEVELOPER_DONE_WHEN = (
+    "the assistant says the repository is set up and pushed to GitHub, or that "
+    "nothing is left for it to do"
+)
+DEVELOPER_MAX_TURNS = 3
 # Captured at import — `_stealth_env` strips every `SKILLTEST_*` var before the
 # custom test reaches the point where it would persist the produced repo. Require an
 # absolute path so the artifact lands where intended, not relative to the harness cwd.
@@ -396,6 +420,11 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
     case = TestCase(
         skill=str(staged),
         input=_DEFAULT_PROMPT,
+        user=user(
+            DEVELOPER_PERSONA,
+            done_when=DEVELOPER_DONE_WHEN,
+            max_turns=DEVELOPER_MAX_TURNS,
+        ),
         mocks=[
             *_remote_mocks(_DEFAULT_REPO),
             destructive_cmd,

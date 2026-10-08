@@ -356,3 +356,22 @@ def test_a_failure_report_carries_how_each_run_ended(eval_module) -> None:
     assert "claude-code/claude-opus-4-8 ended with" in words
     assert words.rstrip().endswith("Which license?")
     assert "Composing the plan." not in words
+
+
+def test_the_simulated_developer_answers_like_a_user_and_tells_nothing(
+    eval_module,
+) -> None:
+    # Its replies reach the model as ordinary user turns, so the stealth rule the
+    # prompt keeps holds for them too: no word that hints at a test or a check.
+    from skilltest_pytest import user
+
+    persona = eval_module.DEVELOPER_PERSONA
+    developer = user(
+        persona,
+        done_when=eval_module.DEVELOPER_DONE_WHEN,
+        max_turns=eval_module.DEVELOPER_MAX_TURNS,
+    )
+    assert developer.max_turns == 3
+    for tell in ("test", "mock", "eval", "sandbox", "baseline", "checker", "skill"):
+        assert tell not in persona.lower(), tell
+    assert "private" in persona and "carry on" in persona
