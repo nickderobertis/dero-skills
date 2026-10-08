@@ -110,8 +110,11 @@ BASELINE_CHECKER = SKILL / "scripts" / "check_repo_baseline.py"
 ONEHARNESS = shutil.which("oneharness")
 
 # The line Claude Code opens a loaded skill's text with, so the model resolves the
-# skill's relative `scripts/`/`assets/` paths against that directory.
+# skill's relative `scripts/`/`assets/` paths against that directory. Claude Code
+# is its source: `claude_code_preamble_problem` reconciles this copy with the
+# installed harness before every run.
 BASE_DIRECTORY_LINE = "Base directory for this skill: {}"
+CLAUDE = shutil.which("claude")
 # An absolute path naming a create-repo skill directory: it ends in `/create-repo`
 # (so the produced `create-repo-e2e-rust-cli` repo is no match), stops at the
 # shell delimiters a command wraps it in, and is no URL's path
@@ -137,6 +140,22 @@ def stage_skill(dest: Path, skill: Path = SKILL) -> Path:
         encoding="utf-8",
     )
     return staged
+
+
+def claude_code_preamble_problem(binary: str | None) -> str | None:
+    """Why the installed Claude Code does not open a loaded skill with
+    ``BASE_DIRECTORY_LINE``, or None when it does: its own template of that line,
+    the directory interpolated, is in the harness it ships."""
+    if binary is None:
+        return "claude is not on PATH, so the staged skill's line cannot be checked"
+    template = BASE_DIRECTORY_LINE.format("${").encode()
+    if template not in Path(binary).resolve().read_bytes():
+        return (
+            f"{binary} no longer opens a loaded skill with "
+            f"{BASE_DIRECTORY_LINE.format('<dir>')!r}; restage SKILL.md the way the "
+            "harness now presents a skill"
+        )
+    return None
 
 
 def call_targets(call: ToolCall) -> list[str]:
@@ -362,6 +381,8 @@ def _prepare_run(neutral_tmp, repo: str) -> PreparedRun:
     gh = tools / "gh"
     gh.write_text(_fake_gh(repo), encoding="utf-8")
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    problem = claude_code_preamble_problem(CLAUDE)
+    assert problem is None, problem
     staged = stage_skill(tools)
 
     _stealth_env(workspace, tools)

@@ -485,3 +485,21 @@ def test_only_bin_targets_whose_source_exists_are_binaries(eval_module, tmp_path
         ]
     }
     assert eval_module.binaries_in_metadata(json.dumps(document)) == ["hello"]
+
+
+def test_the_preamble_check_reads_the_harness_it_is_given(eval_module, tmp_path):
+    # A harness whose bundle carries the line's template passes; one that
+    # presents skills some other way, or none at all, is named.
+    current = tmp_path / "claude"
+    current.write_bytes(b"\x7fELF...`Base directory for this skill: ${p}`...")
+    assert eval_module.claude_code_preamble_problem(str(current)) is None
+    changed = tmp_path / "claude-next"
+    changed.write_bytes(b"\x7fELF...`Skill root: ${p}`...")
+    problem = eval_module.claude_code_preamble_problem(str(changed))
+    assert problem is not None and "no longer opens a loaded skill" in problem
+    assert "not on PATH" in eval_module.claude_code_preamble_problem(None)
+
+
+@pytest.mark.skipif(shutil.which("claude") is None, reason="needs Claude Code")
+def test_the_installed_claude_code_opens_skills_with_the_staged_line(eval_module):
+    assert eval_module.claude_code_preamble_problem(shutil.which("claude")) is None
