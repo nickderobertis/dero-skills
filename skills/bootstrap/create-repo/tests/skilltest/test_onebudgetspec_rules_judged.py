@@ -1253,6 +1253,11 @@ def _id(case: Case) -> str:
     return f"{case.rule}/{case.fixture}"
 
 
+# Every case at once overran the harness's 630 s ceiling on a loaded host; a dozen
+# judges at a time each finish well inside it.
+_CONCURRENT_JUDGES = 12
+
+
 def _settled(future: Future[Verdict]) -> Verdict | BaseException:
     try:
         return future.result()
@@ -1273,7 +1278,7 @@ def verdicts(
         if isinstance(case, Case):
             selected.append(case)
     base = tmp_path_factory.mktemp("onebudgetspec-consumers")
-    with ThreadPoolExecutor(max_workers=max(len(selected), 1)) as pool:
+    with ThreadPoolExecutor(max_workers=_CONCURRENT_JUDGES) as pool:
         futures = {
             _id(c): pool.submit(_judge, c, base / _id(c).replace("/", "--"))
             for c in selected
