@@ -225,3 +225,79 @@ def _ids(report: object, key: str, **match: str) -> list[str]:
     return sorted(
         e["id"] for e in entries if all(e.get(k) == v for k, v in match.items())
     )
+
+
+# The eval runs the skill in this tree, never another checkout of it. skilltest
+# hands the harness SKILL.md's text alone; the staged copy adds the base-directory
+# line Claude Code itself adds, and the run's tool calls are held to it.
+
+# What a run of another checkout recorded: the model searched the host and ran
+# the first copy it found (the commands are the ones a failed run reported).
+STALE = "/home/u/.cache/checkouts/dero-skills/skills/bootstrap/create-repo"
+STALE_RUN = [
+    {
+        "command": 'find / -type d -name "assets" -path "*create-repo*" 2>/dev/null; '
+        'echo "---"; find / -name "compose_repo_plan.py" 2>/dev/null'
+    },
+    {
+        "command": f'SKILL={STALE} && uv run --script "$SKILL/scripts/'
+        'compose_repo_plan.py" --shape cli --language rust -o REPO_PLAN.md'
+    },
+    {"file_path": f"{STALE}/assets/AGENTS.md.template"},
+]
+
+
+def under_test_run(skill: Path) -> list[object]:
+    """The same steps against the skill in this tree, in the forms a model writes."""
+    return [
+        STALE_RUN[0],
+        {
+            "command": f'SKILL={skill} && uv run --script "$SKILL/scripts/'
+            'compose_repo_plan.py" --shape cli --language rust -o REPO_PLAN.md'
+        },
+        {"file_path": f"{skill}/assets/AGENTS.md.template"},
+        {"command": f"uv run --script {skill}/scripts/compose_repo_plan.py --wiring ."},
+        {"command": "cd /tmp/w/create-repo-e2e-rust-cli && just check"},
+    ]
+
+
+def test_the_staged_skill_names_this_tree_and_is_a_valid_skill(
+    eval_module, tmp_path
+) -> None:
+    from skilltest_pytest import validate_skill
+
+    staged = eval_module.stage_skill(tmp_path)
+    report = validate_skill(staged)
+    assert report.valid, report.findings
+    text = (staged / "SKILL.md").read_text(encoding="utf-8")
+    original = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    line = f"Base directory for this skill: {SKILL}"
+    assert line in text.splitlines()
+    # Only the line is added: the frontmatter and every line of the body stay.
+    assert [ln for ln in text.splitlines() if ln and ln != line] == [
+        ln for ln in original.splitlines() if ln
+    ]
+
+
+def test_a_run_of_this_trees_skill_passes_the_isolation_check(eval_module) -> None:
+    calls = under_test_run(SKILL)
+    assert eval_module.skill_copies(calls) == {str(SKILL)}
+    eval_module.assert_ran_the_skill_under_test(calls)
+
+
+def test_a_run_of_another_checkout_fails_naming_it(eval_module) -> None:
+    with pytest.raises(AssertionError, match="another copy of the skill") as caught:
+        eval_module.assert_ran_the_skill_under_test(STALE_RUN)
+    assert STALE in str(caught.value)
+    # One stray read of the other copy is enough, beside a run of this one.
+    with pytest.raises(AssertionError, match="another copy of the skill"):
+        eval_module.assert_ran_the_skill_under_test(
+            [*under_test_run(SKILL), STALE_RUN[2]]
+        )
+
+
+def test_a_run_that_never_reaches_the_skill_fails(eval_module, tmp_path) -> None:
+    staged = tmp_path / "create-repo"
+    calls = [STALE_RUN[0], {"file_path": f"{staged}/SKILL.md"}]
+    with pytest.raises(AssertionError, match="no tool call reached"):
+        eval_module.assert_ran_the_skill_under_test(calls, staged=staged)

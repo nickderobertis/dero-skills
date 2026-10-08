@@ -62,6 +62,13 @@ mechanics; the load-bearing rules:
   `.oneharness.toml`; realistic `gh`/`git push` mock output with no "mock"/"test"
   strings. If you touch the run, re-audit stealth by reading the model's
   `/proc/<pid>/environ` mid-run — it must look like a normal sandboxed session.
+- **The run uses this tree's skill.** skilltest hands the harness SKILL.md's
+  text alone, so a model left to find `scripts/` searches the host and can run
+  another checkout's copy (one did, from a stale dero-skills clone). The case
+  runs a staged SKILL.md (`stage_skill`) opened by the `Base directory for this
+  skill: <dir>` line Claude Code itself adds, and `assert_ran_the_skill_under_test`
+  fails the run when a tool call names any other create-repo directory or none
+  names this one. Its unit tests are in `test_eval_wiring.py`, in the gate.
 - **The remote is never created.** skilltest `stub`s + a fake `gh` on `PATH` make
   `gh repo create`/`git push` return realistic success without touching GitHub.
 - **The harness timeout is a generous ceiling.** The model stops when the task is
