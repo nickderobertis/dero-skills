@@ -158,7 +158,7 @@ rules:
     relevance: |
       the target file is test code (a test file, or a Rust file with a
       `#[cfg(test)]` module) that asserts, measures or records a timing, size or
-      count figure
+      count figure, reads the clock, or bounds a wait with a timeout
     require_line_attribution: true
 
   - name: budgets_track_product_owner_outcomes
