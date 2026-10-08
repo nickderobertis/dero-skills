@@ -98,20 +98,25 @@ count of an action ("exactly one board check"), the absence of an operation
 bound, a host's body-size limit). None of these is a tolerance anyone tunes, so
 none is ever a finding.
 
-Before — the contract is moved out of the test into a budget, where a passing
-`elapsed` figure no longer proves the timeout fires:
+Before — the contracts are mistaken for cost figures: the tests only record
+them, and budgets own the bounds, so a figure inside its budget no longer proves
+the timeout fires near its deadline or the board is checked exactly once:
 
-```yaml
-budgets:
-  - id: client-timeout-seconds
-    measure: elapsed
-    command: ["uv", "run", "python", "budgets/stall_one_request.py"]
-    unit: seconds
-    direction: max
-    threshold: 1.5
+```python
+def test_request_times_out_at_its_configured_deadline(stalled_server):
+    client = Client(stalled_server.url, timeout=0.5)
+    started = time.monotonic()
+    with pytest.raises(RequestTimeout):
+        client.get("/issues")
+    record("client_timeout", seconds=time.monotonic() - started)
+
+
+def test_a_move_checks_the_board(board):
+    move_card(board, "LIN-1", to="done")
+    record("move_card", board_checks=board.checks)
 ```
 
-After — the contract stays where it is checked:
+After — the contracts stay assertions in the tests that check them:
 
 ```python
 def test_request_times_out_at_its_configured_deadline(stalled_server):
