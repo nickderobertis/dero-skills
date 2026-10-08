@@ -1052,16 +1052,16 @@ if not isinstance(phases, dict) or not all(
     for p in phases.values()
 ):
     sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
-(figure,) = sys.argv[1:]
-if figure == "requests":
-    value = sum(p["requests"] for p in phases.values())
-elif figure in ("total", "points"):
-    value = sum(p["points"] for p in phases.values())
-elif figure in PHASES:
-    # A phase the sync had nothing to fetch for records no entry.
-    value = phases.get(figure, {"points": 0})["points"]
-else:
-    sys.exit(f"unknown figure {figure!r}: expected requests, total, points or {PHASES}")
+match sys.argv[1:]:
+    case ["requests"]:
+        value = sum(p["requests"] for p in phases.values())
+    case ["total" | "points"]:
+        value = sum(p["points"] for p in phases.values())
+    case [phase] if phase in PHASES:
+        # A phase the sync had nothing to fetch for records no entry.
+        value = phases.get(phase, {"points": 0})["points"]
+    case figure:
+        sys.exit(f"unknown figure {figure}: expected requests, total, points or {PHASES}")
 Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(json.dumps({"value": value}))
 '''
 
