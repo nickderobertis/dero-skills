@@ -91,6 +91,7 @@ import pytest
 from skilltest_pytest import (
     SkilltestTimeoutError,
     TestCase,
+    ToolCall,
     called,
     describe_failures,
     not_called,
@@ -112,14 +113,11 @@ ONEHARNESS = shutil.which("oneharness")
 BASE_DIRECTORY_LINE = "Base directory for this skill: {}"
 # An absolute path naming a create-repo skill directory: it ends in `/create-repo`
 # (so the produced `create-repo-e2e-rust-cli` repo is no match), stops at the
-# shell and JSON delimiters a tool call's input wraps it in, and is no URL's path
+# shell delimiters a command wraps it in, and is no URL's path
 # (`https://github.com/.../create-repo` starts after a `:` or a `/`).
 _SKILL_COPY_RE = re.compile(
     r"(?<![:/\w.~-])(/[^\s\"'\\$;&|()<>`]*/create-repo)(?=[/\s\"'\\;&|()<>`]|$)"
 )
-# The text a tool call writes into a file, rather than a path it runs or reads:
-# a README linking the skill's source names no copy the run used.
-_WRITTEN_TEXT_KEYS = frozenset({"content", "new_string", "old_string", "edits"})
 
 
 def stage_skill(dest: Path, skill: Path = SKILL) -> Path:
@@ -140,19 +138,30 @@ def stage_skill(dest: Path, skill: Path = SKILL) -> Path:
     return staged
 
 
-def skill_copies(inputs: list[object]) -> set[str]:
-    """Every create-repo skill directory the tool-call ``inputs`` run or touch by
-    path — not the text a call writes into a file."""
+def call_targets(call: ToolCall) -> list[str]:
+    """What a tool call runs or touches: a shell call's command (the SDK's own
+    ``ToolCall.command``), else each input value that is a bare absolute path. Text
+    the call writes into a file is neither, so a README linking the skill's source
+    names no copy the run used."""
+    if call.command is not None:
+        return [call.command]
+    values = call.input.values() if isinstance(call.input, dict) else ()
+    return [
+        value
+        for value in values
+        if isinstance(value, str)
+        and value.startswith("/")
+        and not any(c.isspace() for c in value)
+    ]
+
+
+def skill_copies(calls: list[ToolCall]) -> set[str]:
+    """Every create-repo skill directory the tool ``calls`` run or touch by path."""
     return {
         match.group(1)
-        for item in inputs
-        for match in _SKILL_COPY_RE.finditer(
-            json.dumps(
-                {k: v for k, v in item.items() if k not in _WRITTEN_TEXT_KEYS}
-                if isinstance(item, dict)
-                else item
-            )
-        )
+        for call in calls
+        for target in call_targets(call)
+        for match in _SKILL_COPY_RE.finditer(target)
     }
 
 
@@ -170,10 +179,10 @@ def last_words(report, limit: int = 2000) -> str:
 
 
 def assert_ran_the_skill_under_test(
-    inputs: list[object], skill: Path = SKILL, staged: Path | None = None
+    calls: list[ToolCall], skill: Path = SKILL, staged: Path | None = None
 ) -> None:
     """The run reached ``skill`` and no other copy of create-repo on the host."""
-    named = skill_copies(inputs)
+    named = skill_copies(calls)
     foreign = named - {str(skill), str(staged)}
     assert not foreign, (
         f"the run used another copy of the skill, not {skill}: {sorted(foreign)}"
@@ -370,12 +379,42 @@ def rust_binaries(repo: Path) -> list[str]:
         text=True,
     )
     assert meta.returncode == 0, f"cargo metadata failed:\n{meta.stderr}"
-    return sorted(
-        target["name"]
-        for package in json.loads(meta.stdout)["packages"]
-        for target in package["targets"]
-        if "bin" in target["kind"] and Path(target["src_path"]).is_file()
-    )
+    return binaries_in_metadata(meta.stdout)
+
+
+def binaries_in_metadata(text: str) -> list[str]:
+    """The bin targets a `cargo metadata` document declares whose source exists.
+
+    Its shape is validated before any field is read, so an output cargo did not
+    write the way its format-version 1 documents fails naming what was wrong.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"cargo metadata printed no JSON: {exc}") from exc
+    packages = data.get("packages") if isinstance(data, dict) else None
+    if not isinstance(packages, list):
+        raise AssertionError("cargo metadata has no `packages` list")
+    names: list[str] = []
+    for package in packages:
+        targets = package.get("targets") if isinstance(package, dict) else None
+        if not isinstance(targets, list):
+            raise AssertionError(
+                f"a cargo metadata package has no targets: {package!r}"
+            )
+        for target in targets:
+            match target:
+                case {"name": str(name), "kind": [*kinds], "src_path": str(src)} if all(
+                    isinstance(kind, str) for kind in kinds
+                ):
+                    if "bin" in kinds and Path(src).is_file():
+                        names.append(name)
+                case _:
+                    raise AssertionError(
+                        f"a cargo metadata target lacks a string name, a list of "
+                        f"string kinds or a string src_path: {target!r}"
+                    )
+    return sorted(names)
 
 
 def _find_repo_root(workspace: Path) -> Path:
@@ -484,9 +523,7 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
         pass
     if report is not None:
         # First: a run of another checkout's skill says nothing about this one.
-        assert_ran_the_skill_under_test(
-            [call.input for call in skill_paths.calls], staged=staged
-        )
+        assert_ran_the_skill_under_test(skill_paths.calls, staged=staged)
         assert report.passed, describe_failures(report) + last_words(report)
 
     repo = _find_repo_root(workspace)
@@ -611,9 +648,7 @@ def test_create_repo_with_custom_prompt(neutral_tmp) -> None:
     print(f"--- suppressions ---\n{produced_repo_suppressions.report(dest)}")
 
     if report is not None:
-        assert_ran_the_skill_under_test(
-            [call.input for call in skill_paths.calls], staged=staged
-        )
+        assert_ran_the_skill_under_test(skill_paths.calls, staged=staged)
         assert report.passed, describe_failures(report) + last_words(report)
     # Soft check only: the harness produced *something* beyond an empty git repo.
     # What the artifact must contain is the follow-up check's job, not this test's.

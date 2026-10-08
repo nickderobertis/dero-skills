@@ -65,7 +65,7 @@ mechanics; the load-bearing rules:
   `/proc/<pid>/environ` mid-run — it must look like a normal sandboxed session.
 - **The run uses this tree's skill.** skilltest hands the harness SKILL.md's
   text alone, so a model left to find `scripts/` searches the host and can run
-  another checkout's copy (one did, from a stale dero-skills clone). The case
+  any other checkout's copy of the skill instead. The case
   runs a staged SKILL.md (`stage_skill`) opened by the `Base directory for this
   skill: <dir>` line Claude Code itself adds, and `assert_ran_the_skill_under_test`
   fails the run when a tool call names any other create-repo directory or none
@@ -73,8 +73,8 @@ mechanics; the load-bearing rules:
 - **A developer answers its questions.** The default case is multi-turn: a
   skilltest simulated user (`DEVELOPER_PERSONA`, at most 3 turns) answers what
   the model asks before an outward-facing step (public or private? that crate
-  name?) and tells it to carry on. Single-turn, such a run ended unanswered
-  before the self-verification the evals assert. The persona obeys the prompt's
+  name?) and tells it to carry on, as a real user would; without one, a run
+  that asks ends before the self-verification the evals assert. The persona obeys the prompt's
   stealth rule; `test_eval_wiring.py` holds it to that.
 - **The remote is never created.** skilltest `stub`s + a fake `gh` on `PATH` make
   `gh repo create`/`git push` return realistic success without touching GitHub.

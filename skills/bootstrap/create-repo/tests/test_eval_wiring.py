@@ -247,6 +247,30 @@ STALE_RUN = [
 ]
 
 
+def as_calls(inputs: list[dict[str, str]]):
+    """The SDK's own observed tool calls for ``inputs``, named as Claude Code
+    names the tools: a shell command, a file written or edited, a file read."""
+    from skilltest_pytest import ToolCall
+
+    def tool(item: dict[str, str]) -> str:
+        if "command" in item:
+            return "Bash"
+        if "content" in item:
+            return "Write"
+        return "Edit" if "new_string" in item else "Read"
+
+    return [
+        ToolCall(
+            tool=tool(item),
+            input=item,
+            action="allow",
+            platform="claude-code",
+            model="claude-opus-4-8",
+        )
+        for item in inputs
+    ]
+
+
 def under_test_run(skill: Path) -> list[object]:
     """The same steps against the skill in this tree, in the forms a model writes."""
     return [
@@ -280,19 +304,19 @@ def test_the_staged_skill_names_this_tree_and_is_a_valid_skill(
 
 
 def test_a_run_of_this_trees_skill_passes_the_isolation_check(eval_module) -> None:
-    calls = under_test_run(SKILL)
+    calls = as_calls(under_test_run(SKILL))
     assert eval_module.skill_copies(calls) == {str(SKILL)}
     eval_module.assert_ran_the_skill_under_test(calls)
 
 
 def test_a_run_of_another_checkout_fails_naming_it(eval_module) -> None:
     with pytest.raises(AssertionError, match="another copy of the skill") as caught:
-        eval_module.assert_ran_the_skill_under_test(STALE_RUN)
+        eval_module.assert_ran_the_skill_under_test(as_calls(STALE_RUN))
     assert STALE in str(caught.value)
     # One stray read of the other copy is enough, beside a run of this one.
     with pytest.raises(AssertionError, match="another copy of the skill"):
         eval_module.assert_ran_the_skill_under_test(
-            [*under_test_run(SKILL), STALE_RUN[2]]
+            as_calls([*under_test_run(SKILL), STALE_RUN[2]])
         )
 
 
@@ -303,24 +327,29 @@ def test_a_link_to_the_skills_source_is_not_another_copy(eval_module) -> None:
         "https://github.com/nickderobertis/dero-skills/blob/main/skills/"
         "bootstrap/create-repo"
     )
-    calls = [
+    inputs = [
         *under_test_run(SKILL),
         {"file_path": "/tmp/w/create-repo-e2e-rust-cli/AGENTS.md", "content": url},
-        {"file_path": "/tmp/w/README.md", "old_string": STALE, "new_string": url},
+        {
+            "file_path": "/tmp/w/README.md",
+            "old_string": f"Compose with {STALE}/scripts/compose_repo_plan.py",
+            "new_string": url,
+        },
         {"command": f'gh repo create x --description "built with {url}"'},
     ]
+    calls = as_calls(inputs)
     assert eval_module.skill_copies(calls) == {str(SKILL)}
     eval_module.assert_ran_the_skill_under_test(calls)
     # Writing INTO another copy still names it: the path is the call's target.
     with pytest.raises(AssertionError, match="another copy of the skill"):
         eval_module.assert_ran_the_skill_under_test(
-            [*calls, {"file_path": f"{STALE}/SKILL.md", "content": "x"}]
+            as_calls([*inputs, {"file_path": f"{STALE}/SKILL.md", "content": "x"}])
         )
 
 
 def test_a_run_that_never_reaches_the_skill_fails(eval_module, tmp_path) -> None:
     staged = tmp_path / "create-repo"
-    calls = [STALE_RUN[0], {"file_path": f"{staged}/SKILL.md"}]
+    calls = as_calls([STALE_RUN[0], {"file_path": f"{staged}/SKILL.md"}])
     with pytest.raises(AssertionError, match="no tool call reached"):
         eval_module.assert_ran_the_skill_under_test(calls, staged=staged)
 
@@ -415,3 +444,40 @@ def test_the_binary_is_found_in_whichever_member_declares_it(eval_module, tmp_pa
     )
     (repo / "crates" / "hello-e2e" / "tests" / "cli.rs").write_text("")
     assert eval_module.rust_binaries(repo) == ["hello"]
+
+
+@pytest.mark.parametrize(
+    ("document", "refusal"),
+    [
+        ("not json", "printed no JSON"),
+        ('{"workspace_root": "/r"}', "no `packages` list"),
+        ('{"packages": [{"name": "hello"}]}', "package has no targets"),
+        (
+            '{"packages": [{"targets": [{"name": "hello", "kind": "bin"}]}]}',
+            "target lacks a string name, a list of string kinds",
+        ),
+    ],
+    ids=["not JSON", "no packages", "a package without targets", "kind not a list"],
+)
+def test_a_metadata_document_cargo_did_not_write_is_refused(
+    eval_module, document, refusal
+) -> None:
+    with pytest.raises(AssertionError, match=refusal):
+        eval_module.binaries_in_metadata(document)
+
+
+def test_only_bin_targets_whose_source_exists_are_binaries(eval_module, tmp_path):
+    main = tmp_path / "main.rs"
+    main.write_text("fn main() {}\n")
+    document = {
+        "packages": [
+            {
+                "targets": [
+                    {"name": "hello", "kind": ["bin"], "src_path": str(main)},
+                    {"name": "gone", "kind": ["bin"], "src_path": str(tmp_path / "x")},
+                    {"name": "hello", "kind": ["lib"], "src_path": str(main)},
+                ]
+            }
+        ]
+    }
+    assert eval_module.binaries_in_metadata(json.dumps(document)) == ["hello"]
