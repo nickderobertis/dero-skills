@@ -14,6 +14,200 @@ rather than a copy of it here. This reference states how a repo built from this
 baseline lays budgets out, so a new consumer writes a `budgets.yaml` and a
 measurement and nothing else.
 
+## When is a requirement a budget
+
+This section is the one statement of the rule; the generated `AGENTS.md` and
+the `tests_hold_no_nonfunctional_thresholds` and
+`budgets_track_product_owner_outcomes` lint rules restate it. A number in a
+test falls into one of three cases.
+
+**1. A cost figure is a budget.** The test's subject is how much a behaviour
+costs at a realistic workload — wall clock, request or query count, API points,
+payload or artifact size, memory, money — and the bound is a tolerance someone
+could reasonably raise or lower. That figure goes in a `budgets.yaml` budget. A
+test may record it as telemetry for the budget's command (see "Measure in the
+tests that already run") and never compares it with a threshold itself.
+
+Before — the bound is buried in the test:
+
+```python
+def test_sync_pulls_every_issue_across_pages():
+    transport = RecordingTransport.replaying(PAGES)
+    issues = sync_issues(transport)
+    assert [i["id"] for i in issues] == ["LIN-1", "LIN-2", "LIN-3"]
+    assert len(transport.requests) <= 14
+```
+
+After — the test records the figure, and a budget owns the bound:
+
+```python
+def test_sync_pulls_every_issue_across_pages():
+    transport = RecordingTransport.replaying(PAGES)
+    issues = sync_issues(transport)
+    assert [i["id"] for i in issues] == ["LIN-1", "LIN-2", "LIN-3"]
+    record("sync_journey", requests=len(transport.requests))
+```
+
+```yaml
+budgets:
+  - id: linear-sync-requests
+    description: |
+      Linear API requests one full issue sync makes. Protects the sync from
+      sliding back into per-issue fetches that exhaust Linear's rate limit.
+    measure: reported
+    command: ["uv", "run", "python", "budgets/analyse_sync_requests.py"]
+    unit: requests
+    direction: max
+    threshold: 14
+```
+
+**2. A wall-clock discriminator is rewritten to wait on an event, with no
+number.** The test uses elapsed time to tell two behaviours apart — "returned in
+under 2 s, so it did not wait", "still running after 2 s, so it is blocked".
+That is neither a budget nor a sound test: a loaded host flips it. The test
+instead holds its double until the test releases it and asserts the observable
+event — returned while the double is still held and its job still alive, or the
+process seen as a blocked waiter on the lock. Any timeout left is a hang guard
+only, never an asserted property.
+
+Before:
+
+```python
+def test_enqueue_returns_without_waiting_for_the_export(exporter):
+    started = time.monotonic()
+    job = enqueue_export(exporter, board="ops")
+    assert time.monotonic() - started < 2, "enqueue waited for the export"
+```
+
+After:
+
+```python
+def test_enqueue_returns_without_waiting_for_the_export(exporter):
+    exporter.hold()
+    job = enqueue_export(exporter, board="ops")
+    assert exporter.is_held() and job.is_alive()
+    exporter.release()
+    assert job.result(timeout=30) == "done"  # hang guard, not the property
+```
+
+**3. A time-feature contract stays a test assertion.** The test's subject is a
+time feature itself, where the clock is the event: a configured timeout or
+deadline firing near its value, or a retry's backoff schedule. So do an exact
+count of an action ("exactly one board check"), the absence of an operation
+("no whole-board walk") and a limit the product itself enforces (a truncation
+bound, a host's body-size limit). None of these is a tolerance anyone tunes, so
+none is ever a finding.
+
+Before — the contracts are mistaken for cost figures: the tests only record
+them, and budgets own the bounds, so a figure inside its budget no longer proves
+the timeout fires near its deadline or the board is checked exactly once:
+
+```python
+def test_request_times_out_at_its_configured_deadline(stalled_server):
+    client = Client(stalled_server.url, timeout=0.5)
+    started = time.monotonic()
+    with pytest.raises(RequestTimeout):
+        client.get("/issues")
+    record("client_timeout", seconds=time.monotonic() - started)
+
+
+def test_a_move_checks_the_board(board):
+    move_card(board, "LIN-1", to="done")
+    record("move_card", board_checks=board.checks)
+```
+
+After — the contracts stay assertions in the tests that check them:
+
+```python
+def test_request_times_out_at_its_configured_deadline(stalled_server):
+    client = Client(stalled_server.url, timeout=0.5)
+    started = time.monotonic()
+    with pytest.raises(RequestTimeout):
+        client.get("/issues")
+    assert 0.5 <= time.monotonic() - started < 1.5
+
+
+def test_a_move_checks_the_board_exactly_once(board):
+    move_card(board, "LIN-1", to="done")
+    assert board.checks == 1
+```
+
+**The level a budget sits at.** A budget is a product-owner-level outcome: a
+quota's headroom on a realistic run, a latency someone waits through, the size
+of what reaches a reader. Each carries the threshold the user approves.
+Per-step, per-phase and per-operation figures, and a second unit of the same
+concern (requests beside points), are telemetry, not budgets: still recorded on
+every run, and reported by the budget's analysis as the breakdown of its figure
+in the SDK reporter's `detail` (see "onebudgetspec is the only judge"), so a
+failed budget says which part grew. A budget's command analyses telemetry the
+gate's tests already record, never running a scenario of its own just to
+measure, except where "Measure in the tests that already run" allows a
+standalone measurement.
+
+Before — a run's total registered beside its phases, and one quota in two units
+(each entry's `measure`, `direction` and `threshold` elided):
+
+```yaml
+budgets:
+  - id: linear-sync-points
+    description: Linear API points one full sync spends against the hourly quota.
+    command: ["uv", "run", "python", "budgets/analyse_sync.py", "total"]
+    unit: points
+  - id: linear-sync-issues-points
+    description: Linear API points the issues phase of a sync spends.
+    command: ["uv", "run", "python", "budgets/analyse_sync.py", "issues"]
+    unit: points
+  - id: linear-sync-comments-points
+    description: Linear API points the comments phase of a sync spends.
+    command: ["uv", "run", "python", "budgets/analyse_sync.py", "comments"]
+    unit: points
+  - id: linear-sync-requests
+    description: Linear API requests one full sync makes.
+    command: ["uv", "run", "python", "budgets/analyse_sync.py", "requests"]
+    unit: requests
+```
+
+After — the single total, its phases and requests reported as `detail`:
+
+```yaml
+budgets:
+  - id: linear-sync-points
+    description: |
+      Linear API points one full sync spends. Protects the hourly quota the
+      sync shares with every other integration.
+    measure: reported
+    command: ["uv", "run", "python", "budgets/analyse_sync.py"]
+    unit: points
+    direction: max
+    threshold: 400
+```
+
+```python
+"""Report the points the sync journey test recorded, broken down by phase."""
+
+import json
+import sys
+from pathlib import Path
+
+from onebudgetspec_sdk import report
+
+TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
+recorded = json.loads(TELEMETRY.read_text())
+phases = recorded.get("phases") if isinstance(recorded, dict) else None
+if not isinstance(phases, dict) or not all(
+    isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
+    for p in phases.values()
+):
+    sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
+report(
+    sum(p["points"] for p in phases.values()),
+    detail=", ".join(
+        f"{name}: {p['points']} points in {p['requests']} requests"
+        for name, p in phases.items()
+    ),
+)
+```
+
 ## Measure in the tests that already run
 
 Prefer recording a budget's figure where a test already exercises the behaviour.
@@ -120,7 +314,8 @@ Each project then declares its two targets' `command` (and the `dependsOn` of a
 telemetry-reading `budgets`); the defaults supply the rest. The composed
 `llmlint.yml` adopts the budget rules
 (`assets/llmlint/tools/onebudgetspec.llmlint.yml`, pinned `@1`), which judge
-descriptions, tree scope, the single judge, direct commands and telemetry reuse.
+descriptions, tree scope, the single judge, direct commands and telemetry reuse,
+and the two rules of "When is a requirement a budget" above.
 
 ## Verification
 

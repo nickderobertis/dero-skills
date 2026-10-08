@@ -7,7 +7,9 @@ over it with one rule selected and reads the verdict from its JSON report. Every
 true and false clause a rule states gets a tree of its own, so each verdict is
 proven independently; the minimal-tree rule also gets the non-pedantic case, a
 measuring script that calls a shared harness and the code it measures, both
-outside the budget's tree.
+outside the budget's tree. The two rules on when a requirement is a budget are
+judged over the reference's own worked examples, so they also hold the reference
+and the rules to one reading.
 
 Nothing is mocked: the judge is the harness `oneharness.toml` selects, which is
 why this sits in the `skilltest` project rather than the gate — it needs a
@@ -20,7 +22,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -499,18 +501,7 @@ def _with_journey_test() -> dict[str, str]:
     )
 
 
-def _analyses_test_telemetry() -> dict[str, str]:
-    tree = _with_journey_test()
-    del tree[f"{ROOT}/budgets/measure_sync_requests.py"]
-    del tree[f"{ROOT}/budgets/fixtures/issues_two_pages.json"]
-    tree[f"{ROOT}/tests/test_sync_journey.py"] = (
-        _JOURNEY_TEST.replace(
-            "from linear_sync.sync import sync_issues\n",
-            "from linear_sync.sync import sync_issues\nfrom telemetry import record\n",
-        )
-        + '    record("sync_journey", requests=len(transport.requests))\n'
-    )
-    tree[f"{ROOT}/tests/telemetry.py"] = '''\
+_TELEMETRY_RECORDER = '''\
 """Save a journey's figures under .telemetry/, the `test` target's output."""
 
 import json
@@ -523,6 +514,20 @@ def record(journey, **figures):
     TELEMETRY.mkdir(exist_ok=True)
     (TELEMETRY / f"{journey}.json").write_text(json.dumps(figures))
 '''
+
+
+def _analyses_test_telemetry() -> dict[str, str]:
+    tree = _with_journey_test()
+    del tree[f"{ROOT}/budgets/measure_sync_requests.py"]
+    del tree[f"{ROOT}/budgets/fixtures/issues_two_pages.json"]
+    tree[f"{ROOT}/tests/test_sync_journey.py"] = (
+        _JOURNEY_TEST.replace(
+            "from linear_sync.sync import sync_issues\n",
+            "from linear_sync.sync import sync_issues\nfrom telemetry import record\n",
+        )
+        + '    record("sync_journey", requests=len(transport.requests))\n'
+    )
+    tree[f"{ROOT}/tests/telemetry.py"] = _TELEMETRY_RECORDER
     tree[f"{ROOT}/budgets.yaml"] = _budgets_yaml(
         _budget('["uv", "run", "python", "budgets/analyse_sync_requests.py"]')
     )
@@ -635,6 +640,532 @@ def test_refuses_once_spent():
     }
 
 
+# The trees below are the worked examples of references/tools/onebudgetspec.md,
+# "When is a requirement a budget", so these cases are also the check that the
+# two rules judging it and the reference agree.
+
+
+def _asserted_cost_figure() -> dict[str, str]:
+    """Case 1 before: the journey test asserts its request count against 14."""
+    tree = _with_journey_test()
+    tree[f"{ROOT}/tests/test_sync_journey.py"] = (
+        _JOURNEY_TEST + "    assert len(transport.requests) <= 14\n"
+    )
+    return tree
+
+
+# llmlint: ignore[protocol_based_seams] this is string-literal consumer source handed to the judge as a fixture tree, never imported or run as a seam here, and each case keeps its tree to the minimum the budget rule under test reads, so a `Protocol` would add to the tree without being part of the case.
+_EXPORT_QUEUE = '''\
+"""Run a board export on a worker thread and hand back the running job."""
+
+import threading
+
+
+class ExportJob:
+    def __init__(self, run):
+        self._result = None
+        self._thread = threading.Thread(target=self._finish, args=(run,))
+        self._thread.start()
+
+    def _finish(self, run):
+        self._result = run()
+
+    def is_alive(self):
+        return self._thread.is_alive()
+
+    def result(self, timeout):
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            raise TimeoutError("the export is still running")
+        return self._result
+
+
+def enqueue_export(exporter, board):
+    return ExportJob(lambda: exporter.export(board))
+'''
+
+_EXPORT_CONFTEST = '''\
+import threading
+
+import pytest
+
+
+class HeldExporter:
+    """An exporter double whose exports block until the test releases them."""
+
+    def __init__(self):
+        self._released = threading.Event()
+        self._released.set()
+
+    def hold(self):
+        self._released.clear()
+
+    def release(self):
+        self._released.set()
+
+    def is_held(self):
+        return not self._released.is_set()
+
+    def export(self, board):
+        self._released.wait()
+        return "done"
+
+
+@pytest.fixture
+def exporter():
+    double = HeldExporter()
+    yield double
+    double.release()
+'''
+
+
+def _export_tree(test: str) -> dict[str, str]:
+    return {
+        "src/exports/queue.py": _EXPORT_QUEUE,
+        "tests/conftest.py": _EXPORT_CONFTEST,
+        "tests/test_enqueue.py": test,
+    }
+
+
+def _wall_clock_discriminator() -> dict[str, str]:
+    """Case 2 before: elapsed time tells "returned" from "waited"."""
+    return _export_tree("""\
+import time
+
+from exports.queue import enqueue_export
+
+
+def test_enqueue_returns_without_waiting_for_the_export(exporter):
+    started = time.monotonic()
+    job = enqueue_export(exporter, board="ops")
+    assert time.monotonic() - started < 2, "enqueue waited for the export"
+""")
+
+
+def _event_driven_rewrite() -> dict[str, str]:
+    """Case 2 after: the double is held, and the event is asserted."""
+    return _export_tree("""\
+from exports.queue import enqueue_export
+
+
+def test_enqueue_returns_without_waiting_for_the_export(exporter):
+    exporter.hold()
+    job = enqueue_export(exporter, board="ops")
+    assert exporter.is_held() and job.is_alive()
+    exporter.release()
+    assert job.result(timeout=30) == "done"  # hang guard, not the property
+""")
+
+
+def _configured_timeout() -> dict[str, str]:
+    """Case 3: the client's configured timeout fires near its value."""
+    return {
+        "src/linear_client/client.py": '''\
+"""A Linear REST client whose every request gives up at a configured timeout."""
+
+import socket
+import urllib.request
+
+
+class RequestTimeout(Exception):
+    pass
+
+
+class Client:
+    def __init__(self, base_url, timeout):
+        self.base_url = base_url
+        self.timeout = timeout
+
+    def get(self, path):
+        try:
+            with urllib.request.urlopen(
+                self.base_url + path, timeout=self.timeout
+            ) as response:
+                return response.read()
+        except (socket.timeout, TimeoutError) as error:
+            raise RequestTimeout(path) from error
+''',
+        "tests/conftest.py": '''\
+import socket
+
+import pytest
+
+
+@pytest.fixture
+def stalled_server():
+    """A server that accepts a connection and never answers it."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen()
+
+    class Stalled:
+        url = f"http://127.0.0.1:{listener.getsockname()[1]}"
+
+    yield Stalled
+    listener.close()
+''',
+        "tests/test_client_timeout.py": """\
+import time
+
+import pytest
+
+from linear_client.client import Client, RequestTimeout
+
+
+def test_request_times_out_at_its_configured_deadline(stalled_server):
+    client = Client(stalled_server.url, timeout=0.5)
+    started = time.monotonic()
+    with pytest.raises(RequestTimeout):
+        client.get("/issues")
+    assert 0.5 <= time.monotonic() - started < 1.5
+""",
+    }
+
+
+def _exact_count() -> dict[str, str]:
+    """Case 3: a move checks the board exactly once."""
+    return {
+        "src/boards/move.py": '''\
+"""Move a card after one check of the board's current state."""
+
+
+class Board:
+    def __init__(self, cards):
+        self.cards = dict(cards)
+        self.checks = 0
+
+    def check(self):
+        self.checks += 1
+        return dict(self.cards)
+
+
+def move_card(board, card, to):
+    if card not in board.check():
+        raise KeyError(card)
+    board.cards[card] = to
+''',
+        "tests/test_move.py": """\
+from boards.move import Board, move_card
+
+
+def test_a_move_checks_the_board_exactly_once():
+    board = Board({"LIN-1": "todo", "LIN-2": "doing"})
+    move_card(board, "LIN-1", to="done")
+    assert board.cards["LIN-1"] == "done"
+    assert board.checks == 1
+""",
+    }
+
+
+# llmlint: ignore[protocol_based_seams] this is string-literal consumer source handed to the judge as a fixture tree, never imported or run as a seam here, and each case keeps its tree to the minimum the budget rule under test reads, so a `Protocol` would add to the tree without being part of the case.
+def _backoff_schedule() -> dict[str, str]:
+    """Case 3: a retry's backoff schedule, read off a recorded sleep."""
+    return {
+        "src/linear_client/retry.py": '''\
+"""Retry a call on a rate-limit refusal, doubling the wait each time."""
+
+
+class RateLimited(Exception):
+    pass
+
+
+def with_retries(call, sleep, attempts=4, first_wait=0.5):
+    wait = first_wait
+    for attempt in range(attempts):
+        try:
+            return call()
+        except RateLimited:
+            if attempt == attempts - 1:
+                raise
+            sleep(wait)
+            wait *= 2
+''',
+        "tests/test_retry.py": """\
+from linear_client.retry import RateLimited, with_retries
+
+
+def test_retries_back_off_by_doubling():
+    waits = []
+    outcomes = iter([RateLimited(), RateLimited(), RateLimited(), "ok"])
+
+    def call():
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    assert with_retries(call, sleep=waits.append) == "ok"
+    assert waits == [0.5, 1.0, 2.0]
+""",
+    }
+
+
+def _absent_operation() -> dict[str, str]:
+    """Case 3: moving a card never walks the whole board."""
+    tree = _exact_count()
+    tree["tests/test_move.py"] += """
+
+def test_a_move_never_walks_the_whole_board():
+    board = Board({f"LIN-{n}": "todo" for n in range(500)})
+    board.walk = lambda: (_ for _ in ()).throw(AssertionError("walked the board"))
+    move_card(board, "LIN-7", to="done")
+    assert board.cards["LIN-7"] == "done"
+"""
+    return tree
+
+
+def _product_enforced_limit() -> dict[str, str]:
+    """Case 3: a limit the product itself enforces — the comment it posts is cut
+    to Linear's body-size limit."""
+    return {
+        "src/linear_sync/comment.py": '''\
+"""Post a sync summary as a Linear comment, cut to the API's body-size limit."""
+
+LINEAR_COMMENT_LIMIT = 65_536
+MARKER = "\\n… (truncated)"
+
+
+def comment_body(summary):
+    if len(summary) <= LINEAR_COMMENT_LIMIT:
+        return summary
+    return summary[: LINEAR_COMMENT_LIMIT - len(MARKER)] + MARKER
+''',
+        "tests/test_comment.py": """\
+from linear_sync.comment import LINEAR_COMMENT_LIMIT, comment_body
+
+
+def test_a_long_summary_is_cut_to_linears_limit():
+    body = comment_body("x" * (LINEAR_COMMENT_LIMIT * 2))
+    assert len(body) == LINEAR_COMMENT_LIMIT
+    assert body.endswith("(truncated)")
+""",
+    }
+
+
+def _no_figure() -> dict[str, str]:
+    """Test code asserting no timing, size or count figure at all."""
+    return {
+        "src/linear_sync/sync.py": _SYNC,
+        "tests/test_sync.py": """\
+from linear_sync.sync import sync_issues
+
+
+class OnePage:
+    def post(self, path, body):
+        return {"issues": [{"id": "LIN-1"}], "next": None}
+
+
+def test_sync_returns_the_issues_it_pulled():
+    assert sync_issues(OnePage()) == [{"id": "LIN-1"}]
+""",
+    }
+
+
+def _empty_budgets_file() -> dict[str, str]:
+    """A project wired for budgets that registers none yet."""
+    return {
+        f"{ROOT}/budgets.yaml": _budgets_yaml().rstrip("\n") + " []\n",
+        f"{ROOT}/src/linear_sync/sync.py": _SYNC,
+    }
+
+
+# The level rule's trees: the reference's Linear-points example. The sync's
+# journey test records each phase's points and requests; budgets analyse that.
+_PHASES_JOURNEY_TEST = """\
+from pathlib import Path
+
+from linear_sync.client import RecordingTransport
+from linear_sync.sync import sync_issues
+from telemetry import record
+
+PAGES = Path(__file__).parent / "fixtures" / "issues_two_pages.json"
+
+
+def test_sync_pulls_every_issue_across_pages():
+    transport = RecordingTransport.replaying(PAGES)
+    issues = sync_issues(transport)
+    assert [i["id"] for i in issues] == ["LIN-1", "LIN-2", "LIN-3"]
+    record("sync_journey", phases=transport.usage_by_phase())
+"""
+
+_POINTS_CLIENT = (
+    _CLIENT
+    + '''
+    def usage_by_phase(self):
+        """Points and requests per query kind; Linear charges a point a page."""
+        phases = {}
+        for _, body in self.requests:
+            phase = phases.setdefault(body["query"], {"points": 0, "requests": 0})
+            phase["points"] += 1
+            phase["requests"] += 1
+        return phases
+'''
+)
+
+# The reference's analysis reports through the Python SDK's `report`. This repo
+# carries the CLI but not that SDK, and test_eval_wiring.py runs every tree for
+# real, so the fixtures write what `report` writes: the result protocol's
+# `{"value": ..., "detail": ...}`, to the file ONEBUDGETSPEC_RESULT names.
+_ANALYSE_SYNC = '''\
+"""Report the points the sync journey test recorded, broken down by phase."""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
+recorded = json.loads(TELEMETRY.read_text())
+phases = recorded.get("phases") if isinstance(recorded, dict) else None
+if not isinstance(phases, dict) or not all(
+    isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
+    for p in phases.values()
+):
+    sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
+Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(
+    json.dumps(
+        {
+            "value": sum(p["points"] for p in phases.values()),
+            "detail": ", ".join(
+                f"{name}: {p['points']} points in {p['requests']} requests"
+                for name, p in phases.items()
+            ),
+        }
+    )
+)
+'''
+
+# The before trees' analysis: one figure per budget, picked by its argument.
+_ANALYSE_SYNC_FIGURE = '''\
+"""Report one figure the sync journey test recorded: the total, a phase, or requests."""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+PHASES = ("issues", "comments")
+
+TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
+recorded = json.loads(TELEMETRY.read_text())
+phases = recorded.get("phases") if isinstance(recorded, dict) else None
+if not isinstance(phases, dict) or not all(
+    isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
+    for p in phases.values()
+):
+    sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
+match sys.argv[1:]:
+    case ["requests"]:
+        value = sum(p["requests"] for p in phases.values())
+    case ["total" | "points"]:
+        value = sum(p["points"] for p in phases.values())
+    case [phase] if phase in PHASES:
+        # A phase the sync had nothing to fetch for records no entry.
+        value = phases.get(phase, {"points": 0})["points"]
+    case figure:
+        sys.exit(f"unknown figure {figure}: expected requests, total, points or {PHASES}")
+Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(json.dumps({"value": value}))
+'''
+
+
+def _analyse(*args: str) -> str:
+    return json.dumps(["uv", "run", "python", "budgets/analyse_sync.py", *args])
+
+
+def _points_budget(command: str) -> str:
+    return _budget(
+        command,
+        budget_id="linear-sync-points",
+        description=(
+            "Linear API points one full sync spends. Protects the hourly quota the\n"
+            "sync shares with every other integration."
+        ),
+        unit="points",
+        threshold=400,
+    )
+
+
+def _phase_telemetry_tree(
+    *budgets: str, analysis: str = _ANALYSE_SYNC
+) -> dict[str, str]:
+    return {
+        f"{ROOT}/budgets.yaml": _budgets_yaml(*budgets),
+        f"{ROOT}/budgets/analyse_sync.py": analysis,
+        f"{ROOT}/project.json": _PROJECT_JSON,
+        f"{ROOT}/src/linear_sync/sync.py": _SYNC,
+        f"{ROOT}/src/linear_sync/client.py": _POINTS_CLIENT,
+        f"{ROOT}/tests/telemetry.py": _TELEMETRY_RECORDER,
+        f"{ROOT}/tests/test_sync_journey.py": _PHASES_JOURNEY_TEST,
+        f"{ROOT}/tests/fixtures/issues_two_pages.json": _ISSUES_FIXTURE,
+    }
+
+
+def _total_beside_phases() -> dict[str, str]:
+    """The level rule's before: the total registered beside two of its phases."""
+    return _phase_telemetry_tree(
+        _points_budget(_analyse("total")),
+        *(
+            _budget(
+                _analyse(phase),
+                budget_id=f"linear-sync-{phase}-points",
+                description=f"Linear API points the {phase} phase of a sync spends.",
+                unit="points",
+                threshold=threshold,
+            )
+            for phase, threshold in (("issues", 250), ("comments", 150))
+        ),
+        analysis=_ANALYSE_SYNC_FIGURE,
+    )
+
+
+def _quota_in_two_units() -> dict[str, str]:
+    """The level rule's before: one quota registered in points and in requests."""
+    return _phase_telemetry_tree(
+        _points_budget(_analyse("points")),
+        _budget(
+            _analyse("requests"),
+            budget_id="linear-sync-requests",
+            description="Linear API requests one full sync makes.",
+            unit="requests",
+            threshold=60,
+        ),
+        analysis=_ANALYSE_SYNC_FIGURE,
+    )
+
+
+def _total_reports_phases_as_detail() -> dict[str, str]:
+    """The level rule's after: one total, its phases and requests as `detail`."""
+    return _phase_telemetry_tree(_points_budget(_analyse()))
+
+
+def _distinct_concerns() -> dict[str, str]:
+    """A quota and a latency someone waits through: two outcomes, two budgets."""
+    tree = _phase_telemetry_tree(
+        _points_budget(_analyse()),
+        _budget(
+            json.dumps(["uv", "run", "python", "-m", "linear_sync", "--help"]),
+            budget_id="linear-sync-cold-start-seconds",
+            description=(
+                "Wall clock from launching the sync CLI to its usage text.\n"
+                "Protects the wait a user sits through before anything happens."
+            ),
+            measure="elapsed",
+            unit="seconds",
+            threshold=10,
+        ),
+    )
+    tree[f"{ROOT}/src/linear_sync/__main__.py"] = '''\
+"""The sync's command line: `python -m linear_sync`."""
+
+import argparse
+
+argparse.ArgumentParser(
+    prog="linear-sync", description="Pull every Linear issue."
+).parse_args()
+'''
+    return tree
+
+
 @dataclass(frozen=True)
 class Case:
     rule: str
@@ -650,6 +1181,8 @@ MINIMAL_TREE = "budgets_scoped_to_minimal_tree"
 ONLY_JUDGE = "onebudgetspec_is_the_only_judge"
 DIRECT = "budget_commands_measure_directly"
 TELEMETRY = "budgets_reuse_gate_telemetry"
+THRESHOLDS = "tests_hold_no_nonfunctional_thresholds"
+LEVEL = "budgets_track_product_owner_outcomes"
 
 CASES = [
     Case(DESCRIPTIONS, "terse", _conforming(), Expected.PASS),
@@ -726,6 +1259,57 @@ CASES = [
         Expected.PASS,
     ),
     Case(TELEMETRY, "reruns-test-scenario", _reruns_test_scenario(), Expected.FAIL),
+    Case(
+        THRESHOLDS,
+        "asserted-cost-figure",
+        _asserted_cost_figure(),
+        Expected.FAIL,
+        f"{ROOT}/tests/test_sync_journey.py",
+    ),
+    Case(
+        THRESHOLDS,
+        "cost-recorded-as-telemetry",
+        _analyses_test_telemetry(),
+        Expected.PASS,
+    ),
+    Case(
+        THRESHOLDS,
+        "wall-clock-discriminator",
+        _wall_clock_discriminator(),
+        Expected.FAIL,
+        "tests/test_enqueue.py",
+    ),
+    Case(THRESHOLDS, "event-driven-rewrite", _event_driven_rewrite(), Expected.PASS),
+    Case(THRESHOLDS, "configured-timeout", _configured_timeout(), Expected.PASS),
+    Case(THRESHOLDS, "exact-count", _exact_count(), Expected.PASS),
+    Case(THRESHOLDS, "backoff-schedule", _backoff_schedule(), Expected.PASS),
+    Case(THRESHOLDS, "absent-operation", _absent_operation(), Expected.PASS),
+    Case(
+        THRESHOLDS, "product-enforced-limit", _product_enforced_limit(), Expected.PASS
+    ),
+    Case(THRESHOLDS, "no-figure", _no_figure(), Expected.NOT_RELEVANT),
+    Case(
+        LEVEL,
+        "total-beside-phases",
+        _total_beside_phases(),
+        Expected.FAIL,
+        f"{ROOT}/budgets.yaml",
+    ),
+    Case(
+        LEVEL,
+        "quota-in-two-units",
+        _quota_in_two_units(),
+        Expected.FAIL,
+        f"{ROOT}/budgets.yaml",
+    ),
+    Case(
+        LEVEL,
+        "total-reports-phases-as-detail",
+        _total_reports_phases_as_detail(),
+        Expected.PASS,
+    ),
+    Case(LEVEL, "distinct-concerns", _distinct_concerns(), Expected.PASS),
+    Case(LEVEL, "no-budgets-registered", _empty_budgets_file(), Expected.NOT_RELEVANT),
     # Every rule's relevance clause drops matched files no budget reaches.
     *(
         Case(rule, "no-budgets", _no_budgets(), Expected.NOT_RELEVANT)
@@ -805,20 +1389,46 @@ def _id(case: Case) -> str:
     return f"{case.rule}/{case.fixture}"
 
 
+# Every case at once overran the harness's 630 s ceiling on a loaded host; a dozen
+# judges at a time each finish well inside it.
+_CONCURRENT_JUDGES = 12
+
+
+def _settled(future: Future[Verdict]) -> Verdict | BaseException:
+    try:
+        return future.result()
+    except BaseException as error:  # pytest.fail raises a BaseException
+        return error
+
+
 @pytest.fixture(scope="module")
-def verdicts(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Verdict]:
+def verdicts(
+    request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
+) -> dict[str, Verdict | BaseException]:
+    # Only the cases `-k` selected are judged, and a case whose judge errors fails
+    # alone rather than taking every other case down with it.
+    selected = []
+    for item in request.session.items:
+        callspec = getattr(item, "callspec", None)
+        case = callspec.params.get("case") if callspec is not None else None
+        if isinstance(case, Case):
+            selected.append(case)
     base = tmp_path_factory.mktemp("onebudgetspec-consumers")
-    with ThreadPoolExecutor(max_workers=len(CASES)) as pool:
+    with ThreadPoolExecutor(max_workers=_CONCURRENT_JUDGES) as pool:
         futures = {
             _id(c): pool.submit(_judge, c, base / _id(c).replace("/", "--"))
-            for c in CASES
+            for c in selected
         }
-        return {key: future.result() for key, future in futures.items()}
+        return {key: _settled(future) for key, future in futures.items()}
 
 
 @pytest.mark.parametrize("case", CASES, ids=_id)
-def test_rule_judges_its_fixture(case: Case, verdicts: dict[str, Verdict]) -> None:
+def test_rule_judges_its_fixture(
+    case: Case, verdicts: dict[str, Verdict | BaseException]
+) -> None:
     verdict = verdicts[_id(case)]
+    if isinstance(verdict, BaseException):
+        raise verdict
     assert verdict.outcome == case.expected, (
         f"{case.rule} judged the {case.fixture!r} fixture {verdict.outcome!r}, "
         f"expected {case.expected!r}:\n{verdict.report}"

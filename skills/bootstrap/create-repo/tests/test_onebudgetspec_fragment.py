@@ -2,7 +2,7 @@
 
 `assets/llmlint/tools/onebudgetspec.llmlint.yml` is adopted by URL — `@1` — by
 repos that register budgets (the composer's `--tool onebudgetspec` opt-in lists
-it), and by nothing else. Its path, major and five rule names are what those
+it), and by nothing else. Its path, major and rule names are what those
 consumers pin, and keeping it out of every always-on config is what keeps repos
 without budgets from loading it. The opt-in's own composition is held in
 test_compose_repo_plan.py. Both are silent to break:
@@ -39,6 +39,8 @@ RULES = {
     "onebudgetspec_is_the_only_judge",
     "budget_commands_measure_directly",
     "budgets_reuse_gate_telemetry",
+    "tests_hold_no_nonfunctional_thresholds",
+    "budgets_track_product_owner_outcomes",
 }
 # What any reference to the fragment would contain: its file name, or the tool's.
 NEEDLE = "onebudgetspec"
@@ -53,7 +55,7 @@ def _llmlint() -> str:
     return found
 
 
-def test_the_fragment_parses_and_declares_exactly_its_five_rules(
+def test_the_fragment_parses_and_declares_exactly_its_rules(
     tmp_path: Path,
 ) -> None:
     consumer = tmp_path / "llmlint.yml"

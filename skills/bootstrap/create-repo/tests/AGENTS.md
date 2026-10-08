@@ -25,7 +25,7 @@ for the tiers it can reach:
   `skilltest` target rather than a `test` one, which is what keeps the gate from
   ever reaching it. The same project holds the judged proof of the opt-in
   `assets/llmlint/tools/onebudgetspec.llmlint.yml` rules
-  (`skilltest/test_onebudgetspec_rules_judged.py`, ~2 min: `just skilltest -k
+  (`skilltest/test_onebudgetspec_rules_judged.py`, ~15 min, a dozen judges at a time: `just skilltest -k
   onebudgetspec`), for the same reason — it needs a harness credential.
 
 The `conftest.py` here puts this directory on `sys.path` for the whole subtree,
