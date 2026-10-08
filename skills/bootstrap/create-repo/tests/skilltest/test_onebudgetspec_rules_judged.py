@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -1253,20 +1253,41 @@ def _id(case: Case) -> str:
     return f"{case.rule}/{case.fixture}"
 
 
+def _settled(future: Future[Verdict]) -> Verdict | BaseException:
+    try:
+        return future.result()
+    except BaseException as error:  # pytest.fail raises a BaseException
+        return error
+
+
 @pytest.fixture(scope="module")
-def verdicts(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Verdict]:
+def verdicts(
+    request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
+) -> dict[str, Verdict | BaseException]:
+    # Only the cases `-k` selected are judged, and a case whose judge errors fails
+    # alone rather than taking every other case down with it.
+    selected = []
+    for item in request.session.items:
+        callspec = getattr(item, "callspec", None)
+        case = callspec.params.get("case") if callspec is not None else None
+        if isinstance(case, Case):
+            selected.append(case)
     base = tmp_path_factory.mktemp("onebudgetspec-consumers")
-    with ThreadPoolExecutor(max_workers=len(CASES)) as pool:
+    with ThreadPoolExecutor(max_workers=max(len(selected), 1)) as pool:
         futures = {
             _id(c): pool.submit(_judge, c, base / _id(c).replace("/", "--"))
-            for c in CASES
+            for c in selected
         }
-        return {key: future.result() for key, future in futures.items()}
+        return {key: _settled(future) for key, future in futures.items()}
 
 
 @pytest.mark.parametrize("case", CASES, ids=_id)
-def test_rule_judges_its_fixture(case: Case, verdicts: dict[str, Verdict]) -> None:
+def test_rule_judges_its_fixture(
+    case: Case, verdicts: dict[str, Verdict | BaseException]
+) -> None:
     verdict = verdicts[_id(case)]
+    if isinstance(verdict, BaseException):
+        raise verdict
     assert verdict.outcome == case.expected, (
         f"{case.rule} judged the {case.fixture!r} fixture {verdict.outcome!r}, "
         f"expected {case.expected!r}:\n{verdict.report}"
