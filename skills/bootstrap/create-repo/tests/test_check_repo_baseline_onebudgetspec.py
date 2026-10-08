@@ -1,12 +1,12 @@
 """The baseline checker's onebudgetspec section, over repos the composer wired.
 
-A repo declares onebudgetspec by recording `tools/onebudgetspec.md` among the
-references it composed. Each fixture starts from the conformant baseline repo,
-has the real composer (`--tool onebudgetspec --wiring`) apply the setup step,
-adds budget domains the way a consumer would, and then breaks one of the three
-things the checker holds: the pin, a file's reach from `check`, the lint rules.
-Whether the wired repo actually measures is the external tier's
-(external/test_onebudgetspec_wiring_e2e.py).
+Budgets are part of every repo's baseline, so the checker holds every repo to
+their setup whatever its recorded composition says. Each fixture starts from a
+baseline repo with no budgets setup, has the real composer (`--wiring`) apply
+the setup step, adds budget domains the way a consumer would, and then breaks
+one of the three things the checker holds: the pin, a file's reach from
+`check`, the lint rules. Whether the wired repo actually measures is the
+external tier's (external/test_onebudgetspec_wiring_e2e.py).
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ from pathlib import Path
 
 import pytest
 from test_check_repo_baseline import (
-    CONFORMANT_AGENTS,
+    BUN_LOCK,
     FULL_JUSTFILE,
+    SCRIPT,
     crb,
     levels,
     make_repo,
@@ -29,17 +30,13 @@ from test_check_repo_baseline import (
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
+FRAGMENT = SKILL_DIR / "assets" / "llmlint" / "tools" / "onebudgetspec.llmlint.yml"
 
 # The wiring runs the budgets against the merge base the template assigns.
 BASED_JUSTFILE = 'base := "origin/main"\n\n' + FULL_JUSTFILE
-DECLARING_AGENTS = CONFORMANT_AGENTS.replace(
-    "+ ci.md", "+ ci.md + tools/onebudgetspec.md"
-)
-# What `bun install` records for the pinned release (trimmed to its entry).
-BUN_LOCK = (
-    '{\n  "lockfileVersion": 1,\n  "packages": {\n'
-    '    "@onebudgetspec/cli": ["@onebudgetspec/cli@0.1.3", "", {}, "sha512-x"],\n'
-    "  }\n}\n"
+# An llmlint.yml composed before budgets joined the baseline: no budget rules.
+UNWIRED_LLMLINT = (
+    'plugins:\n  - "https://example.com/assets/llmlint/base.llmlint.yml@1"\n'
 )
 API_BUDGETS = """\
 schema_version: 1
@@ -80,9 +77,19 @@ def api_project(budgets_target: str = "budgets") -> dict[str, object]:
     }
 
 
+def unwired_repo(tmp_path: Path) -> Path:
+    """A baseline repo built before budgets joined the baseline: not wired, and
+    its AGENTS.md names no onebudgetspec reference."""
+    repo = make_repo(
+        tmp_path, justfile=BASED_JUSTFILE, llmlint=UNWIRED_LLMLINT, budgets=False
+    )
+    assert "onebudgetspec" not in (repo / "AGENTS.md").read_text(encoding="utf-8")
+    return repo
+
+
 def wired_repo(tmp_path: Path) -> Path:
-    """A baseline repo declaring onebudgetspec, set up by the composer's wiring."""
-    repo = make_repo(tmp_path, composition=DECLARING_AGENTS, justfile=BASED_JUSTFILE)
+    """A baseline repo set up by the composer's wiring, with two budget domains."""
+    repo = unwired_repo(tmp_path)
     result = subprocess.run(
         [
             "uv",
@@ -93,8 +100,6 @@ def wired_repo(tmp_path: Path) -> Path:
             "cli",
             "--language",
             "python",
-            "--tool",
-            "onebudgetspec",
             "-o",
             str(tmp_path / "plan.md"),
             "--llmlint-config",
@@ -537,15 +542,92 @@ def test_the_value_taking_check_options_are_the_clis(tmp_path):
     assert switches == crb.ONEBUDGETSPEC_SWITCHES
 
 
-def test_a_repo_that_does_not_declare_it_is_not_checked(tmp_path):
-    # Every one of the three broken at once, and still nothing to report.
-    repo = make_repo(tmp_path)
+def run_checker(repo: Path) -> subprocess.CompletedProcess[str]:
+    """The real checker, run the way a consuming repo runs it."""
+    return subprocess.run(
+        ["uv", "run", "--script", str(SCRIPT), str(repo)],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_an_unwired_repo_is_held_to_the_budgets_setup(tmp_path):
+    # Its AGENTS.md records no onebudgetspec reference; budgets are baseline, so
+    # the checker holds it to them anyway and names the setup step as the fix.
+    repo = unwired_repo(tmp_path)
+    result = run_checker(repo)
+    assert result.returncode == 1, result.stdout + result.stderr
+    out = result.stdout + result.stderr
+    assert (
+        "onebudgetspec is not pinned: neither package.json nor uv.lock pins "
+        "onebudgetspec"
+    ) in out
+    assert "compose_repo_plan.py --wiring <repo> performs the setup step" in out
+    assert "the onebudgetspec lint rules are not adopted" in out
+
+
+def test_an_unwired_repo_with_budgets_files_reports_each_out_of_the_gate(tmp_path):
+    repo = unwired_repo(tmp_path)
     api = repo / "services" / "api"
     api.mkdir(parents=True)
     (api / "budgets.yaml").write_text(API_BUDGETS, encoding="utf-8")
     (repo / "budgets.yaml").write_text(ROOT_BUDGETS, encoding="utf-8")
-    assert budget_findings(repo) == []
-    assert levels(crb.audit(repo), "ERROR") == []
+    errors = levels(budget_findings(repo), "ERROR")
+    assert len(errors) == 4, errors
+    assert sum("a budgets file is not in the gate" in e for e in errors) == 2
+
+
+def test_the_wiring_alone_clears_the_setup_findings(tmp_path):
+    # The fix the finding names, run with no other flag, then the lint rules
+    # adopted and the lockfile recorded: the real checker passes the repo.
+    repo = unwired_repo(tmp_path)
+    wiring = subprocess.run(
+        ["uv", "run", "--script", str(COMPOSER), "--wiring", str(repo)],
+        capture_output=True,
+        text=True,
+    )
+    assert wiring.returncode == 0, wiring.stderr
+    (repo / "bun.lock").write_text(BUN_LOCK, encoding="utf-8")
+    config = repo / "llmlint.yml"
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + '  - "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/'
+        'skills/bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"\n',
+        encoding="utf-8",
+    )
+    result = run_checker(repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_wired_repo_passes_the_real_checker(tmp_path):
+    result = run_checker(wired_repo(tmp_path))
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_an_in_tree_path_to_the_fragment_adopts_the_rules(tmp_path):
+    # The repo hosting the fragment dogfoods it as a local plugin path, unpinned.
+    repo = wired_repo(tmp_path)
+    local = repo / "skills" / "create-repo" / "tools" / "onebudgetspec.llmlint.yml"
+    local.parent.mkdir(parents=True)
+    shutil.copy(FRAGMENT, local)
+    rel = local.relative_to(repo).as_posix()
+    (repo / "llmlint.yml").write_text(f'plugins:\n  - "{rel}"\n', encoding="utf-8")
+    assert levels(budget_findings(repo), "ERROR") == []
+
+
+@pytest.mark.parametrize(
+    "plugin",
+    [
+        "skills/create-repo/tools/onebudgetspec.llmlint.yml",  # no such file
+        "https://example.com/tools/onebudgetspec.llmlint.yml",  # a URL, unpinned
+    ],
+    ids=["a missing local path", "an unpinned URL"],
+)
+def test_an_unpinned_or_missing_fragment_is_not_adoption(tmp_path, plugin):
+    repo = wired_repo(tmp_path)
+    (repo / "llmlint.yml").write_text(f'plugins:\n  - "{plugin}"\n', encoding="utf-8")
+    [error] = levels(budget_findings(repo), "ERROR")
+    assert "the onebudgetspec lint rules are not adopted" in error
 
 
 ROOT = "budgets.yaml"

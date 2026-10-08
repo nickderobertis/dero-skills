@@ -116,10 +116,27 @@ jobs:
 """
 
 # A composed llmlint.yml: declares plugins (the rule fragments), as the llmlint
-# invariant requires.
+# invariant requires, and adopts the onebudgetspec rules every repo's budgets
+# setup requires.
+ONEBUDGETSPEC_PLUGIN = (
+    "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
+    "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
+)
 LLMLINT_CONFIG = (
     "version: 1\nplugins:\n"
     '  - "https://example.com/assets/llmlint/base.llmlint.yml@1"\n'
+    f'  - "{ONEBUDGETSPEC_PLUGIN}"\n'
+)
+
+# The budgets setup's pin: package.json pins the release exactly and what
+# `bun install` records for it (trimmed to its entry).
+BUDGETS_PACKAGE_JSON = (
+    '{"private": true, "devDependencies": {"@onebudgetspec/cli": "0.1.3"}}\n'
+)
+BUN_LOCK = (
+    '{\n  "lockfileVersion": 1,\n  "packages": {\n'
+    '    "@onebudgetspec/cli": ["@onebudgetspec/cli@0.1.3", "", {}, "sha512-x"],\n'
+    "  }\n}\n"
 )
 
 # A fallback-mode oneharness.toml: the harness/model selection the pinless
@@ -172,6 +189,7 @@ def make_repo(
     pr_template=True,
     llmlint=True,
     oneharness=True,
+    budgets=True,
 ) -> Path:
     """Build a repo fixture. With no overrides it is fully conformant.
 
@@ -189,7 +207,8 @@ def make_repo(
     graph). ``llmlint`` is True (a composed llmlint.yml with plugins), False
     (none), or a raw string written verbatim to llmlint.yml. ``oneharness`` is True (a
     fallback-mode oneharness.toml), False (none), or a raw string written verbatim
-    to oneharness.toml.
+    to oneharness.toml. ``budgets`` pins onebudgetspec in package.json and
+    bun.lock, the budgets setup's pin (the rules are adopted by LLMLINT_CONFIG).
     """
     repo = tmp_path
     if agents:
@@ -243,6 +262,9 @@ def make_repo(
     if oneharness is not False:
         body = oneharness if isinstance(oneharness, str) else ONEHARNESS_CONFIG
         (repo / "oneharness.toml").write_text(body, encoding="utf-8")
+    if budgets:
+        (repo / "package.json").write_text(BUDGETS_PACKAGE_JSON, encoding="utf-8")
+        (repo / "bun.lock").write_text(BUN_LOCK, encoding="utf-8")
     return repo
 
 

@@ -54,8 +54,20 @@ bootstrap:
 # just resolves the tier, rather than a shell `if`, for two reasons: `just -n
 # check` then prints the one command that will actually run, and a mistyped tier
 # aborts instead of quietly buying the weaker tier.
-check tier="affected":
+#
+# Once those pass, `check` runs the onebudgetspec budgets at the same tier
+# (`budgets` below) — part of every create-repo baseline, this repo included.
+check tier="affected": && (budgets tier)
     {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t format-check lint validate smoke test
+
+# The onebudgetspec budgets `check` runs at its tier: every budget domain's
+# `budgets`/`budgets-host` targets, then the root `budgets.yaml` on every run
+# (skills/bootstrap/create-repo/references/tools/onebudgetspec.md). The CLI is the
+# exact `onebudgetspec-cli` pin in the root uv.lock. Neither target name is one of
+# the expensive tiers', so this stays inside the gate's reach and nothing more.
+budgets tier="affected":
+    {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t budgets budgets-host
+    [ ! -f budgets.yaml ] || uv run onebudgetspec check budgets.yaml
 
 # Format every project's sources in place — formatting is not a "what changed"
 # question, so this sweeps the whole graph rather than the affected set.

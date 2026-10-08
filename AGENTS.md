@@ -49,9 +49,10 @@ so the baseline checker runs against this very section):
   per-language (PEP 723 Python, Node built-ins, Bash) and must not depend on
   this repo's toolchain.
 - **References composed:** `shapes/skills-repo.md` + `languages/python.md` +
-  `languages/bash.md` + `ci.md` + `project-graph.md` + `releasing.md`. Nx is
-  **mandatory**: the repo is a project graph and every root recipe delegates to
-  it, so the gate needs bun/node as well as uv. Consumers still never run Nx.
+  `languages/bash.md` + `ci.md` + `project-graph.md` + `releasing.md` +
+  `tools/onebudgetspec.md`. Nx is **mandatory**: the repo is a project graph,
+  every root recipe delegates to it, so the gate needs bun/node as well as uv;
+  consumers still never run Nx.
 - **Project graph:** ten projects split by test tier and by cost (see "Project
   graph" below). Fast tiers live with the code they cover; the three expensive
   ones — the judged llmlint tier, the `skilltest` eval and the `external`
@@ -62,9 +63,8 @@ so the baseline checker runs against this very section):
 - **Excluded, and why:** see "Excluded on purpose" below — `ty` and coverage
   (the tooling is small and stdlib-only), per-project `pyproject.toml`s, and
   direnv / `src` layout / pre-commit (anti-baggage, consistent with the skill's
-  own guidance). The non-negotiable
-  invariants (strict gate, e2e of real journeys, CI proving the artifact) are
-  kept.
+  own guidance). The non-negotiable invariants (strict gate, e2e of real
+  journeys, CI proving the artifact) are kept.
 
 ## Command surface
 
@@ -81,9 +81,9 @@ thing the graph exists to prevent.
   `format-check lint validate smoke test`, which is the whole of the previous flat
   gate declared per project (ruff format/check, shellcheck, skill validation +
   smoke, the `.tool-versions`/CI pin check, `llmlint validate`, every project's
-  pytest, and the create-repo baseline audit of this repo). Must pass before any
-  commit or PR. `just check all` is the same gate as the **broader** tier — one
-  `nx run-many` sweep, which CI runs at merge-to-main.
+  pytest, and the create-repo baseline audit of this repo), then `just budgets`.
+  Must pass before any commit or PR. `just check all` is the same gate as the
+  **broader** tier — one `nx run-many` sweep, which CI runs at merge-to-main.
 - `just format` / `just format-check` / `just lint` / `just validate` /
   `just test` — the individual targets, affected-scoped (`format` sweeps
   everything: formatting is not a "what changed" question). `just check-versions`
@@ -107,8 +107,7 @@ The gate runs **through Nx**, so `uv`, `node` and `bun` are all clean-clone
 prerequisites, alongside the `uv tool` binaries `bootstrap` installs (`llmlint`,
 `shellcheck`). Pins live in `.tool-versions`, kept in lockstep with CI by `just
 check-versions`; how to provision them, and why a cloud session needs
-`session-setup`, is in
-[`docs/dev-toolchain.md`](docs/dev-toolchain.md).
+`session-setup`, is in [`docs/dev-toolchain.md`](docs/dev-toolchain.md).
 
 ### Optional LLM lint (`llmlint`)
 
@@ -171,8 +170,9 @@ The map, the uniform target names, the promoted tiers and the named inputs
 holding cross-project edges in place are in
 [`docs/project-graph.md`](docs/project-graph.md). Two rules belong here because
 breaking either is silent: **`just check` fans out over `format-check lint
-validate smoke test` and nothing else** (the expensive tiers use their own names,
-`skilltest`, `lint-llm` and `external`, so the gate cannot reach them — `tests/project-graph/`
+validate smoke test`, then its `budgets` dependency over `budgets budgets-host`,
+and nothing else** (the expensive tiers use their own names, `skilltest`,
+`lint-llm` and `external`, so the gate cannot reach them — `tests/project-graph/`
 catches an addition), and **a target reading a file outside its project needs a
 named input in `nx.json`**, or a cached pass outlives an edit to that file.
 

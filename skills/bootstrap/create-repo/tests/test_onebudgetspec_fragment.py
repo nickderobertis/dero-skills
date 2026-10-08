@@ -1,14 +1,15 @@
-"""The opt-in onebudgetspec llmlint fragment: its contract, held offline.
+"""The onebudgetspec llmlint fragment: its contract, held offline.
 
-`assets/llmlint/tools/onebudgetspec.llmlint.yml` is adopted by URL — `@1` — by
-repos that register budgets (the composer's `--tool onebudgetspec` opt-in lists
-it), and by nothing else. Its path, major and rule names are what those
-consumers pin, and keeping it out of every always-on config is what keeps repos
-without budgets from loading it. The opt-in's own composition is held in
-test_compose_repo_plan.py. Both are silent to break:
-a renamed rule leaves a consumer's override dangling, and a stray reference
-loads budget rules everywhere. The judged half (do the rules judge budgets
-correctly?) lives in the `skilltest` project, since it needs a harness.
+Budgets are part of every repository create-repo builds, so the composer lists
+`assets/llmlint/tools/onebudgetspec.llmlint.yml` by URL — `@1` — in every
+composed ongoing `llmlint.yml`: a generated repo adopts the rules by listing
+them itself. Its path, major and rule names are what those consumers pin, and
+keeping it out of `base.llmlint.yml` and every other fragment is what keeps an
+existing llmlint consumer from getting budget rules it never listed. Both are
+silent to break: a renamed rule leaves a consumer's override dangling, and a
+stray reference loads budget rules into configs that did not choose them. The
+judged half (do the rules judge budgets correctly?) lives in the `skilltest`
+project, since it needs a harness.
 
 Parsing goes through the real `llmlint config`, adopting the fragment as a
 consumer would, so "parses" means "llmlint accepts it", not "a YAML library does".
@@ -88,22 +89,25 @@ def test_no_other_fragment_names_it() -> None:
         if frag != FRAGMENT and NEEDLE in frag.read_text(encoding="utf-8")
     ]
     assert naming == [], (
-        f"always-on fragments name the opt-in onebudgetspec fragment: {naming} — "
-        "repos without budgets would load its rules"
+        f"other fragments name the onebudgetspec fragment: {naming} — every "
+        "consumer of them would load budget rules without listing them"
     )
 
 
-def test_this_repos_own_llmlint_config_does_not_name_it() -> None:
-    # dero-skills registers no budgets, so it has nothing for these rules to judge.
-    assert NEEDLE not in (REPO_ROOT / "llmlint.yml").read_text(encoding="utf-8")
+def test_this_repo_adopts_it_as_an_in_tree_plugin() -> None:
+    # dero-skills is wired like the repos it builds, and dogfoods the fragment
+    # by its in-tree path, like the other fragments it hosts.
+    text = (REPO_ROOT / "llmlint.yml").read_text(encoding="utf-8")
+    entry = f'  - "{FRAGMENT.relative_to(REPO_ROOT).as_posix()}"'
+    assert entry in text.splitlines()
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-def test_the_composer_never_wires_it_without_the_opt_in(
+def test_the_composer_adopts_it_in_every_ongoing_config_only(
     shape: str, tmp_path: Path
 ) -> None:
-    # Every shape with every language and every optional concern bar `--tool`:
-    # the widest selection short of the opt-in, in both tiers.
+    # Every shape with every language and every optional concern: the ongoing
+    # config lists the `@1` URL once, the buildout config (no budget rules) not.
     ongoing = tmp_path / "llmlint.yml"
     buildout = tmp_path / "llmlint.buildout.yml"
     languages = [arg for lang in LANGUAGES for arg in ("--language", lang)]
@@ -129,9 +133,12 @@ def test_the_composer_never_wires_it_without_the_opt_in(
     )
     assert result.returncode == 0, result.stderr
     for written in (ongoing, buildout):
-        text = written.read_text(encoding="utf-8")
-        assert "plugins:" in text, f"{written.name} wired no plugins at all"
-        assert NEEDLE not in text, (
-            f"the composer wired the opt-in onebudgetspec fragment into "
-            f"{written.name} for --shape {shape}"
-        )
+        assert "plugins:" in written.read_text(encoding="utf-8"), written.name
+    url = (
+        "https://raw.githubusercontent.com/nickderobertis/dero-skills/main/skills/"
+        "bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml@1"
+    )
+    ongoing_text = ongoing.read_text(encoding="utf-8")
+    assert f'  - "{url}"' in ongoing_text.splitlines(), shape
+    assert ongoing_text.count(NEEDLE) == 1, shape
+    assert NEEDLE not in buildout.read_text(encoding="utf-8"), shape

@@ -97,6 +97,19 @@
         "default"
       ]
     },
+    "budgets": {
+      "cache": true,
+      "inputs": [
+        "default",
+        {
+          "dependentTasksOutputFiles": "**/telemetry/*.json"
+        },
+        "onebudgetspecRelease"
+      ]
+    },
+    "budgets-host": {
+      "cache": false
+    },
     "skilltest": {
       "cache": false
     },

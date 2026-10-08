@@ -23,8 +23,9 @@ for the tiers it can reach:
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
-  ever reaching it. The same project holds the judged proof of the opt-in
-  `assets/llmlint/tools/onebudgetspec.llmlint.yml` rules
+  ever reaching it. The same project holds the judged proof of the
+  `assets/llmlint/tools/onebudgetspec.llmlint.yml` rules every composed
+  `llmlint.yml` adopts
   (`skilltest/test_onebudgetspec_rules_judged.py`, ~15 min, a dozen judges at a time: `just skilltest -k
   onebudgetspec`), for the same reason — it needs a harness credential.
 
@@ -41,8 +42,9 @@ mechanics; the load-bearing rules:
 
 - **Deterministic-first.** The checks are in Python: the skill's own
   `check_repo_baseline.py` must pass against the produced repo, the expected
-  files exist (`Cargo.toml`, `src/main.rs`, `AGENTS.md`, the `CLAUDE.md` symlink),
-  and `cargo run` prints a greeting. The YAML-level `eval`s are deterministic
+  files exist (`Cargo.toml`, `AGENTS.md`, the `CLAUDE.md` symlink, a
+  `src/main.rs` in whichever crate holds the binary), and a binary `cargo
+  metadata` reports runs and prints a greeting. The YAML-level `eval`s are deterministic
   mock-call assertions (no LLM judge): the skill runs no destructive command
   (`not_called`) and does self-verify by running its own baseline checker,
   including the one-time `--buildout` tier (`called`). Add new deterministic
@@ -61,6 +63,19 @@ mechanics; the load-bearing rules:
   `.oneharness.toml`; realistic `gh`/`git push` mock output with no "mock"/"test"
   strings. If you touch the run, re-audit stealth by reading the model's
   `/proc/<pid>/environ` mid-run — it must look like a normal sandboxed session.
+- **The run uses this tree's skill.** skilltest hands the harness SKILL.md's
+  text alone, so a model left to find `scripts/` searches the host and can run
+  any other checkout's copy of the skill instead. The case
+  runs a staged SKILL.md (`stage_skill`) opened by the `Base directory for this
+  skill: <dir>` line Claude Code itself adds, and `assert_ran_the_skill_under_test`
+  fails the run when a tool call names any other create-repo directory or none
+  names this one. Its unit tests are in `test_eval_wiring.py`, in the gate.
+- **A developer answers its questions.** The default case is multi-turn: a
+  skilltest simulated user (`DEVELOPER_PERSONA`, at most 3 turns) answers what
+  the model asks before an outward-facing step (public or private? that crate
+  name?) and tells it to carry on, as a real user would; without one, a run
+  that asks ends before the self-verification the evals assert. The persona obeys the prompt's
+  stealth rule; `test_eval_wiring.py` holds it to that.
 - **The remote is never created.** skilltest `stub`s + a fake `gh` on `PATH` make
   `gh repo create`/`git push` return realistic success without touching GitHub.
 - **The harness timeout is a generous ceiling.** The model stops when the task is

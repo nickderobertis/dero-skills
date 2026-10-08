@@ -225,3 +225,281 @@ def _ids(report: object, key: str, **match: str) -> list[str]:
     return sorted(
         e["id"] for e in entries if all(e.get(k) == v for k, v in match.items())
     )
+
+
+# The eval runs the skill in this tree, never another checkout of it. skilltest
+# hands the harness SKILL.md's text alone; the staged copy adds the base-directory
+# line Claude Code itself adds, and the run's tool calls are held to it.
+
+# What a run of another checkout recorded: the model searched the host and ran
+# the first copy it found (the commands are the ones a failed run reported).
+STALE = "/home/u/.cache/checkouts/dero-skills/skills/bootstrap/create-repo"
+STALE_RUN = [
+    {
+        "command": 'find / -type d -name "assets" -path "*create-repo*" 2>/dev/null; '
+        'echo "---"; find / -name "compose_repo_plan.py" 2>/dev/null'
+    },
+    {
+        "command": f'SKILL={STALE} && uv run --script "$SKILL/scripts/'
+        'compose_repo_plan.py" --shape cli --language rust -o REPO_PLAN.md'
+    },
+    {"file_path": f"{STALE}/assets/AGENTS.md.template"},
+]
+
+
+def as_calls(inputs: list[dict[str, str]]):
+    """The SDK's own observed tool calls for ``inputs``, named as Claude Code
+    names the tools: a shell command, a file written or edited, a file read."""
+    from skilltest_pytest import ToolCall
+
+    def tool(item: dict[str, str]) -> str:
+        match item:
+            case {"command": _}:
+                return "Bash"
+            case {"content": _}:
+                return "Write"
+            case {"new_string": _}:
+                return "Edit"
+            case _:
+                return "Read"
+
+    return [
+        ToolCall(
+            tool=tool(item),
+            input=item,
+            action="allow",
+            platform="claude-code",
+            model="claude-opus-4-8",
+        )
+        for item in inputs
+    ]
+
+
+def under_test_run(skill: Path) -> list[object]:
+    """The same steps against the skill in this tree, in the forms a model writes."""
+    return [
+        STALE_RUN[0],
+        {
+            "command": f'SKILL={skill} && uv run --script "$SKILL/scripts/'
+            'compose_repo_plan.py" --shape cli --language rust -o REPO_PLAN.md'
+        },
+        {"file_path": f"{skill}/assets/AGENTS.md.template"},
+        {"command": f"uv run --script {skill}/scripts/compose_repo_plan.py --wiring ."},
+        {"command": "cd /tmp/w/create-repo-e2e-rust-cli && just check"},
+    ]
+
+
+def test_the_staged_skill_names_this_tree_and_is_a_valid_skill(
+    eval_module, tmp_path
+) -> None:
+    from skilltest_pytest import validate_skill
+
+    staged = eval_module.stage_skill(tmp_path)
+    report = validate_skill(staged)
+    assert report.valid, report.findings
+    text = (staged / "SKILL.md").read_text(encoding="utf-8")
+    original = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    line = f"Base directory for this skill: {SKILL}"
+    assert line in text.splitlines()
+    # Only the line is added: the frontmatter and every line of the body stay.
+    assert [ln for ln in text.splitlines() if ln and ln != line] == [
+        ln for ln in original.splitlines() if ln
+    ]
+
+
+def test_a_run_of_this_trees_skill_passes_the_isolation_check(eval_module) -> None:
+    calls = as_calls(under_test_run(SKILL))
+    assert eval_module.skill_copies(calls) == {str(SKILL)}
+    eval_module.assert_ran_the_skill_under_test(calls)
+
+
+def test_a_run_of_another_checkout_fails_naming_it(eval_module) -> None:
+    with pytest.raises(AssertionError, match="another copy of the skill") as caught:
+        eval_module.assert_ran_the_skill_under_test(as_calls(STALE_RUN))
+    assert STALE in str(caught.value)
+    # One stray read of the other copy is enough, beside a run of this one.
+    with pytest.raises(AssertionError, match="another copy of the skill"):
+        eval_module.assert_ran_the_skill_under_test(
+            as_calls([*under_test_run(SKILL), STALE_RUN[2]])
+        )
+
+
+def test_a_link_to_the_skills_source_is_not_another_copy(eval_module) -> None:
+    # What the model wrote into the produced repo, and a command quoting a URL:
+    # neither runs or reads a copy of the skill. A failed run read one as such.
+    url = (
+        "https://github.com/nickderobertis/dero-skills/blob/main/skills/"
+        "bootstrap/create-repo"
+    )
+    inputs = [
+        *under_test_run(SKILL),
+        {"file_path": "/tmp/w/create-repo-e2e-rust-cli/AGENTS.md", "content": url},
+        {
+            "file_path": "/tmp/w/README.md",
+            "old_string": f"Compose with {STALE}/scripts/compose_repo_plan.py",
+            "new_string": url,
+        },
+        {"command": f'gh repo create x --description "built with {url}"'},
+    ]
+    calls = as_calls(inputs)
+    assert eval_module.skill_copies(calls) == {str(SKILL)}
+    eval_module.assert_ran_the_skill_under_test(calls)
+    # Writing INTO another copy still names it: the path is the call's target.
+    with pytest.raises(AssertionError, match="another copy of the skill"):
+        eval_module.assert_ran_the_skill_under_test(
+            as_calls([*inputs, {"file_path": f"{STALE}/SKILL.md", "content": "x"}])
+        )
+
+
+def test_a_run_that_never_reaches_the_skill_fails(eval_module, tmp_path) -> None:
+    staged = tmp_path / "create-repo"
+    calls = as_calls([STALE_RUN[0], {"file_path": f"{staged}/SKILL.md"}])
+    with pytest.raises(AssertionError, match="no tool call reached"):
+        eval_module.assert_ran_the_skill_under_test(calls, staged=staged)
+
+
+def test_a_failure_report_carries_how_each_run_ended(eval_module) -> None:
+    from skilltest_sdk import Report
+
+    report = Report.model_validate(
+        {
+            "passed": False,
+            "summary": {"cases": 1, "failed": 1, "passed": 0, "runs": 1},
+            "runs": [
+                {
+                    "case": "case",
+                    "evals": [],
+                    "model": "claude-opus-4-8",
+                    "platform": "claude-code",
+                    "passed": False,
+                    "skill": str(SKILL),
+                    "turns": 2,
+                    "transcript": {
+                        "messages": [
+                            {"role": "user", "content": "set it up"},
+                            {"role": "assistant", "content": "Composing the plan."},
+                            {"role": "assistant", "content": "Which license?"},
+                        ]
+                    },
+                }
+            ],
+        }
+    )
+    words = eval_module.last_words(report)
+    assert "claude-code/claude-opus-4-8 ended with" in words
+    assert words.rstrip().endswith("Which license?")
+    assert "Composing the plan." not in words
+
+
+def test_the_simulated_developer_answers_like_a_user_and_tells_nothing(
+    eval_module,
+) -> None:
+    # Its replies reach the model as ordinary user turns, so the stealth rule the
+    # prompt keeps holds for them too: no word that hints at a test or a check.
+    from skilltest_pytest import user
+
+    persona = eval_module.DEVELOPER_PERSONA
+    developer = user(
+        persona,
+        done_when=eval_module.DEVELOPER_DONE_WHEN,
+        max_turns=eval_module.DEVELOPER_MAX_TURNS,
+    )
+    assert developer.max_turns == 3
+    for tell in ("test", "mock", "eval", "sandbox", "baseline", "checker", "skill"):
+        assert tell not in persona.lower(), tell
+    assert "private" in persona and "carry on" in persona
+
+
+def test_a_failure_tree_shows_the_layout_not_gits_objects(eval_module, tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "crates" / "hello" / "src").mkdir(parents=True)
+    (repo / "crates" / "hello" / "src" / "main.rs").write_text("fn main() {}\n")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for skipped in ("node_modules/nx", ".nx/cache", "target/debug"):
+        (repo / skipped).mkdir(parents=True)
+    tree = eval_module._tree(repo).splitlines()
+    assert tree == [
+        "crates",
+        "crates/hello",
+        "crates/hello/src",
+        "crates/hello/src/main.rs",
+    ]
+
+
+@pytest.mark.skipif(shutil.which("cargo") is None, reason="needs cargo")
+def test_the_binary_is_found_in_whichever_member_declares_it(eval_module, tmp_path):
+    # A workspace like the skill's Rust guidance lays out: the binary in one
+    # member, a test-only e2e crate beside it, no root `src/main.rs`.
+    repo = tmp_path / "repo"
+    (repo / "crates" / "hello" / "src").mkdir(parents=True)
+    (repo / "crates" / "hello-e2e" / "tests").mkdir(parents=True)
+    (repo / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/hello", "crates/hello-e2e"]\nresolver = "2"\n'
+    )
+    (repo / "crates" / "hello" / "Cargo.toml").write_text(
+        '[package]\nname = "hello"\nversion = "0.1.0"\nedition = "2021"\n'
+    )
+    (repo / "crates" / "hello" / "src" / "main.rs").write_text(
+        'fn main() { println!("Hello"); }\n'
+    )
+    (repo / "crates" / "hello-e2e" / "Cargo.toml").write_text(
+        '[package]\nname = "hello-e2e"\nversion = "0.1.0"\nedition = "2021"\n'
+        "publish = false\n"
+    )
+    (repo / "crates" / "hello-e2e" / "tests" / "cli.rs").write_text("")
+    assert eval_module.rust_binaries(repo) == ["hello"]
+
+
+@pytest.mark.parametrize(
+    ("document", "refusal"),
+    [
+        ("not json", "printed no JSON"),
+        ('{"workspace_root": "/r"}', "no `packages` list"),
+        ('{"packages": [{"name": "hello"}]}', "package has no targets"),
+        (
+            '{"packages": [{"targets": [{"name": "hello", "kind": "bin"}]}]}',
+            "target lacks a string name, a list of string kinds",
+        ),
+    ],
+    ids=["not JSON", "no packages", "a package without targets", "kind not a list"],
+)
+def test_a_metadata_document_cargo_did_not_write_is_refused(
+    eval_module, document, refusal
+) -> None:
+    with pytest.raises(AssertionError, match=refusal):
+        eval_module.binaries_in_metadata(document)
+
+
+def test_only_bin_targets_whose_source_exists_are_binaries(eval_module, tmp_path):
+    main = tmp_path / "main.rs"
+    main.write_text("fn main() {}\n")
+    document = {
+        "packages": [
+            {
+                "targets": [
+                    {"name": "hello", "kind": ["bin"], "src_path": str(main)},
+                    {"name": "gone", "kind": ["bin"], "src_path": str(tmp_path / "x")},
+                    {"name": "hello", "kind": ["lib"], "src_path": str(main)},
+                ]
+            }
+        ]
+    }
+    assert eval_module.binaries_in_metadata(json.dumps(document)) == ["hello"]
+
+
+def test_the_preamble_check_reads_the_harness_it_is_given(eval_module, tmp_path):
+    # A harness whose bundle carries the line's template passes; one that
+    # presents skills some other way, or none at all, is named.
+    current = tmp_path / "claude"
+    current.write_bytes(b"\x7fELF...`Base directory for this skill: ${p}`...")
+    assert eval_module.claude_code_preamble_problem(str(current)) is None
+    changed = tmp_path / "claude-next"
+    changed.write_bytes(b"\x7fELF...`Skill root: ${p}`...")
+    problem = eval_module.claude_code_preamble_problem(str(changed))
+    assert problem is not None and "no longer opens a loaded skill" in problem
+    assert "not on PATH" in eval_module.claude_code_preamble_problem(None)
+
+
+@pytest.mark.skipif(shutil.which("claude") is None, reason="needs Claude Code")
+def test_the_installed_claude_code_opens_skills_with_the_staged_line(eval_module):
+    assert eval_module.claude_code_preamble_problem(shutil.which("claude")) is None

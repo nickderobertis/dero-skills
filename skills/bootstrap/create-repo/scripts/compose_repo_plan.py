@@ -7,9 +7,10 @@
 Usage:
     uv run --script scripts/compose_repo_plan.py --shape SHAPE --language LANG \
         [--language LANG ...] [--releasing] \
-        [--intersection NAME ...] [--tool NAME ...] [-o OUT.md] \
+        [--intersection NAME ...] [-o OUT.md] \
         [--llmlint-config FILE] [--llmlint-buildout-config FILE] \
         [--oneharness-config FILE] [--wiring REPO_DIR]
+    uv run --script scripts/compose_repo_plan.py --wiring REPO_DIR
     uv run --script scripts/compose_repo_plan.py --list
 
 You describe the repo with flags — its product shape, the language(s) it is
@@ -24,10 +25,12 @@ adding a reference file automatically extends the flags. ``base.md`` is always
 included first (the shape/language-agnostic invariants), immediately followed by
 ``project-graph.md`` (the project graph is mandatory in every repo, so there is
 no flag for it); ``ci.md`` is always included too (it applies on top of every
-shape); ``releasing.md`` is pulled in by ``--releasing``. ``--tool NAME`` opts
-the repo into a tool the baseline does not assume — ``references/tools/NAME.md``
-joins the plan and its ``tools/NAME.llmlint.yml`` fragment joins the ongoing
-``llmlint.yml`` — and nothing about a tool is emitted without it.
+shape); ``releasing.md`` is pulled in by ``--releasing``. The baseline's tools
+join every plan last, with no flag: onebudgetspec budgets are part of the
+baseline, so ``references/tools/onebudgetspec.md`` is always composed and its
+``tools/onebudgetspec.llmlint.yml`` fragment always joins the ongoing
+``llmlint.yml`` (that fragment, not ``base.llmlint.yml``, carries the budget
+rules, so a repo adopts them by listing its URL).
 
 Convenience derivations, each announced on stderr so the composition stays
 auditable:
@@ -50,8 +53,9 @@ no harness, so ``--llmlint-config`` also writes an ``oneharness.toml`` beside it
 selection (codex + gpt-5.5 primary, claude-code + opus-4.8 secondary) llmlint
 reads to pick a harness.
 
-``--wiring REPO_DIR`` applies the opted-in tools' setup step to the repository
-at REPO_DIR, idempotently. For ``onebudgetspec`` that is: pin
+``--wiring REPO_DIR`` applies the baseline tools' setup step to the repository
+at REPO_DIR, idempotently, and needs no other flag (with ``--shape`` and
+``--language`` it composes the plan too). For ``onebudgetspec`` that is: pin
 ``@onebudgetspec/cli`` exactly in ``package.json`` (the lockfile follows on the
 next install), add the ``budgets``/``budgets-host`` target defaults to
 ``nx.json``, and add a ``budgets`` recipe to the justfile that ``check`` depends
@@ -167,6 +171,9 @@ NX_INPUT_EXCLUSIVE = frozenset({"projects", "dependencies"})
 BUDGETS_RECIPE_NAME = "budgets"
 # The recipe itself, an asset so this script carries no orchestrator command.
 ONEBUDGETSPEC_RECIPE = "assets/tools/onebudgetspec.justfile"
+# The tools every repository's baseline includes, each composed from
+# references/tools/<name>.md (and its llmlint fragment) into every plan.
+BASELINE_TOOLS = ("onebudgetspec",)
 # A justfile recipe header: its name, then its parameters up to the single
 # terminating colon, dependencies after it; a leading `@` is just's quiet prefix,
 # not part of the name. The baseline checker reads recipes
@@ -278,14 +285,13 @@ def select_relpaths(
     intersections: list[str],
     releasing: bool,
     notes: list[str],
-    tools: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """Resolve the flags into an ordered, de-duplicated list of reference relpaths.
 
     Returns the relpaths plus the resolved language list (which may have grown,
     e.g. TypeScript auto-added for a Next.js shape). Order mirrors how the skill
     says to compose: base, the mandatory project graph, shape(s), language(s),
-    intersection(s), then ci, the cross-cutting references, and the opted-in tools.
+    intersection(s), then ci, the cross-cutting references, and the baseline tools.
     """
     ordered: list[str] = ["base.md", "project-graph.md"]
 
@@ -323,9 +329,9 @@ def select_relpaths(
     ordered.append("llmlint.md")
     if releasing:
         ordered.append("releasing.md")
-    # A tool is opt-in: only the ones named by `--tool` join the plan, so their
-    # fragments reach the ongoing llmlint.yml through the same mapping as the rest.
-    ordered.extend(f"tools/{tool}.md" for tool in tools or [])
+    # The baseline's tools join every plan, so their fragments reach the ongoing
+    # llmlint.yml through the same mapping as the rest.
+    ordered.extend(f"tools/{tool}.md" for tool in BASELINE_TOOLS)
 
     seen: set[str] = set()
     deduped = [r for r in ordered if not (r in seen or seen.add(r))]
@@ -838,7 +844,7 @@ class ToolWiring(Protocol):
     def __call__(self, repo: Path, skill_dir: Path) -> list[str]: ...
 
 
-# The setup step of each tool that has one, keyed by its `--tool` name.
+# The setup step of each baseline tool that has one, keyed by its name.
 TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 
 
@@ -846,7 +852,6 @@ def build_parser(
     shapes: list[str],
     languages: list[str],
     intersections: list[str],
-    tools: list[str] | None = None,
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="compose_repo_plan.py",
@@ -874,19 +879,10 @@ def build_parser(
         help="the repo ships a versioned artifact (pull in releasing.md)",
     )
     parser.add_argument(
-        "--tool",
-        action="append",
-        choices=tools or [],
-        default=[],
-        metavar="NAME",
-        help="opt into a tool the baseline does not assume (repeatable): pulls in "
-        "references/tools/NAME.md and its llmlint fragment",
-    )
-    parser.add_argument(
         "--wiring",
         metavar="REPO_DIR",
-        help="apply the opted-in tools' setup step to the repository at REPO_DIR "
-        "(idempotent); needs a --tool that has one",
+        help="apply the baseline tools' setup step (onebudgetspec budgets) to the "
+        "repository at REPO_DIR (idempotent); needs no other flag",
     )
     parser.add_argument(
         "-o",
@@ -935,9 +931,8 @@ def main(argv: list[str]) -> int:
     shapes = discover(refs_dir, "shapes")
     languages = discover(refs_dir, "languages")
     intersections = discover(refs_dir, "intersections")
-    tools = discover(refs_dir, "tools")
 
-    parser = build_parser(shapes, languages, intersections, tools)
+    parser = build_parser(shapes, languages, intersections)
     # `--monorepo` was removed rather than renamed, so an invocation carrying it
     # fails. Parse leniently to name the concrete fix instead of leaving argparse
     # to report only that the flag is unknown.
@@ -966,8 +961,25 @@ def main(argv: list[str]) -> int:
         print(f"  --language      {', '.join(languages)}")
         print(f"  --intersection  {', '.join(intersections) or '(none)'}")
         print("  --releasing     ships a versioned artifact (releasing.md)")
-        print(f"  --tool          {', '.join(tools) or '(none)'}")
+        print("  --wiring        a repo dir: apply the baseline's budgets setup step")
         return 0
+
+    skill_dir = refs_dir.parent
+    composing = any(
+        (
+            args.shape,
+            args.language,
+            args.intersection,
+            args.releasing,
+            args.output,
+            args.llmlint_config,
+            args.llmlint_buildout_config,
+            args.oneharness_config,
+        )
+    )
+    if args.wiring and not composing:
+        # The setup step on its own: nothing is composed, so no flag is needed.
+        return wire(Path(args.wiring), skill_dir)
 
     missing = [
         name
@@ -976,12 +988,6 @@ def main(argv: list[str]) -> int:
     ]
     if missing:
         parser.error(f"the following arguments are required: {', '.join(missing)}")
-    wired = [tool for tool in args.tool if tool in TOOL_WIRING]
-    if args.wiring and not wired:
-        parser.error(
-            "--wiring needs a --tool that has a setup step"
-            f"\n      fix: pass --tool {' / '.join(sorted(TOOL_WIRING))} with it."
-        )
 
     notes: list[str] = []
     relpaths, resolved_langs = select_relpaths(
@@ -991,7 +997,6 @@ def main(argv: list[str]) -> int:
         args.intersection,
         args.releasing,
         notes,
-        args.tool,
     )
 
     try:
@@ -1010,7 +1015,6 @@ def main(argv: list[str]) -> int:
     flags += [f"--intersection {name}" for name in args.intersection]
     if args.releasing:
         flags.append("--releasing")
-    flags += [f"--tool {tool}" for tool in args.tool]
     invocation = "compose_repo_plan.py " + " ".join(flags)
 
     document = render_plan(args.shape, resolved_langs, refs, invocation)
@@ -1029,7 +1033,6 @@ def main(argv: list[str]) -> int:
     else:
         sys.stdout.write(document)
 
-    skill_dir = refs_dir.parent
     if args.llmlint_config:
         urls, included = collect_llmlint_plugins(skill_dir, relpaths, buildout=False)
         Path(args.llmlint_config).write_text(
@@ -1069,22 +1072,27 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
     if args.wiring:
-        repo = Path(args.wiring)
-        if not repo.is_dir():
-            print(
-                f"ERROR --wiring {repo} is not a directory\n"
-                "      fix: pass the root of the repository being set up.",
-                file=sys.stderr,
-            )
+        return wire(Path(args.wiring), skill_dir)
+    return 0
+
+
+def wire(repo: Path, skill_dir: Path) -> int:
+    """Apply every baseline tool's setup step to ``repo``; the exit code."""
+    if not repo.is_dir():
+        print(
+            f"ERROR --wiring {repo} is not a directory\n"
+            "      fix: pass the root of the repository being set up.",
+            file=sys.stderr,
+        )
+        return 2
+    for tool, setup in TOOL_WIRING.items():
+        try:
+            changes = setup(repo, skill_dir)
+        except WiringError as exc:
+            print(f"ERROR {tool} wiring: {exc}", file=sys.stderr)
             return 2
-        for tool in dict.fromkeys(wired):
-            try:
-                changes = TOOL_WIRING[tool](repo, skill_dir)
-            except WiringError as exc:
-                print(f"ERROR {tool} wiring: {exc}", file=sys.stderr)
-                return 2
-            summary = "; ".join(changes) if changes else "already wired"
-            print(f"wired {tool} into {repo}: {summary}", file=sys.stderr)
+        summary = "; ".join(changes) if changes else "already wired"
+        print(f"wired {tool} into {repo}: {summary}", file=sys.stderr)
     return 0
 
 

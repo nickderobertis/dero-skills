@@ -47,12 +47,13 @@ clone, run one command, and trust.
 
    ```bash
    uv run --script scripts/compose_repo_plan.py --shape cli --language python \
-     [--releasing] [--intersection <name>] [--tool onebudgetspec] -o REPO_PLAN.md
+     [--releasing] [--intersection <name>] -o REPO_PLAN.md
    ```
 
    It always pulls in `base.md` (the always-applied invariants),
    `project-graph.md` (the mandatory Nx project graph — there is no flag for it,
-   single-deliverable repos included), and `ci.md`, adds the product shape and
+   single-deliverable repos included), `ci.md`, and `tools/onebudgetspec.md`
+   (onebudgetspec budgets are part of every baseline), adds the product shape and
    language(s), pulls in `releasing.md` when you pass `--releasing`, and
    auto-includes the right intersection (e.g. `cli` + `python` → `python-cli`).
    Run `--list` to see the available flags, or
@@ -74,7 +75,11 @@ clone, run one command, and trust.
    must work from a clean clone; `just check` is the full gate and must run the
    tests — including `test-e2e` — not just lint. Replace every `TODO`
    placeholder body with the real, stack-specific command; a recipe left as an
-   `echo` placeholder is a gate that proves nothing.
+   `echo` placeholder is a gate that proves nothing. Then apply the budgets
+   setup step every repo gets: `uv run --script scripts/compose_repo_plan.py
+   --wiring <repo>` pins onebudgetspec, adds the `budgets`/`budgets-host` Nx
+   target defaults, and adds the `budgets` recipe `check` depends on; run
+   `just bootstrap` so the lockfile records the pin.
 4. **Make the gates strict and deterministic.** Formatting, linting, type
    checking, and tests fail on issues — no warnings-only mode. Tests run with
    coverage measured and the gate fails below the threshold; 95% line coverage
@@ -404,10 +409,11 @@ composer's `--intersection` choices automatically.
 - **Languages** — `python`, `typescript`, `rust`, `bash`.
 - **Cross-cutting (flagged)** — `releasing` (Conventional Commits → automated
   release), via `--releasing` when the repo ships a versioned artifact.
-- **Tools (opt-in)** — `onebudgetspec` (measured budgets), via `--tool
-  onebudgetspec`: composes `references/tools/onebudgetspec.md`, adopts its `@1`
-  lint rules, and `--wiring <repo>` applies its setup step (pinned, and every
-  `budgets.yaml` in `check`), which the baseline checker verifies.
+- **Tools (baseline)** — `onebudgetspec` (measured budgets), in every plan with
+  no flag: composes `references/tools/onebudgetspec.md`, adopts its `@1` lint
+  rules in the composed `llmlint.yml`, and `--wiring <repo>` applies its setup
+  step (pinned, and every `budgets.yaml` in `check`), which the baseline checker
+  verifies in every repo.
 - **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
   needed where a shape and a language meet.
 
@@ -415,8 +421,8 @@ composer's `--intersection` choices automatically.
 
 - [`scripts/compose_repo_plan.py`](./scripts/compose_repo_plan.py) — the
   composer (step 2). Takes `--shape`, `--language` (repeatable), `--releasing`,
-  `--intersection` and `--tool` (an opt-in tool, plus `--wiring <repo>` for its
-  setup step), and emits one document for that stack: the
+  and `--intersection`, and emits one document for that stack — onebudgetspec
+  budgets (`references/tools/onebudgetspec.md`) included in every plan: the
   composed guidance plus a single verification checklist assembled from each
   reference's `## Verification` items. Discovers the available flags by scanning
   `references/`, auto-derives intersections (`cli` + `python` → `python-cli`) and
@@ -429,7 +435,9 @@ composer's `--intersection` choices automatically.
   Because the composed `llmlint.yml` pins no harness, `--llmlint-config` also emits
   a fallback-mode `oneharness.toml` beside it (codex + gpt-5.5 primary, claude-code
   + opus-4.8 secondary; override the path with `--oneharness-config`).
-  Self-contained via PEP 723. Run `--list` to see the catalog.
+  `--wiring <repo>`, alone or beside a composition, applies the budgets setup
+  step to the repository (idempotent). Self-contained via PEP 723. Run `--list`
+  to see the catalog.
 - [`assets/AGENTS.md.template`](./assets/AGENTS.md.template) — starter durable
   instruction layer.
 - [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)

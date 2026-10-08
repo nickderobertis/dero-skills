@@ -1,8 +1,8 @@
-# onebudgetspec ongoing rules (plugin). Opt-in, unlike every other fragment here:
-# only a repo that registers budgets in `budgets.yaml` files adopts it, by listing
-# its `@1`-pinned URL in its own llmlint.yml. The composer selects it only through
-# the `--tool onebudgetspec` opt-in, never by default, and no always-on fragment
-# names it, so a repo without budgets never loads these rules.
+# onebudgetspec ongoing rules (plugin). Budgets are part of every repo the
+# create-repo skill builds, so the composer lists this fragment's `@1`-pinned URL
+# in every composed llmlint.yml: a repo adopts these rules by listing them in its
+# own config. No other fragment, `base.llmlint.yml` included, names it, so a
+# config that does not list it never loads them.
 #
 # The rules judging a budget and its measurement share one file set: the
 # `budgets.yaml` files and the places a budget's command plausibly reaches
@@ -14,7 +14,7 @@
 #
 # Version classification and consumer pinning: see references/llmlint.md
 # ("Fragment versioning").
-version: 1.1.0
+version: 1.1.1
 
 rules:
   # The terms of base's `agents_md_durable_and_terse` and

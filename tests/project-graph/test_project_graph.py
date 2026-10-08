@@ -43,8 +43,8 @@ pytestmark = [
     ),
 ]
 
-# The `-t` list of an orchestrator invocation, up to the next flag.
-_TARGETS_RE = re.compile(r"-t\s+((?:[\w-]+\s*)+)")
+# The `-t` list of an orchestrator invocation, up to the next flag or line end.
+_TARGETS_RE = re.compile(r"-t[ \t]+((?:[\w-]+[ \t]*)+)")
 
 
 def gate_targets() -> tuple[str, ...]:
@@ -69,6 +69,21 @@ def gate_targets() -> tuple[str, ...]:
 
 
 GATE_TARGETS = gate_targets()
+
+
+def check_fanout() -> tuple[str, ...]:
+    """Every target name any orchestrator call `just check all` makes reaches —
+    its own list and that of each recipe it depends on, the budgets included."""
+    result = subprocess.run(
+        ["just", "-n", "check", "all"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    lists = _TARGETS_RE.findall(result.stdout + result.stderr)
+    return tuple(name for names in lists for name in names.split())
 
 
 def nx(*args: str) -> subprocess.CompletedProcess[str]:
@@ -202,8 +217,10 @@ def test_the_gate_never_fans_out_over_the_expensive_target_names():
     tier inside `just check`. `GATE_TARGETS` is read off `just -n check`, so
     this fails the moment somebody adds an expensive name to the real gate.
     """
+    fanout = check_fanout()
+    assert "budgets" in fanout, fanout  # the dependency's list is read too
     for expensive in ("skilltest", "lint-llm", "external"):
-        assert expensive not in GATE_TARGETS, GATE_TARGETS
+        assert expensive not in fanout, fanout
         # The target exists — it is promoted out of the gate, not deleted.
         result = nx("show", "projects", "-t", expensive)
         assert result.returncode == 0, result.stdout + result.stderr
