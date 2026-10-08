@@ -45,9 +45,9 @@ def test_list_prints_catalog():
     assert "cli" in result.stdout
     assert "python" in result.stdout
     assert "python-cli" in result.stdout
-    # references/tools/ is discovered the same way, and is what --tool takes.
-    [tools] = [line for line in result.stdout.splitlines() if "--tool" in line]
-    assert tools.split() == ["--tool", "onebudgetspec"]
+    # Budgets are baseline: no flag selects a tool, and --wiring needs none.
+    assert "--tool" not in result.stdout
+    assert "--wiring" in result.stdout
 
 
 def test_cli_python_composes_guidance_and_checklist():
@@ -70,6 +70,10 @@ def test_cli_python_composes_guidance_and_checklist():
     assert "### Shape: CLI  (`shapes/cli.md`)" in doc
     assert "### Language: Python  (`languages/python.md`)" in doc
     assert "### Cross-cutting: GitHub Actions / CI  (`ci.md`)" in doc
+    # onebudgetspec budgets are part of every plan, composed last, with no flag.
+    assert (
+        "### Tool: onebudgetspec (measured budgets)  (`tools/onebudgetspec.md`)" in doc
+    )
 
     # The intersection is auto-derived, announced on stderr.
     assert "intersections/python-cli.md" in doc

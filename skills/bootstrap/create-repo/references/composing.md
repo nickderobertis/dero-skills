@@ -21,10 +21,10 @@ them for the repo in front of you.
 3. **Always pull in `ci.md`** — it applies on top of every shape. When the repo
    ships a *versioned artifact* (binary, package, plugin, image), also pull in
    `releasing.md` — the Conventional-Commits → automated-release pipeline that
-   pairs with `ci.md`'s squash-merge governance. When the repo gates on measured
-   budgets, opt into `tools/onebudgetspec.md` with `--tool onebudgetspec`; its
-   `--wiring` setup step pins the release and puts every `budgets.yaml` in
-   `check`.
+   pairs with `ci.md`'s squash-merge governance. `tools/onebudgetspec.md` joins
+   every plan with no flag: onebudgetspec budgets are part of the baseline, and
+   `--wiring <repo>` applies their setup step, pinning the release and putting
+   every `budgets.yaml` in `check`.
 4. **Always pull in `project-graph.md`** — the Nx project graph, which every
    repo this skill stands up has. It layers on top of the shapes and languages:
    each project inside picks its own. A one-deliverable repo composes it too,
@@ -101,9 +101,8 @@ repo's targets run over.
 | --- | --- |
 | Product shape | `shapes/cli.md`, `shapes/web-app.md`, `shapes/react.md`, `shapes/nextjs.md`, `shapes/library.md`, `shapes/skills-repo.md`, `shapes/asdf-plugin.md` |
 | Language | `languages/python.md`, `languages/typescript.md`, `languages/rust.md`, `languages/bash.md`, `languages/terraform.md` |
-| Always applied | `base.md`, `ci.md`, `project-graph.md` |
+| Always applied | `base.md`, `ci.md`, `project-graph.md`, `tools/onebudgetspec.md` (measured budgets; `--wiring` applies its setup step) |
 | Cross-cutting (flagged) | `releasing.md` (when shipping a versioned artifact) |
-| Tool (opt-in, `--tool`) | `tools/onebudgetspec.md` (when gating on measured budgets) |
 | Intersection | `intersections/python-cli.md`, `intersections/rust-cli.md` |
 
 The core principles in `SKILL.md` always apply; references specialize them and

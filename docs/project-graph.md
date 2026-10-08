@@ -29,7 +29,10 @@ What is not obvious from the table:
   findings (ruff for Python, shellcheck for shell), `validate` is a project's
   deterministic, model-free contract check, `smoke` runs each bundled skill
   script once, `test` is that project's pytest. `just check` fans out over
-  `format-check lint validate smoke test` — nothing else.
+  `format-check lint validate smoke test`, then its `budgets` dependency over
+  the budget domains' `budgets budgets-host` — nothing else. No project declares
+  a budget target yet; the `nx.json` defaults key a cached `budgets` on the
+  `onebudgetspecRelease` input (the uv pin), since this Nx reads no `bun.lock`.
 - **The three bold targets are the promoted tiers.** `skilltest` drives a real
   ~20-30 minute harness bootstrap; `lint-llm` drives a judged model; `external`
   installs from the npm registry. All three leave

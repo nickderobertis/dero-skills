@@ -1,11 +1,13 @@
 # Tool: onebudgetspec (measured budgets)
 
-Applies when the repo gates on measurable budgets — request counts, query counts,
-cold-start time, gate wall clock — registered with
-[onebudgetspec](https://github.com/nickderobertis/onebudgetspec). It is opt-in:
-`compose_repo_plan.py --tool onebudgetspec` composes this reference and adopts the
-budget lint rules, and `--wiring REPO_DIR` applies the setup step below. A repo
-that does not opt in gets none of it.
+Every repo built from this baseline registers its measurable budgets — request
+counts, query counts, cold-start time, gate wall clock — with
+[onebudgetspec](https://github.com/nickderobertis/onebudgetspec), from its first
+commit, so every non-functional requirement with a number is auditable,
+trackable and adjustable in one place. Budgets are part of the baseline:
+`compose_repo_plan.py` composes this reference into every plan and adopts the
+budget lint rules in every composed `llmlint.yml`, and `--wiring REPO_DIR`
+applies the setup step below.
 
 The file format, the result protocol and the command line are onebudgetspec's to
 state: read the
@@ -299,8 +301,10 @@ exercised, sharing a support crate for the harness.
 
 ## The setup step: pinned and wired
 
-Wiring and pinning are a setup step, checked deterministically by
-`check_repo_baseline.py`, never a judged rule. `--wiring REPO_DIR` performs it:
+Wiring and pinning are a setup step every repo takes, checked deterministically
+by `check_repo_baseline.py` in every repo whatever its recorded composition,
+never a judged rule. `compose_repo_plan.py --wiring REPO_DIR`, which needs no
+other flag, performs it:
 
 - pins `@onebudgetspec/cli` exactly in `package.json`, so the next install
   records it in the lockfile like any other dev tool;
@@ -315,7 +319,9 @@ telemetry-reading `budgets`); the defaults supply the rest. The composed
 `llmlint.yml` adopts the budget rules
 (`assets/llmlint/tools/onebudgetspec.llmlint.yml`, pinned `@1`), which judge
 descriptions, tree scope, the single judge, direct commands and telemetry reuse,
-and the two rules of "When is a requirement a budget" above.
+and the two rules of "When is a requirement a budget" above. The fragment is
+listed by URL in the repo's own `llmlint.yml`, never named by `base.llmlint.yml`,
+so a config adopts the budget rules only by listing them.
 
 ## Verification
 
@@ -324,6 +330,9 @@ and the two rules of "When is a requirement a budget" above.
 - [ ] **Every `budgets.yaml` is reached by `check`.** Each project's file through
   its `budgets`/`budgets-host` targets in the affected run; the root file on every
   run. `check_repo_baseline.py` reports any file nothing reaches.
+- [ ] **Wired.** `compose_repo_plan.py --wiring <repo>` has run: the
+  `budgets`/`budgets-host` target defaults are in `nx.json` and `check` depends
+  on the `budgets` recipe, at its tier.
 - [ ] **The lint rules are adopted.** `llmlint.yml` lists the
   `tools/onebudgetspec.llmlint.yml@1` URL.
 - [ ] **One project per budget domain**, its `budgets.yaml` at the root of the

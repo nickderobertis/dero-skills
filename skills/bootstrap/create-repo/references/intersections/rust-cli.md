@@ -29,7 +29,7 @@ reference implementations of this intersection.
   workspace of several crates, apply that shape once per crate exercised, with
   one support crate the members share for the harness, rather than one e2e
   crate for the whole workspace. That is what lets a domain's project contain
-  its budgets when the repo uses onebudgetspec (`tools/onebudgetspec.md`).
+  its budgets (`tools/onebudgetspec.md`).
 - **Deterministic e2e is offline and tempdir-isolated.** A *live* tier that needs
   real services or credentials is the one sanctioned use of `#[ignore]` /
   env-gating — keep it compiling (don't `#[cfg]` it out), and run it in a

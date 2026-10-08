@@ -38,6 +38,8 @@ plugins:
   - "skills/bootstrap/create-repo/assets/llmlint/ci.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/project-graph.llmlint.yml"
   - "skills/bootstrap/create-repo/assets/llmlint/releasing.llmlint.yml"
+  # onebudgetspec budgets are part of every create-repo baseline, this repo's too.
+  - "skills/bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml"
 
 # No `agents` block: all rules run on the default agent. Harness/model are left
 # unset so `oneharness.toml`'s fallback mode selects them — codex + gpt-5.5 primary,

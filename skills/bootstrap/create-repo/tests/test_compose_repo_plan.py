@@ -68,7 +68,7 @@ def test_base_llmlint_fragment_exists():
 def test_every_composable_llmlint_fragment_maps_to_a_reference():
     # A fragment's path mirrors a reference relpath (buildout/ stripped), so every
     # fragment must correspond to a real references/<...>.md — no orphans. That
-    # includes `tools/`: an opt-in fragment joins through its tool's reference.
+    # includes `tools/`: a baseline tool's fragment joins through its reference.
     missing: list[str] = []
     for frag in _llmlint_fragments():
         rel = frag.relative_to(LLMLINT_ASSETS).as_posix()
@@ -213,6 +213,7 @@ def test_select_relpaths_order_and_dedup():
         "ci.md",
         "llmlint.md",
         "releasing.md",
+        "tools/onebudgetspec.md",
     ]
     assert langs == ["python"]
     assert any("python-cli" in n for n in notes)
@@ -374,7 +375,8 @@ def test_buildout_pins_track_each_fragment_current_major(tmp_path):
     )
 
 
-# The onebudgetspec opt-in (`--tool onebudgetspec`, `--wiring`), driven through the real CLI over real files. The wiring's behaviour in a real
+# onebudgetspec budgets, part of every plan, and their setup step (`--wiring`),
+# driven through the real CLI over real files. The wiring's behaviour in a real
 # Nx workspace — budgets measured, scoped, failed and cached — is the external tier's
 # (external/test_onebudgetspec_wiring_e2e.py).
 
@@ -411,38 +413,104 @@ def template_repo(tmp_path: Path) -> Path:
     return repo
 
 
-def test_the_opt_in_composes_the_reference_and_adopts_the_lint_file(tmp_path):
-    result = compose_into(tmp_path, "--tool", "onebudgetspec")
+@pytest.mark.parametrize(
+    ("shape", "language"),
+    [("cli", "rust"), ("library", "python"), ("web-app", "typescript")],
+)
+def test_every_plan_composes_the_reference_and_adopts_the_lint_file(
+    tmp_path, shape, language
+):
+    # A shape and a language alone: budgets are baseline, so no flag selects them.
+    result = run(
+        "--shape",
+        shape,
+        "--language",
+        language,
+        "-o",
+        str(tmp_path / "plan.md"),
+        "--llmlint-config",
+        str(tmp_path / "llmlint.yml"),
+    )
     assert result.returncode == 0, result.stderr
     plan = (tmp_path / "plan.md").read_text(encoding="utf-8")
-    assert "tools/onebudgetspec.md" in plan
-    assert "--tool onebudgetspec" in plan  # the recorded invocation
+    [composed] = [
+        line for line in plan.splitlines() if "**References composed:**" in line
+    ]
+    assert composed.endswith(", tools/onebudgetspec.md")
+    assert "### Tool: onebudgetspec (measured budgets)" in plan
+    # The recorded invocation is the flags that were passed, and nothing else.
+    assert f"`compose_repo_plan.py --shape {shape} --language {language}`" in plan
     llmlint = (tmp_path / "llmlint.yml").read_text(encoding="utf-8")
     assert f'  - "{ONEBUDGETSPEC_URL}"' in llmlint.splitlines()
+    assert llmlint.count("onebudgetspec") == 1
 
 
-def test_without_the_opt_in_nothing_names_onebudgetspec(tmp_path):
+def test_composing_alone_writes_nothing_into_the_repo(tmp_path):
+    # Without --wiring the plan names the setup step but does not perform it.
     repo = template_repo(tmp_path)
     before = (repo / "justfile").read_text(encoding="utf-8")
     result = compose_into(repo)
     assert result.returncode == 0, result.stderr
-    assert "onebudgetspec" not in (repo / "llmlint.yml").read_text(encoding="utf-8")
-    # rust-cli.md's guidance mentions the tool; the plan composes no part of it.
-    plan = (repo / "plan.md").read_text(encoding="utf-8")
-    [composed] = [
-        line for line in plan.splitlines() if "**References composed:**" in line
-    ]
-    assert "tools/" not in composed
-    assert "Tool: onebudgetspec" not in plan
-    assert "--tool" not in plan
     assert (repo / "justfile").read_text(encoding="utf-8") == before
     assert not (repo / "package.json").exists()
     assert not (repo / "nx.json").exists()
 
 
+def test_the_tool_flag_is_refused_as_unknown(tmp_path):
+    result = compose_into(tmp_path, "--tool", "onebudgetspec")
+    assert result.returncode == 2
+    assert "unrecognized arguments: --tool onebudgetspec" in result.stderr
+    assert "fix: run --list" in result.stderr
+    assert not (tmp_path / "plan.md").exists()
+
+
+def test_list_and_help_name_no_tool_flag():
+    for flag in ("--list", "--help"):
+        result = run(flag)
+        assert result.returncode == 0, result.stderr
+        assert "--tool" not in result.stdout, flag
+        assert "--wiring" in result.stdout, flag
+
+
+def test_wiring_alone_wires_a_repository(tmp_path):
+    # The setup step needs no other flag: no shape, no language, no plan.
+    repo = template_repo(tmp_path)
+    result = run("--wiring", str(repo))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+    assert f"wired onebudgetspec into {repo}" in result.stderr
+    package = json.loads((repo / "package.json").read_text(encoding="utf-8"))
+    assert package["devDependencies"] == {
+        "@onebudgetspec/cli": crp.ONEBUDGETSPEC_VERSION
+    }
+    assert (
+        "budgets"
+        in json.loads((repo / "nx.json").read_text(encoding="utf-8"))["targetDefaults"]
+    )
+    justfile = (repo / "justfile").read_text(encoding="utf-8")
+    assert 'check tier="affected": && (test-e2e tier) (budgets tier)\n' in justfile
+    assert sorted(p.name for p in repo.iterdir()) == [
+        "justfile",
+        "nx.json",
+        "package.json",
+    ]
+    again = run("--wiring", str(repo))
+    assert again.returncode == 0, again.stderr
+    assert "already wired" in again.stderr
+    assert (repo / "justfile").read_text(encoding="utf-8") == justfile
+
+
+def test_a_partial_composition_with_wiring_still_needs_its_language(tmp_path):
+    repo = template_repo(tmp_path)
+    result = run("--shape", "cli", "--wiring", str(repo))
+    assert result.returncode == 2
+    assert "the following arguments are required: --language" in result.stderr
+    assert not (repo / "package.json").exists()
+
+
 def test_wiring_pins_the_release_and_adds_both_targets_to_the_gate(tmp_path):
     repo = template_repo(tmp_path)
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
 
     package = json.loads((repo / "package.json").read_text(encoding="utf-8"))
@@ -485,7 +553,7 @@ def test_wiring_is_idempotent_and_keeps_what_the_repo_already_has(tmp_path):
         json.dumps({"namedInputs": {"production": PRODUCTION}}),
         encoding="utf-8",
     )
-    args = ("--tool", "onebudgetspec", "--wiring", str(repo))
+    args = ("--wiring", str(repo))
     assert compose_into(repo, *args).returncode == 0
     wired = {
         name: (repo / name).read_text(encoding="utf-8")
@@ -509,25 +577,15 @@ def test_wiring_moves_an_older_pin_to_the_release(tmp_path):
         json.dumps({"dependencies": {"@onebudgetspec/cli": "^0.1.0"}}),
         encoding="utf-8",
     )
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     package = json.loads((repo / "package.json").read_text(encoding="utf-8"))
     assert package["dependencies"] == {"@onebudgetspec/cli": crp.ONEBUDGETSPEC_VERSION}
     assert "devDependencies" not in package
 
 
-def test_wiring_without_a_tool_is_refused(tmp_path):
-    repo = template_repo(tmp_path)
-    result = compose_into(repo, "--wiring", str(repo))
-    assert result.returncode == 2
-    assert "--wiring needs a --tool" in result.stderr
-    assert not (repo / "package.json").exists()
-
-
 def test_wiring_without_a_justfile_names_the_template(tmp_path):
-    result = compose_into(
-        tmp_path, "--tool", "onebudgetspec", "--wiring", str(tmp_path)
-    )
+    result = compose_into(tmp_path, "--wiring", str(tmp_path))
     assert result.returncode == 2
     assert "no justfile" in result.stderr
     assert "assets/justfile.template" in result.stderr
@@ -536,7 +594,7 @@ def test_wiring_without_a_justfile_names_the_template(tmp_path):
 def test_wiring_refuses_a_package_json_it_cannot_read(tmp_path):
     repo = template_repo(tmp_path)
     (repo / "package.json").write_text("{not json", encoding="utf-8")
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 2
     assert "package.json is not valid JSON" in result.stderr
     assert (repo / "package.json").read_text(encoding="utf-8") == "{not json"
@@ -554,9 +612,7 @@ def test_wiring_refuses_a_justfile_the_recipe_cannot_join(tmp_path, justfile, re
     # The recipe runs at check's tier against the template's merge base; a
     # justfile without them is named, not quietly given a recipe that breaks it.
     (tmp_path / "justfile").write_text(justfile, encoding="utf-8")
-    result = compose_into(
-        tmp_path, "--tool", "onebudgetspec", "--wiring", str(tmp_path)
-    )
+    result = compose_into(tmp_path, "--wiring", str(tmp_path))
     assert result.returncode == 2
     assert refusal in result.stderr
     assert "assets/justfile.template" in result.stderr
@@ -643,7 +699,7 @@ def test_wiring_refuses_a_manifest_it_cannot_merge_into(tmp_path, name, body, re
     repo = template_repo(tmp_path)
     (repo / name).write_text(body, encoding="utf-8")
     justfile = (repo / "justfile").read_text(encoding="utf-8")
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 2
     assert refusal in result.stderr
     assert "fix:" in result.stderr
@@ -657,7 +713,7 @@ def test_a_refused_justfile_leaves_every_manifest_untouched(tmp_path):
     repo = tmp_path
     (repo / "justfile").write_text('check tier="affected":\n    echo gate\n')
     (repo / "package.json").write_text('{"private":true}', encoding="utf-8")
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 2
     assert "no `base` assignment" in result.stderr
     assert (repo / "package.json").read_text(encoding="utf-8") == '{"private":true}'
@@ -668,7 +724,7 @@ def test_wiring_keeps_the_workspaces_own_budget_target_defaults(tmp_path):
     repo = template_repo(tmp_path)
     own = {"budgets": {"cache": False, "inputs": ["{projectRoot}/**/*"]}}
     (repo / "nx.json").write_text(json.dumps({"targetDefaults": own}), encoding="utf-8")
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     defaults = json.loads((repo / "nx.json").read_text(encoding="utf-8"))
     assert defaults["targetDefaults"]["budgets"] == own["budgets"]
@@ -681,7 +737,7 @@ def test_wiring_leaves_an_already_pinned_manifest_byte_for_byte(tmp_path):
         f'{{"devDependencies":{{"@onebudgetspec/cli":"{crp.ONEBUDGETSPEC_VERSION}"}}}}'
     )
     (repo / "package.json").write_text(compact, encoding="utf-8")
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     assert (repo / "package.json").read_text(encoding="utf-8") == compact
 
@@ -691,7 +747,7 @@ def test_wiring_keeps_an_existing_budgets_recipe_and_puts_it_in_check(tmp_path):
     own = 'budgets tier="affected":\n    echo our own budgets {{tier}}\n'
     justfile = repo / "justfile"
     justfile.write_text(justfile.read_text(encoding="utf-8") + "\n" + own)
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     text = justfile.read_text(encoding="utf-8")
     assert text.endswith(own)
@@ -729,7 +785,7 @@ def test_wiring_refuses_a_budgets_recipe_check_cannot_pass_its_tier(
     justfile = repo / "justfile"
     justfile.write_text(edit(justfile.read_text(encoding="utf-8")), encoding="utf-8")
     before = justfile.read_text(encoding="utf-8")
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 2
     assert refusal in result.stderr
     assert "fix:" in result.stderr
@@ -738,13 +794,13 @@ def test_wiring_refuses_a_budgets_recipe_check_cannot_pass_its_tier(
 
     # The fix the refusal names lets the wiring finish, and then it is settled.
     justfile.write_text(repair(before), encoding="utf-8")
-    retried = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    retried = compose_into(repo, "--wiring", str(repo))
     assert retried.returncode == 0, retried.stderr
     text = justfile.read_text(encoding="utf-8")
     assert text.count("(budgets tier)") == 1
     assert text.count("\nbudgets tier=") == 1
     assert (repo / "package.json").is_file()
-    again = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    again = compose_into(repo, "--wiring", str(repo))
     assert again.returncode == 0, again.stderr
     assert "already wired" in again.stderr
     assert justfile.read_text(encoding="utf-8") == text
@@ -759,24 +815,16 @@ def test_wiring_keeps_a_comment_on_the_check_header(tmp_path):
         text.replace(header, header.rstrip("\n") + "  # the one gate\n"),
         encoding="utf-8",
     )
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     wired = justfile.read_text(encoding="utf-8")
     header = 'check tier="affected": && (test-e2e tier) (budgets tier) # the one gate\n'
     assert header in wired, wired
 
 
-def test_a_repeated_tool_is_wired_once(tmp_path):
+def test_composing_and_wiring_together_wire_once(tmp_path):
     repo = template_repo(tmp_path)
-    result = compose_into(
-        repo,
-        "--tool",
-        "onebudgetspec",
-        "--tool",
-        "onebudgetspec",
-        "--wiring",
-        str(repo),
-    )
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     [summary] = [line for line in result.stderr.splitlines() if "wired " in line]
     assert "already wired" not in summary
@@ -788,7 +836,7 @@ def test_a_repeated_tool_is_wired_once(tmp_path):
 
 def test_wiring_a_directory_that_does_not_exist_is_refused(tmp_path):
     missing = tmp_path / "nowhere"
-    result = compose_into(tmp_path, "--tool", "onebudgetspec", "--wiring", str(missing))
+    result = compose_into(tmp_path, "--wiring", str(missing))
     assert result.returncode == 2
     assert f"--wiring {missing} is not a directory" in result.stderr
     assert "fix: pass the root of the repository" in result.stderr
@@ -806,7 +854,7 @@ def test_wiring_keeps_a_quiet_check_header_quiet(tmp_path):
         text.replace('\ncheck tier="affected":', '\n@check tier="affected":'),
         encoding="utf-8",
     )
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     wired = justfile.read_text(encoding="utf-8")
     assert '\n@check tier="affected": && (test-e2e tier) (budgets tier)\n' in wired
@@ -816,7 +864,7 @@ def test_wiring_keeps_a_quiet_check_header_quiet(tmp_path):
 def test_wiring_finds_each_justfile_name_just_reads(tmp_path, name):
     repo = template_repo(tmp_path)
     (repo / "justfile").rename(repo / name)
-    result = compose_into(repo, "--tool", "onebudgetspec", "--wiring", str(repo))
+    result = compose_into(repo, "--wiring", str(repo))
     assert result.returncode == 0, result.stderr
     assert not (repo / "justfile").exists()
     assert "(budgets tier)" in (repo / name).read_text(encoding="utf-8")
@@ -825,9 +873,7 @@ def test_wiring_finds_each_justfile_name_just_reads(tmp_path, name):
 def test_a_parameter_merely_containing_tier_is_not_the_tier(tmp_path):
     justfile = 'base := "origin/main"\ncheck other_tier="x":\n    echo gate\n'
     (tmp_path / "justfile").write_text(justfile, encoding="utf-8")
-    result = compose_into(
-        tmp_path, "--tool", "onebudgetspec", "--wiring", str(tmp_path)
-    )
+    result = compose_into(tmp_path, "--wiring", str(tmp_path))
     assert result.returncode == 2
     assert "no `check tier=...` recipe" in result.stderr
 

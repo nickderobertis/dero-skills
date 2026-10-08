@@ -99,14 +99,15 @@ Checks:
     Presence-only and deterministic: `audit()` never *runs* llmlint. (The `main`
     `--buildout` flag additionally composes and runs the one-time buildout tier —
     non-deterministic, so opt-in and never part of `audit()`; see run_buildout.)
-  * onebudgetspec, for a repo that declares it (its AGENTS.md "References
-    composed" line names `tools/onebudgetspec.md`, as `compose_repo_plan.py --tool
-    onebudgetspec` records it): onebudgetspec is pinned to one exact version and
-    recorded in the lockfile; every `budgets.yaml` is reached by a target `check`
-    runs — a project's file through a target of its owning `project.json` that
-    `check` fans out over, the root file by an `onebudgetspec check` in a recipe
-    `check` runs; and the composed `llmlint.yml` adopts the `@1` budget rules.
-    Silent for a repo that does not declare it.
+  * onebudgetspec budgets are set up, in every repo whatever its recorded
+    composition (budgets are part of the baseline; `compose_repo_plan.py
+    --wiring <repo>` performs the setup step): onebudgetspec is pinned to one
+    exact version and recorded in the lockfile; every `budgets.yaml` is reached
+    by a target `check` runs — a project's file through a target of its owning
+    `project.json` that `check` fans out over, the root file by an
+    `onebudgetspec check` in a recipe `check` runs; and `llmlint.yml` adopts the
+    budget rules, by the `@1`-pinned fragment URL or, in the repo that hosts the
+    fragment, its in-tree path.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -2182,11 +2183,10 @@ def check_llmlint(repo: Path) -> list[Finding]:
     ]
 
 
-# onebudgetspec, a declared tool: the setup step `compose_repo_plan.py --tool
-# onebudgetspec --wiring` performs, verified for a repo whose recorded composition
-# names references/tools/onebudgetspec.md. Deterministic: nothing here runs a budget.
+# onebudgetspec budgets, part of every repo's baseline: the setup step
+# `compose_repo_plan.py --wiring` performs, verified whatever the recorded
+# composition says. Deterministic: nothing here runs a budget.
 
-ONEBUDGETSPEC_REFERENCE = "tools/onebudgetspec.md"
 BUDGETS_FILE = "budgets.yaml"
 # The release's npm packages (the SDK installs the CLI at its own version) and
 # their PyPI counterparts. A pin is exact when the manifest's spec is the version
@@ -2214,7 +2214,8 @@ PEP440_NORMALIZED_RE = re.compile(
     rf"(?:(?:a|b|rc){_PEP440_NUMBER})?(?:\.post{_PEP440_NUMBER})?"
     rf"(?:\.dev{_PEP440_NUMBER})?(?:\+[a-z0-9]+(?:\.[a-z0-9]+)*)?"
 )
-ONEBUDGETSPEC_PLUGIN_SUFFIX = "tools/onebudgetspec.llmlint.yml@1"
+ONEBUDGETSPEC_FRAGMENT_SUFFIX = "tools/onebudgetspec.llmlint.yml"
+ONEBUDGETSPEC_PLUGIN_SUFFIX = f"{ONEBUDGETSPEC_FRAGMENT_SUFFIX}@1"
 ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
 # The `check` options that take a value, so that value is not read as a PATH —
 # `onebudgetspec check --help` is their source, which the test suite reconciles.
@@ -2239,12 +2240,19 @@ class TargetCommand(NamedTuple):
     cwd: str
 
 
-def declares_onebudgetspec(repo: Path) -> bool:
-    agents = repo / "AGENTS.md"
-    if not agents.is_file():
-        return False
-    refs = parse_composed_references(agents.read_text(encoding="utf-8"))
-    return ONEBUDGETSPEC_REFERENCE in refs
+def adopts_onebudgetspec_rules(plugin: str, config_dir: Path) -> bool:
+    """Whether llmlint ``plugin`` entry is the onebudgetspec fragment.
+
+    Either its URL pinned `@1`, or — in the repo that hosts the fragment and
+    dogfoods it unpinned — a local path to the fragment file.
+    """
+    if plugin.endswith(ONEBUDGETSPEC_PLUGIN_SUFFIX):
+        return True
+    return (
+        "://" not in plugin
+        and plugin.endswith(ONEBUDGETSPEC_FRAGMENT_SUFFIX)
+        and (config_dir / plugin).is_file()
+    )
 
 
 def bun_lock_resolution(lock: Path, name: str) -> str | None:
@@ -2512,17 +2520,16 @@ def budgets_file_reach_problem(
 
 
 def check_onebudgetspec(repo: Path) -> list[Finding]:
-    """For a repo declaring onebudgetspec: pinned, every file reached, rules adopted.
+    """onebudgetspec budgets, in every repo: pinned, every file reached, rules adopted.
 
     The setup step of references/tools/onebudgetspec.md, verified deterministically
-    — never by running a budget. Silent for a repo that does not declare the tool.
+    — never by running a budget. Budgets are part of the baseline, so a repo is
+    held to it whatever its recorded composition says.
     """
-    if not declares_onebudgetspec(repo):
-        return []
     problems: list[Finding] = []
     wiring = (
-        "compose_repo_plan.py --tool onebudgetspec --wiring <repo> performs the "
-        "setup step (references/tools/onebudgetspec.md)"
+        "compose_repo_plan.py --wiring <repo> performs the setup step "
+        "(references/tools/onebudgetspec.md)"
     )
 
     pin = onebudgetspec_pin_problem(repo)
@@ -2565,14 +2572,17 @@ def check_onebudgetspec(repo: Path) -> list[Finding]:
 
     cfg = find_llmlint_config(repo)
     plugins = llmlint_plugins(cfg.read_text(encoding="utf-8")) if cfg else []
-    if not any(plugin.endswith(ONEBUDGETSPEC_PLUGIN_SUFFIX) for plugin in plugins):
+    if cfg is None or not any(
+        adopts_onebudgetspec_rules(plugin, cfg.parent) for plugin in plugins
+    ):
         problems.append(
             Finding(
                 "ERROR",
                 "the onebudgetspec lint rules are not adopted (llmlint.yml lists no "
                 "`tools/onebudgetspec.llmlint.yml@1` plugin)",
-                "re-compose llmlint.yml with `compose_repo_plan.py --tool "
-                "onebudgetspec --llmlint-config llmlint.yml`, or add the plugin URL",
+                "re-compose llmlint.yml with `compose_repo_plan.py --shape <shape> "
+                "--language <lang> --llmlint-config llmlint.yml`, or add the "
+                "plugin URL",
             )
         )
 

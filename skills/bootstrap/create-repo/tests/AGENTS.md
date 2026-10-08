@@ -23,8 +23,9 @@ for the tiers it can reach:
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
-  ever reaching it. The same project holds the judged proof of the opt-in
-  `assets/llmlint/tools/onebudgetspec.llmlint.yml` rules
+  ever reaching it. The same project holds the judged proof of the
+  `assets/llmlint/tools/onebudgetspec.llmlint.yml` rules every composed
+  `llmlint.yml` adopts
   (`skilltest/test_onebudgetspec_rules_judged.py`, ~15 min, a dozen judges at a time: `just skilltest -k
   onebudgetspec`), for the same reason — it needs a harness credential.
 

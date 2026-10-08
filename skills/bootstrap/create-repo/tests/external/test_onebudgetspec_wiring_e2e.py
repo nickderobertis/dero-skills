@@ -1,8 +1,8 @@
-"""End-to-end: a repository set up through `--tool onebudgetspec` really measures.
+"""End-to-end: a repository the composer's `--wiring` set up really measures.
 
 Nothing is stubbed. Each case generates a repository the way the skill does —
-the justfile template, then the composer with the onebudgetspec opt-in and
-`--wiring` — adds three budget files a consumer would write (a root file and two
+the justfile template, then the composer, whose every plan carries the
+onebudgetspec budgets, with `--wiring` — adds three budget files a consumer would write (a root file and two
 domain projects), installs what the composer pinned with the real `bun install`,
 and drives the generated repository's own `just check` and its affected run
 (`just budgets`, the recipe the wiring added) through the real Nx and the real
@@ -250,7 +250,7 @@ class Generated:
 
 @pytest.fixture
 def generated(tmp_path: Path) -> tuple[Generated, str]:
-    """A repository generated with the opt-in, installed, its base commit."""
+    """A repository generated and wired for budgets, installed, its base commit."""
     _require("bun", "just", "git", "node", "uv")
     root = tmp_path / "repo"
     root.mkdir()
@@ -269,8 +269,6 @@ def generated(tmp_path: Path) -> tuple[Generated, str]:
         "web-app",
         "--language",
         "typescript",
-        "--tool",
-        "onebudgetspec",
         "-o",
         str(tmp_path / "plan.md"),
         "--llmlint-config",
@@ -395,11 +393,13 @@ def test_the_baseline_checker_reads_the_generated_repo_as_wired(generated):
     # The checker's CLI, run the way a consumer runs it, reads the bun-written
     # bun.lock, the project targets and the composed llmlint.yml as wired. The
     # generated tree is no whole baseline repo, so other sections still report;
-    # none of them is onebudgetspec's until its lint file is dropped.
+    # none of them is onebudgetspec's until its lint file is dropped. Its
+    # AGENTS.md records no onebudgetspec reference: budgets are baseline, so the
+    # checker holds the repo to them whatever the recorded composition says.
     repo, _base = generated
     (repo.root / "AGENTS.md").write_text(
         "# AGENTS\n\n## Stack and composition\n\n- **References composed:** "
-        "base.md, ci.md, tools/onebudgetspec.md\n",
+        "base.md, ci.md\n",
         encoding="utf-8",
     )
     checker = SKILL_DIR / "scripts" / "check_repo_baseline.py"

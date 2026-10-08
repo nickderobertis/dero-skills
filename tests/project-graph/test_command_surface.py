@@ -230,6 +230,9 @@ def run_recipe(
 
 
 GATE_SWEEP = f"bunx nx run-many {GATE_TARGETS}"
+# The budgets `check` runs once its own targets pass, at the same tier.
+BUDGET_TARGETS = "-t budgets budgets-host"
+BUDGETS_SWEEP = f"bunx nx run-many {BUDGET_TARGETS}"
 
 
 def test_bootstrap_runs_one_install_per_ecosystem(surface) -> None:
@@ -246,19 +249,40 @@ def test_bootstrap_runs_one_install_per_ecosystem(surface) -> None:
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
-        (("check",), [f"bunx nx affected --base=origin/main {GATE_TARGETS}"]),
-        (("check", "all"), [GATE_SWEEP]),
+        (
+            ("check",),
+            [
+                f"bunx nx affected --base=origin/main {GATE_TARGETS}",
+                f"bunx nx affected --base=origin/main {BUDGET_TARGETS}",
+            ],
+        ),
+        (("check", "all"), [GATE_SWEEP, BUDGETS_SWEEP]),
         (("test",), ["bunx nx affected --base=origin/main -t test"]),
         (("lint",), ["bunx nx affected --base=origin/main -t lint"]),
         (("format",), ["bunx nx run-many -t format"]),
     ],
 )
-def test_each_gate_recipe_runs_exactly_one_orchestrator_command(
+def test_each_gate_recipe_runs_one_orchestrator_command_per_tier_step(
     surface, args, expected
 ) -> None:
     result, invoked = run_recipe(surface, *args)
     assert result.returncode == 0, result.stdout + result.stderr
     assert invoked == expected
+
+
+def test_a_failed_gate_never_reaches_the_budgets(surface) -> None:
+    # The budgets run after `check`'s own targets, so a failing gate stops there.
+    result, invoked = run_recipe(surface, "check", fail_pattern="bunx nx affected*")
+    assert result.returncode != 0
+    assert invoked == [f"bunx nx affected --base=origin/main {GATE_TARGETS}"]
+
+
+def test_the_root_budgets_file_is_checked_through_the_uv_pin(surface) -> None:
+    # A root budgets.yaml is checked on every run, by the CLI uv.lock pins.
+    (surface / "budgets.yaml").write_text("schema_version: 1\n", encoding="utf-8")
+    result, invoked = run_recipe(surface, "check")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert invoked[-1] == "uv run onebudgetspec check budgets.yaml"
 
 
 def test_upgrade_relocks_both_ecosystems_then_sweeps_the_whole_graph(surface) -> None:
@@ -272,6 +296,7 @@ def test_upgrade_relocks_both_ecosystems_then_sweeps_the_whole_graph(surface) ->
         "uv sync",
         "bun update",
         GATE_SWEEP,
+        BUDGETS_SWEEP,
     ]
 
 
