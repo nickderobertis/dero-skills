@@ -323,3 +323,36 @@ def test_a_run_that_never_reaches_the_skill_fails(eval_module, tmp_path) -> None
     calls = [STALE_RUN[0], {"file_path": f"{staged}/SKILL.md"}]
     with pytest.raises(AssertionError, match="no tool call reached"):
         eval_module.assert_ran_the_skill_under_test(calls, staged=staged)
+
+
+def test_a_failure_report_carries_how_each_run_ended(eval_module) -> None:
+    from skilltest_sdk import Report
+
+    report = Report.model_validate(
+        {
+            "passed": False,
+            "summary": {"cases": 1, "failed": 1, "passed": 0, "runs": 1},
+            "runs": [
+                {
+                    "case": "case",
+                    "evals": [],
+                    "model": "claude-opus-4-8",
+                    "platform": "claude-code",
+                    "passed": False,
+                    "skill": str(SKILL),
+                    "turns": 2,
+                    "transcript": {
+                        "messages": [
+                            {"role": "user", "content": "set it up"},
+                            {"role": "assistant", "content": "Composing the plan."},
+                            {"role": "assistant", "content": "Which license?"},
+                        ]
+                    },
+                }
+            ],
+        }
+    )
+    words = eval_module.last_words(report)
+    assert "claude-code/claude-opus-4-8 ended with" in words
+    assert words.rstrip().endswith("Which license?")
+    assert "Composing the plan." not in words

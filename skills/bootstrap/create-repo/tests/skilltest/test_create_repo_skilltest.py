@@ -148,6 +148,19 @@ def skill_copies(inputs: list[object]) -> set[str]:
     }
 
 
+def last_words(report, limit: int = 2000) -> str:
+    """Each run's final assistant message, for a failure report: a run that ends
+    early (a question to the user, a refusal) says why only there."""
+    words = []
+    for run in report.runs:
+        said = [m.content for m in run.transcript.messages if m.role == "assistant"]
+        last = said[-1].strip() if said else "(no assistant message)"
+        if len(last) > limit:
+            last = "…" + last[-limit:]
+        words.append(f"\n--- {run.platform}/{run.model} ended with ---\n{last}")
+    return "".join(words)
+
+
 def assert_ran_the_skill_under_test(
     inputs: list[object], skill: Path = SKILL, staged: Path | None = None
 ) -> None:
@@ -419,7 +432,7 @@ def test_create_repo_bootstraps_a_baseline_passing_rust_cli(
         assert_ran_the_skill_under_test(
             [call.input for call in skill_paths.calls], staged=staged
         )
-        assert report.passed, describe_failures(report)
+        assert report.passed, describe_failures(report) + last_words(report)
 
     repo = _find_repo_root(workspace)
     tree = _tree(repo)
@@ -524,7 +537,7 @@ def test_create_repo_with_custom_prompt(neutral_tmp) -> None:
         assert_ran_the_skill_under_test(
             [call.input for call in skill_paths.calls], staged=staged
         )
-        assert report.passed, describe_failures(report)
+        assert report.passed, describe_failures(report) + last_words(report)
     # Soft check only: the harness produced *something* beyond an empty git repo.
     # What the artifact must contain is the follow-up check's job, not this test's.
     produced = [p for p in repo.rglob("*") if ".git/" not in f"/{p.relative_to(repo)}/"]
