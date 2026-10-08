@@ -85,6 +85,7 @@ import stat
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 import produced_repo_suppressions
 import pytest
@@ -318,9 +319,18 @@ def _stealth_env(workspace: Path, fake_bin: Path) -> None:
     os.environ["PWD"] = str(workspace)
 
 
-def _prepare_run(neutral_tmp, repo: str) -> tuple[Path, Path, Path]:
+class PreparedRun(NamedTuple):
+    """What a run is driven from: the model's workspace, the skilltest config,
+    and the staged skill naming this tree's."""
+
+    workspace: Path
+    config: Path
+    staged: Path
+
+
+def _prepare_run(neutral_tmp, repo: str) -> PreparedRun:
     """Build the stealth workspace + provider config shared by both tests, and
-    apply the stealth env. Returns ``(workspace, skilltest_config, staged_skill)``.
+    apply the stealth env.
 
     ``base`` is the workspace's parent and carries the hidden bypass config;
     ``tools`` (fake gh + the skilltest config) lives elsewhere so it is not even
@@ -355,7 +365,7 @@ def _prepare_run(neutral_tmp, repo: str) -> tuple[Path, Path, Path]:
     staged = stage_skill(tools)
 
     _stealth_env(workspace, tools)
-    return workspace, config, staged
+    return PreparedRun(workspace, config, staged)
 
 
 def _remote_mocks(repo: str) -> list:

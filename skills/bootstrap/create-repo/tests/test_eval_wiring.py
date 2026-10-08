@@ -253,11 +253,15 @@ def as_calls(inputs: list[dict[str, str]]):
     from skilltest_pytest import ToolCall
 
     def tool(item: dict[str, str]) -> str:
-        if "command" in item:
-            return "Bash"
-        if "content" in item:
-            return "Write"
-        return "Edit" if "new_string" in item else "Read"
+        match item:
+            case {"command": _}:
+                return "Bash"
+            case {"content": _}:
+                return "Write"
+            case {"new_string": _}:
+                return "Edit"
+            case _:
+                return "Read"
 
     return [
         ToolCall(

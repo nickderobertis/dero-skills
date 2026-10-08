@@ -445,8 +445,9 @@ def test_every_plan_composes_the_reference_and_adopts_the_lint_file(
     assert llmlint.count("onebudgetspec") == 1
 
 
-def test_composing_alone_writes_nothing_into_the_repo(tmp_path):
-    # Without --wiring the plan names the setup step but does not perform it.
+def test_composing_alone_leaves_the_budgets_setup_to_wiring(tmp_path):
+    # Without --wiring the plan names the setup step but does not perform it:
+    # the justfile is untouched and no manifest is pinned or given targets.
     repo = template_repo(tmp_path)
     before = (repo / "justfile").read_text(encoding="utf-8")
     result = compose_into(repo)
