@@ -1009,11 +1009,16 @@ _ANALYSE_SYNC = '''\
 
 import json
 import os
+import sys
 from pathlib import Path
 
-phases = json.loads(
-    (Path(__file__).parents[1] / ".telemetry" / "sync_journey.json").read_text()
-)["phases"]
+TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
+phases = json.loads(TELEMETRY.read_text()).get("phases")
+if not isinstance(phases, dict) or not all(
+    isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
+    for p in phases.values()
+):
+    sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
 Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(
     json.dumps(
         {
@@ -1036,16 +1041,25 @@ import os
 import sys
 from pathlib import Path
 
-phases = json.loads(
-    (Path(__file__).parents[1] / ".telemetry" / "sync_journey.json").read_text()
-)["phases"]
-figure = sys.argv[1]
+PHASES = ("issues", "comments")
+
+TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
+phases = json.loads(TELEMETRY.read_text()).get("phases")
+if not isinstance(phases, dict) or not all(
+    isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
+    for p in phases.values()
+):
+    sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
+(figure,) = sys.argv[1:]
 if figure == "requests":
     value = sum(p["requests"] for p in phases.values())
 elif figure in ("total", "points"):
     value = sum(p["points"] for p in phases.values())
-else:
+elif figure in PHASES:
+    # A phase the sync had nothing to fetch for records no entry.
     value = phases.get(figure, {"points": 0})["points"]
+else:
+    sys.exit(f"unknown figure {figure!r}: expected requests, total, points or {PHASES}")
 Path(os.environ["ONEBUDGETSPEC_RESULT"]).write_text(json.dumps({"value": value}))
 '''
 

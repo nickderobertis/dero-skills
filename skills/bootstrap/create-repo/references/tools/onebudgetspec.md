@@ -181,13 +181,18 @@ budgets:
 """Report the points the sync journey test recorded, broken down by phase."""
 
 import json
+import sys
 from pathlib import Path
 
 from onebudgetspec_sdk import report
 
-phases = json.loads(
-    (Path(__file__).parents[1] / ".telemetry" / "sync_journey.json").read_text()
-)["phases"]
+TELEMETRY = Path(__file__).parents[1] / ".telemetry" / "sync_journey.json"
+phases = json.loads(TELEMETRY.read_text()).get("phases")
+if not isinstance(phases, dict) or not all(
+    isinstance(p, dict) and all(type(p.get(k)) is int for k in ("points", "requests"))
+    for p in phases.values()
+):
+    sys.exit(f"{TELEMETRY}: expected per-phase integer points and requests")
 report(
     sum(p["points"] for p in phases.values()),
     detail=", ".join(
