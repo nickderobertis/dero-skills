@@ -1,7 +1,7 @@
 # Rust buildout rules (plugin) — run ONCE during repo creation, then discarded.
 # One-time structural checks on toolchain pinning and the strict clippy gate; the
 # ongoing Rust judgment rules live in languages/rust.llmlint.yml.
-version: 1.2
+version: 1.3
 
 rules:
   - name: toolchain_pinned_and_installed
