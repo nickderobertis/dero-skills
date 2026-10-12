@@ -13,17 +13,20 @@ the points below concrete.
   pin.
 - **Cargo build configuration.** A root `.cargo/config.toml` carries two keys
   every cargo invocation anywhere inside the clone reads:
-  `build.target-dir = "target"` and `profile.dev.debug = 1`. `target-dir` is
+  `build.target-dir = "target"` and `profile.dev.debug = 0`. `target-dir` is
   resolved relative to the directory holding `.cargo/`, so every crate in the
   clone — workspace members and any crate outside the workspace alike — builds
   into `<clone>/target` rather than a `target/` per crate, and a second clone or
   worktree of the repo, carrying its own copy of the file, builds into its own
   root: the target directory is per clone/worktree and is **never shared across
   worktrees or across repositories** (concurrent builds must not contend for
-  one), so never point it outside the clone. `debug = 1` (an integer: cargo's
-  "limited" level, line tables only) keeps `file:line` for backtraces and
-  `cargo llvm-cov` while the full debuginfo cargo writes by default (`debug = 2`)
-  stays off the disk; the `test` profile inherits it from `dev`, and `release`
+  one), so never point it outside the clone. `debug = 0` (an integer: no
+  debuginfo) keeps the debuginfo cargo writes by default (`debug = 2`) off the
+  disk, where it was most of every test binary's size. Nothing a dev or test
+  build is used for reads it: a panic's `file:line` is compiled in, and
+  `cargo llvm-cov` measures through its own instrumentation. (`debug = 1` is
+  cargo's "limited" level, not line tables only, and kept most of that size.)
+  The `test` profile inherits it from `dev`, and `release`
   (and any other profile a repo declares) is untouched. Both keys live in the
   config file rather than `Cargo.toml` because a manifest `[profile]` reaches
   only the workspace that declares it while the config file reaches every crate
@@ -46,11 +49,13 @@ the points below concrete.
   [build]
   target-dir = "target"
 
-  # Line tables only for dev and test builds (`test` inherits `dev`): backtraces and
-  # coverage keep file:line, and the full debuginfo cargo writes by default
-  # (`debug = 2`) stays off the disk. `release` is untouched.
+  # No debuginfo for dev and test builds (`test` inherits `dev`): cargo passes no
+  # `-C debuginfo` level and strips the standard library's. A panic still names its
+  # file:line (that location is compiled in, not read from debuginfo) and
+  # `cargo llvm-cov` measures through its own instrumentation, while every test
+  # binary drops the 2-3x of its size debuginfo was. `release` is untouched.
   [profile.dev]
-  debug = 1
+  debug = 0
   ```
 
   `check_repo_baseline.py` holds every repo containing a `Cargo.toml` to exactly
@@ -186,9 +191,9 @@ repo-level target too.
   strict gates; the toolchain is pinned in `rust-toolchain.toml` (channel,
   components, release targets) and CI installs from it.
 - [ ] **Cargo build configuration.** The root `.cargo/config.toml` carries
-  `build.target-dir = "target"` (a string) and `profile.dev.debug = 1` (an
-  integer), so every crate in the clone builds into `<clone>/target` with
-  line-table debuginfo for dev and test builds while `release` is untouched; the
+  `build.target-dir = "target"` (a string) and `profile.dev.debug = 0` (an
+  integer), so every crate in the clone builds into `<clone>/target` with no
+  debuginfo for dev and test builds while `release` is untouched; the
   target directory is never pointed outside the clone nor shared across
   worktrees or repositories. `check_repo_baseline.py` fails a repo holding a
   `Cargo.toml` when the file is missing or either key carries another value.
