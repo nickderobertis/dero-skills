@@ -238,7 +238,8 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     # The drift gate the contract names, driven the way a later reader runs it
     # against a Rust repository: no config, then a config carrying full debuginfo
     # (`debug = true` is level 2, the value the contract exists to turn off), then
-    # the exact file text the reference has an agent write.
+    # the previous `debug = 1` and a `false`, then the exact file text the
+    # reference has an agent write.
     repo = tmp_path / "rust"
     repo.mkdir()
     make_repo(repo)
@@ -263,6 +264,19 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     assert len(errors) == 1, result.stderr
     assert "`profile.dev.debug` is true, expected 0" in errors[0]
     assert "set `debug = 0` under [profile.dev] in .cargo/config.toml" in result.stderr
+
+    # The contract's previous value, cargo's "limited" level, and `false`, which
+    # cargo reads as level 0 but which is not the integer every repo carries.
+    for value, rendered in (("1", "1"), ("false", "false")):
+        config.write_text(
+            f'[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = {value}\n',
+            encoding="utf-8",
+        )
+        result = _run_script(repo)
+        assert result.returncode == 1, value
+        errors = _cargo_build_config_errors(result)
+        assert len(errors) == 1, result.stderr
+        assert f"`profile.dev.debug` is {rendered}, expected 0" in errors[0]
 
     config.write_text(CONFORMANT_CARGO_CONFIG, encoding="utf-8")
     result = _run_script(repo)
