@@ -248,7 +248,7 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     errors = _cargo_build_config_errors(result)
     assert len(errors) == 1, result.stderr
     assert errors[0].startswith("ERROR .cargo/config.toml missing")
-    assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0]
+    assert 'build.target-dir = "target", profile.dev.debug = 0' in errors[0]
     assert "create .cargo/config.toml at the repo root" in result.stderr
 
     config = repo / ".cargo" / "config.toml"
@@ -261,8 +261,8 @@ def test_e2e_rust_repo_missing_the_cargo_build_config_fails_then_passes(tmp_path
     assert result.returncode == 1
     errors = _cargo_build_config_errors(result)
     assert len(errors) == 1, result.stderr
-    assert "`profile.dev.debug` is true, expected 1" in errors[0]
-    assert "set `debug = 1` under [profile.dev] in .cargo/config.toml" in result.stderr
+    assert "`profile.dev.debug` is true, expected 0" in errors[0]
+    assert "set `debug = 0` under [profile.dev] in .cargo/config.toml" in result.stderr
 
     config.write_text(CONFORMANT_CARGO_CONFIG, encoding="utf-8")
     result = _run_script(repo)
