@@ -1,0 +1,15 @@
+{
+  "name": "hook-setup-e2e",
+  "root": "tests/hooks",
+  "projectType": "library",
+  "tags": ["type:e2e", "lang:python"],
+  "targets": {
+    "format": {"command": "uv run ruff format tests/hooks"},
+    "format-check": {"command": "uv run ruff format --check tests/hooks"},
+    "lint": {"command": "uv run ruff check tests/hooks"},
+    "test": {
+      "command": "uv run pytest tests/hooks",
+      "inputs": ["default", "hookSetup"]
+    }
+  }
+}

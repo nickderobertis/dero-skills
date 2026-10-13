@@ -53,7 +53,7 @@ so the baseline checker runs against this very section):
   `tools/onebudgetspec.md`. Nx is **mandatory**: the repo is a project graph,
   every root recipe delegates to it, so the gate needs bun/node as well as uv;
   consumers still never run Nx.
-- **Project graph:** ten projects split by test tier and by cost (see "Project
+- **Project graph:** eleven projects split by test tier and by cost (see "Project
   graph" below). Fast tiers live with the code they cover; the three expensive
   ones — the judged llmlint tier, the `skilltest` eval and the `external`
   journeys — sit behind graph edges an unrelated change cannot reach.
@@ -76,7 +76,7 @@ thing the graph exists to prevent.
 - `just bootstrap` — set up from a clean clone: one install per ecosystem, never
   one per project (`bun install`, `uv sync` against the single root `uv.lock`,
   plus the uv-installed `llmlint` + `shellcheck` the gate's targets shell out to).
-  Also activates the husky hooks — `commit-msg` and `pre-push`.
+  Also activates the husky `commit-msg` hook.
 - `just check` — the gate at the **affected** tier: `nx affected` over
   `format-check lint validate smoke test`, which is the whole of the previous flat
   gate declared per project (ruff format/check, shellcheck, skill validation +
@@ -91,8 +91,7 @@ thing the graph exists to prevent.
   and `repo-baseline:test`, which `check` already runs.
 - `just lint-llm-validate [args]` — the deterministic, model-free `llmlint
   validate` gate (config + `llmlint: ignore` directives + fragment version bumps).
-  No harness call, so it IS in `just check`; it also runs as the husky `pre-push`
-  hook (skips if llmlint isn't installed; bypass with `git push --no-verify`).
+  No harness call, so it IS in `just check`; CI verifies it on PRs.
 - `just lint-llm [paths]` — the LLM-as-judge *model* lint. NOT in the gate — it
   drives a real harness (see "Optional LLM lint" below).
 - `just skilltest [args]` — the `skilltest-pytest` skill evals; `just external

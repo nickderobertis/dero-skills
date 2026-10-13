@@ -154,7 +154,7 @@ lint-llm *paths:
 # every static check in one pass: config structure, `llmlint: ignore` directives
 # name real rules, and edited versioned fragments bumped their `version:`. It is
 # the `llmlint-tier` project's `validate` target, so `just check` runs it; this
-# recipe is the focused entry point the husky pre-push hook and CI use, where the
+# recipe is the focused entry point contributors and CI use, where the
 # `--diff-base` form additionally scopes the version-bump check to the branch's
 # changes, e.g. `just lint-llm-validate --diff-base origin/main`.
 # `~/.local/bin` (where `bootstrap`/`setup-llmlint.sh` install llmlint via uv tool)

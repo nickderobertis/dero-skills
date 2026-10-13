@@ -341,3 +341,18 @@ def test_the_authoring_tooling_target_runs_its_suite_for_real():
     output = result.stdout + result.stderr
     assert result.returncode == 0, output
     assert "1 passed" in output, output
+
+
+def test_hook_setup_journeys_track_only_their_installation_inputs():
+    assert affected_test_projects("tests/hooks/test_setup_hooks.py") == {
+        "hook-setup-e2e"
+    }
+    for changed in (
+        "tools/setup-hooks.mjs",
+        "package.json",
+        "bun.lock",
+        "commitlint.config.js",
+        ".husky/commit-msg",
+    ):
+        assert "hook-setup-e2e" in affected_test_projects(changed), changed
+    assert "hook-setup-e2e" not in affected_test_projects("tools/validate_skill.py")

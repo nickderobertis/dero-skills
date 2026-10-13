@@ -493,3 +493,12 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   `pull-requests: write` and a `fetch-depth: 0` checkout, and skips fork PRs via
   the `head.repo.full_name == github.repository` guard. It is **not** in the
   required-checks set — it is a review artifact, not a gate.
+
+## Push hooks
+
+A repository with PR CI installs no duplicate pre-push check: CI owns the gate,
+model-free validation and visual checks or captures. Keep manual check, capture,
+baseline and review commands available, and preserve pre-commit hooks. Without CI,
+keep the existing pre-push gate. Hook setup reruns must remove obsolete generated
+pre-push dispatchers owned by the repository without disabling other hooks or
+unsetting a shared hooksPath.

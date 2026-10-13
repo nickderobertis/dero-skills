@@ -7,6 +7,7 @@ split is by **test tier** and by **cost**, per the create-repo skill's
 | Project | Root | Targets |
 | --- | --- | --- |
 | `authoring-tools` | `tools/` | `format` `format-check` `lint` `validate` `test` |
+| `hook-setup-e2e` | `tests/hooks/` | `format` `format-check` `lint` `test` |
 | `authoring-scripts` | `scripts/` | `lint` |
 | `consumer-bootstrap` | `consumer-bootstrap/` | `lint` |
 | `bootstrap-create-repo` | `skills/bootstrap/create-repo/` | `format` `format-check` `lint` `validate` `smoke` `test` |
