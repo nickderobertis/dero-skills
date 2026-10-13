@@ -56,6 +56,13 @@
     ],
     "skillEval": [
       "{workspaceRoot}/skills/bootstrap/create-repo/tests/skilltest/**/*"
+    ],
+    "hookSetup": [
+      "{workspaceRoot}/commitlint.config.js",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/bun.lock",
+      "{workspaceRoot}/.husky/**/*",
+      "{workspaceRoot}/tools/setup-hooks.mjs"
     ]
   },
   "targetDefaults": {

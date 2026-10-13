@@ -327,9 +327,11 @@ a suggested fix.
       is a mandatory invariant, never baggage to trim.
     - Exclude tools and layouts that don't fit (asdf, direnv, `src` layout,
       heavyweight pre-commit frameworks, etc.) unless clearly justified. A *fast*
-      pre-commit/pre-push hook that just calls the gate (lefthook, or husky where
+      pre-commit hook that just calls the gate (lefthook, or husky where
       JS exists) is fine; the baggage to avoid is a framework that re-specifies
-      the tools the gate already runs.
+      the tools the gate already runs. For pre-push policy, follow
+      [`references/ci.md`](references/ci.md#push-hooks).
+      <!-- llmlint: ignore[no_redundant_instruction_pointers] This link identifies the single authoritative push-hook policy required for derived guidance; copying the rule here would create a second source. -->
     - Avoid previews, multiple install profiles, and noisy defaults; minimize
       ongoing maintenance burden.
 13. **Updates should be regular and validated.**

@@ -49,8 +49,10 @@ worked reference implementation (and is where this skill itself lives).
   the projects it is split into. It is authoring and CI tooling only: it must
   never become a runtime dependency of the bundled scripts (see the
   runtime-independence invariant), since a consuming repo never runs it.
-- **Hooks.** Where JS exists, use husky; the pre-commit/pre-push hook should call
-  `just check` and stay quiet on success.
+- **Hooks.** Where JS exists, use husky; the pre-commit hook should call
+  `just check` and stay quiet on success. Follow [CI push-hook policy](../ci.md#push-hooks)
+  for pre-push setup.
+  <!-- llmlint: ignore[no_redundant_instruction_pointers] This link identifies the single authoritative push-hook policy required for derived guidance; copying the rule here would create a second source. -->
 - **Docs.** Root and nested `AGENTS.md`; include `tests/AGENTS.md` when test
   conventions matter; `CLAUDE.md` is a symlink to `AGENTS.md`.
 - **Safety.** Narrow agent allowlist in `.claude/settings.json`; avoid relying on

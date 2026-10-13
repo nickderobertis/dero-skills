@@ -4,7 +4,7 @@
   "private": true,
   "description": "Canonical Agent Skills repository (Nx authoring + CI).",
   "scripts": {
-    "prepare": "husky"
+    "prepare": "node tools/setup-hooks.mjs"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
