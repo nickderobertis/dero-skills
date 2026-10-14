@@ -1657,12 +1657,23 @@ def check_notignored(repo: Path) -> list[Finding]:
     ]
 
 
-def workflow_steps(text: str) -> list[dict[str, str]]:
-    """Each step of each ``steps:`` list in workflow ``text``, as key -> raw value.
+class WorkflowStep(NamedTuple):
+    """The keys of a workflow step the release-PR check reads, as raw text.
 
-    A value is the text after its key plus every line indented deeper than the
-    key, so a block-scalar ``run: |`` carries its script and ``with:`` carries its
-    inputs. A light scan, not a YAML parse — the same bar as the other checks.
+    Each is the text after its key plus every line indented deeper than the key,
+    so a block-scalar ``run: |`` carries its script and ``with:`` its inputs; a
+    key the step does not set is empty.
+    """
+
+    run: str = ""
+    uses: str = ""
+    with_: str = ""
+
+
+def workflow_steps(text: str) -> list[WorkflowStep]:
+    """Each step of each ``steps:`` list in workflow ``text``.
+
+    A light scan, not a YAML parse — the same bar as the other checks.
     """
     lines = text.splitlines()
     items: list[list[str]] = []
@@ -1690,7 +1701,7 @@ def workflow_steps(text: str) -> list[dict[str, str]]:
     return [_step_mapping(item) for item in items]
 
 
-def _step_mapping(step_lines: list[str]) -> dict[str, str]:
+def _step_mapping(step_lines: list[str]) -> WorkflowStep:
     key_indent = len(step_lines[0]) - len(step_lines[0].lstrip())
     mapping: dict[str, str] = {}
     key: str | None = None
@@ -1702,7 +1713,11 @@ def _step_mapping(step_lines: list[str]) -> dict[str, str]:
             mapping[key] = match.group(2).strip()
         elif key is not None:
             mapping[key] += "\n" + line
-    return mapping
+    return WorkflowStep(
+        run=mapping.get("run", ""),
+        uses=mapping.get("uses", ""),
+        with_=mapping.get("with", ""),
+    )
 
 
 def _arms_auto_merge(script: str) -> bool:
@@ -1713,12 +1728,12 @@ def _arms_auto_merge(script: str) -> bool:
     )
 
 
-def opens_release_pr(step: dict[str, str]) -> bool:
-    if RELEASE_PR_RUN_RE.search(step.get("run", "")):
+def opens_release_pr(step: WorkflowStep) -> bool:
+    if RELEASE_PR_RUN_RE.search(step.run):
         return True
     return bool(
-        RELEASE_PLZ_ACTION_RE.match(step.get("uses", "").strip("\"'"))
-        and RELEASE_PR_COMMAND_RE.search(step.get("with", ""))
+        RELEASE_PLZ_ACTION_RE.match(step.uses.strip("\"'"))
+        and RELEASE_PR_COMMAND_RE.search(step.with_)
     )
 
 
@@ -1749,13 +1764,12 @@ def check_release_pr_auto_merge(repo: Path) -> list[Finding]:
         else {}
     )
 
-    def arms(step: dict[str, str]) -> bool:
-        run = step.get("run", "")
-        if _arms_auto_merge(run):
+    def arms(step: WorkflowStep) -> bool:
+        if _arms_auto_merge(step.run):
             return True
         return any(
             _arms_auto_merge("\n".join(recipe_lines(recipes, match.group(2))))
-            for match in JUST_INVOCATION_RE.finditer(run)
+            for match in JUST_INVOCATION_RE.finditer(step.run)
         )
 
     unarmed: list[str] = []

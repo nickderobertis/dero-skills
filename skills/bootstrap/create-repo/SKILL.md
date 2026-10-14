@@ -314,8 +314,7 @@ a suggested fix.
       publish. **Releasing is fully automated with no manual deploy step** — the
       only human action is merging a PR; nobody hand-edits a version, hand-tags,
       or hand-dispatches a publish; a release PR the bot opens has auto-merge
-      armed on it and merges itself unless `AGENTS.md` opts out (see
-      `references/releasing.md`). Decouple versioning from building, and lint
+      armed on it and merges itself unless `AGENTS.md` opts out. Decouple versioning from building, and lint
       the PR title (the squash commit the release reads) as a required check. See
       `references/releasing.md`.
     - Include checksums and signing if appropriate; document versioning and
