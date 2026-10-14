@@ -123,7 +123,9 @@ so it is auditable and re-appliable.
   where the changelog lives. Releasing is fully automated with no manual deploy
   step: the only human action is merging a PR; nobody hand-edits a version,
   hand-tags, or hand-dispatches a publish. Note which shape you chose —
-  push-to-main or a bot release-PR gate. See the create-repo skill's
+  push-to-main or a bot release-PR gate; a release PR has auto-merge armed by the
+  release workflow and merges itself, unless this file records the opt-out phrase
+  `references/releasing.md` defines. See the create-repo skill's
   `references/releasing.md`.>
 
 ## Invariants (non-negotiable)

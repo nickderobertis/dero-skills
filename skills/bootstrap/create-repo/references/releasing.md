@@ -23,11 +23,15 @@ satisfy this and both are fine:
   release fires the moment a normal PR squash-merges to the default branch — zero
   further steps. Prefer this when you want releases to be a non-event.
 - **Release-PR gate (`release-plz`, `release-please`):** the bot opens a release
-  PR accumulating unreleased commits; merging it cuts the release. This is an
-  *approval gate*, not a manual deploy — merging it is the same one-click PR
-  merge, and the version → changelog → tag → build → publish chain runs itself
-  from there. Choose it when you want a human checkpoint on the changelog/version
-  before it ships, and record that intent in `AGENTS.md`.
+  PR accumulating unreleased commits; merging it cuts the release. By default the
+  release workflow **arms auto-merge** on the release PR it opens, under the
+  release token (see "Arm auto-merge on the release PR" below), so GitHub merges
+  it once every required check passes and branch protection allows — and the
+  version → changelog → tag → build → publish chain runs itself from there.
+  Nobody merges it by hand: the only human action in the release is merging an
+  ordinary PR. Choose this shape when the release should batch several merges or
+  ship its own commit (the release PR is where the broader tier sweeps — see
+  below).
 
 If cutting a release ever requires running a command by hand, clicking
 "Run workflow," or editing a version number in a file, the pipeline is **not
@@ -115,6 +119,45 @@ the release/version job with a **PAT or GitHub App token** (these repos use
 and pull-requests. This trap is invisible until the first release that produces no
 binaries.
 
+## Arm auto-merge on the release PR
+
+A release PR nobody merges is a release nobody ships: it sits green while
+everything waiting on that version waits too. So the workflow that opens it arms
+auto-merge on it in the next step, the way `nickderobertis/onevcs`'s
+`release-plz.yml` does:
+
+```yaml
+- name: Auto-merge the release PR when the gate is green
+  env:
+    GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+  run: |
+    pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --json number,headRefName \
+           --jq 'map(select(.headRefName | startswith("release-plz-"))) | .[0].number // empty')
+    if [ -n "$pr" ]; then
+      gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --auto --squash --delete-branch \
+        || echo "::warning::could not enable auto-merge on #$pr (already enabled, or already merging)"
+    else
+      echo "No open release PR to auto-merge."
+    fi
+```
+
+- **Under the release PAT, never the default token.** A merge the default
+  `GITHUB_TOKEN` performs triggers no workflow (the PAT gotcha above), so the
+  push to the default branch that should tag and publish runs nothing.
+- **`--auto`, never `--admin` and never a bare merge.** `--auto` queues the
+  merge until every required check passes; `--admin` merges past branch
+  protection, and a merge without `--auto` either lands before the checks finish
+  or fails. Neither is an acceptable fallback when arming fails.
+- **A failure only warns.** Auto-merge already armed, or the PR already merging,
+  is not a broken release; the warning says so and the job stays green.
+- **The opt-out is written down, not implied.** A repository that deliberately
+  wants a person to merge its release PR records that in its own `AGENTS.md`
+  with the opt-out phrase `the release PR is a human checkpoint` (this is the one
+  statement of it; the baseline checker matches it case-insensitively), and its
+  workflow then arms nothing. Without that phrase, the create-repo baseline
+  checker fails a workflow that opens a release PR and never arms auto-merge on
+  it.
+
 ## Lockstep across many manifests (polyglot / monorepo)
 
 When one logical version spans several manifests — `Cargo.toml`, `pyproject.toml`,
@@ -163,5 +206,9 @@ when you apply branch protection (`ci.md`).
   authenticated with a PAT or GitHub App token (not the default `GITHUB_TOKEN`),
   so the tag it pushes actually fires the downstream `release`/`publish`
   workflows.
+- [ ] **The release PR merges itself.** A workflow that opens a release PR arms
+  auto-merge on it (`gh pr merge --auto --squash` on the open `release-plz-*` PR)
+  under the release PAT — never the default token, `--admin`, or a merge without
+  `--auto` — or `AGENTS.md` records the opt-out phrase defined above.
 - [ ] **Publish is idempotent.** Re-running after a partial failure skips a
   version already live, and registry tokens live in secrets, never in the tree.

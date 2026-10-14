@@ -86,6 +86,15 @@ Checks:
     `fetch-depth: 0` checkout it needs to work, and the fork-PR skip guard that
     keeps it off the required-checks set. It posts every suppression a PR adds,
     so a high-level review sees the checks the change switched off.
+  * A release pull request merges itself: a workflow under .github/workflows/
+    that opens one (a step whose `run` invokes `release-plz release-pr`, or a
+    step using `release-plz/action` with `command: release-pr`) also arms
+    auto-merge on it — a step running `gh pr merge` with `--auto`, or naming
+    GitHub's `enablePullRequestAutoMerge`, in its own `run` or in a `just`
+    recipe that `run` invokes. Otherwise a person has to merge every release.
+    A repository that wants that on purpose records the opt-out phrase
+    `references/releasing.md` defines in its AGENTS.md (case-insensitive,
+    whitespace-normalised). Silent where no workflow opens a release PR.
   * The llmlint (LLM-judge) tier is set up: an `llmlint.yml` at the repo root
     that declares `plugins` (composed from rule fragments, not empty), a
     fallback-mode `oneharness.toml` (its `extends` chain followed) selecting the
@@ -421,6 +430,27 @@ NOTIGNORED_FORK_GUARD_RE = re.compile(
     r"head\.repo\.full_name\s*==\s*github\.repository"
     r"|github\.repository\s*==\s*[^\n]*head\.repo\.full_name"
 )
+
+
+# The opt-out a repository writes in its AGENTS.md to keep a person merging its
+# release pull request. A contract shared with every repository that records it,
+# defined once in references/releasing.md (the test suite holds the two equal).
+RELEASE_PR_CHECKPOINT_PHRASE = "the release PR is a human checkpoint"
+
+# A workflow step that opens a release pull request: release-plz's CLI, or its
+# action run with `command: release-pr`.
+RELEASE_PR_RUN_RE = re.compile(r"\brelease-plz\s+release-pr\b")
+RELEASE_PLZ_ACTION_RE = re.compile(r"^\s*release-plz/action(?:@|$)")
+RELEASE_PR_COMMAND_RE = re.compile(
+    r"""^\s*command:\s*(["']?)release-pr\1\s*$""", re.MULTILINE
+)
+
+# Arming auto-merge: `gh pr merge … --auto` within one command, or the GraphQL
+# mutation behind it named outright.
+GH_PR_MERGE_RE = re.compile(r"\bgh\s+pr\s+merge\b([^\n;&|]*)")
+AUTO_FLAG_RE = re.compile(r"(?<!\S)--auto(?:=true)?(?!\S)")
+AUTO_MERGE_MUTATION_RE = re.compile(r"\benablePullRequestAutoMerge\b")
+JUST_INVOCATION_RE = re.compile(r"(?<![\w-])just\s+((?:-\S+\s+)*)([A-Za-z_][\w-]*)")
 
 
 @dataclass
@@ -1624,6 +1654,161 @@ def check_notignored(repo: Path) -> list[Finding]:
         )
     return problems or [
         Finding("OK", f"{rel} posts the suppressions review comment on pull requests")
+    ]
+
+
+class WorkflowStep(NamedTuple):
+    """The keys of a workflow step the release-PR check reads, as raw text.
+
+    Each is the text after its key plus every line indented deeper than the key,
+    so a block-scalar ``run: |`` carries its script and ``with:`` its inputs; a
+    key the step does not set is empty.
+    """
+
+    run: str = ""
+    uses: str = ""
+    with_: str = ""
+
+
+def workflow_steps(text: str) -> list[WorkflowStep]:
+    """Each step of each ``steps:`` list in workflow ``text``.
+
+    A light scan, not a YAML parse — the same bar as the other checks.
+    """
+    lines = text.splitlines()
+    items: list[list[str]] = []
+    for i, line in enumerate(lines):
+        if line.strip() != "steps:":
+            continue
+        parent = len(line) - len(line.lstrip())
+        item_indent: int | None = None
+        for nxt in lines[i + 1 :]:
+            if not nxt.strip():
+                continue
+            indent = len(nxt) - len(nxt.lstrip())
+            is_item = nxt.lstrip().startswith("-")
+            if item_indent is None:
+                if not is_item or indent < parent:
+                    break
+                item_indent = indent
+            if indent < item_indent or (indent == item_indent and not is_item):
+                break  # the list ended: a sibling key, or the next job
+            if indent == item_indent:
+                # `- key: value` opens a step; its keys line up two columns in.
+                items.append([" " * (indent + 2) + nxt.lstrip()[1:].lstrip()])
+            else:
+                items[-1].append(nxt)
+    return [_step_mapping(item) for item in items]
+
+
+def _step_mapping(step_lines: list[str]) -> WorkflowStep:
+    key_indent = len(step_lines[0]) - len(step_lines[0].lstrip())
+    mapping: dict[str, str] = {}
+    key: str | None = None
+    for line in step_lines:
+        indent = len(line) - len(line.lstrip())
+        match = re.match(r"([A-Za-z_][\w-]*):(.*)$", line.strip())
+        if line.strip() and indent == key_indent and match:
+            key = match.group(1)
+            mapping[key] = match.group(2).strip()
+        elif key is not None:
+            mapping[key] += "\n" + line
+    return WorkflowStep(
+        run=mapping.get("run", ""),
+        uses=mapping.get("uses", ""),
+        with_=mapping.get("with", ""),
+    )
+
+
+def _arms_auto_merge(script: str) -> bool:
+    """Whether shell ``script`` arms auto-merge on a pull request."""
+    joined = re.sub(r"\\\n\s*", " ", script)
+    return bool(AUTO_MERGE_MUTATION_RE.search(joined)) or any(
+        AUTO_FLAG_RE.search(match.group(1)) for match in GH_PR_MERGE_RE.finditer(joined)
+    )
+
+
+def opens_release_pr(step: WorkflowStep) -> bool:
+    if RELEASE_PR_RUN_RE.search(step.run):
+        return True
+    return bool(
+        RELEASE_PLZ_ACTION_RE.match(step.uses.strip("\"'"))
+        and RELEASE_PR_COMMAND_RE.search(step.with_)
+    )
+
+
+def records_release_pr_checkpoint(repo: Path) -> bool:
+    agents = repo / "AGENTS.md"
+    if not agents.is_file():
+        return False
+    text = " ".join(agents.read_text(encoding="utf-8").split()).casefold()
+    return " ".join(RELEASE_PR_CHECKPOINT_PHRASE.split()).casefold() in text
+
+
+def check_release_pr_auto_merge(repo: Path) -> list[Finding]:
+    """Require a workflow opening a release pull request to arm auto-merge on it.
+
+    A release-PR driver (release-plz) batches unreleased commits into a pull
+    request, and unless the workflow arms auto-merge on it, that pull request sits
+    green until a person merges it — every release, and every run waiting on one,
+    held on a human. Arming counts in the step's own ``run`` or in the body of a
+    ``just`` recipe it invokes (dependencies included); arming done any other way
+    (a script the recipe runs, say) is invisible to this text check and is
+    flagged. A repository that wants the human merge records
+    ``RELEASE_PR_CHECKPOINT_PHRASE`` in its AGENTS.md.
+    """
+    justfile = find_justfile(repo)
+    recipes = (
+        parse_just_recipe_details(justfile.read_text(encoding="utf-8"))
+        if justfile
+        else {}
+    )
+
+    def arms(step: WorkflowStep) -> bool:
+        if _arms_auto_merge(step.run):
+            return True
+        return any(
+            _arms_auto_merge("\n".join(recipe_lines(recipes, match.group(2))))
+            for match in JUST_INVOCATION_RE.finditer(step.run)
+        )
+
+    unarmed: list[str] = []
+    armed: list[str] = []
+    for workflow in workflow_files(repo):
+        steps = workflow_steps(
+            YAML_COMMENT_RE.sub("", workflow.read_text(encoding="utf-8"))
+        )
+        if not any(opens_release_pr(step) for step in steps):
+            continue
+        rel = workflow.relative_to(repo).as_posix()
+        (armed if any(arms(step) for step in steps) else unarmed).append(rel)
+    if not unarmed:
+        return [
+            Finding("OK", f"{rel} arms auto-merge on the release PR it opens")
+            for rel in armed
+        ]
+    if records_release_pr_checkpoint(repo):
+        return [
+            Finding(
+                "OK",
+                "AGENTS.md records the opt-out "
+                f'"{RELEASE_PR_CHECKPOINT_PHRASE}", so a person merges the '
+                f"release PR {', '.join(unarmed)} opens",
+            )
+        ]
+    return [
+        Finding(
+            "ERROR",
+            f"{rel} opens a release PR but never arms auto-merge on it, so a person "
+            "has to merge every release",
+            "add a step after the release PR is opened that runs `gh pr merge "
+            '"$pr" --auto --squash --delete-branch` on the open `release-plz-*` PR '
+            "under the release PAT (never the default token, `--admin`, or a merge "
+            "without `--auto`) — see the create-repo skill's references/releasing.md; "
+            "or, to keep a human merge on purpose, write "
+            f'"{RELEASE_PR_CHECKPOINT_PHRASE}" in AGENTS.md',
+        )
+        for rel in unarmed
     ]
 
 
@@ -2880,6 +3065,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_ci(repo)
     findings += check_pr_template(repo)
     findings += check_notignored(repo)
+    findings += check_release_pr_auto_merge(repo)
     findings += check_session_setup(repo)
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
