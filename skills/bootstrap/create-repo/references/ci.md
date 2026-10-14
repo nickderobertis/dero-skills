@@ -310,7 +310,9 @@ exact commands below are the ones this skill's own repo uses.
   `releasing.md` for the release pipeline this feeds.
 - **Auto-merge enabled.** Turn on auto-merge at the repo level so a PR can be
   queued with `gh pr merge --auto --squash` and merges itself the moment every
-  required check goes green — no babysitting, and nothing merges early.
+  required check goes green — no babysitting, and nothing merges early. A release
+  workflow arms it on the release PR it opens, so that PR merges itself too
+  unless `AGENTS.md` opts out (`releasing.md` states the step and the opt-out).
 - **Delete head branches after merge.** Keep the branch list to live work only.
 - **Branch protection on the default branch, requiring *all* CI checks.** Every
   status check that gates correctness must be required — including the
@@ -468,7 +470,8 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   (lockfiles, schemas, formatted code) are out of date, and logs stay minimal on
   success.
 - [ ] **Repo governance configured.** The default branch is protected with
-  squash-merge only, auto-merge on, head branches deleted on merge, and *every*
+  squash-merge only, auto-merge on (and armed on any release PR the release
+  workflow opens, per `releasing.md`), head branches deleted on merge, and *every*
   gating CI check (including the full-e2e gate job *and* the `llmlint` tier, which
   the setup script enforces) required before merge, with admins able to override. The model is recorded in the "Commits, releases, and
   merging" section of `AGENTS.md`. The filesystem checker cannot see repo-side
