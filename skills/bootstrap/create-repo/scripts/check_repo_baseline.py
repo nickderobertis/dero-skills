@@ -63,9 +63,9 @@ Checks:
   * Cargo build configuration (Rust): a repo holding any `Cargo.toml` carries a
     root `.cargo/config.toml` with `build.target-dir = "target"` (a string: one
     per-clone target directory every crate in the clone builds into, never
-    shared across worktrees or repositories) and `profile.dev.debug = 1` (the
-    integer "limited" level — line tables only for dev and test builds, `release`
-    untouched; `true` or `"1"` is not it). The finding names the file, the key
+    shared across worktrees or repositories) and `profile.dev.debug = 0` (the
+    integer: no debuginfo for dev and test builds, `release` untouched; `false`,
+    `true` or `"0"` is not it). The finding names the file, the key
     and the value expected. Silent where the repo has no `Cargo.toml`
     (references/languages/rust.md, the one statement of the contract).
   * A CI workflow exists under .github/workflows/ AND runs the gate
@@ -366,7 +366,7 @@ class CargoBuildKey(NamedTuple):
 
 CARGO_BUILD_KEYS = (
     CargoBuildKey(("build", "target-dir"), "target"),
-    CargoBuildKey(("profile", "dev", "debug"), 1),
+    CargoBuildKey(("profile", "dev", "debug"), 0),
 )
 
 # An AGENTS.md heading that records how the repo was built up from the skill's
@@ -1253,7 +1253,7 @@ def _render_value(value: object) -> str:
     """``value`` quoted for a finding, in the config file's own syntax where it has one.
 
     JSON and TOML spell a string, an integer and a boolean the same way, which
-    is what lets a finding say ``is true, expected 1``; a value JSON cannot
+    is what lets a finding say ``is true, expected 0``; a value JSON cannot
     spell (a date) falls back to ``repr`` so the reader still sees what is there.
     """
     try:
@@ -1267,13 +1267,13 @@ def check_cargo_build_config(repo: Path) -> list[Finding]:
 
     Every repo containing a ``Cargo.toml`` carries the root ``.cargo/config.toml``
     with exactly the keys in ``CARGO_BUILD_KEYS``: one target directory per clone
-    that every crate in it builds into (``build.target-dir = "target"``) and line
-    tables only for dev and test builds (``profile.dev.debug = 1``). Both live in
+    that every crate in it builds into (``build.target-dir = "target"``) and no
+    debuginfo for dev and test builds (``profile.dev.debug = 0``). Both live in
     the config file rather than a manifest because a manifest profile reaches only
     the workspace that declares it while the config file reaches every crate under
     the clone, and ``target-dir`` can live nowhere else. This is the drift gate for
-    that contract: a missing file, a missing key, or another value — a ``true`` or
-    a ``"1"`` where the integer ``1`` is owed — is an ERROR naming the file, the
+    that contract: a missing file, a missing key, or another value — a ``false`` or
+    a ``"0"`` where the integer ``0`` is owed — is an ERROR naming the file, the
     key and the value expected. Silent where the repo has no ``Cargo.toml``.
     """
     if not has_cargo_manifest(repo):
@@ -1307,8 +1307,8 @@ def check_cargo_build_config(repo: Path) -> list[Finding]:
     for key in CARGO_BUILD_KEYS:
         table = _table(data, *key.table)
         actual = table.get(key.name)
-        # `type(...) is` rather than `==`: `True == 1` in Python, and `True` is
-        # cargo's level 2 — the full debuginfo the contract exists to turn off.
+        # `type(...) is` rather than `==`: `False == 0` in Python, and the
+        # contract is the integer, the one spelling every repo carries.
         if type(actual) is type(key.expected) and actual == key.expected:
             continue
         state = "is unset" if key.name not in table else f"is {_render_value(actual)}"
