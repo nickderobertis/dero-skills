@@ -1,0 +1,786 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "date": "Mon, 19 Oct 2026 07:00:34 GMT",
+    "etag": "W/\"6e55cdbecff50ba159782ed87ffc5e475dba86ec6b42ba6033c0dd6c7d292661\"",
+    "x-github-api-version-selected": "2022-11-28",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4110",
+    "x-ratelimit-reset": "1792394021",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "890"
+  },
+  "body": {
+    "total_count": 9,
+    "jobs": [
+      {
+        "id": 116286063933,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCFPQ",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286063933",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286063933",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T07:01:32Z",
+        "completed_at": "2026-10-15T07:01:47Z",
+        "name": "pypi (macos-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T07:01:34Z",
+            "completed_at": "2026-10-15T07:01:35Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T07:01:35Z",
+            "completed_at": "2026-10-15T07:01:38Z"
+          },
+          {
+            "name": "Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T07:01:38Z",
+            "completed_at": "2026-10-15T07:01:38Z"
+          },
+          {
+            "name": "Install from PyPI",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T07:01:38Z",
+            "completed_at": "2026-10-15T07:01:43Z"
+          },
+          {
+            "name": "Smoke-test what PyPI serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T07:01:43Z",
+            "completed_at": "2026-10-15T07:01:43Z"
+          },
+          {
+            "name": "Post Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T07:01:43Z",
+            "completed_at": "2026-10-15T07:01:43Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T07:01:43Z",
+            "completed_at": "2026-10-15T07:01:44Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T07:01:44Z",
+            "completed_at": "2026-10-15T07:01:45Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286063933",
+        "labels": [
+          "macos-latest"
+        ],
+        "runner_id": 1000234682,
+        "runner_name": "GitHub Actions 1000234682",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064048,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCFsA",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064048",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064048",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T07:19:50Z",
+        "completed_at": "2026-10-15T07:20:03Z",
+        "name": "npm (macos-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T07:19:50Z",
+            "completed_at": "2026-10-15T07:19:52Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T07:19:52Z",
+            "completed_at": "2026-10-15T07:19:55Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T07:19:55Z",
+            "completed_at": "2026-10-15T07:19:56Z"
+          },
+          {
+            "name": "Install from npm",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T07:19:56Z",
+            "completed_at": "2026-10-15T07:19:59Z"
+          },
+          {
+            "name": "Smoke-test what npm serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T07:19:59Z",
+            "completed_at": "2026-10-15T07:19:59Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T07:19:59Z",
+            "completed_at": "2026-10-15T07:19:59Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T07:19:59Z",
+            "completed_at": "2026-10-15T07:20:00Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T07:20:00Z",
+            "completed_at": "2026-10-15T07:20:00Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064048",
+        "labels": [
+          "macos-latest"
+        ],
+        "runner_id": 1000234751,
+        "runner_name": "GitHub Actions 1000234751",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064128,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCGAA",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064128",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064128",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T07:01:07Z",
+        "completed_at": "2026-10-15T07:01:24Z",
+        "name": "npm (macos-15-intel)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T07:01:07Z",
+            "completed_at": "2026-10-15T07:01:09Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T07:01:09Z",
+            "completed_at": "2026-10-15T07:01:14Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T07:01:14Z",
+            "completed_at": "2026-10-15T07:01:15Z"
+          },
+          {
+            "name": "Install from npm",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T07:01:15Z",
+            "completed_at": "2026-10-15T07:01:19Z"
+          },
+          {
+            "name": "Smoke-test what npm serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T07:01:19Z",
+            "completed_at": "2026-10-15T07:01:20Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T07:01:20Z",
+            "completed_at": "2026-10-15T07:01:20Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T07:01:20Z",
+            "completed_at": "2026-10-15T07:01:22Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T07:01:22Z",
+            "completed_at": "2026-10-15T07:01:22Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064128",
+        "labels": [
+          "macos-15-intel"
+        ],
+        "runner_id": 1000234681,
+        "runner_name": "GitHub Actions 1000234681",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064138,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCGCg",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064138",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064138",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T07:06:59Z",
+        "completed_at": "2026-10-15T07:07:12Z",
+        "name": "pypi (macos-15-intel)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T07:07:00Z",
+            "completed_at": "2026-10-15T07:07:01Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T07:07:01Z",
+            "completed_at": "2026-10-15T07:07:04Z"
+          },
+          {
+            "name": "Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T07:07:04Z",
+            "completed_at": "2026-10-15T07:07:04Z"
+          },
+          {
+            "name": "Install from PyPI",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T07:07:04Z",
+            "completed_at": "2026-10-15T07:07:09Z"
+          },
+          {
+            "name": "Smoke-test what PyPI serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T07:07:09Z",
+            "completed_at": "2026-10-15T07:07:09Z"
+          },
+          {
+            "name": "Post Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T07:07:09Z",
+            "completed_at": "2026-10-15T07:07:09Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T07:07:09Z",
+            "completed_at": "2026-10-15T07:07:10Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T07:07:10Z",
+            "completed_at": "2026-10-15T07:07:10Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064138",
+        "labels": [
+          "macos-15-intel"
+        ],
+        "runner_id": 1000234722,
+        "runner_name": "GitHub Actions 1000234722",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064150,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCGFg",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064150",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064150",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T06:41:46Z",
+        "completed_at": "2026-10-15T06:42:11Z",
+        "name": "npm (windows-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:48Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T06:41:48Z",
+            "completed_at": "2026-10-15T06:41:54Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T06:41:54Z",
+            "completed_at": "2026-10-15T06:42:00Z"
+          },
+          {
+            "name": "Install from npm",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T06:42:00Z",
+            "completed_at": "2026-10-15T06:42:06Z"
+          },
+          {
+            "name": "Smoke-test what npm serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T06:42:06Z",
+            "completed_at": "2026-10-15T06:42:07Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T06:42:07Z",
+            "completed_at": "2026-10-15T06:42:07Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T06:42:07Z",
+            "completed_at": "2026-10-15T06:42:09Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T06:42:09Z",
+            "completed_at": "2026-10-15T06:42:09Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064150",
+        "labels": [
+          "windows-latest"
+        ],
+        "runner_id": 1000234597,
+        "runner_name": "GitHub Actions 1000234597",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064198,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCGRg",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064198",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064198",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T06:41:46Z",
+        "completed_at": "2026-10-15T06:41:53Z",
+        "name": "pypi (ubuntu-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:47Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:49Z"
+          },
+          {
+            "name": "Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T06:41:49Z",
+            "completed_at": "2026-10-15T06:41:49Z"
+          },
+          {
+            "name": "Install from PyPI",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T06:41:49Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Smoke-test what PyPI serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Post Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064198",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000234598,
+        "runner_name": "GitHub Actions 1000234598",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064235,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCGaw",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064235",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064235",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T06:41:46Z",
+        "completed_at": "2026-10-15T06:41:53Z",
+        "name": "npm (ubuntu-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:47Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:49Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T06:41:49Z",
+            "completed_at": "2026-10-15T06:41:49Z"
+          },
+          {
+            "name": "Install from npm",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T06:41:49Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Smoke-test what npm serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T06:41:51Z",
+            "completed_at": "2026-10-15T06:41:51Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064235",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000234599,
+        "runner_name": "GitHub Actions 1000234599",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116286064278,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbEzCGlg",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116286064278",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116286064278",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-15T06:41:44Z",
+        "started_at": "2026-10-15T06:41:46Z",
+        "completed_at": "2026-10-15T06:42:04Z",
+        "name": "pypi (windows-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:47Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-15T06:41:47Z",
+            "completed_at": "2026-10-15T06:41:53Z"
+          },
+          {
+            "name": "Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-15T06:41:53Z",
+            "completed_at": "2026-10-15T06:41:54Z"
+          },
+          {
+            "name": "Install from PyPI",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-15T06:41:54Z",
+            "completed_at": "2026-10-15T06:42:00Z"
+          },
+          {
+            "name": "Smoke-test what PyPI serves",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-15T06:42:00Z",
+            "completed_at": "2026-10-15T06:42:01Z"
+          },
+          {
+            "name": "Post Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-15T06:42:01Z",
+            "completed_at": "2026-10-15T06:42:01Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-15T06:42:01Z",
+            "completed_at": "2026-10-15T06:42:03Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-15T06:42:03Z",
+            "completed_at": "2026-10-15T06:42:03Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116286064278",
+        "labels": [
+          "windows-latest"
+        ],
+        "runner_id": 1000234600,
+        "runner_name": "GitHub Actions 1000234600",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116299179945,
+        "run_id": 38693951540,
+        "workflow_name": "Published smoke",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38693951540",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbE_inqQ",
+        "head_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116299179945",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38693951540/job/116299179945",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-15T07:20:03Z",
+        "started_at": "2026-10-15T07:20:03Z",
+        "completed_at": "2026-10-15T07:20:03Z",
+        "name": "report a failure",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116299179945",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      }
+    ]
+  }
+}

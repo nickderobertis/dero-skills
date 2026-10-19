@@ -22,6 +22,10 @@ files:
     # the judged tier has no product behaviour to rule on in it.
     - ".claude/settings.json"
     - "gh-secrets.json"
+    # Recorded third-party GitHub API responses, served byte for byte by the actions
+    # budget figures journeys, so they can carry no suppression; their patches quote
+    # other repositories' llmlint directives. The scenarios and README stay judged.
+    - "skills/bootstrap/create-repo/tests/external/fixtures/actions-figures/recordings/**"
 
 oneharness:
   timeout: 600  # ceiling (not a fixed wait); headroom for the full-repo sweep

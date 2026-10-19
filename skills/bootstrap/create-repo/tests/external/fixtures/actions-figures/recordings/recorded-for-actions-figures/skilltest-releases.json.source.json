@@ -1,0 +1,9 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repos/nickderobertis/skilltest/releases?per_page=100",
+    "at": "Mon, 19 Oct 2026 07:00:05 GMT",
+    "how": "gh api --include --method GET, read-only, keeping the headers onevcs keeps in its recordings",
+    "why": "skilltest's releases listing, so release-changes can find v0.13.0's previous tag; onevcs's skilltest journey names --previous-tag instead",
+    "scrubbed": "a private organisation's domain in commit authors' addresses in release notes, replaced by `example` in the text and nowhere else, as onevcs scrubbed its recordings"
+  }
+}
