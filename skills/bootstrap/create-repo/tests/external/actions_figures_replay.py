@@ -140,19 +140,12 @@ class Replay:
 
 
 def install_onevcs(root: Path) -> Path:
-    """The real onevcs release from npm, installed the way a CI job installs it."""
-    require("npm", "node")
+    """The real onevcs release from npm, installed the way this repo installs one."""
+    require("bun", "node")
     root.mkdir(parents=True, exist_ok=True)
     (root / "package.json").write_text('{"private": true}\n', encoding="utf-8")
     installed = subprocess.run(
-        [
-            "npm",
-            "install",
-            "--no-audit",
-            "--no-fund",
-            "--save-exact",
-            f"onevcs-cli@{ONEVCS_CLI_VERSION}",
-        ],
+        ["bun", "add", "--exact", f"onevcs-cli@{ONEVCS_CLI_VERSION}"],
         cwd=root,
         capture_output=True,
         text=True,
