@@ -39,8 +39,9 @@ from actions_figures_replay import (
 ONEPIPELINE = "nickderobertis/onepipeline"
 RELEASE = ["--release", "v0.72.0", "--repo", ONEPIPELINE]
 RELEASE_COMMIT = "d8d674f1f0b46fff580540ab70137ebc91e6b15b"
-# The last v0.72.0 CD job's end: the moment the spike took release-cycle-time at.
-SPIKE_NOW = "2026-10-15T07:20:03Z"
+# When v0.72.0's last CD job ended: a fixed --now, so release-cycle-time measures
+# the release as it shipped rather than the moment the test runs.
+RELEASE_END = "2026-10-15T07:20:03Z"
 HEADS = {
     914: "62631f7c3936c095c6973f5108e9265360466e84",
     916: "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
@@ -220,7 +221,7 @@ def test_cd_job_count_takes_the_push_and_release_runs_at_the_release_commit(repo
     repo = repository("onepipeline-v0.72.0")
     result = repo.figure("job-count", "--stage", "cd", *RELEASE, unit="jobs")
     assert_within(result, 50)
-    assert derive(SPIKE_NOW)["cd_job_count"] == 50
+    assert derive(RELEASE_END)["cd_job_count"] == 50
     assert result["detail"].splitlines() == [
         "50 jobs",
         "per workflow:",
@@ -312,7 +313,7 @@ def test_the_job_running_the_script_is_counted_to_now_and_no_other_running_job(
 
 
 def test_pr_figures_take_each_pull_request_and_report_the_largest(repository):
-    derived = derive(SPIKE_NOW)
+    derived = derive(RELEASE_END)
     repo = repository("onepipeline-v0.72.0")
 
     count = repo.figure("job-count", "--stage", "pr", *RELEASE, unit="jobs")
@@ -341,10 +342,10 @@ def test_pr_figures_take_each_pull_request_and_report_the_largest(repository):
 def test_release_cycle_time_adds_each_pull_requests_checks_to_its_wait_for_release(
     repository,
 ):
-    derived = derive(SPIKE_NOW)
+    derived = derive(RELEASE_END)
     repo = repository("onepipeline-v0.72.0")
     result = repo.figure(
-        "release-cycle-time", *RELEASE, "--now", SPIKE_NOW, unit="seconds"
+        "release-cycle-time", *RELEASE, "--now", RELEASE_END, unit="seconds"
     )
     assert_within(result, 83074)
     assert derived["release_cycle_time"] == 83074
@@ -387,7 +388,7 @@ ALL_FIGURES = [
     },
     {
         "id": "release-cycle-time",
-        "args": ["release-cycle-time", *RELEASE, "--now", SPIKE_NOW],
+        "args": ["release-cycle-time", *RELEASE, "--now", RELEASE_END],
         "unit": "seconds",
     },
     {
@@ -564,7 +565,7 @@ def test_a_pull_request_with_no_pull_request_run_is_missing(repository):
     reason = f"missing: #916 has no pull_request run at its head {HEADS[916]}"
     for args, unit in (
         (["job-count", "--stage", "pr", *RELEASE], "jobs"),
-        (["release-cycle-time", *RELEASE, "--now", SPIKE_NOW], "seconds"),
+        (["release-cycle-time", *RELEASE, "--now", RELEASE_END], "seconds"),
     ):
         assert_error(repo.figure(*args, unit=unit), reason)
         assert_refused_writing_nothing(repo, args, reason)
@@ -575,7 +576,7 @@ def test_a_selected_run_whose_job_list_is_empty_is_missing(repository):
     reason = "missing: run 38632124776 (CI, pull_request) at #916's head lists no job"
     for args, unit in (
         (["job-count", "--stage", "pr", *RELEASE], "jobs"),
-        (["release-cycle-time", *RELEASE, "--now", SPIKE_NOW], "seconds"),
+        (["release-cycle-time", *RELEASE, "--now", RELEASE_END], "seconds"),
     ):
         assert_error(repo.figure(*args, unit=unit), reason)
         assert_refused_writing_nothing(repo, args, reason)
