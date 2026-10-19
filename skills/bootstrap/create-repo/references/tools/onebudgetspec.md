@@ -352,7 +352,8 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   default `--repo`; `GITHUB_RUN_ID` and `RUNNER_NAME`, for the job running it;
   `GITHUB_EVENT_PATH`; `GITHUB_REF_TYPE` and `GITHUB_REF_NAME`.
 - **Saved answers.** Each answer is saved whole under
-  `$RUNNER_TEMP/actions-budget-figures/<OWNER>__<NAME>/<TAG>/`, one file per
+  `$RUNNER_TEMP/actions-budget-figures/<OWNER>__<NAME>/<TAG>/` (the tag
+  percent-encoded, so `release/v1` and `release_v1` never share one), one file per
   query and argument, before it is used, and every later figure in the job reads
   it, so a release tail makes each read once. A failed read saves nothing. With
   `RUNNER_TEMP` unset nothing is saved; nothing is shared across jobs.

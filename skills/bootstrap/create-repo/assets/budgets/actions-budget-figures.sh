@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 1
-# sha256: e839aa36fc1ab5f447efc3dd6a17119d114b8ea3e303303e479bac06386c9b12
+# version: 2
+# sha256: 34bd03bb503bdfbb6e834b3c278c9414f4124db212ef82426848914e00b00025
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -105,10 +105,12 @@ trap 'rm -rf "$work"' EXIT
 
 # Saved answers: one file per query and argument under RUNNER_TEMP, so every figure
 # a job takes for one release asks onevcs each question once. Nothing is saved off
-# a runner, and nothing is shared across jobs.
+# a runner, and nothing is shared across jobs. The tag is percent-encoded, so two
+# tags never share a directory (`release/v1` is `release%2Fv1`, `release_v1` stays).
 cache=""
 if [ -n "${RUNNER_TEMP:-}" ]; then
-  cache="$RUNNER_TEMP/actions-budget-figures/${repo%%/*}__${repo#*/}/$(printf '%s' "$release" | tr -c 'A-Za-z0-9._+-' '_')"
+  tag_dir=$(jq -rn --arg tag "$release" '$tag | @uri') || die "cannot encode the tag $release"
+  cache="$RUNNER_TEMP/actions-budget-figures/${repo%%/*}__${repo#*/}/$tag_dir"
   mkdir -p "$cache"
 fi
 

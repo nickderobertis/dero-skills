@@ -1,0 +1,65 @@
+{
+  "about": "The new-shape release tagged `release_v0.72.0`, with its previous release `release_v0.71.1`: a tag that differs from `release/v0.72.0` only where a squashed spelling of the tag would make them one.",
+  "serve": [
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_releases__per_page_100__311c1f946e.json",
+      "rename_tags": {
+        "v0.72.0": "release_v0.72.0",
+        "v0.71.1": "release_v0.71.1"
+      },
+      "why": "no public repository records two tags that differ only by `/` and `_`; v0.72.0 and v0.71.1 carry the `release_` prefix"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_compare_v0_71_1_v0_72_0__per_page_100__1118b16acb.json",
+      "for": "repos/nickderobertis/onepipeline/compare/release_v0.71.1...release_v0.72.0?per_page=100",
+      "why": "the comparison GitHub recorded for v0.71.1...v0.72.0, asked under the `release_` tag names"
+    },
+    {
+      "recording": "recorded-for-host-queries/onepipeline-pulls-closed-page-1.json"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs__per_page_100_head_sha_d8d674f1f0b46fff580540ab70137ebc91e6b1__3ce82c69a7.json",
+      "keep_runs": [
+        38649523429,
+        38649654071
+      ],
+      "why": "the release commit keeps the Release-plz push run and the Release run"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs__per_page_100_head_sha_4e3dee6c0842603388d96db3d4e8a6f64aac99__73847a707a.json",
+      "keep_runs": [
+        38553682939
+      ],
+      "why": "#919's head keeps its CI run"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs__per_page_100_head_sha_62631f7c3936c095c6973f5108e9265360466e__58d175c2bd.json",
+      "keep_runs": [
+        38534306223
+      ],
+      "why": "#914's head keeps its CI run"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs__per_page_100_head_sha_c5574ad1e2747b59be7bdf843f86cd6e7a4e4b__139dfc8657.json",
+      "keep_runs": [
+        38632124776
+      ],
+      "why": "#916's head keeps its CI run"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs_38649523429_jobs__per_page_100_filter_latest__8625033a96.json"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs_38649654071_jobs__per_page_100_filter_latest__cd5624d98b.json"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs_38553682939_jobs__per_page_100_filter_latest__5ce35da94d.json"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs_38534306223_jobs__per_page_100_filter_latest__8831b85b64.json"
+    },
+    {
+      "recording": "onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_actions_runs_38632124776_jobs__per_page_100_filter_latest__e466a19e19.json"
+    }
+  ]
+}

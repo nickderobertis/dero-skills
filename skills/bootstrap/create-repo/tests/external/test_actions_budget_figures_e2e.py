@@ -488,6 +488,71 @@ def test_a_failed_read_saves_nothing_so_a_later_figure_reads_it_again(
     assert repo.replay.served()[before:] == PR_REQUESTS[916] + PR_REQUESTS[919]
 
 
+def test_tags_a_squashed_spelling_would_merge_keep_their_own_saved_answers(
+    repository, tmp_path
+):
+    # `release/v0.72.0` is the whole v0.72.0 release; `release_v0.72.0` is the
+    # new-shape one, whose figures differ. Both are measured under one RUNNER_TEMP,
+    # as two release tails of one runner would be.
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    env = {"RUNNER_TEMP": str(runner_temp)}
+    figures = {
+        tag: [
+            {
+                "id": "cd-job-count",
+                "args": ["job-count", "--stage", "cd", *release],
+                "unit": "jobs",
+            },
+            {
+                "id": "release-read-requests",
+                "args": ["release-read-requests", *release],
+                "unit": "requests",
+            },
+        ]
+        for tag, release in (
+            ("slash", ["--release", "release/v0.72.0", "--repo", ONEPIPELINE]),
+            ("underscore", ["--release", "release_v0.72.0", "--repo", ONEPIPELINE]),
+        )
+    }
+    compare = f"repos/{ONEPIPELINE}/compare/release{{0}}v0.71.1...release{{0}}v0.72.0?per_page=100"
+
+    def measured(tag: str) -> dict:
+        code, results, _ = repo.check(figures[tag], **env)
+        assert code == 0, results
+        return {r["id"]: r["actual"] for r in results}
+
+    repo = repository("slash-tag-release")
+    assert measured("slash") == {"cd-job-count": 50, "release-read-requests": 9}
+    slash_reads = repo.replay.served()
+    assert len(slash_reads) == len(set(slash_reads)) == 9
+    assert compare.format("/") in slash_reads
+
+    # The second release asks for its own release, runs and jobs.
+    repo.replay.use("underscore-tag-release")
+    assert measured("underscore") == {
+        "cd-job-count": 2 + 32,
+        "release-read-requests": 6,
+    }
+    underscore_reads = repo.replay.served()[len(slash_reads) :]
+    assert len(underscore_reads) == len(set(underscore_reads)) == 6
+    assert compare.format("_") in underscore_reads
+
+    saved = runner_temp / "actions-budget-figures" / "nickderobertis__onepipeline"
+    assert sorted(path.name for path in saved.iterdir()) == [
+        "release%2Fv0.72.0",
+        "release_v0.72.0",
+    ]
+
+    # Measured again, each reads only its own saved answers: nothing is asked, and
+    # the slash release keeps its own figures though the replay now serves the
+    # other release's runs.
+    before = len(repo.replay.served())
+    assert measured("slash") == {"cd-job-count": 50, "release-read-requests": 9}
+    assert measured("underscore") == {"cd-job-count": 34, "release-read-requests": 6}
+    assert len(repo.replay.served()) == before
+
+
 def test_a_release_in_the_new_ci_and_cd_shape_costs_six_reads_and_two_per_pull_request(
     repository, tmp_path
 ):

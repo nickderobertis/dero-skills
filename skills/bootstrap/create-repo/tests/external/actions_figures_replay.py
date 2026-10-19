@@ -7,7 +7,9 @@ asks the real `onevcs` release from npm, with the real jq. `ONEVCS_GH` — the
 seam onevcs's contract names for replaying recorded responses — points at a
 POSIX program that answers `gh api --include` from GitHub's own recordings under
 `fixtures/actions-figures/`, each served for the request it recorded (or the one
-its scenario's entry names in `for`, saying why) with its recorded status,
+its scenario's entry names in `for`; an entry may also leave runs out of a
+listing (`keep_runs`) or rename a listing's tags (`rename_tags`), each saying why)
+with its recorded status,
 headers and body. It is the double onevcs's own journeys replay through, and it
 records every request it served: the read-count assertions are held to that
 record, never to what the answers claim they cost.
@@ -107,7 +109,16 @@ class Replay:
             envelope = recording(entry["recording"])
             url = envelope["request"]["url"].removeprefix("https://api.github.com/")
             request = entry.get("for", url)
-            assert ("for" in entry or "keep_runs" in entry) <= ("why" in entry), entry
+            departs = {"for", "keep_runs", "rename_tags"} & entry.keys()
+            assert bool(departs) <= ("why" in entry), entry
+            if "rename_tags" in entry:
+                renames = entry["rename_tags"]
+                for release in envelope["body"]:
+                    release["tag_name"] = renames.get(
+                        release["tag_name"], release["tag_name"]
+                    )
+                renamed = {release["tag_name"] for release in envelope["body"]}
+                assert set(renames.values()) <= renamed, f"every renamed tag: {entry}"
             if "keep_runs" in entry:
                 keep = entry["keep_runs"]
                 runs = [

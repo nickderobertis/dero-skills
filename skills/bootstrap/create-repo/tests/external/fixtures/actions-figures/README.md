@@ -13,8 +13,10 @@ and its `<name>.source.json` sidecar says where it came from:
 
 `scenarios/*.json` name what one replay serves, in onevcs's sidecar format: each
 entry is served for the request it recorded unless `for` names another, and
-`keep_runs` leaves every other run out of a runs listing. Both are departures from
-what GitHub answered, and every entry using one says `why`.
+`keep_runs` leaves every other run out of a runs listing, and `rename_tags` renames
+tags in a releases listing (no public repository records two tags that differ only
+by `/` and `_`). Each is a departure from what GitHub answered, and every entry
+using one says `why`.
 
 A response's release notes, commit messages and author addresses can name a
 private organisation. Before committing a new recording, run it through
