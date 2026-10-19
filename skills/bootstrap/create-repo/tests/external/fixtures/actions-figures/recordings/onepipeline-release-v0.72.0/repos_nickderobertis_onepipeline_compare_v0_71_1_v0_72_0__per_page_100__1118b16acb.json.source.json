@@ -1,0 +1,7 @@
+{
+  "copied_from": {
+    "repository": "github.com/nickderobertis/onevcs",
+    "commit": "56af7aa21876083fd1b3c54258164ae632fbf480",
+    "path": "crates/onevcs/tests/fixtures/host-queries/recordings/onepipeline-release-v0.72.0/repos_nickderobertis_onepipeline_compare_v0_71_1_v0_72_0__per_page_100__1118b16acb.json"
+  }
+}
