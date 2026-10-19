@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 1
-# sha256: 8b90a809a59e989cf5ff97b91aea0a8e5e536ec94b724e29d1c8ffef54f960d3
+# sha256: e41b4f7509258f220fca89ce1eab55781c23c390e045c176d31606d5a9fa90ee
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -146,7 +146,7 @@ release_changes() {
 }
 
 cd_selection() {
-  local rc cr commit id payload_run seen=" " answers=() extra=()
+  local rc cr commit ids id payload_run seen=" " answers=() extra=()
   rc=$(release_changes) || exit 1
   commit=$(jq -r .commit "$rc")
   cr=$(fetch "commit-runs-$commit-push-release" commit-runs --commit "$commit" --event push --event release) || exit 1
@@ -156,10 +156,12 @@ cd_selection() {
     extra+=("$GITHUB_RUN_ID")
   fi
   if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
-    payload_run=$(jq -r '.workflow_run.id // empty' "$GITHUB_EVENT_PATH")
+    payload_run=$(jq -r '.workflow_run.id // empty' "$GITHUB_EVENT_PATH") ||
+      die "the event payload $GITHUB_EVENT_PATH is not JSON"
     [ -z "$payload_run" ] || extra+=("$payload_run")
   fi
-  for id in $(jq -r '.runs[].id' "$cr") ${extra[@]+"${extra[@]}"}; do
+  ids=$(jq -r '.runs[].id' "$cr") || die "onevcs host commit-runs answered no run ids"
+  for id in $ids ${extra[@]+"${extra[@]}"}; do
     [[ "$id" =~ ^[0-9]+$ ]] || die "a run id must be a number, got: $id"
     case "$seen" in *" $id "*) continue ;; esac
     seen="$seen$id "
@@ -181,11 +183,13 @@ pr_selection() {
   [ -z "$unmapped" ] ||
     missing "commit $unmapped of $release maps to no merged pull request (a rebase merge, or a push with no pull request)"
   [ "$(jq '.changes | length' "$rc")" -gt 0 ] || missing "$release carries no pull request"
+  jq -r '.changes[] | "\(.number) \(.head_sha) \(.merged_at)"' "$rc" >"$work/changes" ||
+    die "onevcs host release-changes answered no changes"
   while read -r number head merged; do
     [ "$merged" != null ] || missing "#$number has no merged_at"
     answers+=("$(fetch "change-checks-$number-$head-$(safe "$merged")" change-checks \
       --change "$number" --head "$head" --merged-at "$merged")") || exit 1
-  done < <(jq -r '.changes[] | "\(.number) \(.head_sha) \(.merged_at)"' "$rc")
+  done <"$work/changes"
   jq -n '[inputs] | {blocks: map({label: "#\(.change.number)", number: .change.number,
                                    head: .change.head_sha, merged_at: .change.merged_at, runs, cost}),
                      answers: map({query: "#\(.change.number)", cost})}' "${answers[@]}"
