@@ -731,3 +731,23 @@ def test_every_committed_fixture_passes_the_public_boundary(onevcs_bin, tmp_path
         )
         assert done.returncode == 0, f"{path}: {done.stdout}{done.stderr}"
     assert shutil.which("jq")
+
+
+def test_a_workflow_run_payload_that_is_not_json_is_an_error(repository, tmp_path):
+    repo = repository("onepipeline-v0.72.0")
+    payload = tmp_path / "event.json"
+    payload.write_text("not json", encoding="utf-8")
+    args = ["job-count", "--stage", "cd", *RELEASE]
+    reason = f"the event payload {payload} is not JSON"
+    assert_error(
+        repo.figure(*args, unit="jobs", GITHUB_EVENT_PATH=str(payload)), reason
+    )
+    assert_refused_writing_nothing(repo, args, reason, GITHUB_EVENT_PATH=str(payload))
+
+
+def test_a_run_id_that_is_not_a_number_is_an_error(repository):
+    repo = repository("onepipeline-v0.72.0")
+    args = ["job-count", "--stage", "cd", *RELEASE]
+    reason = "a run id must be a number, got: latest"
+    assert_error(repo.figure(*args, unit="jobs", GITHUB_RUN_ID="latest"), reason)
+    assert jobs_request("latest") not in repo.replay.served()

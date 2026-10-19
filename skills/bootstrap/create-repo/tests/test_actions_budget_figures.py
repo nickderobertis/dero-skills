@@ -12,6 +12,7 @@ figures themselves are measured in `external/test_actions_budget_figures_e2e.py`
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -430,3 +431,111 @@ def test_an_invalid_invocation_exits_2_naming_what_is_wrong(tmp_path, args, reas
     assert reason in done.stderr, done.stderr
     assert "usage: scripts/actions-budget-figures.sh longest-job" in done.stderr
     assert not calls.exists() and not result.exists()
+
+
+# --- what the script is handed: refused before it can reach a figure -----------
+
+SHA = "d8d674f1f0b46fff580540ab70137ebc91e6b15b"
+HEAD = "4e3dee6c0842603388d96db3d4e8a6f64aac99d2"
+
+
+def release_changes(**change: object) -> dict:
+    """A release-changes answer of onevcs's shape carrying one change."""
+    return {
+        "schema_version": 1,
+        "repository": "owner/name",
+        "tag": "v1.0.0",
+        "commit": SHA,
+        "commits": [{"sha": SHA, "change": 1}],
+        "changes": [
+            {"number": 1, "head_sha": HEAD, "merged_at": "2026-10-14T22:42:57Z"}
+            | change
+        ],
+        "cost": {"graphql_points": 0, "rest_requests": 3, "requests": []},
+    }
+
+
+def handed(tmp_path: Path, answer: object, *args: str, **env: str):
+    """The script, with `ONEVCS` naming a program that answers every query with
+    `answer`: the shapes a broken or different onevcs could hand it, which the real
+    release never answers."""
+    answer_file = tmp_path / "answer.json"
+    answer_file.write_text(
+        answer if isinstance(answer, str) else json.dumps(answer), encoding="utf-8"
+    )
+    onevcs = tmp_path / "onevcs"
+    onevcs.write_text(f"#!/bin/sh\ncat {answer_file}\n", encoding="utf-8")
+    onevcs.chmod(0o755)
+    result = tmp_path / "result.json"
+    done = subprocess.run(
+        ["bash", str(SOURCE), *args],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "ONEVCS": str(onevcs),
+            "ONEBUDGETSPEC_RESULT": str(result),
+            **env,
+        },
+    )
+    assert not result.exists(), "a refused figure writes nothing"
+    return done
+
+
+RELEASE_ARGS = ["--release", "v1.0.0", "--repo", "owner/name"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "args", "reason"),
+    [
+        (
+            {"answer": "of another schema"},
+            ["job-count", "--stage", "pr"],
+            "onevcs host release-changes --tag v1.0.0 answered no schema_version 1 "
+            "document",
+        ),
+        (
+            release_changes() | {"commit": "v1.0.0"},
+            ["job-count", "--stage", "cd"],
+            "onevcs host release-changes answered no commit SHA: v1.0.0",
+        ),
+        (
+            release_changes(number="one"),
+            ["job-count", "--stage", "pr"],
+            "answered a change with no number or head SHA: one " + HEAD,
+        ),
+        (
+            release_changes(head_sha="main"),
+            ["release-cycle-time"],
+            "answered a change with no number or head SHA: 1 main",
+        ),
+        (
+            release_changes(merged_at=None),
+            ["pr-read-requests"],
+            "missing: #1 has no merged_at",
+        ),
+    ],
+)
+def test_an_answer_the_script_cannot_trust_ends_it_writing_nothing(
+    tmp_path, answer, args, reason
+):
+    done = handed(tmp_path, answer, *args, *RELEASE_ARGS)
+    assert done.returncode == 1, done
+    assert reason in done.stderr, done.stderr
+
+
+def test_a_release_payload_that_is_not_json_ends_it_naming_the_payload(tmp_path):
+    payload = tmp_path / "event.json"
+    payload.write_text("not json", encoding="utf-8")
+    done = handed(
+        tmp_path,
+        release_changes(),
+        "job-count",
+        "--stage",
+        "cd",
+        "--repo",
+        "owner/name",
+        GITHUB_EVENT_PATH=str(payload),
+    )
+    assert done.returncode == 1, done
+    assert f"the event payload {payload} is not JSON" in done.stderr
