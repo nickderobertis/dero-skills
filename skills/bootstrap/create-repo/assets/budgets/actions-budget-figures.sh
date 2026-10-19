@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 1
-# sha256: e41b4f7509258f220fca89ce1eab55781c23c390e045c176d31606d5a9fa90ee
+# sha256: ec138aca97789183b0d96bd40c318dafb92de0f050b13e6cfb59e20fd348bc12
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -10,11 +10,11 @@
 # counting rules and the arithmetic. The contract is the "GitHub Actions budget
 # figures" section of create-repo's references/tools/onebudgetspec.md.
 #
-#   actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
-#   actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
-#   actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
-#   actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME]
-#   actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
+#   scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+#   scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+#   scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+#   scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME]
+#   scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
 #
 # Needs bash, jq and `onevcs` (or the binary `ONEVCS` names). Exit 0 wrote the
 # figure to ONEBUDGETSPEC_RESULT; 1 is missing data or a failed read, with the
@@ -25,7 +25,7 @@ me=actions-budget-figures
 
 usage() {
   [ -z "${1:-}" ] || printf '%s: %s\n' "$me" "$1" >&2
-  sed -n 's/^#   \(actions-budget-figures.sh \)/usage: \1/p' "$0" >&2
+  sed -n 's/^#   \(scripts\/actions-budget-figures.sh \)/usage: \1/p' "$0" >&2
   exit 2
 }
 die() {
@@ -146,27 +146,27 @@ release_changes() {
 }
 
 cd_selection() {
-  local rc cr commit ids id payload_run seen=" " answers=() extra=()
+  local rc cr commit id payload_run seen=" " answers=()
   rc=$(release_changes) || exit 1
   commit=$(jq -r .commit "$rc")
   cr=$(fetch "commit-runs-$commit-push-release" commit-runs --commit "$commit" --event push --event release) || exit 1
   [ "$(jq '.runs | length' "$cr")" -gt 0 ] ||
     missing "no push or release run at $release's commit $commit"
-  if [ -n "${GITHUB_RUN_ID:-}" ]; then
-    extra+=("$GITHUB_RUN_ID")
-  fi
+  # The runs at the commit, then the run GITHUB_RUN_ID names, then the one a
+  # workflow_run payload names, one per line.
+  jq -r '.runs[].id' "$cr" >"$work/runs" || die "onevcs host commit-runs answered no run ids"
+  [ -z "${GITHUB_RUN_ID:-}" ] || printf '%s\n' "$GITHUB_RUN_ID" >>"$work/runs"
   if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
     payload_run=$(jq -r '.workflow_run.id // empty' "$GITHUB_EVENT_PATH") ||
       die "the event payload $GITHUB_EVENT_PATH is not JSON"
-    [ -z "$payload_run" ] || extra+=("$payload_run")
+    [ -z "$payload_run" ] || printf '%s\n' "$payload_run" >>"$work/runs"
   fi
-  ids=$(jq -r '.runs[].id' "$cr") || die "onevcs host commit-runs answered no run ids"
-  for id in $ids ${extra[@]+"${extra[@]}"}; do
+  while read -r id; do
     [[ "$id" =~ ^[0-9]+$ ]] || die "a run id must be a number, got: $id"
     case "$seen" in *" $id "*) continue ;; esac
     seen="$seen$id "
     answers+=("$(fetch "run-jobs-$id" run-jobs --run "$id")") || exit 1
-  done
+  done <"$work/runs"
   jq -n --slurpfile rc "$rc" --slurpfile cr "$cr" '
     [inputs] as $jobs
     | ($cr[0].runs | map({key: (.id | tostring), value: .}) | from_entries) as $at
@@ -277,4 +277,5 @@ gap=$(jq -r '.missing // empty' "$work/figure")
 [ -z "$gap" ] || missing "$gap"
 
 jq '{value, detail}' "$work/figure" >"$ONEBUDGETSPEC_RESULT"
+# llmlint: ignore[tool_output_is_signal] the figures contract (references/tools/onebudgetspec.md) has a successful figure print its detail to stderr as well: `onebudgetspec check` prints only the figure, so this breakdown is what a CI log shows of which job or pull request a figure came from.
 jq -r .detail "$work/figure" >&2

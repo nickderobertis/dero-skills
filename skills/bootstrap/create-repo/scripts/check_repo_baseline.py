@@ -2826,17 +2826,24 @@ def parse_figures_header(data: bytes) -> FiguresHeader | None:
     return None
 
 
+class FiguresVersion(NamedTuple):
+    """One entry of the versions file: a version the source has had."""
+
+    version: int
+    sha256: str
+
+
 def figures_digest(body: bytes) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def read_figures_versions(path: Path) -> list[tuple[int, str]]:
+def read_figures_versions(path: Path) -> list[FiguresVersion]:
     """Each `<version> <sha256>` entry of a versions file, oldest first."""
     entries = []
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip() and not line.startswith("#"):
             version, digest = line.split()
-            entries.append((int(version), digest))
+            entries.append(FiguresVersion(int(version), digest))
     return entries
 
 
@@ -2879,7 +2886,7 @@ def check_actions_budget_figures(
             )
         ]
     entries = read_figures_versions(versions)
-    if (header.version, header.sha256) not in entries:
+    if FiguresVersion(header.version, header.sha256) not in entries:
         return [
             Finding(
                 "ERROR",
@@ -2888,7 +2895,7 @@ def check_actions_budget_figures(
                 restore,
             )
         ]
-    latest = entries[-1][0]
+    latest = entries[-1].version
     if header.version < latest:
         return [
             Finding(

@@ -58,9 +58,9 @@ def drift(root: Path, source: str, versions: str, base: str) -> list[str]:
             f"{source}'s body digest is {digest}, its header says {header.sha256}"
         )
     entries = crb.read_figures_versions(root / versions)
-    if [version for version, _ in entries] != list(range(1, len(entries) + 1)):
+    if [entry.version for entry in entries] != list(range(1, len(entries) + 1)):
         problems.append(f"{versions} does not number its versions 1, 2, 3, ...")
-    if entries[-1:] != [(header.version, digest)]:
+    if entries[-1:] != [crb.FiguresVersion(header.version, digest)]:
         problems.append(
             f"{versions} does not end with {source}'s version {header.version} "
             f"and digest {digest}: a body change adds a version"
@@ -89,9 +89,10 @@ def drift(root: Path, source: str, versions: str, base: str) -> list[str]:
                     )
             else:
                 old = crb.parse_figures_header(shown.stdout)
-                if old is None or (old.version, crb.figures_digest(old.body)) not in (
-                    entries
-                ):
+                listed = old and crb.FiguresVersion(
+                    old.version, crb.figures_digest(old.body)
+                )
+                if listed not in entries:
                     problems.append(
                         f"{source} at {commit[:12]} is no version {versions} lists"
                     )
@@ -184,6 +185,28 @@ def test_the_released_state_keeps_the_copy_rule(history):
     assert problems() == []
 
 
+def test_the_reference_states_the_command_lines_the_script_prints():
+    """The contract's command lines in the reference are the script's own usage."""
+    reference = (SKILL_DIR / "references" / "tools" / "onebudgetspec.md").read_text(
+        encoding="utf-8"
+    )
+    section = reference.split("## GitHub Actions budget figures", 1)[1]
+    stated = section.split("```\n", 2)[1].splitlines()
+    usage = [
+        line.removeprefix("#   ")
+        for line in SOURCE.read_text(encoding="utf-8").splitlines()
+        if line.startswith("#   scripts/actions-budget-figures.sh ")
+    ]
+    assert stated == usage
+    done = subprocess.run(
+        ["bash", str(SOURCE), "no-such-figure"],
+        capture_output=True,
+        text=True,
+        env={**os.environ, "ONEBUDGETSPEC_RESULT": os.devnull},
+    )
+    assert done.stderr.splitlines()[1:] == [f"usage: {line}" for line in usage]
+
+
 def test_a_body_change_that_adds_a_version_keeps_the_copy_rule(history):
     root, problems, commit = history
     version = len(crb.read_figures_versions(VERSIONS)) + 1
@@ -237,7 +260,7 @@ def test_an_earlier_entry_that_changes_fails(history):
     first = crb.read_figures_versions(VERSIONS)[0]
     versions.write_text(
         versions.read_text(encoding="utf-8").replace(
-            f"{first[0]} {first[1]}", f"{first[0]} {'0' * 64}"
+            f"{first.version} {first.sha256}", f"{first.version} {'0' * 64}"
         ),
         encoding="utf-8",
     )
@@ -329,6 +352,21 @@ def test_a_copy_at_an_older_listed_version_is_reported_outdated(tmp_path):
     assert "fix: copy the create-repo skill's assets/budgets/" in done.stdout
 
 
+def test_a_checker_without_the_versions_file_says_currency_is_unknown(tmp_path):
+    # The checker copied out of the skill alone, without its assets.
+    checker = tmp_path / "loose" / CHECKER.name
+    checker.parent.mkdir()
+    shutil.copy(CHECKER, checker)
+    repo = with_copy(tmp_path, SOURCE.read_bytes())
+    done = checked(repo, checker)
+    assert done.returncode == 0, done.stdout + done.stderr
+    released = crb.parse_figures_header(SOURCE.read_bytes()).version
+    assert (
+        f"WARN  scripts/actions-budget-figures.sh is at version {released}, but "
+    ) in done.stdout
+    assert "is missing, so whether it is current is unknown" in done.stdout
+
+
 def test_a_repository_without_a_copy_is_not_reported(tmp_path):
     assert crb.check_actions_budget_figures(baseline_repo(tmp_path)) == []
 
@@ -338,3 +376,57 @@ def test_a_copy_without_the_header_is_reported(tmp_path):
     [finding] = crb.check_actions_budget_figures(repo)
     assert finding.level == "ERROR"
     assert "carries no `# version:` and `# sha256:` header" in finding.message
+
+
+# --- invocation -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        ([], "name a figure"),
+        (["no-such-figure"], "unknown figure: no-such-figure"),
+        (["job-count", "--stage", "cd", "--bogus", "x"], "unknown argument: --bogus"),
+        (["job-count", "--release"], "--release needs a value"),
+        (
+            ["job-count", "--release", "v1.0.0"],
+            "job-count needs --stage pr or --stage cd",
+        ),
+        (["job-count", "--stage", "ci"], "job-count needs --stage pr or --stage cd"),
+        (
+            ["release-cycle-time", "--stage", "pr"],
+            "release-cycle-time takes no --stage",
+        ),
+        (
+            ["pr-read-requests", "--now", "2026-10-15T07:20:03Z"],
+            "pr-read-requests takes no --now",
+        ),
+        (
+            ["release-cycle-time", "--now", "2026-10-15 07:20:03"],
+            "--now must be an RFC 3339 UTC timestamp",
+        ),
+        (["release-cycle-time", "--repo", "onepipeline"], "--repo must be OWNER/NAME"),
+    ],
+)
+def test_an_invalid_invocation_exits_2_naming_what_is_wrong(tmp_path, args, reason):
+    """Refused before onevcs is asked anything: `ONEVCS` names a program that
+    records any call, and none is made."""
+    calls = tmp_path / "calls"
+    onevcs = tmp_path / "onevcs"
+    onevcs.write_text(f'#!/bin/sh\necho "$@" >> {calls}\n', encoding="utf-8")
+    onevcs.chmod(0o755)
+    result = tmp_path / "result.json"
+    done = subprocess.run(
+        ["bash", str(SOURCE), *args],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "ONEVCS": str(onevcs),
+            "ONEBUDGETSPEC_RESULT": str(result),
+        },
+    )
+    assert done.returncode == 2, done
+    assert reason in done.stderr, done.stderr
+    assert "usage: scripts/actions-budget-figures.sh longest-job" in done.stderr
+    assert not calls.exists() and not result.exists()
