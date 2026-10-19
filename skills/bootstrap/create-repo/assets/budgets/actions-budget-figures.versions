@@ -2,4 +2,4 @@
 # of every line after its header>`. A change to the script's body adds a line with
 # the next version and its header carries both; no line already here ever changes.
 # check_repo_baseline.py reads this to tell a repository's copy is current.
-1 ec138aca97789183b0d96bd40c318dafb92de0f050b13e6cfb59e20fd348bc12
+1 e839aa36fc1ab5f447efc3dd6a17119d114b8ea3e303303e479bac06386c9b12

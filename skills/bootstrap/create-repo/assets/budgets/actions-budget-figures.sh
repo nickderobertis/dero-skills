@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 1
-# sha256: ec138aca97789183b0d96bd40c318dafb92de0f050b13e6cfb59e20fd348bc12
+# sha256: e839aa36fc1ab5f447efc3dd6a17119d114b8ea3e303303e479bac06386c9b12
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -149,6 +149,7 @@ cd_selection() {
   local rc cr commit id payload_run seen=" " answers=()
   rc=$(release_changes) || exit 1
   commit=$(jq -r .commit "$rc")
+  [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "onevcs host release-changes answered no commit SHA: $commit"
   cr=$(fetch "commit-runs-$commit-push-release" commit-runs --commit "$commit" --event push --event release) || exit 1
   [ "$(jq '.runs | length' "$cr")" -gt 0 ] ||
     missing "no push or release run at $release's commit $commit"
@@ -186,6 +187,8 @@ pr_selection() {
   jq -r '.changes[] | "\(.number) \(.head_sha) \(.merged_at)"' "$rc" >"$work/changes" ||
     die "onevcs host release-changes answered no changes"
   while read -r number head merged; do
+    [[ "$number" =~ ^[1-9][0-9]*$ && "$head" =~ ^[0-9a-f]{40}$ ]] ||
+      die "onevcs host release-changes answered a change with no number or head SHA: $number $head"
     [ "$merged" != null ] || missing "#$number has no merged_at"
     answers+=("$(fetch "change-checks-$number-$head-$(safe "$merged")" change-checks \
       --change "$number" --head "$head" --merged-at "$merged")") || exit 1

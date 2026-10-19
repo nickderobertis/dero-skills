@@ -1,7 +1,7 @@
 ---
 name: create-repo
 description: Use when creating a new repository or bootstrapping an existing project's tooling, tests, AGENTS.md, and CI so the setup fits the actual product and enforces strict, deterministic quality gates.
-compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo. The repo it stands up needs Node and bun for its mandatory project graph, whatever it is written in.
+compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo. The repo it stands up needs Node and bun for its mandatory project graph, whatever it is written in, and a repo that copies the GitHub Actions budget figures script needs bash, jq and the onevcs CLI where it measures.
 ---
 
 # Create repo
