@@ -102,6 +102,7 @@ def repository(tmp_path: Path, onevcs_bin: Path):
     require("bash", "jq", "onebudgetspec")
 
     def make(scenario: str) -> Repository:
+        # llmlint: ignore[e2e_not_mocked] the task fixes GitHub as the one boundary doubled, by a replay of the scrubbed recordings onevcs's own journeys replay; onebudgetspec, jq, the script and the released onevcs all run for real against it.
         replay = Replay(tmp_path / "replay", scenario)
         return Repository(tmp_path / "repo", replay, onevcs_bin)
 
@@ -142,6 +143,8 @@ def assert_refused_writing_nothing(
     done, written = run_direct(repo, *args, **env)
     assert done.returncode == 1, done
     assert reason in done.stderr, done.stderr
+    if reason.startswith("missing: "):
+        assert "\n  next: " in done.stderr, "a missing figure says what to do next"
     assert written == "", "a refused figure writes nothing"
 
 

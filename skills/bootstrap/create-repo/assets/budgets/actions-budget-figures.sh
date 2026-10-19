@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 3
-# sha256: 38a2690787cff1748f09f093439bd8b929a9999c1ae50932469c5101ed801cea
+# version: 4
+# sha256: 75da7c02643cda91e41283b31da59c964d50d90e86153e1d86621f1a7a1ea249
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -32,8 +32,10 @@ die() {
   printf '%s: %s\n' "$me" "$1" >&2
   exit 1
 }
+# What is missing ($1), then what to do about it ($2): a figure is never taken over
+# what remained.
 missing() {
-  printf 'missing: %s\n' "$1" >&2
+  printf 'missing: %s\n  next: %s\n' "$1" "$2" >&2
   exit 1
 }
 
@@ -154,7 +156,8 @@ cd_selection() {
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "onevcs host release-changes answered no commit SHA: $commit"
   cr=$(fetch "commit-runs-$commit-push-release" commit-runs --commit "$commit" --event push --event release) || exit 1
   [ "$(jq '.runs | length' "$cr")" -gt 0 ] ||
-    missing "no push or release run at $release's commit $commit"
+    missing "no push or release run at $release's commit $commit" \
+      "check that --release names the tag this repository's CD built, and that its CD workflows run on push or release"
   # The runs at the commit, then the run GITHUB_RUN_ID names, then the one a
   # workflow_run payload names, one per line.
   jq -r '.runs[].id' "$cr" >"$work/runs" || die "onevcs host commit-runs answered no run ids"
@@ -184,14 +187,17 @@ pr_selection() {
   rc=$(release_changes) || exit 1
   unmapped=$(jq -r '[.commits[] | select(.change == null) | .sha] | join(", ")' "$rc")
   [ -z "$unmapped" ] ||
-    missing "commit $unmapped of $release maps to no merged pull request (a rebase merge, or a push with no pull request)"
-  [ "$(jq '.changes | length' "$rc")" -gt 0 ] || missing "$release carries no pull request"
+    missing "commit $unmapped of $release maps to no merged pull request (a rebase merge, or a push with no pull request)" \
+      "land every change by squash or merge commit through a pull request, or give this repository no pull-request budget"
+  [ "$(jq '.changes | length' "$rc")" -gt 0 ] ||
+    missing "$release carries no pull request" "measure a release that merged at least one pull request"
   jq -r '.changes[] | "\(.number) \(.head_sha) \(.merged_at)"' "$rc" >"$work/changes" ||
     die "onevcs host release-changes answered no changes"
   while read -r number head merged; do
     [[ "$number" =~ ^[1-9][0-9]*$ && "$head" =~ ^[0-9a-f]{40}$ ]] ||
       die "onevcs host release-changes answered a change with no number or head SHA: $number $head"
-    [ "$merged" != null ] || missing "#$number has no merged_at"
+    [ "$merged" != null ] ||
+      missing "#$number has no merged_at" "check on GitHub that #$number was merged rather than closed"
     answers+=("$(fetch "change-checks-$number-$head-$(safe "$merged")" change-checks \
       --change "$number" --head "$head" --merged-at "$merged")") || exit 1
   done <"$work/changes"
@@ -210,7 +216,8 @@ check_selection() {
               | "run \(.id)\(if .workflow_name then " (\(.workflow_name), \(.event))" else "" end)"
                 + "\(if $b.label then " at \($b.label)\u0027s head" else "" end) lists no job")
         end) // empty' "$1")
-  [ -z "$gap" ] || missing "$gap"
+  [ -z "$gap" ] || missing "$gap" \
+    "check on GitHub that the pull_request workflows ran at that head and that the run was not deleted, then re-run this figure"
 }
 
 # shellcheck disable=SC2016 # a jq program: every $name in it is jq's, never the shell's
@@ -279,7 +286,8 @@ now_epoch=$(jq -n --arg t "$now" '$t | sub("\\.[0-9]+Z$"; "Z") | fromdate')
 jq --arg self "${GITHUB_RUN_ID:-}" --arg runner "${RUNNER_NAME:-}" --argjson now "$now_epoch" \
   "$figures ${figure//-/_}" "$work/selection" >"$work/figure"
 gap=$(jq -r '.missing // empty' "$work/figure")
-[ -z "$gap" ] || missing "$gap"
+[ -z "$gap" ] || missing "$gap" \
+  "check on GitHub why the selected runs' jobs were skipped or cancelled before a runner took them, then re-run this figure"
 
 jq '{value, detail}' "$work/figure" >"$ONEBUDGETSPEC_RESULT"
 # llmlint: ignore[tool_output_is_signal] the figures contract (references/tools/onebudgetspec.md) has a successful figure print its detail to stderr as well: `onebudgetspec check` prints only the figure, so this breakdown is what a CI log shows of which job or pull request a figure came from.

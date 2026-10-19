@@ -386,11 +386,12 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   `change-checks` answer cost. Their detail lists every request under the query
   that made it, read from the answers' `cost`, so saved answers report what each
   read cost when it was made.
-- **Missing data is an error, never 0.** It exits 1 with `missing: …`, writing
-  nothing, when the release commit has no `push` or `release` run, a commit maps
-  to no merged pull request (`change: null`: a rebase-merged repository is
-  refused), a pull request has no `pull_request` run, a selected run lists no job,
-  or `longest-job` has no counted job. A run whose listed jobs were all skipped
+- **Missing data is an error, never 0.** It exits 1 with `missing: …` and a
+  `next: …` line saying what to do about it, writing nothing, when the release
+  commit has no `push` or `release` run, a commit maps to no merged pull request
+  (`change: null`: a rebase-merged repository is refused), a pull request has no
+  `pull_request` run, a selected run lists no job, or `longest-job` has no
+  counted job. A run whose listed jobs were all skipped
   counts 0. A non-zero onevcs exit ends it with exit 1 and onevcs's reason.
   `onebudgetspec check` records either as the budget's `error` (exit 3).
 
