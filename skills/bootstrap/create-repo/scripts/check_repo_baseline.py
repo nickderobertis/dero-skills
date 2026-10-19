@@ -117,6 +117,13 @@ Checks:
     `onebudgetspec check` in a recipe `check` runs; and `llmlint.yml` adopts the
     budget rules, by the `@1`-pinned fragment URL or, in the repo that hosts the
     fragment, its in-tree path.
+  * A copy of the GitHub Actions budget figures script
+    (`scripts/actions-budget-figures.sh`, copied from this skill's
+    `assets/budgets/`) is the one the skill released: its body matches its own
+    `sha256` header line (else it was edited in place), its version and digest
+    are an entry of `assets/budgets/actions-budget-figures.versions` (else it is
+    unknown), and an older version than the source's is reported outdated
+    (advisory WARN), naming both. Silent where the repo holds no copy.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -140,6 +147,7 @@ from __future__ import annotations
 # setup_github_governance.py.
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -2780,6 +2788,119 @@ def check_onebudgetspec(repo: Path) -> list[Finding]:
     ]
 
 
+# The GitHub Actions budget figures script (references/tools/onebudgetspec.md,
+# "GitHub Actions budget figures"): a repository's copy of the skill's
+# assets/budgets/actions-budget-figures.sh, held to its own header and to the
+# versions the source has had. Nothing fetches the script at run time, so this is
+# where a stale or locally edited copy shows.
+FIGURES_COPY = "scripts/actions-budget-figures.sh"
+FIGURES_VERSIONS = (
+    Path(__file__).resolve().parent.parent
+    / "assets"
+    / "budgets"
+    / "actions-budget-figures.versions"
+)
+FIGURES_VERSION_RE = re.compile(r"# version: ([1-9]\d*)")
+FIGURES_SHA256_RE = re.compile(r"# sha256: ([0-9a-f]{64})")
+# The header is the first lines, ending at the `sha256` line; the body is every
+# byte after it.
+FIGURES_HEADER_LINES = 8
+
+
+class FiguresHeader(NamedTuple):
+    version: int
+    sha256: str
+    body: bytes
+
+
+def parse_figures_header(data: bytes) -> FiguresHeader | None:
+    """A figures script's header version and digest, and the body they cover."""
+    lines = data.split(b"\n")
+    version: int | None = None
+    for at, raw in enumerate(lines[:FIGURES_HEADER_LINES]):
+        line = raw.decode("utf-8", "replace").rstrip("\r")
+        if match := FIGURES_VERSION_RE.fullmatch(line):
+            version = int(match.group(1))
+        elif (match := FIGURES_SHA256_RE.fullmatch(line)) and version is not None:
+            return FiguresHeader(version, match.group(1), b"\n".join(lines[at + 1 :]))
+    return None
+
+
+def figures_digest(body: bytes) -> str:
+    return hashlib.sha256(body).hexdigest()
+
+
+def read_figures_versions(path: Path) -> list[tuple[int, str]]:
+    """Each `<version> <sha256>` entry of a versions file, oldest first."""
+    entries = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip() and not line.startswith("#"):
+            version, digest = line.split()
+            entries.append((int(version), digest))
+    return entries
+
+
+def check_actions_budget_figures(
+    repo: Path, versions: Path = FIGURES_VERSIONS
+) -> list[Finding]:
+    """A copy of the figures script is one the skill released, and its latest."""
+    copy = repo / FIGURES_COPY
+    if not copy.is_file():
+        return []
+    restore = (
+        "copy the create-repo skill's assets/budgets/actions-budget-figures.sh over "
+        f"{FIGURES_COPY}; change the figures in the skill, never in a copy"
+    )
+    header = parse_figures_header(copy.read_bytes())
+    if header is None:
+        return [
+            Finding(
+                "ERROR",
+                f"{FIGURES_COPY} carries no `# version:` and `# sha256:` header",
+                restore,
+            )
+        ]
+    if figures_digest(header.body) != header.sha256:
+        return [
+            Finding(
+                "ERROR",
+                f"{FIGURES_COPY} was edited in place: its body does not match its "
+                "own `sha256` line",
+                restore,
+            )
+        ]
+    if not versions.is_file():
+        return [
+            Finding(
+                "WARN",
+                f"{FIGURES_COPY} is at version {header.version}, but {versions} is "
+                "missing, so whether it is current is unknown",
+                "run the checker from the whole create-repo skill",
+            )
+        ]
+    entries = read_figures_versions(versions)
+    if (header.version, header.sha256) not in entries:
+        return [
+            Finding(
+                "ERROR",
+                f"{FIGURES_COPY} is unknown: version {header.version} with sha256 "
+                f"{header.sha256} is no version the source has had",
+                restore,
+            )
+        ]
+    latest = entries[-1][0]
+    if header.version < latest:
+        return [
+            Finding(
+                "WARN",
+                f"{FIGURES_COPY} is outdated: it is at version {header.version}, the "
+                f"source at version {latest}",
+                restore,
+            )
+        ]
+    return [Finding("OK", f"{FIGURES_COPY} is the source's version {latest}")]
+
+
 # --- buildout llmlint tier (opt-in, non-deterministic) ---------------------
 # The `--buildout` mode composes the one-time llmlint *buildout* config for this
 # repo's stack and RUNS it. Unlike everything in audit(), this is non-deterministic
@@ -3069,6 +3190,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_session_setup(repo)
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
+    findings += check_actions_budget_figures(repo)
     return findings
 
 

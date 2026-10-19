@@ -1,0 +1,5 @@
+# Every version actions-budget-figures.sh has had, oldest first: `<version> <sha256
+# of every line after its header>`. A change to the script's body adds a line with
+# the next version and its header carries both; no line already here ever changes.
+# check_repo_baseline.py reads this to tell a repository's copy is current.
+1 8b90a809a59e989cf5ff97b91aea0a8e5e536ec94b724e29d1c8ffef54f960d3
