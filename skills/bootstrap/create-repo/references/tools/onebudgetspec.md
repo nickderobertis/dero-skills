@@ -323,6 +323,89 @@ and the two rules of "When is a requirement a budget" above. The fragment is
 listed by URL in the repo's own `llmlint.yml`, never named by `base.llmlint.yml`,
 so a config adopts the budget rules only by listing them.
 
+## GitHub Actions budget figures
+
+The figures CI and CD time budgets need — the longest check, the jobs per pull
+request and per release, a change's time from its final checks to its release,
+and what reading them costs — are measured the same way in every repository by
+one script this skill owns,
+[`assets/budgets/actions-budget-figures.sh`](../../assets/budgets/actions-budget-figures.sh).
+onevcs's read-only `onevcs host` queries select the runs, jobs and pull requests;
+the script only applies the counting rules and the arithmetic. This section is
+the contract every repository's budget nodes name.
+
+```
+scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME]
+scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
+```
+
+- **A `measure: reported` budget's `command`.** It writes `{"value", "detail"}`
+  to the file `ONEBUDGETSPEC_RESULT` names and exits 0, printing the detail to
+  stderr too. With `ONEBUDGETSPEC_RESULT` unset it exits 2 saying to run it under
+  `onebudgetspec check`, writing nothing.
+- **What it needs.** bash, jq, and `onevcs` on `PATH` at a release carrying
+  `onevcs host` (`ONEVCS` may name the binary). It reads only those answers and:
+  the token variables, passed to onevcs untouched; `GITHUB_REPOSITORY`, the
+  default `--repo`; `GITHUB_RUN_ID` and `RUNNER_NAME`, for the job running it;
+  `GITHUB_EVENT_PATH`; `GITHUB_REF_TYPE` and `GITHUB_REF_NAME`.
+- **Saved answers.** Each answer is saved whole under
+  `$RUNNER_TEMP/actions-budget-figures/<OWNER>__<NAME>/<TAG>/`, one file per
+  query and argument, before it is used, and every later figure in the job reads
+  it, so a release tail makes each read once. A failed read saves nothing. With
+  `RUNNER_TEMP` unset nothing is saved; nothing is shared across jobs.
+- **Which release.** `--release TAG`; else a `release` payload's
+  `release.tag_name`; else `GITHUB_REF_NAME` when `GITHUB_REF_TYPE` is `tag`;
+  else exit 1 naming `--release`. `--now` defaults to the moment it starts, in
+  RFC 3339 UTC.
+- **A counted job** is `completed`, not `skipped`, with a `runner_name` (a job
+  cancelled before a runner took it is not), lasting `completed_at − started_at`,
+  never below 0. The job running the script — run `GITHUB_RUN_ID`'s
+  `in_progress` job on runner `RUNNER_NAME` — counts too, timed to `--now`; no
+  other running job does.
+- **Selections.** The release is `onevcs host release-changes --tag`, read once.
+  `--stage cd` takes `commit-runs --commit <release commit> --event push --event
+  release`, plus run `GITHUB_RUN_ID` when not among them, plus a `workflow_run`
+  payload's `workflow_run.id`, each run's jobs from `run-jobs`; nothing is
+  attributed by a timing window. `--stage pr` takes each change's runs and jobs
+  from `change-checks --change --head --merged-at`, and the figure is the largest
+  over the pull requests.
+- **Figures.** `longest-job` (seconds): the longest counted job; detail lists
+  every counted job as `<workflow> / <job name>: <s>s`, longest first, then the
+  longest per runner OS. `job-count` (jobs): counted jobs, each matrix leg one;
+  detail by workflow and runner OS. Under `--stage pr` each detail is one block
+  per pull request headed `#<number>`. `release-cycle-time` (seconds): per
+  change, from the earliest `created_at` of its runs to the latest end of their
+  counted jobs, plus `merged_at` to `--now`; detail `#<n>: checks <s>s + merge to
+  release <s>s`. `release-read-requests` (requests): the `cost.rest_requests` of
+  the release's `release-changes`, `commit-runs` and `--stage cd` `run-jobs`
+  answers; `pr-read-requests` (requests): the most one pull request's
+  `change-checks` answer cost. Their detail lists every request under the query
+  that made it, read from the answers' `cost`, so saved answers report what each
+  read cost when it was made.
+- **Missing data is an error, never 0.** It exits 1 with `missing: …`, writing
+  nothing, when the release commit has no `push` or `release` run, a commit maps
+  to no merged pull request (`change: null`: a rebase-merged repository is
+  refused), a pull request has no `pull_request` run, a selected run lists no job,
+  or `longest-job` has no counted job. A run whose listed jobs were all skipped
+  counts 0. A non-zero onevcs exit ends it with exit 1 and onevcs's reason.
+  `onebudgetspec check` records either as the budget's `error` (exit 3).
+
+**The copy rule.** A repository copies the script to
+`scripts/actions-budget-figures.sh` and names that copy as its budgets'
+`command`; nothing fetches it at run time. Its header says it is edited only
+here and carries `# source:`, `# version:` and `# sha256:` (the digest of every
+line after the header), and
+[`actions-budget-figures.versions`](../../assets/budgets/actions-budget-figures.versions)
+lists every version with its digest. A change to the body adds the next version
+there, which the skill's tests enforce against what is released. The
+baseline checker reports a copy whose body does not match its `sha256` line
+(edited in place), whose version and digest the versions file does not list
+(unknown), or that is older than the source (outdated, naming both versions);
+the fix is always to copy the source again.
+
 ## Verification
 
 - [ ] **Pinned.** `@onebudgetspec/cli` (or `onebudgetspec-cli` in a uv project)
@@ -342,5 +425,8 @@ so a config adopts the budget rules only by listing them.
   its own.
 - [ ] **Cached by kind.** Deterministic `reported` budgets run in the cached
   `budgets` target; `elapsed` and host-reading ones carry the `host` label.
+- [ ] **Actions figures are the skill's copy.** Any `scripts/actions-budget-figures.sh`
+  is an unedited copy of the source at its latest version; the checker reports
+  one that is not.
 - [ ] **Figures come from existing tests where they can**, each standalone
   measurement covering a behaviour no gate exercises.

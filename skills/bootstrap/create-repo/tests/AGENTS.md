@@ -20,6 +20,12 @@ for the tiers it can reach:
   contact promotes it out of the affected tier unconditionally
   (`references/ci.md`). Offline it fails rather than skips, on purpose: a
   stand-in for the release would prove nothing about the wiring.
+  `external/test_actions_budget_figures_e2e.py` runs the actions budget figures
+  script under the real `onebudgetspec check` against the onevcs-cli release from
+  npm (`ONEVCS_CLI_VERSION` overrides the pin), with GitHub replayed from the
+  recordings in `external/fixtures/actions-figures/` (its README says how to add
+  one). Its read counts are held to what the replay served, so a figure that asks
+  GitHub once more fails even when onevcs's `cost` reports it.
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from

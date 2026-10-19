@@ -416,7 +416,10 @@ composer's `--intersection` choices automatically.
   no flag: composes `references/tools/onebudgetspec.md`, adopts its `@1` lint
   rules in the composed `llmlint.yml`, and `--wiring <repo>` applies its setup
   step (pinned, and every `budgets.yaml` in `check`), which the baseline checker
-  verifies in every repo.
+  verifies in every repo. CI and CD time budgets measure through one copied
+  script, `assets/budgets/actions-budget-figures.sh`, whose contract and copy rule
+  are that reference's "GitHub Actions budget figures"; the checker reports a
+  copy edited in place, of an unknown version, or outdated.
 - **Intersections** — e.g. `python-cli`, `rust-cli`, added when guidance is
   needed where a shape and a language meet.
 
