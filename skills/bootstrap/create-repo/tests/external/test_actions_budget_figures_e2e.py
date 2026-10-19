@@ -556,6 +556,21 @@ def test_tags_a_squashed_spelling_would_merge_keep_their_own_saved_answers(
     assert len(repo.replay.served()) == before
 
 
+def test_a_tag_that_would_save_outside_its_release_directory_is_refused(
+    repository, tmp_path
+):
+    # `..` is left as it is by the percent-encoding, so as a saved-answers directory
+    # it would write into the repository's directory, beside every other release.
+    repo = repository("onepipeline-v0.72.0")
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    args = ["job-count", "--stage", "cd", "--release", "..", "--repo", ONEPIPELINE]
+    reason = "the tag .. cannot name a saved-answers directory: pass the release's own tag with --release"
+    assert_error(repo.figure(*args, unit="jobs", RUNNER_TEMP=str(runner_temp)), reason)
+    assert repo.replay.served() == []
+    assert list(runner_temp.iterdir()) == []
+
+
 def test_a_release_in_the_new_ci_and_cd_shape_costs_six_reads_and_two_per_pull_request(
     repository, tmp_path
 ):

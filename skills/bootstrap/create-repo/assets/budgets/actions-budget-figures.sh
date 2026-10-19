@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 4
-# sha256: 75da7c02643cda91e41283b31da59c964d50d90e86153e1d86621f1a7a1ea249
+# version: 5
+# sha256: cf0842bd1ab3c01b7e72e4a18de962499a7e5de030f8175cb8e804f5f58108cd
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -109,9 +109,13 @@ trap 'rm -rf "$work"' EXIT
 # a job takes for one release asks onevcs each question once. Nothing is saved off
 # a runner, and nothing is shared across jobs. The tag is percent-encoded, so two
 # tags never share a directory (`release/v1` is `release%2Fv1`, `release_v1` stays).
+# Encoding leaves `.` and `..` as they are, so those are refused rather than saved
+# outside the release's own directory.
 cache=""
 if [ -n "${RUNNER_TEMP:-}" ]; then
   tag_dir=$(jq -rn --arg tag "$release" '$tag | @uri') || die "cannot encode the tag $release"
+  [[ "$tag_dir" =~ ^[A-Za-z0-9._~%-]+$ ]] && [ "$tag_dir" != . ] && [ "$tag_dir" != .. ] ||
+    die "the tag $release cannot name a saved-answers directory: pass the release's own tag with --release"
   cache="$RUNNER_TEMP/actions-budget-figures/${repo%%/*}__${repo#*/}/$tag_dir"
   mkdir -p "$cache"
 fi

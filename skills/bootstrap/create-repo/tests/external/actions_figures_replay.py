@@ -202,7 +202,12 @@ class Repository:
         for budget in budgets:
             lines += [
                 f"  - id: {budget['id']}",
-                f"    description: {json.dumps(budget['id'] + ' of the replayed release')}",
+                "    description: "
+                + json.dumps(
+                    f"The {budget['args'][0]} figure measured from the replayed"
+                    " release's recordings, holding the figures script to the"
+                    " value and detail its contract states."
+                ),
                 "    measure: reported",
                 f"    command: {json.dumps(['bash', 'scripts/actions-budget-figures.sh', *budget['args']])}",
                 f"    unit: {budget['unit']}",
