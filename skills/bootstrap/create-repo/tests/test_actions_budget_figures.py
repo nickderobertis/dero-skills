@@ -539,3 +539,49 @@ def test_a_release_payload_that_is_not_json_ends_it_naming_the_payload(tmp_path)
     )
     assert done.returncode == 1, done
     assert f"the event payload {payload} is not JSON" in done.stderr
+
+
+def test_help_prints_the_contract_lines_and_needs_no_check(tmp_path):
+    done = subprocess.run(
+        ["bash", str(SOURCE), "--help"],
+        capture_output=True,
+        text=True,
+        env={"PATH": os.environ["PATH"]},
+    )
+    assert done.returncode == 0, done
+    assert "  scripts/actions-budget-figures.sh pr-read-requests" in done.stdout
+    assert "Needs bash, jq and `onevcs`" in done.stdout
+
+
+def test_without_jq_it_ends_naming_jq(tmp_path):
+    # A PATH holding no jq; the script reaches the check on shell builtins alone.
+    done = subprocess.run(
+        [shutil.which("bash"), str(SOURCE), "job-count", "--stage", "cd"],
+        capture_output=True,
+        text=True,
+        env={"PATH": str(tmp_path), "ONEBUDGETSPEC_RESULT": str(tmp_path / "r")},
+    )
+    assert done.returncode == 1, done
+    assert "jq is not on PATH" in done.stderr
+
+
+def test_without_onevcs_it_ends_saying_how_to_provide_it(tmp_path):
+    done = subprocess.run(
+        ["bash", str(SOURCE), "job-count", "--stage", "cd", *RELEASE_ARGS],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "ONEVCS": str(tmp_path / "no-such-onevcs"),
+            "ONEBUDGETSPEC_RESULT": str(tmp_path / "r"),
+        },
+    )
+    assert done.returncode == 1, done
+    assert "onevcs is not on PATH" in done.stderr
+    assert "name the binary in ONEVCS" in done.stderr
+
+
+def test_without_a_repository_it_ends_naming_repo(tmp_path):
+    done = handed(tmp_path, release_changes(), "job-count", "--stage", "cd")
+    assert done.returncode == 1, done
+    assert "no repository: pass --repo OWNER/NAME" in done.stderr

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 2
-# sha256: 34bd03bb503bdfbb6e834b3c278c9414f4124db212ef82426848914e00b00025
+# version: 3
+# sha256: 38a2690787cff1748f09f093439bd8b929a9999c1ae50932469c5101ed801cea
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -77,7 +77,7 @@ case "$takes" in
   stage*) case "$stage" in pr | cd) ;; *) usage "$figure needs --stage pr or --stage cd" ;; esac ;;
 esac
 
-command -v jq >/dev/null 2>&1 || die "jq is not on PATH"
+command -v jq >/dev/null 2>&1 || die "jq is not on PATH: install jq (https://jqlang.org) where this figure is measured"
 onevcs=${ONEVCS:-onevcs}
 command -v "$onevcs" >/dev/null 2>&1 ||
   die "onevcs is not on PATH (install a release carrying \`onevcs host\`, or name the binary in ONEVCS)"
@@ -129,7 +129,7 @@ fetch() {
     die "onevcs host $query $* failed: $(tr -s '\n' ' ' <"$work/stderr")"
   fi
   jq -e '.schema_version == 1 and (.cost.requests | type) == "array"' "$work/answer" >/dev/null 2>&1 ||
-    die "onevcs host $query $* answered no schema_version 1 document"
+    die "onevcs host $query $* answered no schema_version 1 document: install an onevcs release whose \`onevcs host\` answers schema_version 1, or name one in ONEVCS"
   mv "$work/answer" "$answer"
   if [ -n "$cache" ]; then
     cp "$answer" "$cache/.$key.$$" && mv "$cache/.$key.$$" "$cache/$key.json"

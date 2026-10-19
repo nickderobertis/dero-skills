@@ -817,3 +817,11 @@ def test_a_run_id_that_is_not_a_number_is_an_error(repository):
     reason = "a run id must be a number, got: latest"
     assert_error(repo.figure(*args, unit="jobs", GITHUB_RUN_ID="latest"), reason)
     assert jobs_request("latest") not in repo.replay.served()
+
+
+def test_release_cycle_time_with_no_counted_job_is_missing(repository):
+    repo = repository("all-skipped")
+    args = ["release-cycle-time", *RELEASE, "--now", RELEASE_END]
+    reason = "missing: #914: no counted job ends its checks"
+    assert_error(repo.figure(*args, unit="seconds"), reason)
+    assert_refused_writing_nothing(repo, args, reason)
