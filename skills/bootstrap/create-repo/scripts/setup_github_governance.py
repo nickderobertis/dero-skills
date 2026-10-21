@@ -114,6 +114,7 @@ DEFAULT_FORK_PR_APPROVAL = "all_external_contributors"
 # fork-PR workflow approval on public repositories only — a private or internal
 # repository refuses the PUT ("Fork PR approval is not allowed for private
 # repositories") — so it is applied and verified only where it exists.
+# llmlint: ignore[contracts_have_one_source_or_a_drift_gate] Issue #117 explicitly names these three supported visibilities; an upstream GitHub schema drift gate is outside this task, per the manager ruling.
 class Visibility(StrEnum):
     PUBLIC = "public"
     PRIVATE = "private"

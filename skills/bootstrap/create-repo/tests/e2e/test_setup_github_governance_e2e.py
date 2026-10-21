@@ -159,6 +159,7 @@ class ApiRequest(NamedTuple):
     path: str
 
 
+# llmlint: ignore[contracts_have_one_source_or_a_drift_gate] Issue #117 requires offline doubles at GitHub's gh executable boundary; these response fixtures supply that boundary, and an upstream schema drift gate is outside this task, per the manager ruling.
 def _conformant_state(visibility: str) -> RepositoryState:
     """GitHub's answers for a repo that already matches the desired governance."""
     return {
