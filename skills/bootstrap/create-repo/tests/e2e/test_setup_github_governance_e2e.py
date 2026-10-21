@@ -92,14 +92,6 @@ def test_e2e_refuses_governance_without_llmlint_required_check():
     assert "--allow-missing-llmlint" in result.stderr
 
 
-# --- visibility: fork-PR approval exists on public repositories only ---------
-#
-# Apply and --verify talk to GitHub, so these runs put a fake `gh` first on PATH:
-# the one boundary doubled. It answers the reads from a JSON state file, records
-# every request (args + the JSON body piped to `--input -`), and refuses the
-# fork-PR approval endpoint on a private or internal repository exactly as GitHub
-# does, so a script that still called it would fail here as it did in the field.
-
 CHECKS = ("check", "commitlint", "llmlint")
 FORK_PATH = "repos/acme/w/actions/permissions/fork-pr-contributor-approval"
 FORK_REFUSAL = "Fork PR approval is not allowed for private repositories (HTTP 422)"

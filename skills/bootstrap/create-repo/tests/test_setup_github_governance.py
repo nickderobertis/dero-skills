@@ -807,8 +807,6 @@ def test_main_verify_fails_and_reports_drift(capsys):
     assert "FAIL" in err
 
 
-# --- visibility (fork-PR approval exists on public repositories only) -------
-
 NOT_PUBLIC = ("private", "internal")
 CONTEXTS = ["check", "commitlint", "llmlint"]
 APPLY_ARGS = [*CONTEXTS, "--repo", "acme/w", "--branch", "main"]

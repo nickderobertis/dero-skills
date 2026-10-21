@@ -272,7 +272,7 @@ def plan(
     enforce_admins: bool,
     strict: bool = False,
     fork_pr_approval: str = DEFAULT_FORK_PR_APPROVAL,
-    visibility: str = DEFAULT_VISIBILITY,
+    visibility: Visibility = DEFAULT_VISIBILITY,
 ) -> list[GhCall]:
     """Build the ordered list of mutating calls.
 
@@ -306,12 +306,12 @@ def plan(
     return calls
 
 
-def fork_approval_applies(visibility: str) -> bool:
+def fork_approval_applies(visibility: Visibility) -> bool:
     """Whether the fork-PR approval setting exists for this visibility."""
-    return visibility == "public"
+    return visibility == Visibility.PUBLIC
 
 
-def fork_approval_label(visibility: str, policy: str) -> str:
+def fork_approval_label(visibility: Visibility, policy: str) -> str:
     """How the fork-PR approval outcome reads in the success and dry-run lines."""
     if fork_approval_applies(visibility):
         return policy
@@ -349,7 +349,7 @@ def read_visibility(run: Runner, repo: str) -> Visibility:
     )
 
 
-def check_visibility_flag(given: str | None, live: str) -> None:
+def check_visibility_flag(given: Visibility | None, live: Visibility) -> None:
     """Refuse a --visibility that disagrees with the live repository."""
     if given is not None and given != live:
         raise GhError(
@@ -655,7 +655,7 @@ def _get_json(
 
 
 def _render_dry_run(
-    repo: str, branch: str, calls: Sequence[GhCall], visibility: str
+    repo: str, branch: str, calls: Sequence[GhCall], visibility: Visibility
 ) -> str:
     lines = [f"DRY-RUN would configure {repo}@{branch}:"]
     for call in calls:
@@ -676,7 +676,7 @@ def _success_line(
     enforce_admins: bool,
     strict: bool,
     fork_pr_approval: str,
-    visibility: str = DEFAULT_VISIBILITY,
+    visibility: Visibility = DEFAULT_VISIBILITY,
 ) -> str:
     admins = "admins enforced" if enforce_admins else "admins can override"
     strictness = "strict" if strict else "non-strict"
@@ -732,6 +732,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--visibility",
+        type=Visibility,
         choices=VISIBILITIES,
         help="the repository's visibility, for an offline --dry-run that cannot "
         f"read it (default there: {DEFAULT_VISIBILITY}); otherwise it is read from "
