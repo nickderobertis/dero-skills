@@ -96,6 +96,7 @@ CHECKS = ("check", "commitlint", "llmlint")
 FORK_PATH = "repos/acme/w/actions/permissions/fork-pr-contributor-approval"
 FORK_REFUSAL = "Fork PR approval is not allowed for private repositories (HTTP 422)"
 
+# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] Issue #117 requires offline doubles at GitHub's gh executable boundary; this fixture implements that boundary, and an upstream schema drift gate is outside this task, per the manager ruling.
 FAKE_GH = """\
 import json, os, sys
 
@@ -130,6 +131,7 @@ elif path.endswith("/fork-pr-contributor-approval"):
 else:
     print(json.dumps({**state["settings"], **state.get("visibility_response", {"visibility": state["visibility"]})}))
 """.replace("FORK_REFUSAL", repr(FORK_REFUSAL))
+# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
 
 
 class RepositoryState(TypedDict):
@@ -151,7 +153,7 @@ class ApiRequest(NamedTuple):
     path: str
 
 
-# llmlint: ignore[contracts_have_one_source_or_a_drift_gate] Issue #117 requires offline doubles at GitHub's gh executable boundary; these response fixtures supply that boundary, and an upstream schema drift gate is outside this task, per the manager ruling.
+# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] Issue #117 requires offline doubles at GitHub's gh executable boundary; these response fixtures supply that boundary, and an upstream schema drift gate is outside this task, per the manager ruling.
 def _conformant_state(visibility: str) -> RepositoryState:
     """GitHub's answers for a repo that already matches the desired governance."""
     return {
@@ -177,6 +179,9 @@ def _conformant_state(visibility: str) -> RepositoryState:
         },
         "fork_policy": "all_external_contributors",
     }
+
+
+# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
 
 
 def _run_with_fake_gh(
