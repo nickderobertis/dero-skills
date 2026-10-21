@@ -311,12 +311,11 @@ def visibility_from_api(data: object) -> str:
     an error rather than a guess — guessing public would send a PUT GitHub then
     refuses, guessing private would skip a setting that exists.
     """
-    data = data if isinstance(data, dict) else {}
-    visibility = data.get("visibility")
-    if isinstance(visibility, str) and visibility.lower() in VISIBILITIES:
-        return visibility.lower()
-    if isinstance(data.get("private"), bool):
-        return "private" if data["private"] else "public"
+    match data:
+        case {"visibility": str(visibility)} if visibility.lower() in VISIBILITIES:
+            return visibility.lower()
+        case {"private": bool(private)}:
+            return "private" if private else "public"
     raise GhError(
         "could not read the repository's visibility from `gh api repos/{repo}`",
         "check `gh api repos/OWNER/NAME --jq .visibility` prints public, private "

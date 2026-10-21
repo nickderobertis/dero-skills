@@ -18,7 +18,6 @@ import json
 import os
 import stat
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -166,7 +165,8 @@ def _run_with_fake_gh(tmp_path: Path, state: dict, *extra: str):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     gh = bin_dir / "gh"
-    gh.write_text(f"#!{sys.executable}\n{FAKE_GH}", encoding="utf-8")
+    # llmlint: ignore[e2e_not_mocked] Issue #117 requires offline CLI journeys with only gh doubled at its executable boundary; the governance script, argument parsing and subprocess calls run for real.
+    gh.write_text("#!/usr/bin/env -S uv run --script\n" + FAKE_GH, encoding="utf-8")
     gh.chmod(gh.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     (tmp_path / "state.json").write_text(json.dumps(state), encoding="utf-8")
     env = {
