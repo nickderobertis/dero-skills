@@ -79,6 +79,8 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
+from typing import NamedTuple
 
 # The llmlint job's status-check context. The create-repo CI names the job so
 # its context is a bare ``llmlint``; match case-insensitively (and any suffix a
@@ -107,12 +109,24 @@ FORK_PR_APPROVAL_POLICIES = (
 )
 DEFAULT_FORK_PR_APPROVAL = "all_external_contributors"
 
+
 # Repository visibilities, as the ``repos/{repo}`` GET spells them. GitHub offers
 # fork-PR workflow approval on public repositories only — a private or internal
 # repository refuses the PUT ("Fork PR approval is not allowed for private
 # repositories") — so it is applied and verified only where it exists.
-VISIBILITIES = ("public", "private", "internal")
-DEFAULT_VISIBILITY = "public"
+class Visibility(StrEnum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+    INTERNAL = "internal"
+
+
+VISIBILITIES = tuple(Visibility)
+DEFAULT_VISIBILITY = Visibility.PUBLIC
+
+
+class Verification(NamedTuple):
+    problems: list[str]
+    visibility: Visibility
 
 
 @dataclass
@@ -303,7 +317,7 @@ def fork_approval_label(visibility: str, policy: str) -> str:
     return f"not applicable ({visibility})"
 
 
-def visibility_from_api(data: object) -> str:
+def visibility_from_api(data: object) -> Visibility:
     """Read the visibility from a ``repos/{repo}`` GET response.
 
     ``visibility`` is the field that tells internal from private; the older
@@ -313,9 +327,9 @@ def visibility_from_api(data: object) -> str:
     """
     match data:
         case {"visibility": str(visibility)} if visibility.lower() in VISIBILITIES:
-            return visibility.lower()
+            return Visibility(visibility.lower())
         case {"private": bool(private)}:
-            return "private" if private else "public"
+            return Visibility.PRIVATE if private else Visibility.PUBLIC
     raise GhError(
         "could not read the repository's visibility from `gh api repos/{repo}`",
         "check `gh api repos/OWNER/NAME --jq .visibility` prints public, private "
@@ -323,7 +337,7 @@ def visibility_from_api(data: object) -> str:
     )
 
 
-def read_visibility(run: Runner, repo: str) -> str:
+def read_visibility(run: Runner, repo: str) -> Visibility:
     """Read the repository's visibility with one ``repos/{repo}`` GET."""
     return visibility_from_api(
         _get_json(
@@ -553,7 +567,7 @@ def verify(
     enforce_admins: bool,
     strict: bool,
     fork_pr_approval: str,
-) -> tuple[list[str], str]:
+) -> Verification:
     """Read the live governance state; return its divergences and the visibility.
 
     Reads (never writes) the three settings this script configures — merge model,
@@ -603,7 +617,7 @@ def verify(
             LiveForkApproval.from_api(fork), fork_pr_approval
         )
 
-    return problems, visibility
+    return Verification(problems, visibility)
 
 
 def _is_not_found(stderr: str) -> bool:

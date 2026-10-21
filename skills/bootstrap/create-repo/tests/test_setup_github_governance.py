@@ -378,8 +378,6 @@ def test_main_applies_and_is_quiet_on_success(capsys):
     assert "auto-merge" in lines[0]
     assert "admins can override" in lines[0]
     assert "fork-PR approval: all_external_contributors" in lines[0]
-    # Resolved repo + branch (2 reads), read the visibility once, and applied
-    # all three mutations.
     assert fake.reads() == ["get:repo-settings"]
     assert fake.mutations() == [
         "api:repo-settings",
@@ -394,7 +392,6 @@ def test_main_with_explicit_repo_and_branch_skips_resolution():
         gov.main(["check", "llmlint", "--repo", "acme/w", "--branch", "main"], run=fake)
         == 0
     )
-    # No `repo view` calls — only the visibility read and the three mutations.
     assert all(a[0] == "api" for a, _ in fake.calls)
     assert len(fake.calls) == 4
 
@@ -427,7 +424,6 @@ def test_main_dry_run_offline_makes_no_gh_calls(capsys):
 def test_main_dry_run_resolves_but_never_mutates():
     fake = FakeGh()
     assert gov.main(["check", "llmlint", "--dry-run"], run=fake) == 0
-    # It may read (resolve repo/branch, visibility) but must not mutate.
     assert fake.mutations() == []
 
 
@@ -833,7 +829,6 @@ def _conformant_verify_fake(**over) -> FakeGh:
 def test_main_apply_skips_fork_approval_when_not_public(visibility, capsys):
     fake = _apply_fake(visibility)
     assert gov.main(APPLY_ARGS, run=fake) == 0
-    # Visibility read once, then every applicable setting — and no fork call.
     assert fake.reads() == ["get:repo-settings"]
     assert fake.mutations() == ["api:repo-settings", "api:protection"]
     out = capsys.readouterr()

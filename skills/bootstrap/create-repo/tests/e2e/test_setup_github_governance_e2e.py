@@ -19,6 +19,7 @@ import os
 import stat
 import subprocess
 from pathlib import Path
+from typing import NamedTuple, NotRequired, TypedDict
 
 import pytest
 
@@ -114,8 +115,14 @@ body = sys.stdin.read() if "--input" in args else None
 with open(os.path.join(state_dir, "calls.jsonl"), "a") as fh:
     fh.write(json.dumps({"args": args, "body": body}) + "\\n")
 
+if args[:1] == ["repo"]:
+    print("acme/w")
+    sys.exit(0)
 if args[:1] != ["api"]:
     sys.exit(f"fake gh: unexpected command {args}")
+if "--jq" in args:
+    print("main")
+    sys.exit(0)
 method = args[args.index("--method") + 1] if "--method" in args else "GET"
 path = next(a for a in args[1:] if a.startswith("repos/"))
 if path in state.get("fail", {}):
@@ -129,11 +136,30 @@ elif path.endswith("/protection"):
 elif path.endswith("/fork-pr-contributor-approval"):
     print(json.dumps({"approval_policy": state["fork_policy"]}))
 else:
-    print(json.dumps({**state["settings"], "visibility": state["visibility"]}))
+    print(json.dumps({**state["settings"], **state.get("visibility_response", {"visibility": state["visibility"]})}))
 """.replace("FORK_REFUSAL", repr(FORK_REFUSAL))
 
 
-def _conformant_state(visibility: str) -> dict:
+class RepositoryState(TypedDict):
+    visibility: str
+    settings: dict[str, object]
+    protection: dict[str, object]
+    fork_policy: str
+    fail: NotRequired[dict[str, str]]
+    visibility_response: NotRequired[dict[str, object]]
+
+
+class RecordedCall(TypedDict):
+    args: list[str]
+    body: str | None
+
+
+class ApiRequest(NamedTuple):
+    method: str
+    path: str
+
+
+def _conformant_state(visibility: str) -> RepositoryState:
     """GitHub's answers for a repo that already matches the desired governance."""
     return {
         "visibility": visibility,
@@ -160,7 +186,9 @@ def _conformant_state(visibility: str) -> dict:
     }
 
 
-def _run_with_fake_gh(tmp_path: Path, state: dict, *extra: str):
+def _run_with_fake_gh(
+    tmp_path: Path, state: RepositoryState, *extra: str, online_dry_run: bool = False
+):
     """Run the real script against the fake `gh`; return (result, requests)."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -176,7 +204,11 @@ def _run_with_fake_gh(tmp_path: Path, state: dict, *extra: str):
     }
     result = subprocess.run(
         ["uv", "run", "--script", str(SCRIPT), *CHECKS]
-        + ["--repo", "acme/w", "--branch", "main", *extra],
+        + (
+            [*extra]
+            if online_dry_run
+            else ["--repo", "acme/w", "--branch", "main", *extra]
+        ),
         capture_output=True,
         text=True,
         env=env,
@@ -186,13 +218,13 @@ def _run_with_fake_gh(tmp_path: Path, state: dict, *extra: str):
     return result, [json.loads(line) for line in lines]
 
 
-def _requests(calls: list[dict]) -> list[tuple[str, str]]:
+def _requests(calls: list[RecordedCall]) -> list[ApiRequest]:
     """Each recorded `gh api` request as (method, path)."""
     out = []
     for call in calls:
         args = call["args"]
         method = args[args.index("--method") + 1] if "--method" in args else "GET"
-        out.append((method, next(a for a in args if a.startswith("repos/"))))
+        out.append(ApiRequest(method, next(a for a in args if a.startswith("repos/"))))
     return out
 
 
@@ -315,3 +347,89 @@ def test_e2e_verify_refuses_visibility_flag_disagreeing_with_live(tmp_path):
         ("GET", "repos/acme/w"),
         ("GET", "repos/acme/w/branches/main/protection"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("response", "visibility"),
+    [
+        ({"visibility": "INTERNAL"}, "internal"),
+        ({"private": True}, "private"),
+        ({"private": False}, "public"),
+    ],
+)
+def test_e2e_apply_accepts_visibility_response_forms(tmp_path, response, visibility):
+    state = _conformant_state(visibility)
+    state["visibility_response"] = response
+    result, calls = _run_with_fake_gh(tmp_path, state)
+    assert result.returncode == 0, result.stderr
+    assert (("PUT", FORK_PATH) in _requests(calls)) == (visibility == "public")
+    assert "OK" in result.stdout
+    label = (
+        "all_external_contributors"
+        if visibility == "public"
+        else f"not applicable ({visibility})"
+    )
+    assert f"fork-PR approval: {label}" in result.stdout
+
+
+@pytest.mark.parametrize("response", [{}, {"visibility": "unknown"}])
+def test_e2e_apply_refuses_unreadable_visibility(tmp_path, response):
+    state = _conformant_state("private")
+    state["visibility_response"] = response
+    result, calls = _run_with_fake_gh(tmp_path, state)
+    assert result.returncode == 1
+    assert "could not read the repository's visibility" in result.stderr
+    assert "fix:" in result.stderr
+    assert "OK" not in result.stdout
+    assert _requests(calls) == [("GET", "repos/acme/w")]
+
+
+def test_e2e_apply_refuses_failed_visibility_read(tmp_path):
+    state = _conformant_state("private")
+    state["fail"] = {"repos/acme/w": "HTTP 403: Forbidden"}
+    result, calls = _run_with_fake_gh(tmp_path, state)
+    assert result.returncode == 1
+    assert "403" in result.stderr and "fix:" in result.stderr
+    assert "OK" not in result.stdout
+    assert _requests(calls) == [("GET", "repos/acme/w")]
+
+
+def test_e2e_apply_refuses_visibility_flag_disagreeing_with_live(tmp_path):
+    result, calls = _run_with_fake_gh(
+        tmp_path, _conformant_state("private"), "--visibility", "public"
+    )
+    assert result.returncode == 1
+    assert "--visibility public but the repository is private" in result.stderr
+    assert "OK" not in result.stdout
+    assert _requests(calls) == [("GET", "repos/acme/w")]
+
+
+@pytest.mark.parametrize("visibility", ["public", "private", "internal"])
+def test_e2e_online_dry_run_reads_visibility_without_mutating(tmp_path, visibility):
+    result, calls = _run_with_fake_gh(
+        tmp_path, _conformant_state(visibility), "--dry-run", online_dry_run=True
+    )
+    assert result.returncode == 0, result.stderr
+    api_calls = [call for call in calls if call["args"][0] == "api"]
+    assert _requests(api_calls) == [("GET", "repos/acme/w")]
+    assert "DRY-RUN" in result.stdout
+    assert "PATCH repos/acme/w" in result.stdout
+    assert (FORK_PATH in result.stdout) == (visibility == "public")
+    if visibility != "public":
+        assert f"not applicable ({visibility})" in result.stdout
+
+
+def test_e2e_online_dry_run_refuses_disagreeing_visibility(tmp_path):
+    result, calls = _run_with_fake_gh(
+        tmp_path,
+        _conformant_state("private"),
+        "--dry-run",
+        "--visibility",
+        "public",
+        online_dry_run=True,
+    )
+    assert result.returncode == 1
+    assert "--visibility public but the repository is private" in result.stderr
+    assert "DRY-RUN" not in result.stdout
+    api_calls = [call for call in calls if call["args"][0] == "api"]
+    assert _requests(api_calls) == [("GET", "repos/acme/w")]
