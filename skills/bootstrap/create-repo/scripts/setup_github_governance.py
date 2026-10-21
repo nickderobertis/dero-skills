@@ -7,7 +7,8 @@
 Usage:
     uv run --script scripts/setup_github_governance.py CHECK [CHECK ...] \
         [--repo OWNER/NAME] [--branch NAME] [--approvals N] \
-        [--fork-pr-approval POLICY] [--enforce-admins] [--dry-run] [--verify]
+        [--fork-pr-approval POLICY] [--visibility VISIBILITY] [--enforce-admins] \
+        [--dry-run] [--verify]
 
 The positional ``CHECK`` arguments are the status-check contexts that must be
 green before a PR can merge. List *every* gating check by name — including the
@@ -33,17 +34,24 @@ What it sets (the model the create-repo skill prescribes — see references/ci.m
     CI runs (default: all external contributors). Credential-gated checks (the
     live/llmlint tiers) fail fast without their secret, so fork PRs must not
     auto-run them unreviewed. Tune the class of contributor with
-    --fork-pr-approval.
+    --fork-pr-approval. GitHub offers this setting on public repositories only,
+    so on a private or internal one it is not applicable: the script reads the
+    repository's visibility once, neither applies nor verifies the setting there,
+    and reports it as ``fork-PR approval: not applicable (private)`` (or
+    ``(internal)``). Every other setting is still applied and verified.
 
 This sets the *full desired state* idempotently: re-running applies the same
 config, and the branch-protection PUT replaces any existing protection on the
 branch. Use --dry-run to print exactly what it would do without touching the
-repo (pass --repo and --branch to preview fully offline).
+repo (pass --repo and --branch to preview fully offline). An offline preview
+cannot read the visibility, so it plans for a public repository unless
+--visibility private|internal says otherwise; whenever the script does talk to
+GitHub it reads the live visibility, and refuses a --visibility that disagrees.
 
 Use --verify to *read back* the live state and report where it diverges from the
 desired one — branch protection (are all gating checks required? force-push and
 deletion blocked?), the merge model (squash-only, auto-merge, delete-on-merge),
-and the fork-PR approval policy. This is the piece the filesystem baseline checker
+and, on a public repository, the fork-PR approval policy. This is the piece the filesystem baseline checker
 structurally cannot see (repo-side settings, not files), so a repo can pass every
 file-level gate while its gating checks are not actually required to merge.
 --verify writes nothing and exits non-zero on any divergence, so it belongs in a
@@ -71,6 +79,8 @@ import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
+from typing import NamedTuple
 
 # The llmlint job's status-check context. The create-repo CI names the job so
 # its context is a bare ``llmlint``; match case-insensitively (and any suffix a
@@ -98,6 +108,29 @@ FORK_PR_APPROVAL_POLICIES = (
     "all_external_contributors",
 )
 DEFAULT_FORK_PR_APPROVAL = "all_external_contributors"
+
+
+# Repository visibilities, as the ``repos/{repo}`` GET spells them. GitHub offers
+# fork-PR workflow approval on public repositories only — a private or internal
+# repository refuses the PUT ("Fork PR approval is not allowed for private
+# repositories") — so it is applied and verified only where it exists.
+# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] Issue #117 explicitly names these three supported visibilities; an upstream GitHub schema drift gate is outside this task, per the manager ruling.
+class Visibility(StrEnum):
+    PUBLIC = "public"
+    PRIVATE = "private"
+    INTERNAL = "internal"
+
+
+# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
+
+
+VISIBILITIES = tuple(Visibility)
+DEFAULT_VISIBILITY = Visibility.PUBLIC
+
+
+class Verification(NamedTuple):
+    problems: list[str]
+    visibility: Visibility
 
 
 @dataclass
@@ -242,13 +275,15 @@ def plan(
     enforce_admins: bool,
     strict: bool = False,
     fork_pr_approval: str = DEFAULT_FORK_PR_APPROVAL,
+    visibility: Visibility = DEFAULT_VISIBILITY,
 ) -> list[GhCall]:
     """Build the ordered list of mutating calls.
 
-    Merge model, then branch protection, then the fork-PR workflow approval
-    policy (so a maintainer gates fork CI before credential-requiring checks run).
+    Merge model, then branch protection, then — on a public repository, the only
+    kind that has the setting — the fork-PR workflow approval policy (so a
+    maintainer gates fork CI before credential-requiring checks run).
     """
-    return [
+    calls = [
         GhCall(
             "PATCH",
             f"repos/{repo}",
@@ -261,13 +296,69 @@ def plan(
             protection_payload(contexts, approvals, enforce_admins, strict),
             f"branch protection on {branch}",
         ),
-        GhCall(
-            "PUT",
-            f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
-            fork_pr_approval_payload(fork_pr_approval),
-            f"fork PR workflow approval ({fork_pr_approval})",
-        ),
     ]
+    if fork_approval_applies(visibility):
+        calls.append(
+            GhCall(
+                "PUT",
+                f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
+                fork_pr_approval_payload(fork_pr_approval),
+                f"fork PR workflow approval ({fork_pr_approval})",
+            )
+        )
+    return calls
+
+
+def fork_approval_applies(visibility: Visibility) -> bool:
+    """Whether the fork-PR approval setting exists for this visibility."""
+    return visibility == Visibility.PUBLIC
+
+
+def fork_approval_label(visibility: Visibility, policy: str) -> str:
+    """How the fork-PR approval outcome reads in the success and dry-run lines."""
+    if fork_approval_applies(visibility):
+        return policy
+    return f"not applicable ({visibility})"
+
+
+def visibility_from_api(data: object) -> Visibility:
+    """Read the visibility from a ``repos/{repo}`` GET response.
+
+    ``visibility`` is the field that tells internal from private; the older
+    ``private`` boolean is accepted as a fallback. A response carrying neither is
+    an error rather than a guess — guessing public would send a PUT GitHub then
+    refuses, guessing private would skip a setting that exists.
+    """
+    match data:
+        case {"visibility": str(visibility)} if visibility.lower() in VISIBILITIES:
+            return Visibility(visibility.lower())
+        case {"private": bool(private)}:
+            return Visibility.PRIVATE if private else Visibility.PUBLIC
+    raise GhError(
+        "could not read the repository's visibility from `gh api repos/{repo}`",
+        "check `gh api repos/OWNER/NAME --jq .visibility` prints public, private "
+        "or internal",
+    )
+
+
+def read_visibility(run: Runner, repo: str) -> Visibility:
+    """Read the repository's visibility with one ``repos/{repo}`` GET."""
+    return visibility_from_api(
+        _get_json(
+            run,
+            f"repos/{repo}",
+            "check you can read the repo (`gh auth status`) and --repo is correct",
+        )
+    )
+
+
+def check_visibility_flag(given: Visibility | None, live: Visibility) -> None:
+    """Refuse a --visibility that disagrees with the live repository."""
+    if given is not None and given != live:
+        raise GhError(
+            f"--visibility {given} but the repository is {live}",
+            f"drop --visibility (it is read from GitHub) or pass --visibility {live}",
+        )
 
 
 def _capture(run: Runner, args: Sequence[str], fix: str) -> str:
@@ -480,13 +571,15 @@ def verify(
     enforce_admins: bool,
     strict: bool,
     fork_pr_approval: str,
-) -> list[str]:
-    """Read the live governance state and return the list of divergences.
+) -> Verification:
+    """Read the live governance state; return its divergences and the visibility.
 
     Reads (never writes) the three settings this script configures — merge model,
     branch protection, fork-PR approval — parses each GitHub response into a typed
-    model at the boundary, and diffs it against the desired state. An empty list
-    means the repo matches; the caller reports and sets the exit code.
+    model at the boundary, and diffs it against the desired state. The visibility
+    comes from the same settings read; on a private or internal repository the
+    fork-PR approval read is skipped, since the setting does not exist there. An
+    empty list means the repo matches; the caller reports and sets the exit code.
     """
     problems: list[str] = []
 
@@ -495,6 +588,7 @@ def verify(
         f"repos/{repo}",
         "check you can read the repo (`gh auth status`) and --repo is correct",
     )
+    visibility = visibility_from_api(settings)
     problems += verify_repo_settings(LiveMergeModel.from_api(settings))
 
     protection = _get_json(
@@ -517,14 +611,17 @@ def verify(
             strict,
         )
 
-    fork = _get_json(
-        run,
-        f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
-        "check admin access to Actions settings",
-    )
-    problems += verify_fork_approval(LiveForkApproval.from_api(fork), fork_pr_approval)
+    if fork_approval_applies(visibility):
+        fork = _get_json(
+            run,
+            f"repos/{repo}/actions/permissions/fork-pr-contributor-approval",
+            "check admin access to Actions settings",
+        )
+        problems += verify_fork_approval(
+            LiveForkApproval.from_api(fork), fork_pr_approval
+        )
 
-    return problems
+    return Verification(problems, visibility)
 
 
 def _is_not_found(stderr: str) -> bool:
@@ -560,12 +657,18 @@ def _get_json(
         raise GhError(f"`gh api {path}` returned invalid JSON: {exc}", fix) from exc
 
 
-def _render_dry_run(repo: str, branch: str, calls: Sequence[GhCall]) -> str:
+def _render_dry_run(
+    repo: str, branch: str, calls: Sequence[GhCall], visibility: Visibility
+) -> str:
     lines = [f"DRY-RUN would configure {repo}@{branch}:"]
     for call in calls:
         lines.append(f"  {call.method} {call.path}  # {call.summary}")
         for body_line in json.dumps(call.body, indent=2).splitlines():
             lines.append(f"    {body_line}")
+    if not fork_approval_applies(visibility):
+        lines.append(
+            f"  fork-PR approval: {fork_approval_label(visibility, '')} — not set"
+        )
     return "\n".join(lines)
 
 
@@ -576,6 +679,7 @@ def _success_line(
     enforce_admins: bool,
     strict: bool,
     fork_pr_approval: str,
+    visibility: Visibility = DEFAULT_VISIBILITY,
 ) -> str:
     admins = "admins enforced" if enforce_admins else "admins can override"
     strictness = "strict" if strict else "non-strict"
@@ -583,7 +687,7 @@ def _success_line(
     return (
         f"OK    {repo}@{branch}: squash-only + auto-merge + delete-on-merge; "
         f"{len(contexts)} required check(s) [{checks}], {strictness}; {admins}; "
-        f"fork-PR approval: {fork_pr_approval}"
+        f"fork-PR approval: {fork_approval_label(visibility, fork_pr_approval)}"
     )
 
 
@@ -630,6 +734,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "from auto-running unreviewed on forks",
     )
     parser.add_argument(
+        "--visibility",
+        type=Visibility,
+        choices=VISIBILITIES,
+        help="the repository's visibility, for an offline --dry-run that cannot "
+        f"read it (default there: {DEFAULT_VISIBILITY}); otherwise it is read from "
+        "GitHub and a disagreeing value is refused. Fork-PR approval exists only "
+        "on public repositories, so it is skipped on private and internal ones",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="print what would change without modifying the repo",
@@ -638,7 +751,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--verify",
         action="store_true",
         help="read-only: report where the live governance state diverges from the "
-        "desired one (branch protection, merge model, fork-PR approval) instead of "
+        "desired one (branch protection, merge model, and fork-PR approval on a "
+        "public repository) instead of "
         "applying it; exits non-zero on any divergence",
     )
     return parser.parse_args(argv)
@@ -649,10 +763,11 @@ def main(argv: list[str], run: Runner | None = None) -> int:
 
     # With a real ``gh``, ensure it is installed before doing anything. A fully
     # offline dry-run (--repo and --branch both given) needs no ``gh`` at all.
+    offline_dry_run = bool(
+        args.dry_run and args.repo and args.branch and not args.verify
+    )
     if run is None:
-        offline_dry_run = args.dry_run and args.repo and args.branch and not args.verify
-        needs_gh = not offline_dry_run
-        if needs_gh and shutil.which("gh") is None:
+        if not offline_dry_run and shutil.which("gh") is None:
             print(
                 "ERROR gh CLI not found\n"
                 "      fix: install GitHub CLI (https://cli.github.com) and run "
@@ -668,7 +783,7 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         repo = resolve_repo(run, args.repo)
         branch = resolve_branch(run, repo, args.branch)
         if args.verify:
-            problems = verify(
+            problems, visibility = verify(
                 run,
                 repo,
                 branch,
@@ -678,6 +793,7 @@ def main(argv: list[str], run: Runner | None = None) -> int:
                 args.strict,
                 args.fork_pr_approval,
             )
+            check_visibility_flag(args.visibility, visibility)
             if problems:
                 for problem in problems:
                     print(f"DRIFT {problem}", file=sys.stderr)
@@ -687,8 +803,19 @@ def main(argv: list[str], run: Runner | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 1
-            print(f"OK    {repo}@{branch}: governance matches the desired state")
+            print(
+                f"OK    {repo}@{branch}: governance matches the desired state; "
+                "fork-PR approval: "
+                f"{fork_approval_label(visibility, args.fork_pr_approval)}"
+            )
             return 0
+        # Read the visibility once, before planning: it decides whether the
+        # fork-PR approval call exists. An offline dry run cannot read it.
+        if offline_dry_run:
+            visibility = args.visibility or DEFAULT_VISIBILITY
+        else:
+            visibility = read_visibility(run, repo)
+            check_visibility_flag(args.visibility, visibility)
         calls = plan(
             repo,
             branch,
@@ -697,9 +824,10 @@ def main(argv: list[str], run: Runner | None = None) -> int:
             args.enforce_admins,
             args.strict,
             args.fork_pr_approval,
+            visibility,
         )
         if args.dry_run:
-            print(_render_dry_run(repo, branch, calls))
+            print(_render_dry_run(repo, branch, calls, visibility))
             return 0
         execute(run, calls)
     except GhError as exc:
@@ -714,6 +842,7 @@ def main(argv: list[str], run: Runner | None = None) -> int:
             args.enforce_admins,
             args.strict,
             args.fork_pr_approval,
+            visibility,
         )
     )
     return 0

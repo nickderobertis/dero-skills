@@ -185,9 +185,9 @@ gate, coverage, real e2e, upgrade) and closes with the two automated gates:
    uv run --script scripts/setup_github_governance.py <every-required-check> --verify
    ```
 
-   `--verify` reads the live branch protection, merge model, and fork-PR approval
-   back and exits non-zero on any divergence — so a repo can't pass while its
-   gating checks aren't actually required to merge.
+   `--verify` refuses divergence or failed reads of every applicable setting.
+   Fork-PR approval applies only to public repositories; `--visibility` controls
+   offline previews. See [governance visibility and flags](./references/ci.md).
 
 Fix failures until all are green — do not narrate them as next steps. The
 checker is silent on success and, on failure, names each missing invariant with

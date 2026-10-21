@@ -19,6 +19,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "setup_github_governance.py"
 
 spec = importlib.util.spec_from_file_location("setup_github_governance", SCRIPT)
@@ -66,7 +68,8 @@ class FakeGh:
     """Records every call; returns canned Results keyed by route.
 
     Defaults resolve the current repo to ``owner/name`` and its default branch
-    to ``main``, and let mutating ``api`` calls succeed. Override per route to
+    to ``main``, answer the settings read as a public repository, and let
+    mutating ``api`` calls succeed. Override per route to
     simulate failures or different repos.
     """
 
@@ -83,11 +86,20 @@ class FakeGh:
         defaults = {
             "repo": gov.Result(0, "owner/name\n"),
             "branch": gov.Result(0, "main\n"),
+            "get:repo-settings": gov.Result(0, json.dumps({"visibility": "public"})),
         }
         return defaults.get(key, gov.Result(0, "", ""))
 
     def api_calls(self) -> list[tuple[list[str], str | None]]:
         return [(a, i) for a, i in self.calls if a and a[0] == "api"]
+
+    def mutations(self) -> list[str]:
+        """The routes of the mutating ``api`` calls, in order."""
+        return [route(a) for a, _ in self.api_calls() if "--method" in a]
+
+    def reads(self) -> list[str]:
+        """The routes of the read-only ``api`` GETs, in order."""
+        return [route(a) for a, _ in self.api_calls() if "--method" not in a]
 
     def body_for(self, key: str) -> dict:
         """Return the JSON body of the api call whose route is ``key``.
@@ -228,7 +240,7 @@ def test_main_allow_missing_llmlint_applies_without_it():
     )
     assert code == 0
     # The three mutations still run; only the llmlint guard was waived.
-    assert [route(a) for a, _ in fake.api_calls()] == [
+    assert fake.mutations() == [
         "api:repo-settings",
         "api:protection",
         "api:fork-approval",
@@ -366,8 +378,8 @@ def test_main_applies_and_is_quiet_on_success(capsys):
     assert "auto-merge" in lines[0]
     assert "admins can override" in lines[0]
     assert "fork-PR approval: all_external_contributors" in lines[0]
-    # Resolved repo + branch (2 reads) and applied all three mutations.
-    assert [route(a) for a, _ in fake.api_calls()] == [
+    assert fake.reads() == ["get:repo-settings"]
+    assert fake.mutations() == [
         "api:repo-settings",
         "api:protection",
         "api:fork-approval",
@@ -380,9 +392,8 @@ def test_main_with_explicit_repo_and_branch_skips_resolution():
         gov.main(["check", "llmlint", "--repo", "acme/w", "--branch", "main"], run=fake)
         == 0
     )
-    # No `repo view` calls — only the three mutations.
     assert all(a[0] == "api" for a, _ in fake.calls)
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 4
 
 
 def test_main_dry_run_offline_makes_no_gh_calls(capsys):
@@ -413,8 +424,7 @@ def test_main_dry_run_offline_makes_no_gh_calls(capsys):
 def test_main_dry_run_resolves_but_never_mutates():
     fake = FakeGh()
     assert gov.main(["check", "llmlint", "--dry-run"], run=fake) == 0
-    # It may read (resolve repo/branch) but must not issue any api mutation.
-    assert fake.api_calls() == []
+    assert fake.mutations() == []
 
 
 def test_main_failure_returns_one_with_actionable_fix(capsys):
@@ -583,18 +593,22 @@ def _live_protection(
 
 
 def _verify_fake(
-    *, settings=None, protection=..., fork_policy="all_external_contributors"
+    *,
+    settings=None,
+    protection=...,
+    fork_policy="all_external_contributors",
+    visibility="public",
 ) -> FakeGh:
     """A fake gh whose GETs return a (by default conformant) live governance state.
 
     Pass ``protection=None`` to simulate an unprotected branch (a 404), or a dict
     to inject drift; ``settings``/``fork_policy`` likewise override the merge model
-    and fork policy.
+    and fork policy, and ``visibility`` the repository's visibility.
     """
+    live_settings = dict(settings if settings is not None else _live_settings())
+    live_settings["visibility"] = visibility
     responses = {
-        "get:repo-settings": gov.Result(
-            0, json.dumps(settings if settings is not None else _live_settings())
-        ),
+        "get:repo-settings": gov.Result(0, json.dumps(live_settings)),
         "get:fork-approval": gov.Result(
             0, json.dumps({"approval_policy": fork_policy})
         ),
@@ -609,7 +623,7 @@ def _verify_fake(
 
 def test_verify_conformant_state_reports_no_problems():
     fake = _verify_fake()
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -626,7 +640,7 @@ def test_verify_conformant_state_reports_no_problems():
 
 def test_verify_flags_missing_required_check():
     fake = _verify_fake(protection=_live_protection(contexts=("check",)))
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -641,7 +655,7 @@ def test_verify_flags_missing_required_check():
 
 def test_verify_flags_merge_model_drift():
     fake = _verify_fake(settings=_live_settings(allow_merge_commit=True))
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -656,7 +670,7 @@ def test_verify_flags_merge_model_drift():
 
 def test_verify_flags_allowed_force_pushes():
     fake = _verify_fake(protection=_live_protection(force_pushes=True))
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -672,7 +686,7 @@ def test_verify_flags_allowed_force_pushes():
 def test_verify_flags_unprotected_branch():
     # A genuine 404 (stderr says "Not Found") is the branch simply being unprotected.
     fake = _verify_fake(protection=None)
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -708,7 +722,7 @@ def test_verify_non_404_protection_error_raises_not_misclassified():
 
 def test_verify_flags_fork_policy_drift():
     fake = _verify_fake(fork_policy="first_time_contributors")
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -730,7 +744,7 @@ def test_verify_reads_nested_enabled_and_checks_shape():
         {"context": "commitlint", "app_id": 1},
     ]
     fake = _verify_fake(protection=prot)
-    problems = gov.verify(
+    problems, _ = gov.verify(
         fake,
         "owner/name",
         "main",
@@ -791,3 +805,132 @@ def test_main_verify_fails_and_reports_drift(capsys):
     err = capsys.readouterr().err
     assert "DRIFT" in err
     assert "FAIL" in err
+
+
+NOT_PUBLIC = ("private", "internal")
+CONTEXTS = ["check", "commitlint", "llmlint"]
+APPLY_ARGS = [*CONTEXTS, "--repo", "acme/w", "--branch", "main"]
+VERIFY_ARGS = [*CONTEXTS, "--repo", "owner/name", "--branch", "main", "--verify"]
+
+
+def _apply_fake(visibility: str) -> FakeGh:
+    return FakeGh(
+        {"get:repo-settings": gov.Result(0, json.dumps({"visibility": visibility}))}
+    )
+
+
+def _conformant_verify_fake(**over) -> FakeGh:
+    return _verify_fake(protection=_live_protection(contexts=CONTEXTS), **over)
+
+
+@pytest.mark.parametrize("visibility", NOT_PUBLIC)
+def test_main_apply_skips_fork_approval_when_not_public(visibility, capsys):
+    fake = _apply_fake(visibility)
+    assert gov.main(APPLY_ARGS, run=fake) == 0
+    assert fake.reads() == ["get:repo-settings"]
+    assert fake.mutations() == ["api:repo-settings", "api:protection"]
+    out = capsys.readouterr()
+    assert out.err == ""
+    assert f"fork-PR approval: not applicable ({visibility})" in out.out
+
+
+def test_main_apply_on_public_still_sets_fork_approval(capsys):
+    fake = _apply_fake("public")
+    assert gov.main(APPLY_ARGS, run=fake) == 0
+    assert fake.mutations() == [
+        "api:repo-settings",
+        "api:protection",
+        "api:fork-approval",
+    ]
+    assert fake.body_for("api:fork-approval") == {
+        "approval_policy": "all_external_contributors"
+    }
+    assert "fork-PR approval: all_external_contributors" in capsys.readouterr().out
+
+
+def test_main_apply_refuses_when_visibility_read_fails(capsys):
+    fake = FakeGh({"get:repo-settings": gov.Result(1, "", "HTTP 403: Forbidden")})
+    assert gov.main(APPLY_ARGS, run=fake) == 1
+    err = capsys.readouterr().err
+    assert "403" in err and "fix:" in err
+    assert fake.mutations() == []
+
+
+def test_main_apply_refuses_unreadable_visibility(capsys):
+    fake = FakeGh({"get:repo-settings": gov.Result(0, json.dumps({"name": "w"}))})
+    assert gov.main(APPLY_ARGS, run=fake) == 1
+    assert "visibility" in capsys.readouterr().err
+    assert fake.mutations() == []
+
+
+def test_visibility_falls_back_to_the_private_flag():
+    assert gov.visibility_from_api({"private": True}) == "private"
+    assert gov.visibility_from_api({"private": False}) == "public"
+    assert gov.visibility_from_api({"visibility": "INTERNAL"}) == "internal"
+
+
+def test_main_apply_refuses_visibility_flag_disagreeing_with_live(capsys):
+    fake = _apply_fake("private")
+    assert gov.main([*APPLY_ARGS, "--visibility", "public"], run=fake) == 1
+    err = capsys.readouterr().err
+    assert "--visibility public but the repository is private" in err
+    assert fake.mutations() == []
+
+
+@pytest.mark.parametrize("visibility", NOT_PUBLIC)
+def test_main_verify_passes_without_reading_fork_approval(visibility, capsys):
+    fake = _conformant_verify_fake(visibility=visibility)
+    # Any fork read would fail loudly, as GitHub's does on these repositories.
+    fake.responses["get:fork-approval"] = gov.Result(
+        1, "", "Fork PR approval is not allowed for private repositories"
+    )
+    assert gov.main(VERIFY_ARGS, run=fake) == 0
+    assert fake.reads() == ["get:repo-settings", "get:protection"]
+    assert fake.mutations() == []
+    out = capsys.readouterr()
+    assert out.err == ""
+    assert "governance matches" in out.out
+    assert f"fork-PR approval: not applicable ({visibility})" in out.out
+
+
+@pytest.mark.parametrize("visibility", NOT_PUBLIC)
+def test_main_verify_not_public_still_refuses_other_drift(visibility, capsys):
+    fake = _verify_fake(
+        visibility=visibility,
+        protection=_live_protection(contexts=("check", "commitlint")),
+    )
+    assert gov.main(VERIFY_ARGS, run=fake) == 1
+    err = capsys.readouterr().err
+    assert "DRIFT" in err and "llmlint" in err and "FAIL" in err
+    assert "get:fork-approval" not in fake.reads()
+
+
+@pytest.mark.parametrize("visibility", NOT_PUBLIC)
+def test_main_verify_not_public_still_refuses_failed_read(visibility, capsys):
+    fake = _conformant_verify_fake(visibility=visibility)
+    fake.responses["get:protection"] = gov.Result(1, "", "HTTP 403: Forbidden")
+    assert gov.main(VERIFY_ARGS, run=fake) == 1
+    err = capsys.readouterr().err
+    assert "ERROR" in err and "403" in err
+
+
+def test_main_verify_public_reads_and_reports_fork_approval(capsys):
+    fake = _conformant_verify_fake()
+    assert gov.main(VERIFY_ARGS, run=fake) == 0
+    assert fake.reads() == ["get:repo-settings", "get:protection", "get:fork-approval"]
+    assert "fork-PR approval: all_external_contributors" in capsys.readouterr().out
+
+    fake = _conformant_verify_fake(fork_policy="first_time_contributors")
+    assert gov.main(VERIFY_ARGS, run=fake) == 1
+    assert "fork-PR approval policy" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("visibility", NOT_PUBLIC)
+def test_main_offline_dry_run_visibility_flag_omits_fork_approval(visibility, capsys):
+    fake = FakeGh()
+    code = gov.main([*APPLY_ARGS, "--dry-run", "--visibility", visibility], run=fake)
+    assert code == 0
+    assert fake.calls == []
+    out = capsys.readouterr().out
+    assert "fork-pr-contributor-approval" not in out
+    assert f"fork-PR approval: not applicable ({visibility})" in out
