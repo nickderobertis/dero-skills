@@ -298,3 +298,20 @@ def test_e2e_offline_dry_run_visibility_omits_fork_approval(visibility):
     assert "PUT repos/acme/w/branches/main/protection" in out
     assert "fork-pr-contributor-approval" not in out
     assert f"fork-PR approval: not applicable ({visibility})" in out
+
+
+def test_e2e_verify_refuses_visibility_flag_disagreeing_with_live(tmp_path):
+    result, calls = _run_with_fake_gh(
+        tmp_path,
+        _conformant_state("private"),
+        "--verify",
+        "--visibility",
+        "public",
+    )
+    assert result.returncode == 1
+    assert "--visibility public but the repository is private" in result.stderr
+    assert "OK" not in result.stdout
+    assert _requests(calls) == [
+        ("GET", "repos/acme/w"),
+        ("GET", "repos/acme/w/branches/main/protection"),
+    ]
