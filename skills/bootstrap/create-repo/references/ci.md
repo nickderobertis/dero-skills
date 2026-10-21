@@ -350,7 +350,9 @@ exact commands below are the ones this skill's own repo uses.
   auto-run unreviewed. Set the fork-PR approval policy (GitHub's *Settings →
   Actions → General → Fork pull request workflows*) so a maintainer approves
   before a fork's workflows run; default it to all external contributors. Secrets
-  stay restricted on `pull_request` from forks even after approval.
+  stay restricted on `pull_request` from forks even after approval. GitHub offers
+  this setting on public repositories only; on a private or internal one it is
+  not applicable and is skipped, not failed.
 - **Commit a required PR template.** Add `.github/pull_request_template.md`
   (start from
   [`assets/pull_request_template.md.template`](../assets/pull_request_template.md.template))
@@ -391,14 +393,17 @@ gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input - <<'JSON'
 JSON
 
 # Require maintainer approval before a fork's workflows run (so credential-gated
-# checks never auto-run unreviewed on forks).
+# checks never auto-run unreviewed on forks). Public repositories only: GitHub
+# refuses this on a private or internal repository.
 gh api -X PUT repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval \
   -f approval_policy=all_external_contributors
 ```
 
 The skill bundles this as a runnable, idempotent script — it applies the merge
-model, branch protection, *and* the fork-PR approval policy. Pass the required
-check contexts and preview with `--dry-run` first:
+model, branch protection, *and* — on a public repository — the fork-PR approval
+policy, reading the visibility from GitHub and reporting the policy as `not
+applicable (private)` or `(internal)` elsewhere. Pass the required check contexts
+and preview with `--dry-run` first:
 
 ```bash
 uv run --script scripts/setup_github_governance.py check commitlint llmlint --dry-run
@@ -406,6 +411,9 @@ uv run --script scripts/setup_github_governance.py check commitlint llmlint
 # tune who is gated on forks (default: all_external_contributors):
 uv run --script scripts/setup_github_governance.py check commitlint llmlint \
   --fork-pr-approval first_time_contributors
+# preview a private or internal repo fully offline (no `gh` to read visibility):
+uv run --script scripts/setup_github_governance.py check commitlint llmlint \
+  --repo OWNER/NAME --branch main --visibility private --dry-run
 ```
 
 The `llmlint` context is the **LLM-judge tier** (see

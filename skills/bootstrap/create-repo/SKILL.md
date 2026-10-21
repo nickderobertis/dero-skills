@@ -186,8 +186,13 @@ gate, coverage, real e2e, upgrade) and closes with the two automated gates:
    ```
 
    `--verify` reads the live branch protection, merge model, and fork-PR approval
-   back and exits non-zero on any divergence — so a repo can't pass while its
-   gating checks aren't actually required to merge.
+   back and exits non-zero on any divergence or failed read — so a repo can't
+   pass while its gating checks aren't actually required to merge. Fork-PR
+   approval exists on public repositories only: on a private or internal one the
+   script (apply and `--verify` alike) reads the visibility, skips that setting,
+   and reports `fork-PR approval: not applicable (private)` (or `(internal)`)
+   while still checking everything else. An offline `--dry-run` cannot read the
+   visibility, so pass `--visibility private|internal` there (default `public`).
 
 Fix failures until all are green — do not narrate them as next steps. The
 checker is silent on success and, on failure, names each missing invariant with
@@ -493,6 +498,8 @@ composer's `--intersection` choices automatically.
   [`references/ci.md`](./references/ci.md) via `gh`. `--verify` reports where the
   live repo-side state — which the filesystem checker can't see — diverges from
   the desired one, closing the gap where a repo passes every file gate while its
-  checks aren't actually required to merge. It refuses to apply (or verify)
+  checks aren't actually required to merge. Fork-PR approval is applied and
+  verified on public repositories only (`--visibility` sets it for an offline
+  `--dry-run`). It refuses to apply (or verify)
   governance that omits an `llmlint` required check — the mandated blocking
   LLM-judge tier — unless `--allow-missing-llmlint` is passed.
