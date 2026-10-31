@@ -110,6 +110,18 @@ def repository(tmp_path: Path, onevcs_bin: Path):
     return make
 
 
+@pytest.fixture
+def onetaskgraph(repository) -> Repository:
+    """onetaskgraph at its v0.12.13 release, read through `repository`'s replay."""
+    return repository("onetaskgraph-v0.12.13")
+
+
+@pytest.fixture
+def onepipeline(repository) -> Repository:
+    """onepipeline at its v0.72.0 release, read through `repository`'s replay."""
+    return repository("onepipeline-v0.72.0")
+
+
 def run_direct(repo: Repository, *args: str, **env: str):
     """The script run outside `check`, its result file kept: what it wrote, if any."""
     result = repo.root / "result.json"
@@ -391,10 +403,10 @@ def otg_reads(*runs: int) -> list[str]:
     ]
 
 
-def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(repository):
-    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
-    repo = repository("onetaskgraph-v0.12.13")
-    counted = measure_cd(repo)
+def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(
+    onetaskgraph,
+):
+    counted = measure_cd(onetaskgraph)
     # Unnamed, the warmer's two legs count: ci 8 + warmer 2 + Release-plz 1 +
     # Visual docs 0 (cancelled before a runner took a job) + Release 5.
     assert counted.job_count.actual == 16
@@ -403,10 +415,10 @@ def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(repositor
     assert "rust cache warm / warm (ubuntu-latest): 796s" in longest
     assert "  Windows: ci / check (windows-latest): 2738s" in longest
     assert counted.release_reads.actual == 3 + 1 + 5
-    assert jobs_request(OTG_WARMER, ONETASKGRAPH) in repo.replay.served()
+    assert jobs_request(OTG_WARMER, ONETASKGRAPH) in onetaskgraph.replay.served()
 
-    before = len(repo.replay.served())
-    named = measure_cd(repo, WARMER)
+    before = len(onetaskgraph.replay.served())
+    named = measure_cd(onetaskgraph, WARMER)
     assert named.job_count.actual == 14
     detail = named.job_count.detail
     assert not any(line.startswith("  rust cache warm") for line in detail), detail
@@ -422,17 +434,15 @@ def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(repositor
     reads = otg_reads(OTG_CI, OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
     release_detail = named.release_reads.detail
     assert [line.strip() for line in release_detail if line.startswith("  ")] == reads
-    assert sorted(set(repo.replay.served()[before:])) == sorted(reads)
+    assert sorted(set(onetaskgraph.replay.served()[before:])) == sorted(reads)
 
 
 def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alone(
-    repository,
+    onetaskgraph,
 ):
     # With ci's push re-run named too, what remains is what made and published the
     # release: Release-plz's one job and the five jobs of the Release it triggered.
-    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
-    repo = repository("onetaskgraph-v0.12.13")
-    named = measure_cd(repo, "ci", WARMER)
+    named = measure_cd(onetaskgraph, "ci", WARMER)
     assert named.job_count.actual == 1 + 5
     assert named.job_count.detail == [
         "6 jobs",
@@ -452,15 +462,13 @@ def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alo
     assert longest.detail[0] == "Release / build-linux-arm64: 819s"
     assert "  Windows: Release / build-windows: 742s" in longest.detail
     assert named.release_reads.actual == 3 + 1 + 3
-    assert sorted(set(repo.replay.served())) == sorted(
+    assert sorted(set(onetaskgraph.replay.served())) == sorted(
         otg_reads(OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
     )
 
 
-def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(repository):
-    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
-    repo = repository("onetaskgraph-v0.12.13")
-    result = repo.figure(
+def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(onetaskgraph):
+    result = onetaskgraph.figure(
         "job-count",
         "--stage",
         "cd",
@@ -471,12 +479,10 @@ def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(repository)
         GITHUB_RUN_ID=str(OTG_WARMER),
     )
     assert_within(result, 14)
-    assert jobs_request(OTG_WARMER, ONETASKGRAPH) not in repo.replay.served()
+    assert jobs_request(OTG_WARMER, ONETASKGRAPH) not in onetaskgraph.replay.served()
 
 
-def test_naming_every_run_at_the_release_commit_is_missing(repository):
-    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
-    repo = repository("onetaskgraph-v0.12.13")
+def test_naming_every_run_at_the_release_commit_is_missing(onetaskgraph):
     every = ["ci", WARMER, "Release-plz", "Visual docs", "Release"]
     excluded = [arg for name in every for arg in ("--exclude-workflow", name)]
     reason = (
@@ -484,20 +490,18 @@ def test_naming_every_run_at_the_release_commit_is_missing(repository):
         " is a workflow --exclude-workflow names"
     )
     args = ["job-count", "--stage", "cd", *OTG_RELEASE, *excluded]
-    assert_error(repo.figure(*args, unit="jobs"), reason)
-    assert_refused_writing_nothing(repo, args, reason)
-    assert not any("/jobs?" in request for request in repo.replay.served())
+    assert_error(onetaskgraph.figure(*args, unit="jobs"), reason)
+    assert_refused_writing_nothing(onetaskgraph, args, reason)
+    assert not any("/jobs?" in request for request in onetaskgraph.replay.served())
 
 
 @pytest.mark.parametrize("source", ["GITHUB_RUN_ID", "workflow_run payload"])
 def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
-    repository, tmp_path, source
+    onetaskgraph, tmp_path, source
 ):
     # Every workflow at the release commit is named, and the environment names one
     # of its runs again: the selection is still empty, so the figure is missing
     # rather than 0 jobs.
-    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
-    repo = repository("onetaskgraph-v0.12.13")
     if source == "GITHUB_RUN_ID":
         env = {"GITHUB_RUN_ID": str(OTG_WARMER)}
     else:
@@ -517,12 +521,12 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
         ("longest-job", "seconds"),
     ):
         args = [figure, "--stage", "cd", *OTG_RELEASE, *excluded]
-        assert_error(repo.figure(*args, unit=unit, **env), reason)
-        assert_refused_writing_nothing(repo, args, reason, **env)
+        assert_error(onetaskgraph.figure(*args, unit=unit, **env), reason)
+        assert_refused_writing_nothing(onetaskgraph, args, reason, **env)
     args = ["release-read-requests", *OTG_RELEASE, *excluded]
-    assert_error(repo.figure(*args, unit="requests", **env), reason)
-    assert_refused_writing_nothing(repo, args, reason, **env)
-    assert not any("/jobs?" in request for request in repo.replay.served())
+    assert_error(onetaskgraph.figure(*args, unit="requests", **env), reason)
+    assert_refused_writing_nothing(onetaskgraph, args, reason, **env)
+    assert not any("/jobs?" in request for request in onetaskgraph.replay.served())
 
 
 @pytest.mark.parametrize(
@@ -547,16 +551,14 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
     ],
 )
 def test_exclude_workflow_outside_the_cd_figures_is_an_invalid_invocation(
-    repository, args, reason
+    onepipeline, args, reason
 ):
-    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
-    repo = repository("onepipeline-v0.72.0")
-    done, written = run_direct(repo, *args)
+    done, written = run_direct(onepipeline, *args)
     assert done.returncode == 2, done
     assert f"actions-budget-figures: {reason}\n" in done.stderr, done.stderr
     assert "usage: scripts/actions-budget-figures.sh" in done.stderr, done.stderr
     assert written == ""
-    assert repo.replay.served() == []
+    assert onepipeline.replay.served() == []
 
 
 # --- v0.72.0: --stage pr and release-cycle-time --------------------------------
