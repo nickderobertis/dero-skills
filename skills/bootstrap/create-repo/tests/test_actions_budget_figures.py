@@ -524,6 +524,44 @@ def test_an_answer_the_script_cannot_trust_ends_it_writing_nothing(
     assert reason in done.stderr, done.stderr
 
 
+def commit_runs(*workflow_names: object) -> dict:
+    """One document answering both release-changes and commit-runs, as `handed`
+    serves every query the same answer: one push run per workflow name given."""
+    runs = [
+        {"id": index, "workflow_name": name, "event": "push"}
+        for index, name in enumerate(workflow_names, start=1)
+    ]
+    return release_changes() | {"runs": runs}
+
+
+NO_WORKFLOW_NAME = (
+    "onevcs host commit-runs answered a run with no workflow name, so "
+    "--exclude-workflow cannot be applied"
+)
+
+
+@pytest.mark.parametrize("name", [None, ""])
+@pytest.mark.parametrize(
+    "figure", [["job-count", "--stage", "cd"], ["release-read-requests"]]
+)
+def test_a_run_with_no_workflow_name_ends_an_exclusion_writing_nothing(
+    tmp_path, name, figure
+):
+    answer = commit_runs("Release", name)
+    args = [*figure, *RELEASE_ARGS, "--exclude-workflow", "warmer"]
+    done = handed(tmp_path, answer, *args)
+    assert done.returncode == 1, done
+    assert NO_WORKFLOW_NAME in done.stderr, done.stderr
+    assert "install an onevcs release" in done.stderr, done.stderr
+
+
+def test_without_an_exclusion_a_run_with_no_workflow_name_is_not_refused_for_it(
+    tmp_path,
+):
+    done = handed(tmp_path, commit_runs("Release", None), "job-count", "--stage", "cd")
+    assert NO_WORKFLOW_NAME not in done.stderr, done.stderr
+
+
 def test_a_release_payload_that_is_not_json_ends_it_naming_the_payload(tmp_path):
     payload = tmp_path / "event.json"
     payload.write_text("not json", encoding="utf-8")
