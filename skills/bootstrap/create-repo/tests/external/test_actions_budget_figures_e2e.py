@@ -468,6 +468,41 @@ def test_naming_every_run_at_the_release_commit_is_missing(repository):
     assert not any("/jobs?" in request for request in repo.replay.served())
 
 
+@pytest.mark.parametrize("source", ["GITHUB_RUN_ID", "workflow_run payload"])
+def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
+    repository, tmp_path, source
+):
+    # Every workflow at the release commit is named, and the environment names one
+    # of its runs again: the selection is still empty, so the figure is missing
+    # rather than 0 jobs.
+    repo = repository("onetaskgraph-v0.12.13")
+    if source == "GITHUB_RUN_ID":
+        env = {"GITHUB_RUN_ID": str(OTG_WARMER)}
+    else:
+        payload = tmp_path / "event.json"
+        payload.write_text(
+            json.dumps({"workflow_run": {"id": OTG_RELEASE_RUN}}), encoding="utf-8"
+        )
+        env = {"GITHUB_EVENT_PATH": str(payload)}
+    every = ["ci", WARMER, "Release-plz", "Visual docs", "Release"]
+    excluded = [arg for name in every for arg in ("--exclude-workflow", name)]
+    reason = (
+        f"missing: every push or release run at v0.12.13's commit {OTG_COMMIT}"
+        " is a workflow --exclude-workflow names"
+    )
+    for figure, unit in (
+        ("job-count", "jobs"),
+        ("longest-job", "seconds"),
+    ):
+        args = [figure, "--stage", "cd", *OTG_RELEASE, *excluded]
+        assert_error(repo.figure(*args, unit=unit, **env), reason)
+        assert_refused_writing_nothing(repo, args, reason, **env)
+    args = ["release-read-requests", *OTG_RELEASE, *excluded]
+    assert_error(repo.figure(*args, unit="requests", **env), reason)
+    assert_refused_writing_nothing(repo, args, reason, **env)
+    assert not any("/jobs?" in request for request in repo.replay.served())
+
+
 @pytest.mark.parametrize(
     ("args", "reason"),
     [

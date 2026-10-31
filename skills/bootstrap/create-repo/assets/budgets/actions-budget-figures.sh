@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 6
-# sha256: 05bc79c1067dc966cde6eb95971add8ee43ce82b943ffafd0fbe3e0abe0dc668
+# version: 7
+# sha256: ad33a62ae7d01e62a3c25910fcee1d4be8b37fea00237d96fa3ca2ead5765278
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -189,15 +189,21 @@ cd_selection() {
       die "the event payload $GITHUB_EVENT_PATH is not JSON"
     [ -z "$payload_run" ] || printf '%s\n' "$payload_run" >>"$work/runs"
   fi
-  [ -s "$work/runs" ] ||
-    missing "every push or release run at $release's commit $commit is a workflow --exclude-workflow names" \
-      "name with --exclude-workflow only the push workflows that deliver nothing, never the ones that make or publish the release"
+  # Ids to read: each once, never an excluded run's, however the environment names it.
+  : >"$work/read"
   while read -r id; do
     [[ "$id" =~ ^[0-9]+$ ]] || die "a run id must be a number, got: $id"
     case "$seen" in *" $id "*) continue ;; esac
     seen="$seen$id "
-    answers+=("$(fetch "run-jobs-$id" run-jobs --run "$id")") || exit 1
+    printf '%s\n' "$id" >>"$work/read"
   done <"$work/runs"
+  # Judged after exclusion and deduplication, before any job is read.
+  [ -s "$work/read" ] ||
+    missing "every push or release run at $release's commit $commit is a workflow --exclude-workflow names" \
+      "name with --exclude-workflow only the push workflows that deliver nothing, never the ones that make or publish the release"
+  while read -r id; do
+    answers+=("$(fetch "run-jobs-$id" run-jobs --run "$id")") || exit 1
+  done <"$work/read"
   jq -n --slurpfile rc "$rc" --slurpfile cr "$cr" --argjson out "$excluded" '
     [inputs] as $jobs
     | ($cr[0].runs | map({key: (.id | tostring), value: .}) | from_entries) as $at
