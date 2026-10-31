@@ -1,0 +1,32 @@
+{
+  "about": "Every response onetaskgraph v0.12.13's CD figures read: the release's three reads, the runs at its commit (ci, rust cache warm, Release-plz and Visual docs on push, Release on release), and the jobs of each. rust cache warm builds and saves the Rust cache pull requests restore and publishes nothing: the push workflow a repository names with --exclude-workflow.",
+  "serve": [
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-releases.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-compare-v0.12.12-v0.12.13.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-pulls-closed-page-1.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-runs-at-3b6b228f.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-run-41026640644-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-run-41026640695-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-run-41026640747-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-run-41026641128-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.12.13/onetaskgraph-run-41026720026-jobs.json"
+    }
+  ]
+}

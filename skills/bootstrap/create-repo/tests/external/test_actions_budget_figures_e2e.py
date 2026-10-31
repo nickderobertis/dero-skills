@@ -312,6 +312,195 @@ def test_the_job_running_the_script_is_counted_to_now_and_no_other_running_job(
     assert jobs_request(IN_PROGRESS_RUN) in repo.replay.served()
 
 
+# --- onetaskgraph v0.12.13: --exclude-workflow ----------------------------------
+
+ONETASKGRAPH = "nickderobertis/onetaskgraph"
+OTG_RELEASE = ["--release", "v0.12.13", "--repo", ONETASKGRAPH]
+OTG_COMMIT = "3b6b228f168ab17c94613a831e1eec96a225d949"
+# The push and release runs at v0.12.13's commit. rust cache warm builds and saves
+# the Rust cache pull requests restore on every push to main, so it runs at the
+# release commit and publishes nothing; ci re-runs the gate there.
+OTG_CI, OTG_WARMER, OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN = (
+    41026640644,
+    41026640695,
+    41026640747,
+    41026641128,
+    41026720026,
+)
+WARMER = "rust cache warm"
+OTG_RELEASE_CHANGES_REQUESTS = [
+    f"repos/{ONETASKGRAPH}/releases?per_page=100",
+    f"repos/{ONETASKGRAPH}/compare/v0.12.12...v0.12.13?per_page=100",
+    f"repos/{ONETASKGRAPH}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+]
+OTG_COMMIT_RUNS_REQUEST = (
+    f"repos/{ONETASKGRAPH}/actions/runs?per_page=100&head_sha={OTG_COMMIT}"
+)
+
+
+def otg_figures(*exclude: str) -> list[dict]:
+    """onetaskgraph's three CD budgets, each naming `exclude` as its commands would."""
+    excluded = [arg for name in exclude for arg in ("--exclude-workflow", name)]
+    return [
+        {
+            "id": "cd-job-count",
+            "args": ["job-count", "--stage", "cd", *OTG_RELEASE, *excluded],
+            "unit": "jobs",
+        },
+        {
+            "id": "cd-longest-job",
+            "args": ["longest-job", "--stage", "cd", *OTG_RELEASE, *excluded],
+            "unit": "seconds",
+        },
+        {
+            "id": "release-read-requests",
+            "args": ["release-read-requests", *OTG_RELEASE, *excluded],
+            "unit": "requests",
+        },
+    ]
+
+
+def otg_reads(*runs: int) -> list[str]:
+    return [
+        *OTG_RELEASE_CHANGES_REQUESTS,
+        OTG_COMMIT_RUNS_REQUEST,
+        *(jobs_request(run, ONETASKGRAPH) for run in runs),
+    ]
+
+
+def measure(repo: Repository, budgets: list[dict], **env: str) -> dict[str, dict]:
+    code, results, _ = repo.check(budgets, **env)
+    assert code == 0, results
+    return {result["id"]: result for result in results}
+
+
+def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(repository):
+    repo = repository("onetaskgraph-v0.12.13")
+    counted = measure(repo, otg_figures())
+    # Unnamed, the warmer's two legs count: ci 8 + warmer 2 + Release-plz 1 +
+    # Visual docs 0 (cancelled before a runner took a job) + Release 5.
+    assert counted["cd-job-count"]["actual"] == 16
+    assert "  rust cache warm: 2" in counted["cd-job-count"]["detail"].splitlines()
+    longest = counted["cd-longest-job"]["detail"].splitlines()
+    assert "rust cache warm / warm (ubuntu-latest): 796s" in longest
+    assert "  Windows: ci / check (windows-latest): 2738s" in longest
+    assert counted["release-read-requests"]["actual"] == 3 + 1 + 5
+    assert jobs_request(OTG_WARMER, ONETASKGRAPH) in repo.replay.served()
+
+    before = len(repo.replay.served())
+    named = measure(repo, otg_figures(WARMER))
+    assert named["cd-job-count"]["actual"] == 14
+    detail = named["cd-job-count"]["detail"].splitlines()
+    assert not any(line.startswith("  rust cache warm") for line in detail), detail
+    assert detail[-1] == (
+        f"left out by --exclude-workflow: rust cache warm (run {OTG_WARMER}, push)"
+    )
+    longest = named["cd-longest-job"]["detail"].splitlines()
+    assert named["cd-longest-job"]["actual"] == 4620  # ci / check (ubuntu-latest)
+    assert not any(line.startswith("rust cache warm /") for line in longest)
+    assert longest[-1] == detail[-1]
+    # The warmer's jobs are never read, so its read is no release read.
+    assert named["release-read-requests"]["actual"] == 3 + 1 + 4
+    reads = otg_reads(OTG_CI, OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
+    release_detail = named["release-read-requests"]["detail"].splitlines()
+    assert [line.strip() for line in release_detail if line.startswith("  ")] == reads
+    assert sorted(set(repo.replay.served()[before:])) == sorted(reads)
+
+
+def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alone(
+    repository,
+):
+    # With ci's push re-run named too, what remains is what made and published the
+    # release: Release-plz's one job and the five jobs of the Release it triggered.
+    repo = repository("onetaskgraph-v0.12.13")
+    named = measure(repo, otg_figures("ci", WARMER))
+    assert named["cd-job-count"]["actual"] == 1 + 5
+    assert named["cd-job-count"]["detail"].splitlines() == [
+        "6 jobs",
+        "per workflow:",
+        "  Release: 5",
+        "  Release-plz: 1",
+        "  Visual docs: 0",
+        "per runner OS:",
+        "  Linux: 4",
+        "  Windows: 1",
+        "  macOS: 1",
+        f"left out by --exclude-workflow: ci (run {OTG_CI}, push)",
+        f"left out by --exclude-workflow: rust cache warm (run {OTG_WARMER}, push)",
+    ]
+    longest = named["cd-longest-job"]
+    assert longest["actual"] == 819
+    assert longest["detail"].splitlines()[0] == "Release / build-linux-arm64: 819s"
+    assert "  Windows: Release / build-windows: 742s" in longest["detail"].splitlines()
+    assert named["release-read-requests"]["actual"] == 3 + 1 + 3
+    assert sorted(set(repo.replay.served())) == sorted(
+        otg_reads(OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
+    )
+
+
+def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(repository):
+    repo = repository("onetaskgraph-v0.12.13")
+    result = repo.figure(
+        "job-count",
+        "--stage",
+        "cd",
+        *OTG_RELEASE,
+        "--exclude-workflow",
+        WARMER,
+        unit="jobs",
+        GITHUB_RUN_ID=str(OTG_WARMER),
+    )
+    assert_within(result, 14)
+    assert jobs_request(OTG_WARMER, ONETASKGRAPH) not in repo.replay.served()
+
+
+def test_naming_every_run_at_the_release_commit_is_missing(repository):
+    repo = repository("onetaskgraph-v0.12.13")
+    every = ["ci", WARMER, "Release-plz", "Visual docs", "Release"]
+    excluded = [arg for name in every for arg in ("--exclude-workflow", name)]
+    reason = (
+        f"missing: every push or release run at v0.12.13's commit {OTG_COMMIT}"
+        " is a workflow --exclude-workflow names"
+    )
+    args = ["job-count", "--stage", "cd", *OTG_RELEASE, *excluded]
+    assert_error(repo.figure(*args, unit="jobs"), reason)
+    assert_refused_writing_nothing(repo, args, reason)
+    assert not any("/jobs?" in request for request in repo.replay.served())
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        (
+            ["job-count", "--stage", "pr", *RELEASE, "--exclude-workflow", "CI"],
+            "--exclude-workflow applies to the CD figures only, not --stage pr",
+        ),
+        (
+            ["release-cycle-time", *RELEASE, "--exclude-workflow", "CI"],
+            "release-cycle-time takes no --exclude-workflow",
+        ),
+        (
+            ["pr-read-requests", *RELEASE, "--exclude-workflow", "CI"],
+            "pr-read-requests takes no --exclude-workflow",
+        ),
+        (
+            ["job-count", "--stage", "cd", *RELEASE, "--exclude-workflow", ""],
+            "--exclude-workflow needs a value",
+        ),
+    ],
+)
+def test_exclude_workflow_outside_the_cd_figures_is_an_invalid_invocation(
+    repository, args, reason
+):
+    repo = repository("onepipeline-v0.72.0")
+    done, written = run_direct(repo, *args)
+    assert done.returncode == 2, done
+    assert f"actions-budget-figures: {reason}\n" in done.stderr, done.stderr
+    assert "usage: scripts/actions-budget-figures.sh" in done.stderr, done.stderr
+    assert written == ""
+    assert repo.replay.served() == []
+
+
 # --- v0.72.0: --stage pr and release-cycle-time --------------------------------
 
 

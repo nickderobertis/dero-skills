@@ -335,10 +335,10 @@ the script only applies the counting rules and the arithmetic. This section is
 the contract every repository's budget nodes name.
 
 ```
-scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
-scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
+scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
-scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME]
+scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
 ```
 
@@ -370,7 +370,20 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   `--stage cd` takes `commit-runs --commit <release commit> --event push --event
   release`, plus run `GITHUB_RUN_ID` when not among them, plus a `workflow_run`
   payload's `workflow_run.id`, each run's jobs from `run-jobs`; nothing is
-  attributed by a timing window. `--stage pr` takes each change's runs and jobs
+  attributed by a timing window.
+- **Delivery only: `--exclude-workflow NAME`.** A push workflow on the default
+  branch runs at the release commit whether or not it delivers anything, so the
+  CD figures (`--stage cd` and `release-read-requests`) leave out every run of a
+  workflow `--exclude-workflow` names, by the `workflow_name` onevcs's answers
+  carry; the option repeats, and its jobs are never read, nor added back as
+  `GITHUB_RUN_ID` or a payload's run. A repository passes its push workflows that
+  make and publish nothing — a cache warmer among them — in its CD budgets'
+  commands, and never the release-plz or
+  semantic-release run or the release workflow it triggers. The script names no
+  workflow of its own: without the option every push or release run counts.
+  `--stage pr` refuses the option (exit 2), and the detail of `longest-job` and
+  `job-count` ends with one `left out by --exclude-workflow: <workflow> (run
+  <id>, <event>)` line per run it left out. `--stage pr` takes each change's runs and jobs
   from `change-checks --change --head --merged-at`, and the figure is the largest
   over the pull requests.
 - **Figures.** `longest-job` (seconds): the longest counted job; detail lists
@@ -388,7 +401,8 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   read cost when it was made.
 - **Missing data is an error, never 0.** It exits 1 with `missing: …` and a
   `next: …` line saying what to do about it, writing nothing, when the release
-  commit has no `push` or `release` run, a commit maps to no merged pull request
+  commit has no `push` or `release` run (or `--exclude-workflow` names every
+  one), a commit maps to no merged pull request
   (`change: null`: a rebase-merged repository is refused), a pull request has no
   `pull_request` run, a selected run lists no job, or `longest-job` has no
   counted job. A run whose listed jobs were all skipped
