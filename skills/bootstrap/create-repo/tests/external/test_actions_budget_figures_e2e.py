@@ -163,12 +163,17 @@ def assert_refused_writing_nothing(
 
 # --- the figures jq works out from the raw recordings -------------------------
 
-DERIVE = r"""
+COUNTED = r"""
 def ts: fromdate;
 # Counted: completed, not skipped, and taken by a runner; seconds never below 0.
 def counted: select(.status == "completed" and .conclusion != "skipped"
                     and (.runner_name // "") != "")
   | . + {secs: ([(.completed_at | ts) - (.started_at | ts), 0] | max)};
+"""
+
+DERIVE = (
+    COUNTED
+    + r"""
 . as $r
 | [$r.compare.commits[].sha as $sha | $r.pulls[]
    | select(.merge_commit_sha == $sha and .merged_at != null)] as $prs
@@ -187,6 +192,7 @@ def counted: select(.status == "completed" and .conclusion != "skipped"
    cd_job_count: ([$r.release.workflow_runs[] | select(.event == "push" or .event == "release")
                    | $r.jobs[.id | tostring].jobs[] | counted] | length)}
 """
+)
 
 
 def derive(now: str) -> dict:
@@ -403,67 +409,120 @@ def otg_reads(*runs: int) -> list[str]:
     ]
 
 
+DERIVE_CD = (
+    COUNTED
+    + r"""
+# The CD selection: each push or release run at the commit whose workflow $out does
+# not name, and every job GitHub listed for it.
+[.runs.workflow_runs[]
+ | select((.event == "push" or .event == "release") and (.name | IN($out[]) | not))
+ | .id] as $ids
+| [$ids[] as $id | .jobs[$id | tostring].jobs[]] as $all
+| [$all[] | counted] as $jobs
+| ($jobs | max_by(.secs)) as $longest
+| {runs: $ids, job_count: ($jobs | length), longest_job: $longest.secs,
+   longest_line: "\($longest.workflow_name) / \($longest.name): \($longest.secs)s",
+   per_workflow: [$all | group_by(.workflow_name)[] | .[0].workflow_name as $w
+                  | "  \($w): \([$jobs[] | select(.workflow_name == $w)] | length)"]}
+"""
+)
+
+
+def derive_cd(*exclude: str) -> dict:
+    """v0.12.13's CD figures from the raw GitHub recordings, with jq and no onevcs."""
+    raw: dict = {"jobs": {}}
+    sidecar = json.loads(
+        (FIXTURES / "scenarios" / "onetaskgraph-v0.12.13.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for entry in sidecar["serve"]:
+        envelope = recording(entry["recording"])
+        url, body = envelope["request"]["url"], envelope["body"]
+        if "/jobs?" in url:
+            raw["jobs"][url.split("/runs/")[1].split("/")[0]] = body
+        elif f"head_sha={OTG_COMMIT}" in url:
+            raw["runs"] = body
+    done = subprocess.run(
+        ["jq", "--argjson", "out", json.dumps(list(exclude)), DERIVE_CD],
+        input=json.dumps(raw),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(done.stdout)
+
+
+def assert_cd_figures_are_derived(figures: CdFigures, *exclude: str) -> dict:
+    """The script's CD figures are the ones jq works out with `exclude` left out."""
+    derived = derive_cd(*exclude)
+    assert figures.job_count.actual == derived["job_count"]
+    per_workflow = figures.job_count.detail[2 : 2 + len(derived["per_workflow"])]
+    assert per_workflow == derived["per_workflow"], figures.job_count.detail
+    assert figures.longest_job.actual == derived["longest_job"]
+    assert figures.longest_job.detail[0] == derived["longest_line"]
+    reads = otg_reads(*derived["runs"])
+    assert figures.release_reads.actual == len(reads)
+    lines = figures.release_reads.detail
+    assert sorted(line.strip() for line in lines if line.startswith("  ")) == sorted(
+        reads
+    )
+    return derived
+
+
 def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(
     onetaskgraph,
 ):
     counted = measure_cd(onetaskgraph)
-    # Unnamed, the warmer's two legs count: ci 8 + warmer 2 + Release-plz 1 +
-    # Visual docs 0 (cancelled before a runner took a job) + Release 5.
-    assert counted.job_count.actual == 16
-    assert "  rust cache warm: 2" in counted.job_count.detail
-    longest = counted.longest_job.detail
-    assert "rust cache warm / warm (ubuntu-latest): 796s" in longest
-    assert "  Windows: ci / check (windows-latest): 2738s" in longest
-    assert counted.release_reads.actual == 3 + 1 + 5
+    derived = assert_cd_figures_are_derived(counted)
+    assert OTG_WARMER in derived["runs"]
+    assert any(line.startswith(f"  {WARMER}: ") for line in counted.job_count.detail)
+    assert any(
+        line.startswith(f"{WARMER} / ") for line in counted.longest_job.detail
+    ), "unnamed, the warmer's jobs are counted CD jobs"
     assert jobs_request(OTG_WARMER, ONETASKGRAPH) in onetaskgraph.replay.served()
 
     before = len(onetaskgraph.replay.served())
     named = measure_cd(onetaskgraph, WARMER)
-    assert named.job_count.actual == 14
-    detail = named.job_count.detail
-    assert not any(line.startswith("  rust cache warm") for line in detail), detail
-    assert detail[-1] == (
-        f"left out by --exclude-workflow: rust cache warm (run {OTG_WARMER}, push)"
-    )
-    longest = named.longest_job.detail
-    assert named.longest_job.actual == 4620  # ci / check (ubuntu-latest)
-    assert not any(line.startswith("rust cache warm /") for line in longest)
-    assert longest[-1] == detail[-1]
+    derived = assert_cd_figures_are_derived(named, WARMER)
+    assert derived["runs"] == [
+        OTG_RELEASE_RUN,
+        OTG_CI,
+        OTG_VISUAL_DOCS,
+        OTG_RELEASE_PLZ,
+    ]
+    assert named.job_count.actual < counted.job_count.actual
+    left_out = f"left out by --exclude-workflow: {WARMER} (run {OTG_WARMER}, push)"
+    for figure in (named.job_count, named.longest_job):
+        assert not any(WARMER in line for line in figure.detail[:-1]), figure.detail
+        assert figure.detail[-1] == left_out
     # The warmer's jobs are never read, so its read is no release read.
-    assert named.release_reads.actual == 3 + 1 + 4
-    reads = otg_reads(OTG_CI, OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
-    release_detail = named.release_reads.detail
-    assert [line.strip() for line in release_detail if line.startswith("  ")] == reads
-    assert sorted(set(onetaskgraph.replay.served()[before:])) == sorted(reads)
+    served = onetaskgraph.replay.served()[before:]
+    assert jobs_request(OTG_WARMER, ONETASKGRAPH) not in served
+    assert sorted(set(served)) == sorted(otg_reads(*derived["runs"]))
 
 
 def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alone(
     onetaskgraph,
 ):
     # With ci's push re-run named too, what remains is what made and published the
-    # release: Release-plz's one job and the five jobs of the Release it triggered.
+    # release: Release-plz, the Release it triggered, and Visual docs, whose push run
+    # was cancelled before a runner took any of its jobs.
     named = measure_cd(onetaskgraph, "ci", WARMER)
-    assert named.job_count.actual == 1 + 5
-    assert named.job_count.detail == [
-        "6 jobs",
-        "per workflow:",
-        "  Release: 5",
+    derived = assert_cd_figures_are_derived(named, "ci", WARMER)
+    assert derived["runs"] == [OTG_RELEASE_RUN, OTG_VISUAL_DOCS, OTG_RELEASE_PLZ]
+    assert derived["per_workflow"] == [
+        f"  Release: {derived['job_count'] - 1}",
         "  Release-plz: 1",
         "  Visual docs: 0",
-        "per runner OS:",
-        "  Linux: 4",
-        "  Windows: 1",
-        "  macOS: 1",
-        f"left out by --exclude-workflow: ci (run {OTG_CI}, push)",
-        f"left out by --exclude-workflow: rust cache warm (run {OTG_WARMER}, push)",
     ]
-    longest = named.longest_job
-    assert longest.actual == 819
-    assert longest.detail[0] == "Release / build-linux-arm64: 819s"
-    assert "  Windows: Release / build-windows: 742s" in longest.detail
-    assert named.release_reads.actual == 3 + 1 + 3
+    assert named.longest_job.detail[0].startswith("Release / ")
+    assert named.job_count.detail[-2:] == [
+        f"left out by --exclude-workflow: ci (run {OTG_CI}, push)",
+        f"left out by --exclude-workflow: {WARMER} (run {OTG_WARMER}, push)",
+    ]
     assert sorted(set(onetaskgraph.replay.served())) == sorted(
-        otg_reads(OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
+        otg_reads(*derived["runs"])
     )
 
 
@@ -478,7 +537,7 @@ def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(onetaskgrap
         unit="jobs",
         GITHUB_RUN_ID=str(OTG_WARMER),
     )
-    assert_within(result, 14)
+    assert_within(result, derive_cd(WARMER)["job_count"])
     assert jobs_request(OTG_WARMER, ONETASKGRAPH) not in onetaskgraph.replay.served()
 
 
