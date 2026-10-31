@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -312,7 +313,8 @@ def test_the_job_running_the_script_is_counted_to_now_and_no_other_running_job(
     assert jobs_request(IN_PROGRESS_RUN) in repo.replay.served()
 
 
-# --- onetaskgraph v0.12.13: --exclude-workflow ----------------------------------
+# onetaskgraph v0.12.13: the warmer is a push workflow at the release commit that
+# delivers nothing, so the CD figures leave it out once --exclude-workflow names it.
 
 ONETASKGRAPH = "nickderobertis/onetaskgraph"
 OTG_RELEASE = ["--release", "v0.12.13", "--repo", ONETASKGRAPH]
@@ -338,26 +340,47 @@ OTG_COMMIT_RUNS_REQUEST = (
 )
 
 
-def otg_figures(*exclude: str) -> list[dict]:
-    """onetaskgraph's three CD budgets, each naming `exclude` as its commands would."""
+@dataclass(frozen=True)
+class Figure:
+    """One budget's measured figure: its value and its detail, line by line."""
+
+    actual: float
+    detail: list[str]
+
+
+@dataclass(frozen=True)
+class CdFigures:
+    """onetaskgraph's three CD budgets, measured in one `onebudgetspec check`."""
+
+    job_count: Figure
+    longest_job: Figure
+    release_reads: Figure
+
+
+def measure_cd(repo: Repository, *exclude: str) -> CdFigures:
+    """The three CD figures, each budget's command naming `exclude` as onetaskgraph's would."""
     excluded = [arg for name in exclude for arg in ("--exclude-workflow", name)]
-    return [
-        {
-            "id": "cd-job-count",
-            "args": ["job-count", "--stage", "cd", *OTG_RELEASE, *excluded],
-            "unit": "jobs",
-        },
-        {
-            "id": "cd-longest-job",
-            "args": ["longest-job", "--stage", "cd", *OTG_RELEASE, *excluded],
-            "unit": "seconds",
-        },
+    stage = ["--stage", "cd", *OTG_RELEASE, *excluded]
+    budgets = [
+        {"id": "cd-job-count", "args": ["job-count", *stage], "unit": "jobs"},
+        {"id": "cd-longest-job", "args": ["longest-job", *stage], "unit": "seconds"},
         {
             "id": "release-read-requests",
             "args": ["release-read-requests", *OTG_RELEASE, *excluded],
             "unit": "requests",
         },
     ]
+    code, results, _ = repo.check(budgets)
+    assert code == 0, results
+    by_id = {
+        result["id"]: Figure(result["actual"], result["detail"].splitlines())
+        for result in results
+    }
+    return CdFigures(
+        job_count=by_id["cd-job-count"],
+        longest_job=by_id["cd-longest-job"],
+        release_reads=by_id["release-read-requests"],
+    )
 
 
 def otg_reads(*runs: int) -> list[str]:
@@ -368,41 +391,35 @@ def otg_reads(*runs: int) -> list[str]:
     ]
 
 
-def measure(repo: Repository, budgets: list[dict], **env: str) -> dict[str, dict]:
-    code, results, _ = repo.check(budgets, **env)
-    assert code == 0, results
-    return {result["id"]: result for result in results}
-
-
 def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(repository):
     repo = repository("onetaskgraph-v0.12.13")
-    counted = measure(repo, otg_figures())
+    counted = measure_cd(repo)
     # Unnamed, the warmer's two legs count: ci 8 + warmer 2 + Release-plz 1 +
     # Visual docs 0 (cancelled before a runner took a job) + Release 5.
-    assert counted["cd-job-count"]["actual"] == 16
-    assert "  rust cache warm: 2" in counted["cd-job-count"]["detail"].splitlines()
-    longest = counted["cd-longest-job"]["detail"].splitlines()
+    assert counted.job_count.actual == 16
+    assert "  rust cache warm: 2" in counted.job_count.detail
+    longest = counted.longest_job.detail
     assert "rust cache warm / warm (ubuntu-latest): 796s" in longest
     assert "  Windows: ci / check (windows-latest): 2738s" in longest
-    assert counted["release-read-requests"]["actual"] == 3 + 1 + 5
+    assert counted.release_reads.actual == 3 + 1 + 5
     assert jobs_request(OTG_WARMER, ONETASKGRAPH) in repo.replay.served()
 
     before = len(repo.replay.served())
-    named = measure(repo, otg_figures(WARMER))
-    assert named["cd-job-count"]["actual"] == 14
-    detail = named["cd-job-count"]["detail"].splitlines()
+    named = measure_cd(repo, WARMER)
+    assert named.job_count.actual == 14
+    detail = named.job_count.detail
     assert not any(line.startswith("  rust cache warm") for line in detail), detail
     assert detail[-1] == (
         f"left out by --exclude-workflow: rust cache warm (run {OTG_WARMER}, push)"
     )
-    longest = named["cd-longest-job"]["detail"].splitlines()
-    assert named["cd-longest-job"]["actual"] == 4620  # ci / check (ubuntu-latest)
+    longest = named.longest_job.detail
+    assert named.longest_job.actual == 4620  # ci / check (ubuntu-latest)
     assert not any(line.startswith("rust cache warm /") for line in longest)
     assert longest[-1] == detail[-1]
     # The warmer's jobs are never read, so its read is no release read.
-    assert named["release-read-requests"]["actual"] == 3 + 1 + 4
+    assert named.release_reads.actual == 3 + 1 + 4
     reads = otg_reads(OTG_CI, OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
-    release_detail = named["release-read-requests"]["detail"].splitlines()
+    release_detail = named.release_reads.detail
     assert [line.strip() for line in release_detail if line.startswith("  ")] == reads
     assert sorted(set(repo.replay.served()[before:])) == sorted(reads)
 
@@ -413,9 +430,9 @@ def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alo
     # With ci's push re-run named too, what remains is what made and published the
     # release: Release-plz's one job and the five jobs of the Release it triggered.
     repo = repository("onetaskgraph-v0.12.13")
-    named = measure(repo, otg_figures("ci", WARMER))
-    assert named["cd-job-count"]["actual"] == 1 + 5
-    assert named["cd-job-count"]["detail"].splitlines() == [
+    named = measure_cd(repo, "ci", WARMER)
+    assert named.job_count.actual == 1 + 5
+    assert named.job_count.detail == [
         "6 jobs",
         "per workflow:",
         "  Release: 5",
@@ -428,11 +445,11 @@ def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alo
         f"left out by --exclude-workflow: ci (run {OTG_CI}, push)",
         f"left out by --exclude-workflow: rust cache warm (run {OTG_WARMER}, push)",
     ]
-    longest = named["cd-longest-job"]
-    assert longest["actual"] == 819
-    assert longest["detail"].splitlines()[0] == "Release / build-linux-arm64: 819s"
-    assert "  Windows: Release / build-windows: 742s" in longest["detail"].splitlines()
-    assert named["release-read-requests"]["actual"] == 3 + 1 + 3
+    longest = named.longest_job
+    assert longest.actual == 819
+    assert longest.detail[0] == "Release / build-linux-arm64: 819s"
+    assert "  Windows: Release / build-windows: 742s" in longest.detail
+    assert named.release_reads.actual == 3 + 1 + 3
     assert sorted(set(repo.replay.served())) == sorted(
         otg_reads(OTG_RELEASE_PLZ, OTG_VISUAL_DOCS, OTG_RELEASE_RUN)
     )
