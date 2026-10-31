@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 8
-# sha256: d1b605c13430d7d86fdf16ff5341a577a1fae070c9a37518098778a6ccd2a4dd
+# version: 9
+# sha256: a29faecd791ba75ea38eb9a9940686416205ab0a4bb6c0edeba479e8129b7aaf
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -166,7 +166,7 @@ release_changes() {
 }
 
 cd_selection() {
-  local rc cr commit id payload_run seen answers=()
+  local rc cr commit id payload_run seen ids=() answers=()
   rc=$(release_changes) || exit 1
   commit=$(jq -r .commit "$rc")
   [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "onevcs host release-changes answered no commit SHA: $commit"
@@ -174,6 +174,10 @@ cd_selection() {
   [ "$(jq '.runs | length' "$cr")" -gt 0 ] ||
     missing "no push or release run at $release's commit $commit" \
       "check that --release names the tag this repository's CD built, and that its CD workflows run on push or release"
+  # A run is excluded by its workflow name, so with --exclude-workflow given every run
+  # must carry one: a run without it would be counted however it was named.
+  [ "$excluded" = '[]' ] || jq -e '.runs | all(.workflow_name | type == "string" and . != "")' "$cr" >/dev/null ||
+    die "onevcs host commit-runs answered a run with no workflow name, so --exclude-workflow cannot be applied: install an onevcs release whose \`onevcs host commit-runs\` names each run's workflow, or name one in ONEVCS"
   # Delivery: every push or release run at the commit, except the runs of a workflow
   # --exclude-workflow names, which count toward no CD figure and whose jobs are not
   # read (`seen` holds them, so neither GITHUB_RUN_ID nor a payload adds one back).
@@ -189,20 +193,19 @@ cd_selection() {
     [ -z "$payload_run" ] || printf '%s\n' "$payload_run" >>"$work/runs"
   fi
   # Ids to read: each once, never an excluded run's, however the environment names it.
-  : >"$work/read"
   while read -r id; do
     [[ "$id" =~ ^[0-9]+$ ]] || die "a run id must be a number, got: $id"
     case "$seen" in *" $id "*) continue ;; esac
     seen="$seen$id "
-    printf '%s\n' "$id" >>"$work/read"
+    ids+=("$id")
   done <"$work/runs"
   # Judged after exclusion and deduplication, before any job is read.
-  [ -s "$work/read" ] ||
+  [ "${#ids[@]}" -gt 0 ] ||
     missing "every push or release run at $release's commit $commit is a workflow --exclude-workflow names" \
       "name with --exclude-workflow only the push workflows that deliver nothing, never the ones that make or publish the release"
-  while read -r id; do
+  for id in "${ids[@]}"; do
     answers+=("$(fetch "run-jobs-$id" run-jobs --run "$id")") || exit 1
-  done <"$work/read"
+  done
   jq -n --slurpfile rc "$rc" --slurpfile cr "$cr" --argjson out "$excluded" '
     [inputs] as $jobs
     | ($cr[0].runs | map({key: (.id | tostring), value: .}) | from_entries) as $at

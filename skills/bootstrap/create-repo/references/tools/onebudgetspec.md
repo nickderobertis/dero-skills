@@ -385,6 +385,8 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   commands, and never the release-plz or
   semantic-release run or the release workflow it triggers. The script names no
   workflow of its own: without the option every push or release run counts.
+  With the option given, a run at the release commit whose `workflow_name` is
+  missing or empty ends the figure (exit 1), since it could not be told apart.
   `--stage pr` refuses the option (exit 2), and the detail of `longest-job` and
   `job-count` ends with one `left out by --exclude-workflow: <workflow> (run
   <id>, <event>)` line per run it left out.
