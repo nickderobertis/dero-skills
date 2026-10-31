@@ -332,7 +332,9 @@ one script this skill owns,
 [`assets/budgets/actions-budget-figures.sh`](../../assets/budgets/actions-budget-figures.sh).
 onevcs's read-only `onevcs host` queries select the runs, jobs and pull requests;
 the script only applies the counting rules and the arithmetic. This section is
-the contract every repository's budget nodes name.
+the contract every repository's budget nodes name. The usage block below is the
+script's own header usage, line for line; `test_actions_budget_figures.py` fails
+when the two differ.
 
 ```
 scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
@@ -370,7 +372,9 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   `--stage cd` takes `commit-runs --commit <release commit> --event push --event
   release`, plus run `GITHUB_RUN_ID` when not among them, plus a `workflow_run`
   payload's `workflow_run.id`, each run's jobs from `run-jobs`; nothing is
-  attributed by a timing window.
+  attributed by a timing window. `--stage pr` takes each change's runs and jobs
+  from `change-checks --change --head --merged-at`, and the figure is the largest
+  over the pull requests.
 - **Delivery only: `--exclude-workflow NAME`.** A push workflow on the default
   branch runs at the release commit whether or not it delivers anything, so the
   CD figures (`--stage cd` and `release-read-requests`) leave out every run of a
@@ -383,9 +387,7 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   workflow of its own: without the option every push or release run counts.
   `--stage pr` refuses the option (exit 2), and the detail of `longest-job` and
   `job-count` ends with one `left out by --exclude-workflow: <workflow> (run
-  <id>, <event>)` line per run it left out. `--stage pr` takes each change's runs and jobs
-  from `change-checks --change --head --merged-at`, and the figure is the largest
-  over the pull requests.
+  <id>, <event>)` line per run it left out.
 - **Figures.** `longest-job` (seconds): the longest counted job; detail lists
   every counted job as `<workflow> / <job name>: <s>s`, longest first, then the
   longest per runner OS. `job-count` (jobs): counted jobs, each matrix leg one;

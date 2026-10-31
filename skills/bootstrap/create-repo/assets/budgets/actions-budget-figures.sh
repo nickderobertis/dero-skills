@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 7
-# sha256: ad33a62ae7d01e62a3c25910fcee1d4be8b37fea00237d96fa3ca2ead5765278
+# version: 8
+# sha256: d1b605c13430d7d86fdf16ff5341a577a1fae070c9a37518098778a6ccd2a4dd
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
 # onevcs selects the runs, jobs and pull requests; this script only applies the
 # counting rules and the arithmetic. The contract is the "GitHub Actions budget
-# figures" section of create-repo's references/tools/onebudgetspec.md.
+# figures" section of create-repo's references/tools/onebudgetspec.md, whose usage
+# block the skill's tests hold to the lines below.
 #
 #   scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
 #   scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
@@ -16,12 +17,8 @@
 #   scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME] [--exclude-workflow NAME]...
 #   scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
 #
-# The CD figures (--stage cd and release-read-requests) count every push or release
-# run at the release commit, except the runs of a workflow --exclude-workflow names,
-# by the workflow name onevcs's answers carry: those count toward none of them and
-# their jobs are never read. A repository names there its push workflows that
-# deliver nothing, a cache warmer among them, in its budgets' commands; this script
-# names no workflow of its own, so without the option every such run counts.
+# This script names no workflow of its own: which push workflows deliver nothing is
+# each repository's to say, with --exclude-workflow in its CD budgets' commands.
 #
 # Needs bash, jq and `onevcs` (or the binary `ONEVCS` names). Exit 0 wrote the
 # figure to ONEBUDGETSPEC_RESULT; 1 is missing data or a failed read, with the
@@ -87,12 +84,14 @@ done
 case "$takes" in
   stage*) case "$stage" in pr | cd) ;; *) usage "$figure needs --stage pr or --stage cd" ;; esac ;;
 esac
-[ "$stage" != pr ] || [ ${#excludes[@]} -eq 0 ] ||
+[ "$stage" != pr ] || [ "${#excludes[@]}" -eq 0 ] ||
   usage "--exclude-workflow applies to the CD figures only, not --stage pr"
 
 command -v jq >/dev/null 2>&1 || die "jq is not on PATH: install jq (https://jqlang.org) where this figure is measured"
-# The workflow names --exclude-workflow gave, as a JSON array.
-excluded=$(jq -cn '$ARGS.positional' --args ${excludes[@]+"${excludes[@]}"})
+# The workflow names --exclude-workflow gave, as a JSON array. An empty array is
+# never expanded: bash before 4.4 calls that an unbound variable under `set -u`.
+excluded='[]'
+[ "${#excludes[@]}" -eq 0 ] || excluded=$(jq -cn '$ARGS.positional' --args "${excludes[@]}")
 onevcs=${ONEVCS:-onevcs}
 command -v "$onevcs" >/dev/null 2>&1 ||
   die "onevcs is not on PATH (install a release carrying \`onevcs host\`, or name the binary in ONEVCS)"

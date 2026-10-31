@@ -392,6 +392,7 @@ def otg_reads(*runs: int) -> list[str]:
 
 
 def test_a_cache_warmer_counts_toward_the_cd_figures_until_it_is_named(repository):
+    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
     repo = repository("onetaskgraph-v0.12.13")
     counted = measure_cd(repo)
     # Unnamed, the warmer's two legs count: ci 8 + warmer 2 + Release-plz 1 +
@@ -429,6 +430,7 @@ def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alo
 ):
     # With ci's push re-run named too, what remains is what made and published the
     # release: Release-plz's one job and the five jobs of the Release it triggered.
+    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
     repo = repository("onetaskgraph-v0.12.13")
     named = measure_cd(repo, "ci", WARMER)
     assert named.job_count.actual == 1 + 5
@@ -456,6 +458,7 @@ def test_naming_every_push_workflow_that_delivers_nothing_leaves_the_release_alo
 
 
 def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(repository):
+    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
     repo = repository("onetaskgraph-v0.12.13")
     result = repo.figure(
         "job-count",
@@ -472,6 +475,7 @@ def test_a_named_workflow_is_not_added_back_as_the_run_the_job_is_in(repository)
 
 
 def test_naming_every_run_at_the_release_commit_is_missing(repository):
+    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
     repo = repository("onetaskgraph-v0.12.13")
     every = ["ci", WARMER, "Release-plz", "Visual docs", "Release"]
     excluded = [arg for name in every for arg in ("--exclude-workflow", name)]
@@ -492,6 +496,7 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
     # Every workflow at the release commit is named, and the environment names one
     # of its runs again: the selection is still empty, so the figure is missing
     # rather than 0 jobs.
+    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
     repo = repository("onetaskgraph-v0.12.13")
     if source == "GITHUB_RUN_ID":
         env = {"GITHUB_RUN_ID": str(OTG_WARMER)}
@@ -544,6 +549,7 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
 def test_exclude_workflow_outside_the_cd_figures_is_an_invalid_invocation(
     repository, args, reason
 ):
+    # llmlint: ignore[e2e_not_mocked] the replay is the one doubled boundary, as the `repository` fixture's directive says: GitHub's recorded responses, with onebudgetspec, jq, the script and the released onevcs all run for real.
     repo = repository("onepipeline-v0.72.0")
     done, written = run_direct(repo, *args)
     assert done.returncode == 2, done
