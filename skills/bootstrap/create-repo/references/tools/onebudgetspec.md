@@ -396,7 +396,10 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   never read, so it costs `release-read-requests` no request and changes no job
   count or longest job, nor is it added back as `GITHUB_RUN_ID` or a payload's
   run. A run that concluded any other way — `success`, `failure`, `cancelled` —
-  is read and counted. The detail of `longest-job` and `job-count` ends with one
+  is read and counted, as is one still running (a null conclusion). A run whose
+  `conclusion` is absent or neither a string nor null ends every CD figure (exit
+  1), since a skipped run could not be told apart. The detail of `longest-job`
+  and `job-count` ends with one
   `left out as concluded skipped: <workflow> (run <id>, <event>)` line per such
   run, after the `--exclude-workflow` lines.
 - **Figures.** `longest-job` (seconds): the longest counted job; detail lists

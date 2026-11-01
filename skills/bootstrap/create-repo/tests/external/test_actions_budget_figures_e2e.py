@@ -379,7 +379,6 @@ def measure_cd(
     repo: Repository,
     *exclude: str,
     release: list[str] = OTG_RELEASE,
-    read_budget: int = 10**9,
 ) -> CdFigures:
     """The three CD figures, each budget's command naming `exclude` as onetaskgraph's would."""
     excluded = [arg for name in exclude for arg in ("--exclude-workflow", name)]
@@ -391,7 +390,6 @@ def measure_cd(
             "id": "release-read-requests",
             "args": ["release-read-requests", *release, *excluded],
             "unit": "requests",
-            "threshold": read_budget,
         },
     ]
     code, results, _ = repo.check(budgets)
@@ -598,9 +596,9 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
 
 
 # onetaskgraph v0.13.0: Visual docs' push run at the release commit concluded
-# skipped, every job skipped by its condition. Reading its jobs put the release's
-# read requests at 7 against its budget of 6; a skipped run ran nothing, so no CD
-# figure reads or counts it. Release itself concluded failure and is still read.
+# skipped, every job skipped by its condition. Reading its jobs spent one release
+# read on a run that ran nothing and failed the release; no CD figure reads or
+# counts it now. Release itself concluded failure and is still read.
 
 OTG13_RELEASE = ["--release", "v0.13.0", "--repo", ONETASKGRAPH]
 OTG13_COMMIT = "c6adfa0d0fa7eaa7bc4f3588364d003fd893f418"
@@ -610,7 +608,9 @@ OTG13_WARMER, OTG13_RELEASE_PLZ, OTG13_SKIPPED, OTG13_RELEASE_RUN = (
     41252214397,
     41252264998,
 )
-OTG13_READS = [
+# The release's three release-changes reads and its commit's runs listing: every
+# read but the jobs of the runs counted.
+OTG13_LISTING_READS = [
     f"repos/{ONETASKGRAPH}/releases?per_page=100",
     f"repos/{ONETASKGRAPH}/compare/v0.12.14...v0.13.0?per_page=100",
     f"repos/{ONETASKGRAPH}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
@@ -627,22 +627,28 @@ def onetaskgraph_v0_13_0(repository) -> Repository:
     return repository("onetaskgraph-v0.13.0")
 
 
+# The reads a v0.13.0 CD figure makes with the warmer named: the listings, then
+# the jobs of the two runs counted, Release and Release-plz.
+OTG13_READS = [
+    *OTG13_LISTING_READS,
+    jobs_request(OTG13_RELEASE_RUN, ONETASKGRAPH),
+    jobs_request(OTG13_RELEASE_PLZ, ONETASKGRAPH),
+]
+
+
 def test_a_run_concluded_skipped_costs_no_read_and_adds_no_cd_job(
     onetaskgraph_v0_13_0,
 ):
     repo = onetaskgraph_v0_13_0
-    # Measured as onetaskgraph's CD budgets are: the warmer named, reads held to 6.
-    figures = measure_cd(repo, WARMER, release=OTG13_RELEASE, read_budget=6)
+    # Measured as onetaskgraph's CD budgets are, the warmer named.
+    figures = measure_cd(repo, WARMER, release=OTG13_RELEASE)
 
-    reads = [
-        *OTG13_READS,
-        jobs_request(OTG13_RELEASE_RUN, ONETASKGRAPH),
-        jobs_request(OTG13_RELEASE_PLZ, ONETASKGRAPH),
-    ]
+    reads = OTG13_READS
     served = repo.replay.served()
     assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in served
     assert sorted(set(served)) == sorted(reads)
-    assert figures.release_reads.actual == len(reads) == 6
+    # One request per distinct read: the skipped run's jobs read is not among them.
+    assert figures.release_reads.actual == len(reads)
     lines = figures.release_reads.detail
     assert sorted(line.strip() for line in lines if line.startswith("  ")) == sorted(
         reads
@@ -667,24 +673,43 @@ def test_a_run_concluded_skipped_costs_no_read_and_adds_no_cd_job(
     assert any(line.startswith("  Release: ") for line in figures.job_count.detail)
 
 
+@pytest.mark.parametrize("source", ["GITHUB_RUN_ID", "workflow_run payload"])
+@pytest.mark.parametrize(
+    ("figure", "unit"),
+    [
+        (["job-count", "--stage", "cd"], "jobs"),
+        (["longest-job", "--stage", "cd"], "seconds"),
+        (["release-read-requests"], "requests"),
+    ],
+)
 def test_a_skipped_run_the_environment_names_is_not_read(
-    onetaskgraph_v0_13_0, tmp_path
+    onetaskgraph_v0_13_0, tmp_path, source, figure, unit
 ):
+    # The environment names the skipped run, as it would were the figures measured
+    # in that run or in a workflow_run it triggered: it is still neither read nor
+    # counted, so every figure is what the listing's own selection gives.
     repo = onetaskgraph_v0_13_0
-    payload = tmp_path / "event.json"
-    payload.write_text(
-        json.dumps({"workflow_run": {"id": OTG13_SKIPPED}}), encoding="utf-8"
-    )
-    result = repo.figure(
-        "release-read-requests",
-        *OTG13_RELEASE,
-        "--exclude-workflow",
-        WARMER,
-        unit="requests",
-        GITHUB_EVENT_PATH=str(payload),
-    )
-    assert_within(result, 6)
-    assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in repo.replay.served()
+    if source == "GITHUB_RUN_ID":
+        env = {"GITHUB_RUN_ID": str(OTG13_SKIPPED)}
+    else:
+        payload = tmp_path / "event.json"
+        payload.write_text(
+            json.dumps({"workflow_run": {"id": OTG13_SKIPPED}}), encoding="utf-8"
+        )
+        env = {"GITHUB_EVENT_PATH": str(payload)}
+    args = [*figure, *OTG13_RELEASE, "--exclude-workflow", WARMER]
+    result = repo.figure(*args, unit=unit, **env)
+
+    served = repo.replay.served()
+    assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in served
+    assert sorted(set(served)) == sorted(OTG13_READS)
+    derived = derive_cd(WARMER, scenario="onetaskgraph-v0.13.0", commit=OTG13_COMMIT)
+    expected = {
+        "jobs": derived["job_count"],
+        "seconds": derived["longest_job"],
+        "requests": len(OTG13_READS),
+    }[unit]
+    assert_within(result, expected)
 
 
 def test_every_run_skipped_or_named_at_the_release_commit_is_missing(
@@ -699,6 +724,7 @@ def test_every_run_skipped_or_named_at_the_release_commit_is_missing(
     )
     for args, unit in (
         (["job-count", "--stage", "cd", *OTG13_RELEASE, *excluded], "jobs"),
+        (["longest-job", "--stage", "cd", *OTG13_RELEASE, *excluded], "seconds"),
         (["release-read-requests", *OTG13_RELEASE, *excluded], "requests"),
     ):
         assert_error(repo.figure(*args, unit=unit), reason)

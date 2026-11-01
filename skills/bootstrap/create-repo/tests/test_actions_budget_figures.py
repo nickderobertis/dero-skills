@@ -524,11 +524,13 @@ def test_an_answer_the_script_cannot_trust_ends_it_writing_nothing(
     assert reason in done.stderr, done.stderr
 
 
-def commit_runs(*workflow_names: object) -> dict:
+def commit_runs(*workflow_names: object, **run: object) -> dict:
     """One document answering both release-changes and commit-runs, as `handed`
-    serves every query the same answer: one push run per workflow name given."""
+    serves every query the same answer: one push run per workflow name given,
+    concluded success and updated with `run`."""
     runs = [
-        {"id": index, "workflow_name": name, "event": "push"}
+        {"id": index, "workflow_name": name, "event": "push", "conclusion": "success"}
+        | run
         for index, name in enumerate(workflow_names, start=1)
     ]
     return release_changes() | {"runs": runs}
@@ -560,6 +562,47 @@ def test_without_an_exclusion_a_run_with_no_workflow_name_is_not_refused_for_it(
 ):
     done = handed(tmp_path, commit_runs("Release", None), "job-count", "--stage", "cd")
     assert NO_WORKFLOW_NAME not in done.stderr, done.stderr
+
+
+NO_CONCLUSION = (
+    "onevcs host commit-runs answered a run with no conclusion, so a run "
+    "concluded skipped cannot be left out"
+)
+
+
+def no_conclusion() -> dict:
+    """A commit-runs answer whose one run carries no conclusion field at all."""
+    answer = commit_runs("Release")
+    del answer["runs"][0]["conclusion"]
+    return answer
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [no_conclusion(), commit_runs("Release", conclusion=0)],
+    ids=["absent", "not-a-string"],
+)
+@pytest.mark.parametrize(
+    "figure",
+    [
+        ["job-count", "--stage", "cd"],
+        ["longest-job", "--stage", "cd"],
+        ["release-read-requests"],
+    ],
+)
+def test_a_run_with_no_conclusion_ends_a_cd_figure_writing_nothing(
+    tmp_path, answer, figure
+):
+    done = handed(tmp_path, answer, *figure, *RELEASE_ARGS)
+    assert done.returncode == 1, done
+    assert NO_CONCLUSION in done.stderr, done.stderr
+    assert "install an onevcs release" in done.stderr, done.stderr
+
+
+def test_a_run_still_in_progress_is_not_refused_for_its_null_conclusion(tmp_path):
+    answer = commit_runs("Release", conclusion=None)
+    done = handed(tmp_path, answer, "job-count", "--stage", "cd", *RELEASE_ARGS)
+    assert NO_CONCLUSION not in done.stderr, done.stderr
 
 
 def test_a_release_payload_that_is_not_json_ends_it_naming_the_payload(tmp_path):

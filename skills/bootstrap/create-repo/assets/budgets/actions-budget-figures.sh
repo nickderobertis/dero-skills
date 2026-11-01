@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 10
-# sha256: 6ab5b865fc9e885d3602a41f2a15195dd63e6bf4d82e8e9eaff067df9e5211dd
+# sha256: 13ac7d79aaa3902dc7cfe87449283a05ba397fbc0612701e9b788ed59daf438d
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -180,6 +180,11 @@ cd_selection() {
   # must carry one: a run without it would be counted however it was named.
   [ "$excluded" = '[]' ] || jq -e '.runs | all(.workflow_name | type == "string" and . != "")' "$cr" >/dev/null ||
     die "onevcs host commit-runs answered a run with no workflow name, so --exclude-workflow cannot be applied: install an onevcs release whose \`onevcs host commit-runs\` names each run's workflow, or name one in ONEVCS"
+  # A run is left out as skipped by its conclusion, so every run must carry one: a
+  # string once it completed, null while it runs. A run without it would be read and
+  # counted however it concluded.
+  jq -e '.runs | all(has("conclusion") and (.conclusion | type == "string" or type == "null"))' "$cr" >/dev/null ||
+    die "onevcs host commit-runs answered a run with no conclusion, so a run concluded skipped cannot be left out: install an onevcs release whose \`onevcs host commit-runs\` reports each run's conclusion, or name one in ONEVCS"
   # Delivery: every push or release run at the commit, except the runs of a workflow
   # --exclude-workflow names and the runs the listing reports concluded `skipped`
   # (every job skipped by its condition, so the run ran nothing). Neither counts
