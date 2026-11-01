@@ -375,16 +375,20 @@ class CdFigures:
     release_reads: Figure
 
 
-def measure_cd(repo: Repository, *exclude: str) -> CdFigures:
+def measure_cd(
+    repo: Repository,
+    *exclude: str,
+    release: list[str] = OTG_RELEASE,
+) -> CdFigures:
     """The three CD figures, each budget's command naming `exclude` as onetaskgraph's would."""
     excluded = [arg for name in exclude for arg in ("--exclude-workflow", name)]
-    stage = ["--stage", "cd", *OTG_RELEASE, *excluded]
+    stage = ["--stage", "cd", *release, *excluded]
     budgets = [
         {"id": "cd-job-count", "args": ["job-count", *stage], "unit": "jobs"},
         {"id": "cd-longest-job", "args": ["longest-job", *stage], "unit": "seconds"},
         {
             "id": "release-read-requests",
-            "args": ["release-read-requests", *OTG_RELEASE, *excluded],
+            "args": ["release-read-requests", *release, *excluded],
             "unit": "requests",
         },
     ]
@@ -428,20 +432,23 @@ DERIVE_CD = (
 )
 
 
-def derive_cd(*exclude: str) -> dict:
-    """v0.12.13's CD figures from the raw GitHub recordings, with jq and no onevcs."""
+def derive_cd(
+    *exclude: str, scenario: str = "onetaskgraph-v0.12.13", commit: str = OTG_COMMIT
+) -> dict:
+    """A release's CD figures from the raw GitHub recordings, with jq and no onevcs.
+
+    Every push or release run is taken, whatever its conclusion, so a run the
+    script leaves out as concluded skipped is still derived here."""
     raw: dict = {"jobs": {}}
     sidecar = json.loads(
-        (FIXTURES / "scenarios" / "onetaskgraph-v0.12.13.json").read_text(
-            encoding="utf-8"
-        )
+        (FIXTURES / "scenarios" / f"{scenario}.json").read_text(encoding="utf-8")
     )
     for entry in sidecar["serve"]:
         envelope = recording(entry["recording"])
         url, body = envelope["request"]["url"], envelope["body"]
         if "/jobs?" in url:
             raw["jobs"][url.split("/runs/")[1].split("/")[0]] = body
-        elif f"head_sha={OTG_COMMIT}" in url:
+        elif f"head_sha={commit}" in url:
             raw["runs"] = body
     done = subprocess.run(
         ["jq", "--argjson", "out", json.dumps(list(exclude)), DERIVE_CD],
@@ -586,6 +593,168 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
     assert_error(onetaskgraph.figure(*args, unit="requests", **env), reason)
     assert_refused_writing_nothing(onetaskgraph, args, reason, **env)
     assert not any("/jobs?" in request for request in onetaskgraph.replay.served())
+
+
+# onetaskgraph v0.13.0: Visual docs' push run at the release commit concluded
+# skipped, every job skipped by its condition, so no CD figure reads or counts it.
+# Release concluded failure, and is read and counted.
+
+OTG13_RELEASE = ["--release", "v0.13.0", "--repo", ONETASKGRAPH]
+OTG13_COMMIT = "c6adfa0d0fa7eaa7bc4f3588364d003fd893f418"
+OTG13_WARMER, OTG13_RELEASE_PLZ, OTG13_SKIPPED, OTG13_RELEASE_RUN = (
+    41252214129,
+    41252214135,
+    41252214397,
+    41252264998,
+)
+# The release's three release-changes reads and its commit's runs listing: every
+# read but the jobs of the runs counted.
+OTG13_LISTING_READS = [
+    f"repos/{ONETASKGRAPH}/releases?per_page=100",
+    f"repos/{ONETASKGRAPH}/compare/v0.12.14...v0.13.0?per_page=100",
+    f"repos/{ONETASKGRAPH}/pulls?state=closed&sort=updated&direction=desc&per_page=100",
+    f"repos/{ONETASKGRAPH}/actions/runs?per_page=100&head_sha={OTG13_COMMIT}",
+]
+OTG13_SKIPPED_LINE = (
+    f"left out as concluded skipped: Visual docs (run {OTG13_SKIPPED}, push)"
+)
+
+
+@pytest.fixture
+def onetaskgraph_v0_13_0(repository) -> Repository:
+    """onetaskgraph at its v0.13.0 release, read through `repository`'s replay."""
+    return repository("onetaskgraph-v0.13.0")
+
+
+# The reads a v0.13.0 CD figure makes with the warmer named: the listings, then
+# the jobs of the two runs counted, Release and Release-plz.
+OTG13_READS = [
+    *OTG13_LISTING_READS,
+    jobs_request(OTG13_RELEASE_RUN, ONETASKGRAPH),
+    jobs_request(OTG13_RELEASE_PLZ, ONETASKGRAPH),
+]
+
+
+def test_a_run_concluded_skipped_costs_no_read_and_adds_no_cd_job(
+    onetaskgraph_v0_13_0,
+):
+    repo = onetaskgraph_v0_13_0
+    # Measured as onetaskgraph's CD budgets are, the warmer named.
+    figures = measure_cd(repo, WARMER, release=OTG13_RELEASE)
+
+    reads = OTG13_READS
+    served = repo.replay.served()
+    assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in served
+    assert sorted(set(served)) == sorted(reads)
+    # One request per distinct read: the skipped run's jobs read is not among them.
+    assert figures.release_reads.actual == len(reads)
+    lines = figures.release_reads.detail
+    assert sorted(line.strip() for line in lines if line.startswith("  ")) == sorted(
+        reads
+    )
+
+    # The skipped run's one job was itself skipped, so reading it would have added
+    # nothing: the job count and longest job are what every run's jobs derive.
+    derived = derive_cd(WARMER, scenario="onetaskgraph-v0.13.0", commit=OTG13_COMMIT)
+    assert OTG13_SKIPPED in derived["runs"]
+    assert figures.job_count.actual == derived["job_count"]
+    assert figures.longest_job.actual == derived["longest_job"]
+    assert figures.longest_job.detail[0] == derived["longest_line"]
+    assert "  Visual docs: 0" in derived["per_workflow"]
+    for figure in (figures.job_count, figures.longest_job):
+        assert not any("Visual docs /" in line for line in figure.detail), figure
+        assert "  Visual docs: 0" not in figure.detail
+        assert figure.detail[-2:] == [
+            f"left out by --exclude-workflow: {WARMER} (run {OTG13_WARMER}, push)",
+            OTG13_SKIPPED_LINE,
+        ]
+    # Release concluded failure: a run concluded any way but skipped is counted.
+    assert any(line.startswith("  Release: ") for line in figures.job_count.detail)
+
+
+def test_a_run_still_in_progress_is_read_and_counted(repository):
+    # Release listed as it is while its own publish job measures the figures: in
+    # progress, its conclusion null. Only a run concluded skipped is left out, so
+    # Release is still selected, its jobs read and counted, and every figure is
+    # what the release gives once Release has concluded.
+    repo = repository("onetaskgraph-v0.13.0-release-in-progress")
+    figures = measure_cd(repo, WARMER, release=OTG13_RELEASE)
+
+    served = repo.replay.served()
+    assert jobs_request(OTG13_RELEASE_RUN, ONETASKGRAPH) in served
+    assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in served
+    assert sorted(set(served)) == sorted(OTG13_READS)
+    assert figures.release_reads.actual == len(OTG13_READS)
+
+    derived = derive_cd(WARMER, scenario="onetaskgraph-v0.13.0", commit=OTG13_COMMIT)
+    assert figures.job_count.actual == derived["job_count"]
+    assert figures.longest_job.actual == derived["longest_job"]
+    release = next(line for line in derived["per_workflow"] if "  Release: " in line)
+    assert release in figures.job_count.detail
+    for figure in (figures.job_count, figures.longest_job):
+        assert figure.detail[-2:] == [
+            f"left out by --exclude-workflow: {WARMER} (run {OTG13_WARMER}, push)",
+            OTG13_SKIPPED_LINE,
+        ]
+
+
+@pytest.mark.parametrize("source", ["GITHUB_RUN_ID", "workflow_run payload"])
+@pytest.mark.parametrize(
+    ("figure", "unit"),
+    [
+        (["job-count", "--stage", "cd"], "jobs"),
+        (["longest-job", "--stage", "cd"], "seconds"),
+        (["release-read-requests"], "requests"),
+    ],
+)
+def test_a_skipped_run_the_environment_names_is_not_read(
+    onetaskgraph_v0_13_0, tmp_path, source, figure, unit
+):
+    # The environment names the skipped run, as it would were the figures measured
+    # in that run or in a workflow_run it triggered: it is still neither read nor
+    # counted, so every figure is what the listing's own selection gives.
+    repo = onetaskgraph_v0_13_0
+    if source == "GITHUB_RUN_ID":
+        env = {"GITHUB_RUN_ID": str(OTG13_SKIPPED)}
+    else:
+        payload = tmp_path / "event.json"
+        payload.write_text(
+            json.dumps({"workflow_run": {"id": OTG13_SKIPPED}}), encoding="utf-8"
+        )
+        env = {"GITHUB_EVENT_PATH": str(payload)}
+    args = [*figure, *OTG13_RELEASE, "--exclude-workflow", WARMER]
+    result = repo.figure(*args, unit=unit, **env)
+
+    served = repo.replay.served()
+    assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in served
+    assert sorted(set(served)) == sorted(OTG13_READS)
+    derived = derive_cd(WARMER, scenario="onetaskgraph-v0.13.0", commit=OTG13_COMMIT)
+    expected = {
+        "jobs": derived["job_count"],
+        "seconds": derived["longest_job"],
+        "requests": len(OTG13_READS),
+    }[unit]
+    assert_within(result, expected)
+
+
+def test_every_run_skipped_or_named_at_the_release_commit_is_missing(
+    onetaskgraph_v0_13_0,
+):
+    repo = onetaskgraph_v0_13_0
+    every = [WARMER, "Release-plz", "Release"]
+    excluded = [arg for name in every for arg in ("--exclude-workflow", name)]
+    reason = (
+        f"missing: every push or release run at v0.13.0's commit {OTG13_COMMIT}"
+        " concluded skipped or is a workflow --exclude-workflow names"
+    )
+    for args, unit in (
+        (["job-count", "--stage", "cd", *OTG13_RELEASE, *excluded], "jobs"),
+        (["longest-job", "--stage", "cd", *OTG13_RELEASE, *excluded], "seconds"),
+        (["release-read-requests", *OTG13_RELEASE, *excluded], "requests"),
+    ):
+        assert_error(repo.figure(*args, unit=unit), reason)
+        assert_refused_writing_nothing(repo, args, reason)
+    assert not any("/jobs?" in request for request in repo.replay.served())
 
 
 @pytest.mark.parametrize(

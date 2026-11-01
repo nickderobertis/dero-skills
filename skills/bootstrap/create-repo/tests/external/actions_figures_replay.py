@@ -8,7 +8,8 @@ seam onevcs's contract names for replaying recorded responses — points at a
 POSIX program that answers `gh api --include` from GitHub's own recordings under
 `fixtures/actions-figures/`, each served for the request it recorded (or the one
 its scenario's entry names in `for`; an entry may also leave runs out of a
-listing (`keep_runs`) or rename a listing's tags (`rename_tags`), each saying why)
+listing (`keep_runs`), report runs of a listing still in progress
+(`in_progress_runs`) or rename a listing's tags (`rename_tags`), each saying why)
 with its recorded status,
 headers and body. It is the double onevcs's own journeys replay through, and it
 records every request it served: the read-count assertions are held to that
@@ -109,7 +110,8 @@ class Replay:
             envelope = recording(entry["recording"])
             url = envelope["request"]["url"].removeprefix("https://api.github.com/")
             request = entry.get("for", url)
-            departs = {"for", "keep_runs", "rename_tags"} & entry.keys()
+            departs = {"for", "keep_runs", "in_progress_runs", "rename_tags"}
+            departs &= entry.keys()
             assert bool(departs) <= ("why" in entry), entry
             if "rename_tags" in entry:
                 renames = entry["rename_tags"]
@@ -129,6 +131,19 @@ class Replay:
                 assert len(runs) == len(keep), f"every kept run is recorded: {entry}"
                 envelope["body"]["total_count"] = len(runs)
                 envelope["body"]["workflow_runs"] = runs
+            if "in_progress_runs" in entry:
+                # As GitHub lists a run before it completes: no conclusion yet.
+                running = entry["in_progress_runs"]
+                runs = [
+                    run
+                    for run in envelope["body"]["workflow_runs"]
+                    if run["id"] in running
+                ]
+                assert len(runs) == len(running), (
+                    f"every running run is recorded: {entry}"
+                )
+                for run in runs:
+                    run["status"], run["conclusion"] = "in_progress", None
             status = envelope["status"]
             head = f"HTTP/2.0 {status} {REASONS.get(status, 'Error')}\n"
             head += "".join(

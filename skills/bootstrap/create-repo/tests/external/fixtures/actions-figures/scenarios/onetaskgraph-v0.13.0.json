@@ -1,0 +1,29 @@
+{
+  "about": "Every response onetaskgraph v0.13.0's CD figures read: the release's three reads, the runs at its commit (rust cache warm, Release-plz and Visual docs on push, Release on release), and the jobs of each. Visual docs concluded skipped, every job skipped by its condition: reading its jobs put the release read-request figure one over its budget of 6, so its jobs are served for a script that would still read them.",
+  "serve": [
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-releases.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-compare-v0.12.14-v0.13.0.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-pulls-closed-page-1.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-runs-at-c6adfa0d.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-run-41252214129-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-run-41252214135-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-run-41252214397-jobs.json"
+    },
+    {
+      "recording": "onetaskgraph-release-v0.13.0/onetaskgraph-run-41252264998-jobs.json"
+    }
+  ]
+}
