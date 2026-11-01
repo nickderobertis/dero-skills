@@ -596,9 +596,8 @@ def test_an_excluded_run_the_environment_names_does_not_fill_an_empty_selection(
 
 
 # onetaskgraph v0.13.0: Visual docs' push run at the release commit concluded
-# skipped, every job skipped by its condition. Reading its jobs spent one release
-# read on a run that ran nothing and failed the release; no CD figure reads or
-# counts it now. Release itself concluded failure and is still read.
+# skipped, every job skipped by its condition, so no CD figure reads or counts it.
+# Release concluded failure, and is read and counted.
 
 OTG13_RELEASE = ["--release", "v0.13.0", "--repo", ONETASKGRAPH]
 OTG13_COMMIT = "c6adfa0d0fa7eaa7bc4f3588364d003fd893f418"
