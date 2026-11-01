@@ -1,0 +1,8 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41252214397/jobs?per_page=100&filter=latest",
+    "at": "Sat, 31 Oct 2026 23:59:08 GMT",
+    "how": "gh api --include --method GET, read-only, keeping the headers onevcs keeps in its recordings",
+    "why": "onetaskgraph v0.13.0: a release commit whose Visual docs push run concluded skipped, every job skipped by its condition; the jobs of the skipped Visual docs push run, which the script no longer reads: served so a script that still reads them measures what the v0.13.0 release measured"
+  }
+}

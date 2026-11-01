@@ -1,0 +1,163 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41252214135/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "date": "Sat, 31 Oct 2026 23:59:07 GMT",
+    "etag": "W/\"a64da2a7d9575a290a4d52e0d56b5b250c1a64b515c436ff3ea0e744b0dc1d5c\"",
+    "x-github-api-version-selected": "2022-11-28",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4746",
+    "x-ratelimit-reset": "1793492601",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "254"
+  },
+  "body": {
+    "total_count": 1,
+    "jobs": [
+      {
+        "id": 124687884838,
+        "run_id": 41252214135,
+        "workflow_name": "Release-plz",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41252214135",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUBBgxs8AAAAdB_oiJg",
+        "head_sha": "c6adfa0d0fa7eaa7bc4f3588364d003fd893f418",
+        "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/jobs/124687884838",
+        "html_url": "https://github.com/nickderobertis/onetaskgraph/actions/runs/41252214135/job/124687884838",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-31T23:21:47Z",
+        "started_at": "2026-10-31T23:21:49Z",
+        "completed_at": "2026-10-31T23:22:42Z",
+        "name": "release-plz",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-31T23:21:49Z",
+            "completed_at": "2026-10-31T23:21:52Z"
+          },
+          {
+            "name": "Decide whether this repository can release",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-31T23:21:52Z",
+            "completed_at": "2026-10-31T23:21:52Z"
+          },
+          {
+            "name": "Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-31T23:21:52Z",
+            "completed_at": "2026-10-31T23:21:59Z"
+          },
+          {
+            "name": "Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-31T23:21:59Z",
+            "completed_at": "2026-10-31T23:22:14Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-31T23:22:14Z",
+            "completed_at": "2026-10-31T23:22:15Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-31T23:22:15Z",
+            "completed_at": "2026-10-31T23:22:16Z"
+          },
+          {
+            "name": "Provision the pinned release-plz into the repository-scoped tool location",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-31T23:22:16Z",
+            "completed_at": "2026-10-31T23:22:18Z"
+          },
+          {
+            "name": "Tag and cut the GitHub Release with the PAT",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-31T23:22:18Z",
+            "completed_at": "2026-10-31T23:22:27Z"
+          },
+          {
+            "name": "Open or update the release pull request",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-31T23:22:27Z",
+            "completed_at": "2026-10-31T23:22:38Z"
+          },
+          {
+            "name": "Enable auto-merge",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-31T23:22:38Z",
+            "completed_at": "2026-10-31T23:22:39Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-10-31T23:22:39Z",
+            "completed_at": "2026-10-31T23:22:39Z"
+          },
+          {
+            "name": "Post Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-10-31T23:22:39Z",
+            "completed_at": "2026-10-31T23:22:40Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20,
+            "started_at": "2026-10-31T23:22:40Z",
+            "completed_at": "2026-10-31T23:22:40Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-10-31T23:22:40Z",
+            "completed_at": "2026-10-31T23:22:40Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/check-runs/124687884838",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000291358,
+        "runner_name": "GitHub Actions 1000291358",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ]
+  }
+}

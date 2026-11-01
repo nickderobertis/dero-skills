@@ -390,6 +390,15 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   `--stage pr` refuses the option (exit 2), and the detail of `longest-job` and
   `job-count` ends with one `left out by --exclude-workflow: <workflow> (run
   <id>, <event>)` line per run it left out.
+- **Delivery only: a run concluded `skipped` ran nothing.** A run the
+  `commit-runs` listing reports concluded `skipped` (every job skipped by its
+  condition), whatever its workflow, counts toward no CD figure: its jobs are
+  never read, so it costs `release-read-requests` no request and changes no job
+  count or longest job, nor is it added back as `GITHUB_RUN_ID` or a payload's
+  run. A run that concluded any other way — `success`, `failure`, `cancelled` —
+  is read and counted. The detail of `longest-job` and `job-count` ends with one
+  `left out as concluded skipped: <workflow> (run <id>, <event>)` line per such
+  run, after the `--exclude-workflow` lines.
 - **Figures.** `longest-job` (seconds): the longest counted job; detail lists
   every counted job as `<workflow> / <job name>: <s>s`, longest first, then the
   longest per runner OS. `job-count` (jobs): counted jobs, each matrix leg one;
@@ -405,8 +414,8 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   read cost when it was made.
 - **Missing data is an error, never 0.** It exits 1 with `missing: …` and a
   `next: …` line saying what to do about it, writing nothing, when the release
-  commit has no `push` or `release` run (or `--exclude-workflow` names every
-  one), a commit maps to no merged pull request
+  commit has no `push` or `release` run (or every one concluded `skipped` or is
+  a workflow `--exclude-workflow` names), a commit maps to no merged pull request
   (`change: null`: a rebase-merged repository is refused), a pull request has no
   `pull_request` run, a selected run lists no job, or `longest-job` has no
   counted job. A run whose listed jobs were all skipped
