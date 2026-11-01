@@ -673,6 +673,32 @@ def test_a_run_concluded_skipped_costs_no_read_and_adds_no_cd_job(
     assert any(line.startswith("  Release: ") for line in figures.job_count.detail)
 
 
+def test_a_run_still_in_progress_is_read_and_counted(repository):
+    # Release listed as it is while its own publish job measures the figures: in
+    # progress, its conclusion null. Only a run concluded skipped is left out, so
+    # Release is still selected, its jobs read and counted, and every figure is
+    # what the release gives once Release has concluded.
+    repo = repository("onetaskgraph-v0.13.0-release-in-progress")
+    figures = measure_cd(repo, WARMER, release=OTG13_RELEASE)
+
+    served = repo.replay.served()
+    assert jobs_request(OTG13_RELEASE_RUN, ONETASKGRAPH) in served
+    assert jobs_request(OTG13_SKIPPED, ONETASKGRAPH) not in served
+    assert sorted(set(served)) == sorted(OTG13_READS)
+    assert figures.release_reads.actual == len(OTG13_READS)
+
+    derived = derive_cd(WARMER, scenario="onetaskgraph-v0.13.0", commit=OTG13_COMMIT)
+    assert figures.job_count.actual == derived["job_count"]
+    assert figures.longest_job.actual == derived["longest_job"]
+    release = next(line for line in derived["per_workflow"] if "  Release: " in line)
+    assert release in figures.job_count.detail
+    for figure in (figures.job_count, figures.longest_job):
+        assert figure.detail[-2:] == [
+            f"left out by --exclude-workflow: {WARMER} (run {OTG13_WARMER}, push)",
+            OTG13_SKIPPED_LINE,
+        ]
+
+
 @pytest.mark.parametrize("source", ["GITHUB_RUN_ID", "workflow_run payload"])
 @pytest.mark.parametrize(
     ("figure", "unit"),
