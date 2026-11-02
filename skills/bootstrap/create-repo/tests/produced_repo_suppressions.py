@@ -114,6 +114,15 @@ ALLOWED: tuple[AllowedSuppression, ...] = (
         rules=frozenset({"changed_behavior_has_e2e"}),
         path_glob="scripts/setup-llmlint.sh",
     ),
+    # assets/budgets.yaml.template, on each of the eight CI/CD budgets: a 30-minute
+    # line per CI check and CD job beside the 90-minute release cycle, job counts
+    # and GitHub reads are the units the brief fixes, which that rule would fold
+    # into one product-owner outcome.
+    AllowedSuppression(
+        tool="llmlint",
+        rules=frozenset({"budgets_track_product_owner_outcomes"}),
+        path_glob="budgets.yaml",
+    ),
 )
 
 

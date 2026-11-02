@@ -21,6 +21,8 @@ a clone that has not been bootstrapped.
 
 from __future__ import annotations
 
+import fnmatch
+import json
 import os
 import re
 import shutil
@@ -169,6 +171,56 @@ def test_a_change_to_the_oneharness_bound_reruns_the_skill_e2e_tier():
     # release.
     for manifest in ("pyproject.toml", "uv.lock"):
         assert "bootstrap-create-repo-e2e" in affected_test_projects(manifest), manifest
+
+
+def resolved_inputs(project: str, target: str) -> list[str]:
+    """The file patterns `target`'s cache key hashes, as the real `nx` resolves them."""
+    shown = subprocess.run(
+        [str(NX), "show", "project", project, "--json"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    named = json.loads((REPO_ROOT / "nx.json").read_text(encoding="utf-8"))[
+        "namedInputs"
+    ]
+    patterns: list[str] = []
+    for entry in json.loads(shown.stdout)["targets"][target]["inputs"]:
+        if isinstance(entry, str):
+            patterns += named.get(entry, [entry])
+    return patterns
+
+
+def test_the_skill_e2e_cache_key_covers_every_skill_file_its_journeys_read():
+    # The e2e journeys run the skill's composer, checker and governance scripts,
+    # render its templates and assets, compose its references, and import the
+    # fast tier's fixture builders — all outside the e2e project. Unless every one
+    # is an input of the cached `test` target, an edit to it replays the old pass.
+    root = "skills/bootstrap/create-repo"
+    project_root = f"{root}/tests/e2e"
+    patterns = [
+        p.replace("{workspaceRoot}/", "").replace("{projectRoot}", project_root)
+        for p in resolved_inputs("bootstrap-create-repo-e2e", "test")
+    ]
+    tracked = subprocess.run(
+        ["git", "ls-files", f"{root}/assets", f"{root}/scripts", f"{root}/references"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    tracked += [
+        p.relative_to(REPO_ROOT).as_posix()
+        for p in (REPO_ROOT / root / "tests").glob("*.py")
+    ]
+    assert f"{root}/assets/ci.yml.template" in tracked
+    uncovered = [
+        f
+        for f in tracked
+        if not any(fnmatch.fnmatchcase(f, p.replace("**/*", "*")) for p in patterns)
+    ]
+    assert uncovered == [], uncovered
 
 
 def test_an_unrelated_change_selects_nothing():

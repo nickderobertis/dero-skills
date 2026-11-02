@@ -62,7 +62,10 @@ What is not obvious from the table:
   composed config with that release, `onebudgetspecRelease` attaches the same two
   files — where the `onebudgetspec-cli` pin lives — to the create-repo fast tier
   that runs the judged onebudgetspec fixtures through that release and reads its
-  README, `nxRelease` attaches the root `package.json` and `bun.lock` — what
+  README, and to the create-repo e2e tier whose CI/CD-shape journeys validate the
+  composed budgets with it, `createRepoSkillSources` attaches the skill's
+  `assets/`, `scripts/` and `references/` and the fixture builders under its
+  `tests/` to that e2e tier, whose journeys render, run and import them, `nxRelease` attaches the root `package.json` and `bun.lock` — what
   `node_modules` installs — to the same tier, which reads Nx's schema, `semver`
   and that lock, and to `repo-baseline`, which runs the installed commit-analyzer
   to hold `AGENTS.md`'s bump policy to `.releaserc.json`, and `skillEval` attaches the harness-driven eval to the fast tier

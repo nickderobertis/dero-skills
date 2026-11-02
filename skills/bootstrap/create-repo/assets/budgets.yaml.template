@@ -1,0 +1,113 @@
+#% # The root budgets every repository create-repo composes starts with, rendered by
+#% # `compose_repo_plan.py --ci-cd REPO_DIR` (see ci.yml.template for the `#%` syntax).
+# The budgets this repository holds itself to, checked by `onebudgetspec check budgets.yaml`.
+#
+# Seven are its CI and CD figures, labelled `release-tail`: measured after a release has
+# published, by scripts/actions-budget-figures.sh (a verbatim copy of the create-repo skill's)
+# from onevcs's read-only answers, as the last step of release.yml's `publish` job, whose
+# result nothing reads. The eighth, `host-variable`, is the local gate's wall clock, which
+# `just gate` checks as a warning. The strict check `just check` runs excludes both labels.
+# references/ci.md ("CI and CD time budgets") states why each line is where it is.
+schema_version: 1
+budgets:
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-ci-check-time
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, longest-job, --stage, pr]
+    unit: seconds
+    direction: max
+    threshold: 1800
+    labels: [release-tail]
+    description: >-
+      The longest counted job of each pull request's last-commit CI runs, over the pull
+      requests one release carries, from GitHub's job timestamps. It protects every
+      contributor's turnaround, because one slow check holds every change behind it;
+      ci.yml's `timeout-minutes: 30` enforces the same line on each pull request.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-cd-job-time
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, longest-job, --stage, cd]
+    unit: seconds
+    direction: max
+    threshold: 1800
+    labels: [release-tail]
+    description: >-
+      The longest counted job of one release's CD runs — release-plz's run at the release
+      commit and the Release run, publish included up to the tail's moment. It protects
+      the time a release takes, a slow job being the actionable unit inside the release
+      cycle.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-release-cycle-time
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, release-cycle-time]
+    unit: seconds
+    direction: max
+    threshold: 5400
+    labels: [release-tail]
+    description: >-
+      Per pull request one release carries, its last commit's checks plus its merge to the
+      end of publish; the maximum over the release's pull requests. It protects how soon a
+      merged change reaches the people who install it.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-ci-job-count
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, job-count, --stage, pr]
+    unit: jobs
+    direction: max
+    threshold: @@CI_JOB_COUNT@@
+    labels: [release-tail]
+    description: >-
+      The most counted jobs any pull request of one release ran at its last commit, over
+      every workflow its pull_request event started. It protects this repository's share
+      of the account-wide 20-job concurrency limit: @@CI_JOBS_PROSE@@.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-cd-job-count
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, job-count, --stage, cd]
+    unit: jobs
+    direction: max
+    threshold: @@CD_JOB_COUNT@@
+    labels: [release-tail]
+    description: >-
+      The counted jobs of one release's CD runs, publish included as the job running the
+      tail. It protects this repository's CD share of the account-wide 20-job concurrency
+      limit: @@CD_JOBS_PROSE@@.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-release-read-requests
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, release-read-requests]
+    unit: requests
+    direction: max
+    threshold: 6
+    labels: [release-tail]
+    description: >-
+      The REST requests the release's own reads cost — the releases listing, the
+      comparison, the closed-pull-request page, the runs at the release commit and the
+      jobs of its CD runs — summed from onevcs's answers. It protects the tail's GitHub
+      reads from growing with this repository's CD shape, whatever number of pull requests
+      a release carries.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-pr-read-requests
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, pr-read-requests]
+    unit: requests
+    direction: max
+    threshold: 2
+    labels: [release-tail]
+    description: >-
+      The most REST requests any one pull request of the release needed — its runs at head
+      and the jobs of each CI run there — from onevcs's answers. It protects the reads
+      each pull request costs from growing with the workflows a pull request starts.
+  # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships the same eight budgets the three repositories register.
+  - id: @@NAME@@-gate-time
+    measure: reported
+    command: [node, scripts/gate-time-budget.mjs]
+    unit: seconds
+    direction: max
+    threshold: 1800
+    labels: [host-variable]
+    description: >-
+      The wall clock of one `just gate` run on a development machine, from the start and
+      end the recipe records on that run. It holds the local gate to the line each CI job
+      is held to, as a warning, since a development machine's timing varies too much to
+      refuse on.

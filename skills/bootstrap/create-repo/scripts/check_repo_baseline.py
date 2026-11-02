@@ -69,7 +69,8 @@ Checks:
     and the value expected. Silent where the repo has no `Cargo.toml`
     (references/languages/rust.md, the one statement of the contract).
   * A CI workflow exists under .github/workflows/ AND runs the gate
-    (`just check`) — a workflow that never invokes the gate proves nothing.
+    (`just check`, or the composed CI/CD shape's `just ci-test`) — a workflow
+    that never invokes the gate proves nothing.
   * A GitHub pull-request template exists (`.github/pull_request_template.md`,
     or the root/docs variants GitHub also renders) AND names both a What and a
     Why section — so every PR states the behavior change and its driver, not a
@@ -124,6 +125,18 @@ Checks:
     are an entry of `assets/budgets/actions-budget-figures.versions` (else it is
     unknown), and an older version than the source's is reported outdated
     (advisory WARN), naming both. Silent where the repo holds no copy.
+  * The CI/CD shape (`compose_repo_plan.py --ci-cd`), in a repository carrying
+    its `.github/governance.json` or a release workflow with a `publish` job:
+    `.github/workflows/ci.yml` runs `lint` and one `test-<platform>` job per
+    platform the record requires (`test-linux` always), each with
+    `timeout-minutes: 30`; no workflow runs any other job on a pull request but
+    a `visual-docs-<arch>`; CI does not run on push to main; the root
+    `budgets.yaml` registers the eight CI/CD budgets (`<name>-ci-check-time`,
+    `-cd-job-time`, `-release-cycle-time`, `-ci-job-count`, `-cd-job-count`,
+    `-release-read-requests`, `-pr-read-requests`, `-gate-time`) and, when it
+    runs `scripts/actions-budget-figures.sh`, the repository holds that copy;
+    the governance record requires exactly `lint` and the test jobs. Whether it
+    is strict is not checked: up-to-date branches are an opt-in.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -173,6 +186,9 @@ AGENTS_MD_MAX_LINES = 250
 # The command that proves the artifact. CI must invoke it, and `check` is where
 # the full gate (including e2e) is composed.
 GATE_COMMAND = "just check"
+# What each test job of the composed CI/CD shape runs instead: the gate's tests over
+# the affected projects, with formatting and lint in its `lint` job (references/ci.md).
+CI_SHAPE_GATE_COMMAND = "just ci-test"
 
 # A justfile recipe header starts at column 0 with an identifier, may take
 # parameters (including defaulted ones like `base="origin/main"`), and ends in a
@@ -1442,7 +1458,11 @@ def check_ci(repo: Path) -> list[Finding]:
                 "(see assets/ci.yml.template and references/ci.md)",
             )
         ]
-    if not any(GATE_COMMAND in p.read_text(encoding="utf-8") for p in files):
+    if not any(
+        command in p.read_text(encoding="utf-8")
+        for p in files
+        for command in (GATE_COMMAND, CI_SHAPE_GATE_COMMAND)
+    ):
         return [
             Finding(
                 "ERROR",
@@ -3176,6 +3196,312 @@ def run_buildout(
     return _buildout_findings(rc, out, err, len(fragments))
 
 
+# The CI/CD shape (references/ci.md, "CI and CD time budgets"): what
+# `compose_repo_plan.py --ci-cd` writes, held in place. It applies to a repository
+# carrying that shape's governance record, or a release workflow with a `publish`
+# job, and is silent elsewhere: a repository on another release model (this skill's
+# own, which releases on merge) is not asked to adopt it.
+GOVERNANCE_RECORD = ".github/governance.json"
+CI_SHAPE_WORKFLOW = ".github/workflows/ci.yml"
+RELEASE_WORKFLOW = ".github/workflows/release.yml"
+CI_JOB_TIMEOUT_MINUTES = 30
+# The pull-request jobs the shape runs: `lint`, one `test-<platform>` per supported
+# platform, and a `visual-docs-<arch>` per second visual-docs architecture.
+CI_TEST_JOB_RE = re.compile(r"test-[a-z0-9-]+")
+CI_VISUAL_DOCS_JOB_RE = re.compile(r"visual-docs-[a-z0-9-]+")
+# The eight root budgets, by id suffix after the project-name prefix.
+SHAPE_BUDGET_SUFFIXES = (
+    "ci-check-time",
+    "cd-job-time",
+    "release-cycle-time",
+    "ci-job-count",
+    "cd-job-count",
+    "release-read-requests",
+    "pr-read-requests",
+    "gate-time",
+)
+BUDGET_ID_RE = re.compile(r"^\s*-\s+id:\s*['\"]?([^'\"\s#]+)", re.MULTILINE)
+WORKFLOW_KEY_RE = re.compile(r"^( *)([A-Za-z0-9_-]+|['\"][^'\"]+['\"]):(.*)$")
+
+
+class WorkflowJob(NamedTuple):
+    """A job's id and the text of the keys the shape check reads."""
+
+    name: str
+    timeout: str
+    runs_if: str
+
+
+def _yaml_children(
+    lines: list[str], start: int, indent: int
+) -> list[tuple[str, str, int]]:
+    """The direct keys of the block after ``start``, indented ``indent``: each key,
+    its inline value and its line number, up to the next line indented less."""
+    children = []
+    for index in range(start + 1, len(lines)):
+        line = YAML_COMMENT_RE.sub("", lines[index]).rstrip()
+        if not line.strip():
+            continue
+        depth = len(line) - len(line.lstrip(" "))
+        if depth < indent:
+            break
+        match = WORKFLOW_KEY_RE.match(line)
+        if depth == indent and match:
+            children.append(
+                (match.group(2).strip("'\""), match.group(3).strip(), index)
+            )
+    return children
+
+
+def _block_text(lines: list[str], start: int, indent: int) -> str:
+    """The lines of the block a key at ``start`` opens: deeper than ``indent``."""
+    body = []
+    for line in lines[start + 1 :]:
+        text = YAML_COMMENT_RE.sub("", line).rstrip()
+        if text.strip() and len(text) - len(text.lstrip(" ")) <= indent:
+            break
+        body.append(text)
+    return "\n".join(body)
+
+
+def workflow_jobs(text: str) -> list[WorkflowJob]:
+    """The jobs under a workflow's top-level ``jobs:``, read without a YAML parser."""
+    lines = text.splitlines()
+    top = {key: index for key, _value, index in _yaml_children(lines, -1, 0)}
+    if "jobs" not in top:
+        return []
+    jobs = []
+    for name, _value, index in _yaml_children(lines, top["jobs"], 2):
+        keys = {key: value for key, value, _i in _yaml_children(lines, index, 4)}
+        jobs.append(
+            WorkflowJob(
+                name,
+                keys.get("timeout-minutes", "").strip("'\""),
+                keys.get("if", ""),
+            )
+        )
+    return jobs
+
+
+def workflow_triggers(text: str) -> dict[str, str]:
+    """A workflow's ``on:`` triggers, each to the text of its body ("" inline)."""
+    lines = text.splitlines()
+    for key, value, index in _yaml_children(lines, -1, 0):
+        if key not in ("on", "true"):
+            continue
+        if value:
+            return {
+                name.strip(" '\""): ""
+                for name in value.strip("[]").split(",")
+                if name.strip()
+            }
+        return {
+            name: _block_text(lines, at, 2)
+            for name, _inline, at in _yaml_children(lines, index, 2)
+        }
+    return {}
+
+
+def runs_on_pull_request(triggers: dict[str, str]) -> bool:
+    """Whether the workflow runs while a pull request is open (not only on close)."""
+    for name in ("pull_request", "pull_request_target"):
+        if name in triggers:
+            types = re.search(r"types:\s*\[([^\]]*)\]", triggers[name])
+            listed = re.findall(r"^\s*-\s*(\S+)", triggers[name], re.MULTILINE)
+            named = (
+                {t.strip(" '\"") for t in types.group(1).split(",")}
+                if types
+                else set(listed)
+            )
+            if not named or named - {"closed"}:
+                return True
+    return False
+
+
+def runs_on_push_to_main(triggers: dict[str, str]) -> bool:
+    """Whether a push to main starts the workflow (no branch filter counts)."""
+    if "push" not in triggers:
+        return False
+    body = triggers["push"]
+    if "branches:" not in body:
+        return "tags:" not in body
+    return bool(
+        re.search(r"(?<![\w/-])(main|master|'\*\*?'|\"\*\*?\"|\*\*?)(?![\w/-])", body)
+    )
+
+
+def check_ci_cd_shape(repo: Path) -> list[Finding]:
+    """The CI/CD shape the composer writes: its jobs, timeouts, budgets and governance."""
+    governance_path = repo / GOVERNANCE_RECORD
+    release = repo / RELEASE_WORKFLOW
+    releases = release.is_file() and any(
+        job.name == "publish"
+        for job in workflow_jobs(release.read_text(encoding="utf-8"))
+    )
+    if not governance_path.is_file() and not releases:
+        return []
+    compose = "compose_repo_plan.py --ci-cd <repo> writes the shape (references/ci.md)"
+    problems: list[Finding] = []
+
+    required: list[str] | None = None
+    if not governance_path.is_file():
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{RELEASE_WORKFLOW} releases through `publish`, but there is no "
+                f"{GOVERNANCE_RECORD} recording the required checks",
+                f"record `lint` and the test jobs as `required_checks`; {compose}",
+            )
+        )
+    else:
+        try:
+            data = json.loads(governance_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = None
+        checks = data.get("required_checks") if isinstance(data, dict) else None
+        if isinstance(checks, list) and all(isinstance(c, str) for c in checks):
+            required = checks
+        else:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{GOVERNANCE_RECORD} has no `required_checks` list",
+                    f"write the list of required check names; {compose}",
+                )
+            )
+
+    workflows = {
+        p.relative_to(repo).as_posix(): p.read_text(encoding="utf-8")
+        for p in workflow_files(repo)
+    }
+    ci_text = workflows.get(CI_SHAPE_WORKFLOW)
+    ci_jobs = {job.name: job for job in workflow_jobs(ci_text or "")}
+    test_jobs = sorted(n for n in ci_jobs if CI_TEST_JOB_RE.fullmatch(n))
+    if required is not None:
+        extra = [c for c in required if c != "lint" and not CI_TEST_JOB_RE.fullmatch(c)]
+        if extra:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{GOVERNANCE_RECORD} requires {', '.join(extra)}, beyond `lint` "
+                    "and the test jobs",
+                    "require exactly `lint` and each `test-<platform>` job: every "
+                    "other check runs as a step of one of them",
+                )
+            )
+        expected = ["lint", "test-linux"] + [
+            c for c in required if CI_TEST_JOB_RE.fullmatch(c) and c != "test-linux"
+        ]
+        missing = [job for job in expected if job not in ci_jobs]
+        if missing:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{CI_SHAPE_WORKFLOW} lacks the CI job(s) {', '.join(missing)}",
+                    f"run `lint` and one `test-<platform>` job per supported platform "
+                    f"on every pull request; {compose}",
+                )
+            )
+        unrequired = [
+            n for n in ["lint", *test_jobs] if n in ci_jobs and n not in required
+        ]
+        if unrequired:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{GOVERNANCE_RECORD} does not require {', '.join(unrequired)}",
+                    "add each to `required_checks`, so a red run blocks the merge",
+                )
+            )
+    for name, job in ci_jobs.items():
+        try:
+            minutes = int(job.timeout)
+        except ValueError:
+            minutes = None
+        if minutes is None or not 0 < minutes <= CI_JOB_TIMEOUT_MINUTES:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{CI_SHAPE_WORKFLOW} job `{name}` is not held to "
+                    f"{CI_JOB_TIMEOUT_MINUTES} minutes (timeout-minutes: "
+                    f"{job.timeout or 'unset'})",
+                    f"give it `timeout-minutes: {CI_JOB_TIMEOUT_MINUTES}`: every CI "
+                    "check is held to 30 minutes, met by cutting work, never by "
+                    "sharding",
+                )
+            )
+
+    for rel, text in workflows.items():
+        triggers = workflow_triggers(text)
+        jobs = workflow_jobs(text)
+        if runs_on_pull_request(triggers):
+            others = [
+                job.name
+                for job in jobs
+                if job.name != "lint"
+                and not CI_TEST_JOB_RE.fullmatch(job.name)
+                and not CI_VISUAL_DOCS_JOB_RE.fullmatch(job.name)
+            ]
+            if others:
+                problems.append(
+                    Finding(
+                        "ERROR",
+                        f"{rel} runs job(s) {', '.join(others)} on pull requests, "
+                        "beyond `lint`, the test jobs and `visual-docs-<arch>`",
+                        "fold the check into a step of `lint` (platform-independent) "
+                        "or of the test jobs: each extra job spends one of the "
+                        "account's 20 concurrent job slots on every push",
+                    )
+                )
+        if rel == CI_SHAPE_WORKFLOW and runs_on_push_to_main(triggers):
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{rel} runs CI on push to main",
+                    "trigger it on `pull_request` only: the merged tree is the one its "
+                    "pull request's jobs proved, so a push run repeats them",
+                )
+            )
+
+    budgets = repo / BUDGETS_FILE
+    text = budgets.read_text(encoding="utf-8") if budgets.is_file() else ""
+    ids = BUDGET_ID_RE.findall(text)
+    lacking = [
+        suffix
+        for suffix in SHAPE_BUDGET_SUFFIXES
+        if not any(budget.endswith(f"-{suffix}") for budget in ids)
+    ]
+    if lacking:
+        problems.append(
+            Finding(
+                "ERROR",
+                f"the root {BUDGETS_FILE} lacks the budget(s) "
+                + ", ".join(f"<name>-{s}" for s in lacking),
+                f"register the eight CI/CD budgets of assets/budgets.yaml.template; {compose}",
+            )
+        )
+    if (
+        "actions-budget-figures.sh" in YAML_COMMENT_RE.sub("", text)
+        and not (repo / FIGURES_COPY).is_file()
+    ):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"the root {BUDGETS_FILE} runs {FIGURES_COPY}, but the repository "
+                "holds no copy of it",
+                "copy the create-repo skill's assets/budgets/actions-budget-figures.sh "
+                f"to {FIGURES_COPY}, unedited",
+            )
+        )
+    return problems or [
+        Finding(
+            "OK",
+            "CI/CD shape: lint and test jobs held to 30 minutes, the eight budgets, "
+            "governance requiring exactly those checks",
+        )
+    ]
+
+
 def audit(repo: Path) -> list[Finding]:
     findings: list[Finding] = []
     findings += check_agents_md(repo)
@@ -3198,6 +3524,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
     findings += check_actions_budget_figures(repo)
+    findings += check_ci_cd_shape(repo)
     return findings
 
 

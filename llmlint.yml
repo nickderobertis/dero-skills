@@ -26,6 +26,10 @@ files:
     # budget figures journeys, so they can carry no suppression; their patches quote
     # other repositories' llmlint directives. The scenarios and README stay judged.
     - "skills/bootstrap/create-repo/tests/external/fixtures/actions-figures/recordings/**"
+    # The same kind of data for the composed release tail's journey: onetaskgraph's
+    # release-tail recordings, copied byte for byte from its landing commit, whose
+    # compare patches quote its llmlint directives. The README beside them stays judged.
+    - "skills/bootstrap/create-repo/tests/external/fixtures/release-tail/onetaskgraph-v0.13.0/**"
 
 oneharness:
   timeout: 600  # ceiling (not a fixed wait); headroom for the full-repo sweep

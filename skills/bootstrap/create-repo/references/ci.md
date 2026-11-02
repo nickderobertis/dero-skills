@@ -5,14 +5,17 @@ prove the artifact the way a future maintainer or user would encounter it — no
 to re-run a developer's warm local environment.
 
 - **Required, and it must run the gate.** A CI workflow is non-negotiable, and a
-  workflow that doesn't invoke `just check` proves nothing. Start from
-  [`assets/ci.yml.template`](../assets/ci.yml.template).
+  workflow that doesn't invoke the gate proves nothing. Write it with
+  `compose_repo_plan.py --ci-cd` from
+  [`assets/ci.yml.template`](../assets/ci.yml.template): its jobs run the gate's
+  parts — `just lint` once, `just ci-test` per platform — as "CI and CD time
+  budgets" below lays out.
 - **Clean checkout -> bootstrap -> the gate.** Every run starts from a clean
   checkout, runs `just bootstrap`, then `just check` (which includes e2e) — at
   the tier that run is for ("Staged gates" below: the affected tier on a pull
   request, the broader sweep at its one lifecycle point). If bootstrap can't
   produce a working repo from scratch, that is the bug. The baseline checker
-  fails CI that never references `just check`.
+  fails CI that never references `just check` (or the composed `just ci-test`).
 - **Pins stay in lockstep.** A toolchain version pinned in more than one place
   (`.tool-versions`, a CI `setup-*` action or matrix entry, a `Dockerfile`, the
   docs) must hold the same value everywhere, or be reconciled by a single check —
@@ -60,6 +63,112 @@ to re-run a developer's warm local environment.
   Publish checksums for binaries; sign where appropriate.
 - **Logs are context.** Keep logs minimal on success; emit detailed diagnostics
   only on failure, so a failed run points straight at the cause.
+
+## CI and CD time budgets
+
+Every repository this skill composes starts inside the CI and CD shape, and the
+budgets, that onepipeline, onetaskgraph and onepipeline-ui proved — so it is held
+to the lines below from its first pull request rather than growing into hours-long
+checks, repeated sweeps and job sprawl. `compose_repo_plan.py --ci-cd REPO_DIR
+--language rust|typescript --name NAME [--platforms cross-platform|linux]
+[--visual-docs] [--visual-docs-arch arm64]` writes it; `check_repo_baseline.py`
+holds it in place.
+
+**The lines.** Every CI check and every CD job is held to **30 minutes**, and a
+change's last-commit pull-request checks plus its merge to release to **90
+minutes**. Jobs are counted too, per pull-request push and per release, because the
+account's **20 concurrent jobs** are shared by every repository: a job a pull
+request did not need is a slot another repository waited for.
+
+**CI** (`.github/workflows/ci.yml`, `pull_request` only):
+
+- `lint` — once, on Linux, everything platform-independent: the PR-title check,
+  the suppressions comment (notignored), format/lint/type checks over the
+  affected projects (`just lint`), the supply chain and (Rust) the MSRV
+  (`just supply-chain`), the judged lint (llmlint), and the visual docs through
+  screencomp's composite actions as steps, never its reusable workflow's jobs.
+- `test-linux`, `test-windows`, `test-macos` — one per platform the repository
+  supports, each running `just ci-test` (tests, builds, e2e and per-project
+  budgets over the affected projects); a Linux-only repository runs `lint` and
+  `test-linux`.
+- `visual-docs-<arch>` — only for a repository that captures its visual docs on a
+  second architecture, natively on that architecture's runner.
+- Every job `timeout-minutes: 30`, none with a `needs` edge, so all start at once.
+- **No run on push to main.** The merged tree is the one its pull request's jobs
+  proved; nothing re-runs them afterwards.
+- **The release pull request runs `lint` alone.** The test jobs skip the release
+  tool's own branch, which is sound only while that tree is a tested main plus the
+  release tool's version and changelog edits — so `lint` runs
+  `scripts/release-branch-guard.mjs`, which reads each change by content, not
+  by file name: a CHANGELOG, the package and workspace-crate `version`s in
+  `Cargo.toml`, workspace members' versions in `Cargo.lock`, the top-level
+  `version` of `package.json` and the release-please manifest's versions pass;
+  a dependency, build setting or script edited inside those same files, or any
+  other file, fails `lint` naming the file and why.
+
+**CD:** `release-plz` (`.github/workflows/release-plz.yml`, push to main) opens
+the release pull request and arms auto-merge on it, so it merges itself once its
+checks pass; on merge it tags and cuts the GitHub Release. (release-plz versions
+Cargo workspaces only, so a TypeScript repository's `release-plz` job runs
+release-please in pull-request mode; the job id is what the CD budgets count.)
+The Release fires `.github/workflows/release.yml`: `build-linux`,
+`build-linux-arm64` (GitHub's hosted ARM runner, aarch64-unknown-linux-gnu),
+`build-macos` (Apple Silicon only) and `build-windows`, one per supported
+platform, each building every artifact for its targets once, test-installing those
+files, publishing its platform's artifacts and verifying them from the registries
+on its own OS; then `publish`, which needs the build jobs, publishes the
+platform-independent artifacts and confirms registry resolution. There is no
+release-time test re-run and no separate published-smoke workflow. That is six CD
+jobs cross-platform, four Linux-only.
+
+**The budgets** (root `budgets.yaml`, from
+[`assets/budgets.yaml.template`](../assets/budgets.yaml.template), each id under
+the project name):
+
+| budget | threshold | label |
+| --- | --- | --- |
+| `<name>-ci-check-time` | 1800 s | `release-tail` |
+| `<name>-cd-job-time` | 1800 s | `release-tail` |
+| `<name>-release-cycle-time` | 5400 s | `release-tail` |
+| `<name>-ci-job-count` | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` |
+| `<name>-cd-job-count` | 6 cross-platform, 4 Linux-only | `release-tail` |
+| `<name>-release-read-requests` | 6 requests | `release-tail` |
+| `<name>-pr-read-requests` | 2 requests | `release-tail` |
+| `<name>-gate-time` | 1800 s | `host-variable` |
+
+The seven GitHub figures run the repository's verbatim copy of the figures script
+(`tools/onebudgetspec.md`, "GitHub Actions budget figures").
+
+**Where each line is enforced.** At pull-request time, by each job's
+`timeout-minutes: 30`. After a release, by the release tail: `publish` installs
+`onevcs-cli` at the version the skill pins and ends with `onebudgetspec check
+budgets.yaml --label release-tail`, whose result nothing reads — an over figure
+turns that step red with every breakdown in its log, and never blocks, demotes or
+reverts a release. Locally, as a warning: `just gate` records its wall clock to
+`.gate-time.json` and checks `<name>-gate-time` (`--label host-variable`),
+warning on an over reading (exit 1) and failing on an invalid budgets file or a
+failed measurement (2 or 3). The strict budget check `just check` runs excludes
+both labels. No pre-push hook runs the gate: CI owns it ("Push hooks" below).
+
+**Meet the line by cutting work, never by sharding.** Affected-only selection,
+caches keyed on their inputs, no check run twice, no needless serialization
+(`needs`). Splitting a job into shards buys wall-clock with job slots the account
+does not have. An alternative that reduces coverage — skipping a platform,
+dropping a suite from a job — is the owner's decision, never a fix applied to meet
+a budget.
+
+**Required checks** are exactly `lint` and the test jobs, which the composer
+records in `.github/governance.json` and `setup_github_governance.py` applies by
+default. Branches need not be up to date before they merge (non-strict): that
+trades catching a semantic conflict between two independently green pull requests
+for not re-running every open pull request each time main moves, and with no CI
+run on push to main nothing catches such a conflict until the next pull request
+touching that code. Up-to-date branches stay an explicit opt-in (`--strict`).
+
+**Staged gates under this shape.** Every pull request runs the affected tier. The
+broader `just check all` sweep is not a CI job here — there is no push run and the
+release pull request's tree is a tested main — so it runs where a change reaches
+everything (`just upgrade`) and by hand.
 
 ## Staged gates: the affected tier and the broader tier
 
@@ -264,8 +373,10 @@ Action posts one sticky comment listing the suppressions *this* pull request
 introduced — each with its tool, its silenced rules, its stated reason (or the
 conspicuous absence of one), a link to the line, and a collapsed block holding the
 code it silences. So a human reviewing at a high level sees every bypass and its
-justification without reading the diff line by line. Add it to every repo; start
-from [`assets/notignored.yml.template`](../assets/notignored.yml.template) →
+justification without reading the diff line by line. Add it to every repo. In the
+composed CI/CD shape it is a step of the `lint` job, guarded by the fork check
+below; a repository without that shape starts from
+[`assets/notignored.yml.template`](../assets/notignored.yml.template) →
 `.github/workflows/notignored.yml`.
 
 - **Drop-in, with defaults.** No config file and nothing to install — the action
@@ -280,7 +391,8 @@ from [`assets/notignored.yml.template`](../assets/notignored.yml.template) →
   be upserted, and `fetch-depth: 0` on the checkout so the base branch exists to
   diff against. Each failure is silent — the run goes green having posted
   nothing — and a shallow checkout is the usual culprit.
-- **It is deliberately NOT a required check.** Skip it on fork pull requests
+- **It is deliberately NOT a required check of its own.** (As a `lint` step it
+  is skipped on forks while `lint` itself still reports.) Skip it on fork pull requests
   (`if: github.event.pull_request.head.repo.full_name == github.repository`),
   whose read-only token cannot upsert a comment — and a required context that
   never reports would block those PRs forever. So keep it out of the required set
@@ -321,10 +433,11 @@ exact commands below are the ones this skill's own repo uses.
   advisory and a red one can still be merged past. Add the standard protections:
   require a PR before merging, linear history, no force-pushes, no branch
   deletion, and conversation resolution.
-- **Required checks are the PR-context jobs only.** Under the staged model the
-  jobs that report on a pull request are the affected-tier gate (`check`), the
-  PR-title lint (`commitlint`), and the llmlint judge (`llmlint`) — and those are
-  exactly the contexts listed below. The **broader-tier sweep runs after the PR
+- **Required checks are the PR-context jobs only.** In the composed CI/CD shape
+  those are exactly `lint` (which carries the PR-title check and the llmlint
+  judge as steps) and the test jobs, recorded in `.github/governance.json`. A
+  repository on the older shape requires its affected-tier gate (`check`), the
+  PR-title lint (`commitlint`) and the llmlint judge (`llmlint`). The **broader-tier sweep runs after the PR
   is gone** (at merge-to-main, or at release-prep), so it has no pull request to
   report on and must never join the required set: a required context that never
   reports blocks every PR forever, the same trap as `notignored` below. It gates
@@ -337,9 +450,11 @@ exact commands below are the ones this skill's own repo uses.
   PR to be rebased onto the latest default branch before it can merge (GitHub's
   `strict` flag) — it forces a re-sync and a full CI re-run every time the base
   moves, which is real friction for little gain on a fast-moving or
-  solo-maintained repo. Turn it on (`--strict`) only if independently-green PRs
-  routinely break when combined (semantic conflicts) and that risk outweighs the
-  churn.
+  solo-maintained repo. The trade: a semantic conflict between two independently
+  green PRs is not caught at merge, and with no CI run on push to main, not until
+  a later PR touches that code. Turn it on (`--strict`) only as an explicit
+  opt-in, if independently-green PRs routinely break when combined and that risk
+  outweighs the churn.
 - **Admins can still override.** Leave admin enforcement off
   (`enforce_admins: false`) so a maintainer can break the glass in an emergency;
   the protection is the default path, not a cage. (Bump the required approval
@@ -402,10 +517,14 @@ gh api -X PUT repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-appro
 The skill bundles this as a runnable, idempotent script — it applies the merge
 model, branch protection, *and* — on a public repository — the fork-PR approval
 policy, reading the visibility from GitHub and reporting the policy as `not
-applicable (private)` or `(internal)` elsewhere. Pass the required check contexts
-and preview with `--dry-run` first:
+applicable (private)` or `(internal)` elsewhere. In a composed repository it reads
+the required checks — `lint` and the test jobs, non-strict — from
+`.github/governance.json`, so it needs no contexts; elsewhere pass them. Preview
+with `--dry-run` first:
 
 ```bash
+uv run --script scripts/setup_github_governance.py --dry-run   # the composed shape
+uv run --script scripts/setup_github_governance.py
 uv run --script scripts/setup_github_governance.py check commitlint llmlint --dry-run
 uv run --script scripts/setup_github_governance.py check commitlint llmlint
 # tune who is gated on forks (default: all_external_contributors):
@@ -424,8 +543,9 @@ no-op). It **must** be among the required contexts so a red llmlint run blocks
 merge, the same as the `check` gate — otherwise auto-merge lands a PR the moment
 `check`/`commitlint` go green, past a still-running or failed llmlint. The setup
 script **enforces** this: it refuses to apply governance without an `llmlint`
-context unless you pass `--allow-missing-llmlint` (only for a repo with no
-llmlint tier).
+context — or a required `lint` whose job in `ci.yml` runs `just lint-llm-diff`,
+as the composed shape's does — unless you pass `--allow-missing-llmlint` (only
+for a repo with no llmlint tier).
 
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
@@ -433,11 +553,21 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
 
 ## Verification
 
+- [ ] **The CI/CD shape.** `compose_repo_plan.py --ci-cd` wrote it, and
+  `check_repo_baseline.py` passes it: `lint` plus one `test-<platform>` job (and
+  any `visual-docs-<arch>`), each `timeout-minutes: 30` with no `needs`; no other
+  pull-request job; no CI on push to main; `release-plz`, a `build-<platform>`
+  job per supported platform (Linux arm64 with Linux) and `publish` ending in the
+  release tail; the eight budgets in the root `budgets.yaml` with the figures
+  script copied unedited; `.github/governance.json` requiring exactly `lint` and
+  the test jobs, non-strict unless the owner opted in.
+
 - [ ] **Two tiers, named and wired.** Pull requests run the **affected tier** —
   the gate recipe delegating to `nx affected` keyed off an explicitly derived
-  merge base — and one job runs the **broader tier**, a full `run-many` sweep.
-  Both go through the same recipe surface, so no tier is a second
-  implementation of the gate.
+  merge base — and one job runs the **broader tier**, a full `run-many` sweep
+  (except in the composed CI/CD shape, which runs no sweep in CI: see "CI and CD
+  time budgets"). Both go through the same recipe surface, so no tier is a
+  second implementation of the gate.
 - [ ] **The broader tier runs at exactly one lifecycle point.** Exactly one job
   sweeps: merge-to-main for a repo that releases the merged commit, release-prep
   for a repo that batches releases. The placement, and the release model it was
@@ -498,7 +628,8 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
 - [ ] **PR template.** A GitHub pull-request template exists
   (`.github/pull_request_template.md`) with **What** and **Why** sections
   (**Additional info** optional).
-- [ ] **Suppressions review comment.** `.github/workflows/notignored.yml` exists
+- [ ] **Suppressions review comment.** The composed `lint` job runs it as a
+  step, or `.github/workflows/notignored.yml` exists
   (from `assets/notignored.yml.template`), runs
   `uses: nickderobertis/notignored@v0` on `pull_request` with
   `pull-requests: write` and a `fetch-depth: 0` checkout, and skips fork PRs via

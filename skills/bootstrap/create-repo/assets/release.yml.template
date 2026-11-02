@@ -1,0 +1,119 @@
+#% # The release workflow, rendered by `compose_repo_plan.py --ci-cd REPO_DIR` (see
+#% # ci.yml.template for the `#%` syntax).
+# Build, verify and publish everything a published GitHub Release ships. The Release that
+# fires this is the one release-plz.yml cut; creating one by hand is the supported fallback.
+#
+# One build job per platform this repository releases, each natively on that platform's
+# runner and held to 30 minutes: it builds every artifact for its targets once, installs and
+# runs those exact files, publishes its platform's artifacts, then installs them back from the
+# registries on its own OS and runs them. The build jobs need nothing from one another.
+# `publish` waits for all of them, confirms the registries serve every platform's artifacts,
+# publishes the platform-independent ones and confirms those resolve too.
+#
+# There is no test re-run here and no separate published-smoke workflow: the tree a Release
+# names is the one ci.yml's jobs proved on its pull request, and what this workflow proves is
+# the artifacts, by running each one before it publishes and again from the registry after.
+#
+# Each step is one phase of the `just release <job> <phase>` recipe (`build`, `publish`, `verify`,
+# `available`), so a release runs nothing a contributor cannot.
+#
+# Last, `publish` reports the seven `release-tail` budgets of budgets.yaml — the CI and CD
+# figures of this release, measured by scripts/actions-budget-figures.sh from onevcs's
+# read-only answers. Reporting only: an over figure turns that last step red with every
+# figure's breakdown in its log, and nothing reads its result, so it never blocks, demotes or
+# reverts a release.
+
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+#% for build in linux linux-arm64 macos windows
+  # @@BUILD_NOTE@@
+  build-@@BUILD@@:
+    runs-on: @@BUILD_RUNNER@@
+    timeout-minutes: 30
+    permissions:
+      contents: write # upload this platform's archive to the GitHub Release
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - uses: oven-sh/setup-bun@v2
+#% if rust
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: @@BUILD_TARGET@@
+#% endif
+      - name: Build, package and test-install the @@BUILD_TITLE@@ artifacts
+        run: just release build-@@BUILD@@ build --tag "$TAG"
+      - name: Publish the @@BUILD_TITLE@@ artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+#% if rust
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+#% endif
+        run: just release build-@@BUILD@@ publish --tag "$TAG"
+      - name: Install and run the @@BUILD_TITLE@@ artifacts from the registries
+        run: just release build-@@BUILD@@ verify --tag "$TAG"
+
+#% endfor
+  publish:
+    needs: [@@BUILD_JOBS@@]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Read-only for the release tail's GitHub reads (the release, its pull requests and the
+    # runs and jobs that carried them); the registry tokens below are what publishes.
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v2
+      - uses: oven-sh/setup-bun@v2
+#% if rust
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+#% endif
+      # Nothing platform-independent is published until every platform's artifacts are served.
+      - name: Confirm the registries serve every platform's artifacts
+        run: just release publish available --tag "$TAG"
+      - name: Build the platform-independent artifacts
+        run: just release publish build --tag "$TAG"
+      - name: Publish the platform-independent artifacts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+#% if rust
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+#% endif
+        run: just release publish publish --tag "$TAG"
+      - name: Confirm the registries resolve the platform-independent artifacts
+        run: just release publish verify --tag "$TAG"
+      # The release tail: onevcs at the release the create-repo skill pins, onebudgetspec at
+      # the version package.json pins.
+      - name: Install onevcs and onebudgetspec for the release tail
+        shell: bash
+        run: |
+          npm install --no-save --no-package-lock --no-audit --no-fund --prefix "$RUNNER_TEMP/release-tail" onevcs-cli@@@ONEVCS_CLI_VERSION@@ @onebudgetspec/cli@@@ONEBUDGETSPEC_VERSION@@
+          echo "$RUNNER_TEMP/release-tail/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Report the release-tail budgets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: onebudgetspec check budgets.yaml --label release-tail

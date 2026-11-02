@@ -1,0 +1,85 @@
+#% # The first CD job, rendered by `compose_repo_plan.py --ci-cd REPO_DIR` (see ci.yml.template
+#% # for the `#%` syntax). The job id is `release-plz` in every shape: it is what the CD
+#% # budgets count. release-plz versions Cargo workspaces only, so the TypeScript shape's
+#% # job runs release-please in pull-request mode instead.
+# Versioning: on every push to main, open or update the release pull request from the merged
+# Conventional Commits, and — once that pull request has merged — tag the version and cut the
+# GitHub Release, which fires release.yml. The release pull request merges itself once its
+# required checks pass: this job arms auto-merge on it, and on nothing else.
+#
+# It authenticates with a PAT (RELEASE_PLZ_TOKEN) precisely so that the Release it cuts fires
+# release.yml and the pull request it opens runs ci.yml: a tag, release or pull request
+# created by the default GITHUB_TOKEN triggers no workflow. Without the token (a fork, or a
+# clone not yet configured) every step after the guard is skipped.
+
+name: Release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release-plz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: release-plz
+      cancel-in-progress: false
+    steps:
+      - id: guard
+        name: Decide whether this repository can release
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: echo "enabled=$([ -n "$RELEASE_TOKEN" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+#% if rust
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        if: steps.guard.outputs.enabled == 'true'
+      - uses: taiki-e/install-action@v2
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          tool: release-plz
+      - name: Tag and cut the GitHub Release of a merged release pull request
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: release-plz release --git-token "$GITHUB_TOKEN"
+      - name: Open or update the release pull request
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: release-plz release-pr --git-token "$GITHUB_TOKEN"
+      - name: Arm auto-merge on the release pull request
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+        run: |
+          pr="$(gh pr list --state open --json number,headRefName \
+            --jq 'map(select(.headRefName | startswith("release-plz-"))) | .[0].number // empty')"
+          [ -z "$pr" ] || gh pr merge "$pr" --auto --squash
+#% endif
+#% if typescript
+      # release-please in pull-request mode: the same release pull request and Release
+      # release-plz makes for a Cargo workspace, for package.json.
+      - id: release
+        uses: googleapis/release-please-action@v4
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          release-type: node
+      - name: Arm auto-merge on the release pull request
+        if: steps.guard.outputs.enabled == 'true' && steps.release.outputs.pr != ''
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+          PR: ${{ fromJSON(steps.release.outputs.pr).number }}
+        run: gh pr merge "$PR" --auto --squash
+#% endif

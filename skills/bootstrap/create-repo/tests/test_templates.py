@@ -65,36 +65,39 @@ def job_block(workflow: str, name: str) -> str:
     return "\n".join(body)
 
 
-def test_pull_requests_run_the_affected_tier_with_a_derived_merge_base(ci_workflow):
-    job = job_block(ci_workflow, "check")
-    assert "github.event_name == 'pull_request'" in job
-    # Affected detection needs the history the merge base is derived from...
-    assert "fetch-depth: 0" in job
-    # ...and the base derived explicitly, not left to the implicit default.
-    assert "nrwl/nx-set-shas@" in job
-    assert "run: just check" in job
-    assert "just check all" not in job
+def test_pull_requests_run_lint_and_one_test_job_per_platform(ci_workflow):
+    # The rendered jobs are proven per composition by e2e/test_ci_cd_shape_e2e.py;
+    # here, the template's own two job bodies.
+    for name, recipe in (
+        ("lint", "run: just lint"),
+        ("test-@@PLATFORM@@", "run: just ci-test"),
+    ):
+        job = job_block(ci_workflow, name)
+        assert "    timeout-minutes: 30" in job.splitlines(), name
+        # Affected detection needs the history the merge base is derived from,
+        # and the base derived explicitly, not left to the implicit default.
+        assert "fetch-depth: 0" in job and "nrwl/nx-set-shas@" in job, name
+        assert recipe in job, name
+        assert "needs:" not in job, name
 
 
-def test_the_broader_sweep_runs_at_one_lifecycle_point(ci_workflow):
-    job = job_block(ci_workflow, "check-all")
-    assert "github.event_name == 'push'" in job
-    assert "run: just check all" in job
-    # One sweep, at merge-to-main: nothing downstream re-gates the same tree.
-    assert ci_workflow.count("just check all") == 1
+def test_ci_runs_on_pull_requests_and_never_on_push_to_main(ci_workflow):
+    assert "\non:\n  pull_request:\n\n" in ci_workflow
+    assert "\n  push:" not in ci_workflow
+
+
+def test_the_llmlint_tier_runs_inside_lint(ci_workflow):
+    job = job_block(ci_workflow, "lint")
+    assert "just lint-llm-validate --diff-base origin/main" in job
+    assert "just lint-llm-diff origin/main" in job
+    assert "\n  llmlint:" not in ci_workflow
 
 
 def test_both_tiers_run_the_same_recipe_surface(ci_workflow):
-    # The tier is a flag on `just check`, never a second gate implementation, so
-    # local and CI cannot drift.
+    # Each job runs a `just` recipe, never a second gate implementation, so local
+    # and CI cannot drift.
     assert "nx affected" not in ci_workflow
     assert "nx run-many" not in ci_workflow
-
-
-def test_the_llmlint_tier_survives_alongside_the_staged_gate(ci_workflow):
-    job = job_block(ci_workflow, "llmlint")
-    assert "just lint-llm-validate --diff-base origin/main" in job
-    assert "just lint-llm-diff origin/main" in job
 
 
 def test_the_workflow_is_least_privilege(ci_workflow):
