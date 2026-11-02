@@ -99,28 +99,19 @@ clone, run one command, and trust.
    (satisfiable with mocks that prove nothing), not the target. Enumerate the
    journeys in `AGENTS.md` so coverage is auditable and grows with the repo.
 7. **Add CI that proves the artifact, inside its time budgets.** Write the CI
-   and CD shape with `uv run --script scripts/compose_repo_plan.py --ci-cd <repo>
-   --language rust|typescript --name <name> [--platforms linux]
-   [--visual-docs] [--visual-docs-arch arm64]`: a `lint` job and one test job per
-   supported platform on every pull request, each held to 30 minutes and never on
-   push to main; `release-plz`, a build job per platform and `publish` ending in
-   the release tail; the root `budgets.yaml` with the eight CI/CD budgets; `just
-   gate`'s timing wrapper; and `.github/governance.json`. The rules — every CI
-   check and CD job within 30 minutes, a change's last checks plus merge to
-   release within 90, job counts budgeted because the account's 20 concurrent
-   jobs are shared, met by cutting work and never by sharding, and where each is
-   enforced — are "CI and CD time budgets" in
+   and CD shape and its budgets with `uv run --script
+   scripts/compose_repo_plan.py --ci-cd <repo>` (`--help` lists its options);
+   don't hand-write what it renders. The budget rules it encodes — 30 minutes
+   per CI check and CD job, 90 from a change's last checks to its release, job
+   counts held because the account's concurrent jobs are shared, met by cutting
+   work and never by sharding — are "CI and CD time budgets" in
    [`references/ci.md`](./references/ci.md) and the CI/CD budgets section of
    [`references/tools/onebudgetspec.md`](./references/tools/onebudgetspec.md).
-   (release-plz versions Cargo workspaces only, so a TypeScript repository's
-   `release-plz` job runs release-please.) The workflows call recipes only the
-   repository knows how to fill — `just bootstrap`, `just supply-chain`, and
-   `just release <job> <phase>` (each `build-<os>` job's `build`, `publish` and
-   `verify`; `publish`'s `available`, `build`, `publish` and `verify`) — and the
-   template's placeholder for each names what to implement and exits non-zero,
-   so an unfilled one fails its job; implement every one of them for the
-   repository's shape. No pre-push hook runs the gate: CI
-   owns it. CI that doesn't actually invoke the gate proves nothing. If the repo ships something users
+   The judgment left to you: implement every placeholder recipe the workflows
+   call (`just bootstrap`, `just supply-chain`, `just release <job> <phase>`)
+   for the repository's build — each fails its job until you do. No pre-push
+   hook runs the gate: CI owns it, and CI that doesn't invoke the gate proves
+   nothing. If the repo ships something users
    install, CI must *also* prove the **end-user install path**: a separate job
    that installs the artifact via the recommended end-user method (ideally one
    cross-platform script or command) on the real platform matrix and smoke-tests

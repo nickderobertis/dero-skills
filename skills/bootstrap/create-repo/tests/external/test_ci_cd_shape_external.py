@@ -269,9 +269,11 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
     release_reads = [r for r in served if r not in pr_reads]
     # The read figures are the double's own count: the release's reads, and the
     # most any one pull request needed (its runs at head and one CI run's jobs).
+    # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] A replayed figure, not a measured one: it must equal the replay double's own count of the reads served, which is the functional proof that each onevcs read happens once across the seven budgets.
     assert results[f"{NAME}-release-read-requests"][1] == str(len(release_reads)), (
         served
     )
+    # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] A replayed figure checked against the replay double's own record of the reads served, which is what proves each pull request's reads are counted once, not a request-count bar.
     assert results[f"{NAME}-pr-read-requests"][1] == str(len(pr_reads) // 2), served
     assert sum("/releases?" in r for r in served) == 1
     assert not any("/runs/41252214397/jobs" in r for r in served)  # the skipped run
@@ -289,12 +291,11 @@ def test_a_figure_over_its_threshold_turns_the_tail_non_zero_naming_it(
     code, output, results, _served = run_tail(released, tmp_path, {**HIGH, reads: 1})
     assert code == 1, output
     budget, actual, threshold, verdict = results[reads]
+    # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold of 1 is the input this test seeds below the replayed figure to prove the tail exits non-zero naming the budget; it holds the code to no request count.
     assert (verdict, threshold) == ("over", "1"), output
+    # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] Confirms the seeded threshold of 1 sits below the replayed figure, the precondition of the over-threshold verdict under test.
     assert float(actual) > 1
     assert [b for b, *_, v in results.values() if v == "over"] == [reads], output
-
-
-# --- the gate -------------------------------------------------------------------
 
 
 @pytest.fixture(scope="module")

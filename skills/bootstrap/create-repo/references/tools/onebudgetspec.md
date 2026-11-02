@@ -446,8 +446,7 @@ budgets onepipeline, onetaskgraph and onepipeline-ui register, each id under the
 project name the composer fills in. Every CI check and CD job is held to 30
 minutes and a change's last-commit pull-request checks plus merge to release to
 90; job counts are budgeted per pull-request push and per release because the
-account's 20 concurrent jobs are shared. `../ci.md` ("CI and CD time budgets")
-states the CI and CD shape they measure.
+account's 20 concurrent jobs are shared.
 
 | id | unit | threshold | label | command |
 | --- | --- | --- | --- | --- |

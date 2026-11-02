@@ -4,6 +4,7 @@
 // wrapper writes beside the repository (gitignored). A missing, malformed or failed record is an
 // error, never a figure: onebudgetspec then exits 3 and the gate fails.
 import { readFileSync } from "node:fs";
+// llmlint: ignore[scripts_runtime_independent] Not a skill script: the composer copies it into the composed repository as the `<name>-gate-time` budget command, where the same `--ci-cd` step pins @onebudgetspec/sdk in that repository's own package.json, as the three repositories that proved the shape run it.
 import { report } from "@onebudgetspec/sdk";
 
 const RECORD = new URL("../.gate-time.json", import.meta.url);

@@ -199,9 +199,6 @@ def bump_node(repo: Path) -> None:
     edit(repo, "CHANGELOG.md", "## 0.3.0", "## 0.4.0\n\n- second\n\n## 0.3.0")
 
 
-# --- the release tool's own edits pass -----------------------------------------
-
-
 def test_the_step_runs_the_content_guard_rather_than_a_name_filter(composed):
     lint = jobs(workflow(composed, "ci.yml"))["lint"]
     assert (
@@ -224,8 +221,6 @@ def test_a_release_tools_version_and_changelog_edits_pass(release_branch, bump):
     assert done.returncode == 0, done.stderr
     assert "all release-tool version and changelog edits" in done.stdout
 
-
-# --- anything else inside the allowed files fails ------------------------------
 
 TAMPERING = {
     # `path =` in a comment, or inside another field's string, names no workspace
