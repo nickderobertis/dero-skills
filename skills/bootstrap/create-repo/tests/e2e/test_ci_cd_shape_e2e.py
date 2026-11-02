@@ -130,9 +130,6 @@ def expected_ci_jobs(platforms: str, arch: str | None) -> list[str]:
     return [ci[0], f"visual-docs-{arch}", *ci[1:]] if arch else ci
 
 
-# --- what the composer writes -------------------------------------------------
-
-
 def test_ci_runs_lint_and_a_test_job_per_platform_each_held_to_30_minutes(composed):
     repo, _language, platforms, arch = composed
     ci = workflow(repo, "ci.yml")
@@ -169,6 +166,15 @@ def test_lint_runs_everything_platform_independent_once(composed):
         assert "lint-llm" not in body and "supply-chain" not in body
     msrv = "cargo-hack" in lint
     assert msrv == (language == "rust")
+
+
+def test_lint_writes_contents_only_where_it_publishes_visual_docs(composed):
+    repo, _language, _platforms, arch = composed
+    lint = jobs(workflow(repo, "ci.yml"))["lint"]
+    grants = lint[lint.index("permissions:\n") : lint.index("steps:")]
+    contents = re.findall(r"^\s+contents: (\w+)", grants, re.MULTILINE)
+    # Only the visual docs push to gh-pages; every other composition stays read-only.
+    assert contents == (["write"] if arch else ["read"]), grants
 
 
 def test_the_release_runs_release_plz_then_a_build_job_per_platform_and_publish(
@@ -239,6 +245,7 @@ def test_the_root_budgets_are_the_eight_the_three_repositories_register(composed
         budget = budgets[f"{NAME}-{suffix}"]
         assert budget["command"] == command, suffix
         assert budget["unit"] == unit, suffix
+        # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold is the composed repository's budgets.yaml content the task fixes to what the three repositories' landing commits register, not a performance bar this suite holds itself to: a wrong value here is a wrong file the composer wrote.
         assert budget["threshold"] == counts.get(suffix, threshold), suffix
         assert budget["labels"] == [label], suffix
         assert budget["measure"] == "reported" and budget["direction"] == "max"
@@ -349,9 +356,6 @@ def test_a_language_without_a_known_toolchain_is_refused(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-# --- the governance script ------------------------------------------------------
-
-
 @pytest.mark.parametrize("platforms", ["cross-platform", "linux"])
 def test_the_governance_dry_run_requires_exactly_lint_and_the_test_jobs(
     tmp_path, platforms
@@ -401,9 +405,6 @@ def test_governance_refuses_a_lint_job_that_runs_no_llmlint(tmp_path):
     )  # fmt: skip
     assert done.returncode == 1
     assert "no llmlint check among the required status checks" in done.stderr
-
-
-# --- the baseline checker -------------------------------------------------------
 
 
 def test_the_baseline_checker_passes_the_unmodified_composition(composed):

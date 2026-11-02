@@ -848,7 +848,6 @@ class ToolWiring(Protocol):
 TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 
 
-# --- The CI/CD shape ----------------------------------------------------------
 # `--ci-cd REPO_DIR` writes the CI and CD workflows, the root budgets and the gate's
 # timing wrapper every repository starts inside (references/ci.md, "CI and CD time
 # budgets"), rendered from the templates under assets/ for the composition: its
@@ -870,42 +869,69 @@ PLATFORM_SETS: dict[str, tuple[str, ...]] = {
     "cross-platform": ("linux", "windows", "macos"),
     "linux": ("linux",),
 }
-# Each CI test job's platform: its title and its hosted runner.
-CI_PLATFORMS: dict[str, dict[str, str]] = {
-    "linux": {"PLATFORM_TITLE": "Linux", "PLATFORM_RUNNER": "ubuntu-latest"},
-    "windows": {"PLATFORM_TITLE": "Windows", "PLATFORM_RUNNER": "windows-latest"},
-    "macos": {"PLATFORM_TITLE": "macOS", "PLATFORM_RUNNER": "macos-latest"},
+
+
+class CiPlatform(NamedTuple):
+    """A CI test job's platform: its title and its hosted runner."""
+
+    title: str
+    runner: str
+
+    def values(self, platform: str) -> dict[str, str]:
+        return {
+            "PLATFORM": platform,
+            "PLATFORM_TITLE": self.title,
+            "PLATFORM_RUNNER": self.runner,
+        }
+
+
+CI_PLATFORMS: dict[str, CiPlatform] = {
+    "linux": CiPlatform("Linux", "ubuntu-latest"),
+    "windows": CiPlatform("Windows", "windows-latest"),
+    "macos": CiPlatform("macOS", "macos-latest"),
 }
-# Each CD build job (`build-<build>`): what it releases, natively, on which runner.
+
+
+class CdBuild(NamedTuple):
+    """A CD build job (`build-<build>`): what it releases, natively, on which runner."""
+
+    title: str
+    runner: str
+    target: str
+    note: str
+
+    def values(self, build: str) -> dict[str, str]:
+        return {
+            "BUILD": build,
+            "BUILD_TITLE": self.title,
+            "BUILD_RUNNER": self.runner,
+            "BUILD_TARGET": self.target,
+            "BUILD_NOTE": self.note,
+        }
+
+
 # Linux arm64 is released on every repository that releases Linux, on GitHub's hosted
 # ARM runner; macOS is Apple Silicon only.
-CD_BUILDS: dict[str, dict[str, str]] = {
-    "linux": {
-        "BUILD_TITLE": "Linux",
-        "BUILD_RUNNER": "ubuntu-latest",
-        "BUILD_TARGET": "x86_64-unknown-linux-gnu",
-        "BUILD_NOTE": "Linux x86_64.",
-    },
-    "linux-arm64": {
-        "BUILD_TITLE": "Linux arm64",
-        "BUILD_RUNNER": "ubuntu-24.04-arm",
-        "BUILD_TARGET": "aarch64-unknown-linux-gnu",
-        "BUILD_NOTE": "Linux arm64, natively on GitHub's hosted ARM Linux runner: the same "
+CD_BUILDS: dict[str, CdBuild] = {
+    "linux": CdBuild(
+        "Linux", "ubuntu-latest", "x86_64-unknown-linux-gnu", "Linux x86_64."
+    ),
+    "linux-arm64": CdBuild(
+        "Linux arm64",
+        "ubuntu-24.04-arm",
+        "aarch64-unknown-linux-gnu",
+        "Linux arm64, natively on GitHub's hosted ARM Linux runner: the same "
         "kinds of artifact build-linux publishes, for aarch64.",
-    },
-    "macos": {
-        "BUILD_TITLE": "macOS",
-        "BUILD_RUNNER": "macos-latest",
-        "BUILD_TARGET": "aarch64-apple-darwin",
-        "BUILD_NOTE": "macOS, Apple Silicon only: nothing here cross-compiles or emulates "
-        "x86_64.",
-    },
-    "windows": {
-        "BUILD_TITLE": "Windows",
-        "BUILD_RUNNER": "windows-latest",
-        "BUILD_TARGET": "x86_64-pc-windows-msvc",
-        "BUILD_NOTE": "Windows x86_64.",
-    },
+    ),
+    "macos": CdBuild(
+        "macOS",
+        "macos-latest",
+        "aarch64-apple-darwin",
+        "macOS, Apple Silicon only: nothing here cross-compiles or emulates x86_64.",
+    ),
+    "windows": CdBuild(
+        "Windows", "windows-latest", "x86_64-pc-windows-msvc", "Windows x86_64."
+    ),
 }
 # The CD builds each CI platform releases.
 PLATFORM_BUILDS: dict[str, tuple[str, ...]] = {
@@ -915,47 +941,69 @@ PLATFORM_BUILDS: dict[str, tuple[str, ...]] = {
 }
 # A second visual-docs architecture, to the runner that captures it natively.
 VISUAL_DOCS_ARCH_RUNNERS = {"arm64": "ubuntu-24.04-arm"}
-# Per language: the release pull request's branch prefix (whose edits
-# scripts/release-branch-guard.mjs holds to versions and changelogs), and the
-# lockfiles the Nx cache key hashes beside bun.lock.
-LANGUAGE_VALUES: dict[str, dict[str, str]] = {
-    "rust": {
-        "RELEASE_BRANCH_PREFIX": "release-plz-",
-        "LOCKFILES": ", 'Cargo.lock'",
-        "SUPPLY_CHAIN_EXTRA": " and the MSRV",
-    },
-    "typescript": {
-        "RELEASE_BRANCH_PREFIX": "release-please--",
-        "LOCKFILES": "",
-        "SUPPLY_CHAIN_EXTRA": "",
-    },
+
+
+class LanguageValues(NamedTuple):
+    """Per language: the release pull request's branch prefix (whose edits
+    scripts/release-branch-guard.mjs holds to versions and changelogs), the lockfiles
+    the Nx cache key hashes beside bun.lock, and what the supply-chain step adds."""
+
+    release_branch_prefix: str
+    lockfiles: str
+    supply_chain_extra: str
+
+    def values(self) -> dict[str, str]:
+        return {
+            "RELEASE_BRANCH_PREFIX": self.release_branch_prefix,
+            "LOCKFILES": self.lockfiles,
+            "SUPPLY_CHAIN_EXTRA": self.supply_chain_extra,
+        }
+
+
+LANGUAGE_VALUES: dict[str, LanguageValues] = {
+    "rust": LanguageValues("release-plz-", ", 'Cargo.lock'", " and the MSRV"),
+    "typescript": LanguageValues("release-please--", "", ""),
 }
-# Each file the shape writes, from the template it is rendered from (None: copied
-# byte for byte), and whether it is executable.
-CI_CD_FILES: tuple[tuple[str, str, bool, bool], ...] = (
-    (".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
-    (
+
+
+class CiCdFile(NamedTuple):
+    """A file the shape writes: where, from which asset, and how."""
+
+    target: str
+    source: str
+    # False: copied byte for byte rather than rendered as a template.
+    rendered: bool
+    executable: bool
+
+
+CI_CD_FILES: tuple[CiCdFile, ...] = (
+    CiCdFile(".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
+    CiCdFile(
         ".github/workflows/release-plz.yml",
         "assets/release-plz.yml.template",
         True,
         False,
     ),
-    (".github/workflows/release.yml", "assets/release.yml.template", True, False),
-    ("budgets.yaml", "assets/budgets.yaml.template", True, False),
-    ("scripts/gate-time.sh", "assets/budgets/gate-time.sh.template", True, True),
-    (
+    CiCdFile(
+        ".github/workflows/release.yml", "assets/release.yml.template", True, False
+    ),
+    CiCdFile("budgets.yaml", "assets/budgets.yaml.template", True, False),
+    CiCdFile(
+        "scripts/gate-time.sh", "assets/budgets/gate-time.sh.template", True, True
+    ),
+    CiCdFile(
         "scripts/gate-time-budget.mjs",
         "assets/budgets/gate-time-budget.mjs",
         False,
         False,
     ),
-    (
+    CiCdFile(
         "scripts/release-branch-guard.mjs",
         "assets/release-branch-guard.mjs",
         False,
         False,
     ),
-    (
+    CiCdFile(
         "scripts/actions-budget-figures.sh",
         "assets/budgets/actions-budget-figures.sh",
         False,
@@ -1019,7 +1067,7 @@ class CiCdShape(NamedTuple):
         arch = self.visual_docs_arch or ""
         return {
             "NAME": self.name,
-            **LANGUAGE_VALUES[self.language],
+            **LANGUAGE_VALUES[self.language].values(),
             "SCREENCOMP_VERSION": SCREENCOMP_VERSION,
             "VISUAL_DOCS_ARCH": arch,
             "VISUAL_DOCS_RUNNER": VISUAL_DOCS_ARCH_RUNNERS.get(arch, ""),
@@ -1034,8 +1082,8 @@ class CiCdShape(NamedTuple):
 
     def loops(self) -> dict[str, dict[str, dict[str, str]]]:
         return {
-            "platform": {p: {"PLATFORM": p, **CI_PLATFORMS[p]} for p in self.platforms},
-            "build": {b: {"BUILD": b, **CD_BUILDS[b]} for b in self.builds},
+            "platform": {p: CI_PLATFORMS[p].values(p) for p in self.platforms},
+            "build": {b: CD_BUILDS[b].values(b) for b in self.builds},
         }
 
 
@@ -1070,23 +1118,26 @@ def _expand_template(
             )
             index += 1
             continue
-        words = directive[len(TEMPLATE_DIRECTIVE) :].split()
-        if words[:1] == ["if"]:
-            end = _template_block(lines, index, "if", "endif")
-            if words[1] in flags:
-                out += _expand_template(lines[index + 1 : end], flags, values, loops)
-            index = end + 1
-        elif words[:1] == ["for"]:
-            end = _template_block(lines, index, "for", "endfor")
-            items = loops[words[1]]
-            for item in words[3:]:
-                if item in items:
-                    out += _expand_template(
-                        lines[index + 1 : end], flags, values | items[item], loops
-                    )
-            index = end + 1
-        else:  # `#% #` is a comment about the template itself; nothing renders.
-            index += 1
+        match directive[len(TEMPLATE_DIRECTIVE) :].split():
+            case ["if", flag]:
+                end = _template_block(lines, index, "if", "endif")
+                if (flag.removeprefix("!") in flags) != flag.startswith("!"):
+                    body = lines[index + 1 : end]
+                    out += _expand_template(body, flags, values, loops)
+                index = end + 1
+            case ["for", loop, "in", *names]:
+                end = _template_block(lines, index, "for", "endfor")
+                items = loops[loop]
+                for item in names:
+                    if item in items:
+                        out += _expand_template(
+                            lines[index + 1 : end], flags, values | items[item], loops
+                        )
+                index = end + 1
+            case ["#", *_]:  # A comment about the template itself; nothing renders.
+                index += 1
+            case _:
+                raise ValueError(f"template line {index + 1}: unknown `{directive}`")
     return out
 
 
@@ -1111,11 +1162,11 @@ def governance_config(shape: CiCdShape) -> str:
 def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str, bytes]:
     """Every file the shape writes, by repo-relative path, refusing a differing one."""
     planned: dict[str, bytes] = {}
-    for target, source, rendered, _executable in CI_CD_FILES:
-        data = (skill_dir / source).read_bytes()
-        if rendered:
+    for file in CI_CD_FILES:
+        data = (skill_dir / file.source).read_bytes()
+        if file.rendered:
             data = render_template(data.decode("utf-8"), shape).encode("utf-8")
-        planned[target] = data
+        planned[file.target] = data
     planned[GOVERNANCE_FILE] = governance_config(shape).encode("utf-8")
     for target, data in planned.items():
         path = repo / target
@@ -1170,7 +1221,7 @@ def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
         )
     gitignore = repo / ".gitignore"
     ignored = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
-    executable = {target for target, _s, _r, x in CI_CD_FILES if x}
+    executable = {file.target for file in CI_CD_FILES if file.executable}
     for target, data in planned.items():
         path = repo / target
         if path.exists():

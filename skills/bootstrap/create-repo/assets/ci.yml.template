@@ -1,7 +1,8 @@
 #% # The pull-request CI every repository create-repo composes starts from. Render it with
 #% # `compose_repo_plan.py --ci-cd REPO_DIR`, which keeps the blocks between `#% if FLAG`
 #% # and `#% endif` for the flags the composition sets (rust, typescript, windows, macos,
-#% # visual-docs, visual-docs-arch), fills each @@KEY@@, and drops every `#%` line.
+#% # visual-docs, visual-docs-arch) and `#% if !FLAG` for those it does not, fills each
+#% # @@KEY@@, and drops every `#%` line.
 # Prove each pull request from a clean checkout, in one job per concern: `lint` once, on
 # Linux, for everything platform-independent, and one test job per platform the repository
 # supports. None needs another, so they all start at once, and each is held to 30 minutes
@@ -44,11 +45,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write # visual docs: push the pull request's gallery preview to gh-pages
-      pull-requests: write # the suppressions and visual docs comments; read the PR title
 #% if visual-docs
+      contents: write # visual docs: push the pull request's gallery preview to gh-pages
       pages: read # visual docs: wait on the Pages build the preview triggers
 #% endif
+#% if !visual-docs
+      contents: read
+#% endif
+      pull-requests: write # the suppressions and visual docs comments; read the PR title
     steps:
       # The merge base, llmlint's diff and notignored's scan all need the full history.
       - uses: actions/checkout@v4
