@@ -10,6 +10,7 @@ misreport and still failing the genuine gap beside it.
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -31,10 +32,15 @@ from test_check_repo_baseline_fleet import (
 
 
 def run_checker(repo: Path) -> subprocess.CompletedProcess[str]:
+    # A caller exporting UV_NO_SYNC makes `uv run --script` warn on stderr that the
+    # flag is a no-op for an inline-metadata script; an author's shell need not set
+    # it, and this journey asserts stderr stays empty, so it runs without it.
+    env = {k: v for k, v in os.environ.items() if k != "UV_NO_SYNC"}
     return subprocess.run(
         ["uv", "run", "--script", str(SCRIPT), str(repo)],
         capture_output=True,
         text=True,
+        env=env,
     )
 
 
