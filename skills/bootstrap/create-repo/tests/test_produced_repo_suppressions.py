@@ -36,6 +36,7 @@ from __future__ import annotations
 # purpose — ruff reads its own directives out of any comment, so spelling one in this
 # justification would either warn as malformed or, spelled well, blanket-silence the file.
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -267,6 +268,14 @@ def test_the_guard_is_invisible_to_the_model_but_works_after_the_run(
     (produced_repo / "app.py").write_text("import os  # noqa\n", encoding="utf-8")
     driver = tmp_path / "drive_stealth.py"
     driver.write_text(_STEALTH_DRIVER, encoding="utf-8")
+    # The PATH the driver needs, built here rather than inherited: `uv`, which puts
+    # this repo's venv on PATH by its absolute path (the entry stealth strips), and
+    # the system directories. An inherited relative entry such as `.venv/bin` would
+    # resolve against the driver's cwd — this repo — and hand `notignored` to the
+    # model whatever stealth removed.
+    uv = shutil.which("uv")
+    assert uv is not None, "uv is not on PATH — run `just bootstrap`"
+    path = os.pathsep.join([str(Path(uv).parent), "/usr/local/bin", "/usr/bin", "/bin"])
 
     result = subprocess.run(
         [
@@ -279,6 +288,7 @@ def test_the_guard_is_invisible_to_the_model_but_works_after_the_run(
             str(tmp_path),
         ],
         cwd=REPO_ROOT,
+        env={**os.environ, "PATH": path},
         capture_output=True,
         text=True,
     )
