@@ -16,7 +16,12 @@
     },
     "test": {
       "command": "uv run pytest skills/bootstrap/create-repo/tests/e2e",
-      "inputs": ["default", "oneharnessRelease"]
+      "inputs": [
+        "default",
+        "oneharnessRelease",
+        "onebudgetspecRelease",
+        "createRepoSkillSources"
+      ]
     }
   }
 }
