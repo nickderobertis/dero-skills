@@ -135,11 +135,15 @@ def test_each_gate_recipe_delegates_to_the_orchestrator(
     assert planned(command_surface, recipe) == [expected]
 
 
-def test_placeholder_recipes_still_name_what_a_new_repo_must_fill_in(command_surface):
-    # bootstrap is the stack-specific one the template can't write, so it runs for
-    # real and says so.
-    result = run_just(command_surface, "bootstrap")
-    assert result.returncode == 0, result.stderr
+@pytest.mark.parametrize("recipe", ["bootstrap", "supply-chain"])
+def test_placeholder_recipes_still_name_what_a_new_repo_must_fill_in(
+    command_surface, recipe
+):
+    # The stack-specific recipes the template can't write run for real, say what
+    # to implement, and fail: CI runs both, so an unfilled one must fail its job
+    # rather than pass it.
+    result = run_just(command_surface, recipe)
+    assert result.returncode != 0, result.stdout
     assert "TODO" in result.stdout
 
 

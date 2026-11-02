@@ -36,7 +36,7 @@ COMPOSITIONS = {
 # fills them, so the checker's only findings are the shape's.
 FILLED = {
     '@echo "TODO: install toolchain + dependencies (e.g. bun install, then uv sync / '
-    'cargo fetch)"': "bun install",
+    'cargo fetch)" && exit 1': "bun install",
     "@echo \"TODO: upgrade each ecosystem's dependencies (e.g. bun update, uv lock "
     '--upgrade, cargo update)"': "bun update",
 }

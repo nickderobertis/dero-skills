@@ -26,7 +26,9 @@ such workflow, so its commands carry no exclusion and are otherwise identical.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 import shutil
 from pathlib import Path
 
@@ -267,6 +269,44 @@ def test_the_gate_records_its_wall_clock_and_checks_it_as_a_warning(composed):
     assert not (repo / ".husky").exists()
     assert "pre-push:" not in justfile
     assert "husky" not in (repo / "package.json").read_text(encoding="utf-8")
+
+
+def test_every_placeholder_a_job_runs_fails_naming_what_to_implement(composed):
+    # The recipes only the repository can fill — the supply chain and each release
+    # phase — are run exactly as the composed workflows call them, with the real
+    # `just`: each says what to implement for that job and phase and exits
+    # non-zero, so an unfilled recipe fails its job rather than passing it.
+    repo, _language, platforms, _arch = composed
+    calls = {
+        f"{name}: {line.strip()[len('run: ') :]}"
+        for file in ("ci.yml", "release.yml")
+        for name, body in jobs(workflow(repo, file)).items()
+        for line in body.splitlines()
+        if line.strip().startswith(("run: just supply-chain", "run: just release "))
+    }
+    release_phases = {
+        build: ("build", "publish", "verify")
+        for build in CD_JOBS[platforms]
+        if build.startswith("build-")
+    }
+    release_phases["publish"] = ("available", "build", "publish", "verify")
+    assert calls == {"lint: just supply-chain"} | {
+        f'{job}: just release {job} {phase} --tag "$TAG"'
+        for job, phases in release_phases.items()
+        for phase in phases
+    }
+    env = {**os.environ, "TAG": "v1.2.3"}
+    env.pop("NX_BASE", None)
+    for call in sorted(calls):
+        _job, command = call.split(": ", 1)
+        argv = shlex.split(command.replace('"$TAG"', env["TAG"]))
+        done = run(argv, cwd=repo, env=env)
+        assert done.returncode != 0, (call, done.stdout)
+        assert "TODO: implement" in done.stdout, (call, done.stdout)
+        if argv[1] == "release":
+            assert f"phase {argv[3]} of release job {argv[2]}" in done.stdout, call
+        else:
+            assert "supply-chain check the CI lint job runs" in done.stdout, call
 
 
 def test_composing_again_changes_nothing_and_a_differing_file_is_refused(tmp_path):

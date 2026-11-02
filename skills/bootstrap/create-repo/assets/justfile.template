@@ -29,9 +29,10 @@ default:
 
 # Set up the project from a clean clone: the Node toolchain Nx runs on, then each
 # ecosystem's own workspace install — one lockfile per ecosystem, not one per
-# project.
+# project. Every CI job runs this first, so the placeholder fails until it is filled:
+# an unimplemented install must fail its job rather than pass it.
 bootstrap:
-    @echo "TODO: install toolchain + dependencies (e.g. bun install, then uv sync / cargo fetch)"
+    @echo "TODO: install toolchain + dependencies (e.g. bun install, then uv sync / cargo fetch)" && exit 1
 
 # Full quality gate. Defaults to the AFFECTED tier: every target that this change
 # can reach, and nothing else — the tier development and review run. `just check
@@ -62,8 +63,9 @@ gate-body: check supply-chain
 
 # The supply-chain checks the CI `lint` job runs once, platform-independent: dependency
 # licenses and advisories, and (Rust) the minimum supported Rust version.
+# The CI `lint` job runs it, so the placeholder fails until it is filled.
 supply-chain:
-    @echo "TODO: check the supply chain (e.g. cargo deny check && cargo hack check --rust-version, or bun audit)"
+    @echo "TODO: implement the supply-chain check the CI lint job runs (e.g. cargo deny check && cargo hack check --rust-version, or bun audit)" && exit 1
 
 # What each CI test job runs on its platform: the tests, builds, e2e journeys and
 # per-project budgets of the projects this change can reach. Formatting, linting and the

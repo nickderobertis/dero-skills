@@ -113,7 +113,13 @@ clone, run one command, and trust.
    [`references/ci.md`](./references/ci.md) and the CI/CD budgets section of
    [`references/tools/onebudgetspec.md`](./references/tools/onebudgetspec.md).
    (release-plz versions Cargo workspaces only, so a TypeScript repository's
-   `release-plz` job runs release-please.) No pre-push hook runs the gate: CI
+   `release-plz` job runs release-please.) The workflows call recipes only the
+   repository knows how to fill — `just bootstrap`, `just supply-chain`, and
+   `just release <job> <phase>` (each `build-<os>` job's `build`, `publish` and
+   `verify`; `publish`'s `available`, `build`, `publish` and `verify`) — and the
+   template's placeholder for each names what to implement and exits non-zero,
+   so an unfilled one fails its job; implement every one of them for the
+   repository's shape. No pre-push hook runs the gate: CI
    owns it. CI that doesn't actually invoke the gate proves nothing. If the repo ships something users
    install, CI must *also* prove the **end-user install path**: a separate job
    that installs the artifact via the recommended end-user method (ideally one
