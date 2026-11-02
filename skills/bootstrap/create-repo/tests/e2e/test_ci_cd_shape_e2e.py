@@ -433,6 +433,14 @@ EXTRA_JOB = (
     "  coverage:\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n"
     "    steps:\n      - run: just coverage\n"
 )
+GOVERNANCE_RECORD = ".github/governance.json"
+
+
+def rewrite_governance(repo: Path, change) -> None:
+    path = repo / GOVERNANCE_RECORD
+    path.write_text(json.dumps(change(json.loads(path.read_text()))), encoding="utf-8")
+
+
 # Each way a composition can fall out of the shape, and the finding it must raise.
 BREAKS = {
     "a CI job dropped": (
@@ -479,6 +487,22 @@ BREAKS = {
     "an extra required context": (
         lambda repo: edit(repo, ".github/governance.json", '"lint",', '"lint",\n    "llmlint",'),
         "governance.json requires llmlint, beyond `lint` and the test jobs",
+    ),
+    "a test job left unrequired": (
+        lambda repo: rewrite_governance(repo, lambda g: {**g, "required_checks": [c for c in g["required_checks"] if c != "test-windows"]}),
+        "governance.json does not require test-windows",
+    ),
+    "the governance record dropped while the release publishes": (
+        lambda repo: (repo / GOVERNANCE_RECORD).unlink(),
+        "release.yml releases through `publish`, but there is no .github/governance.json recording the required checks",
+    ),
+    "a governance record with no required_checks list": (
+        lambda repo: rewrite_governance(repo, lambda g: {"strict": g["strict"], "required_checks": "lint"}),
+        "governance.json has no `required_checks` list",
+    ),
+    "a governance record that is not JSON": (
+        lambda repo: (repo / GOVERNANCE_RECORD).write_text("{not json", encoding="utf-8"),
+        "governance.json has no `required_checks` list",
     ),
 }  # fmt: skip
 
