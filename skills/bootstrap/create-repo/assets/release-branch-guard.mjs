@@ -12,7 +12,10 @@
 //
 //   * CHANGELOG.md (any directory) may change, or be added, freely: it runs nothing.
 //   * Cargo.toml may change only the `version` of [package] / [workspace.package] and
-//     the `version` of a dependency that names a `path` (a crate of this workspace).
+//     the `version` field of an inline dependency table whose own `path` field is a
+//     string (a crate of this workspace) — read field by field, so a `path` inside a
+//     comment or another string does not count. A file holding a multi-line string,
+//     or a dependency it cannot read exactly, may not change at all.
 //   * Cargo.lock may change only the `version` of a package with no `source` (a
 //     workspace member), and that member's version where a dependency list names it.
 //   * package.json may change only its top-level "version" (formatting is free).
@@ -51,18 +54,98 @@ function placeholder(line) {
   return match && SEMVER.test(match[2]) ? `${match[1]}${V}${match[3]}` : line;
 }
 
+// The tokens of one TOML line: strings (basic, with escapes, and literal), the
+// punctuation of an inline table, bare words, and a trailing comment — a `#` counts
+// only outside a string. Null when the line does not tokenize (an unterminated
+// string), so the caller leaves it as it is.
+function tokenize(line) {
+  const tokens = [];
+  let i = 0;
+  while (i < line.length) {
+    const c = line[i];
+    if (c === " " || c === "\t") i += 1;
+    else if (c === "#") {
+      tokens.push({ kind: "comment", start: i, end: line.length });
+      break;
+    } else if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < line.length && line[j] !== c) j += c === '"' && line[j] === "\\" ? 2 : 1;
+      if (j >= line.length) return null;
+      tokens.push({ kind: "string", start: i, end: j + 1, value: line.slice(i + 1, j) });
+      i = j + 1;
+    } else if ("{}[]=,".includes(c)) {
+      tokens.push({ kind: c, start: i, end: i + 1 });
+      i += 1;
+    } else {
+      const word = /^[A-Za-z0-9_.+-]+/.exec(line.slice(i));
+      if (!word) return null;
+      tokens.push({ kind: "word", start: i, end: i + word[0].length, value: word[0] });
+      i += word[0].length;
+    }
+  }
+  return tokens;
+}
+
+// A dependency written as one inline table, `name = { key = value, ... } # comment`,
+// read field by field: each top-level key, and the token holding its value when that
+// value is a string. Null for anything else — a dotted or quoted name, a nested
+// table, a value spanning lines — so only a line read exactly is ever normalized.
+function inlineDependency(line) {
+  const tokens = tokenize(line);
+  if (!tokens) return null;
+  const at = (n, kind) => tokens[n]?.kind === kind;
+  if (!(at(0, "word") && at(1, "=") && at(2, "{"))) return null;
+  const fields = new Map();
+  let n = 3;
+  while (!at(n, "}")) {
+    if (!(at(n, "word") || at(n, "string")) || !at(n + 1, "=")) return null;
+    const key = tokens[n].value;
+    if (fields.has(key)) return null;
+    n += 2;
+    if (at(n, "string") || at(n, "word")) {
+      fields.set(key, tokens[n]);
+      n += 1;
+    } else if (at(n, "[")) {
+      n += 1;
+      while (!at(n, "]")) {
+        if (!(at(n, "string") || at(n, "word"))) return null;
+        n += 1;
+        if (at(n, ",")) n += 1;
+        else if (!at(n, "]")) return null;
+      }
+      fields.set(key, null);
+      n += 1;
+    } else return null;
+    if (at(n, ",")) n += 1;
+    else if (!at(n, "}")) return null;
+  }
+  n += 1;
+  if (at(n, "comment")) n += 1;
+  return n === tokens.length ? fields : null;
+}
+
 function normalizeCargoToml(text) {
+  // A multi-line string could make any line read as something it is not, so a file
+  // holding one is compared as it stands: every change to it fails.
+  if (text.includes('"""') || text.includes("'''")) return text;
   let section = "";
   return text.split("\n").map((line) => {
-    const header = /^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*(?:#.*)?$/.exec(line);
+    const header = /^\s*\[\[?\s*([^\]"'#]+?)\s*\]\]?\s*(?:#.*)?$/.exec(line);
     if (header) {
       section = header[1];
       return line;
     }
     if (section === "package" || section === "workspace.package") return placeholder(line);
-    // A workspace crate named inline: `name = { path = "...", version = "..." }`.
-    if (/(^|\.)(dev-|build-)?dependencies$/.test(section) && /^\s*[\w-]+\s*=\s*\{.*\bpath\s*=/.test(line))
-      return line.replace(/(\bversion\s*=\s*")([^"]*)(")/, (all, a, v, b) => (SEMVER.test(v) ? `${a}${V}${b}` : all));
+    // A workspace crate named inline, `name = { path = "...", version = "..." }`: its
+    // `path` and `version` must be fields of the table itself, never text inside a
+    // comment or another field's string.
+    if (/(^|\.)(dev-|build-)?dependencies$/.test(section)) {
+      const fields = inlineDependency(line);
+      const path = fields?.get("path");
+      const version = fields?.get("version");
+      if (path?.kind === "string" && version?.kind === "string" && SEMVER.test(version.value))
+        return `${line.slice(0, version.start)}"${V}"${line.slice(version.end)}`;
+    }
     return line;
   }).join("\n");
 }

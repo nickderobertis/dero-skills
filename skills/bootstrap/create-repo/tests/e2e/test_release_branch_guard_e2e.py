@@ -34,8 +34,10 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-demo-core = { path = "core", version = "0.3.0" }
+demo-core = { path = "core", version = "0.3.0" } # the workspace's own crate
 serde = "1.0.200"
+docs-only = { version = "1.0.0" } # path = "documentation only"
+tricky = { version = "1.0.0", registry = "path = \"here\"" }
 
 [profile.release]
 lto = true
@@ -226,6 +228,26 @@ def test_a_release_tools_version_and_changelog_edits_pass(release_branch, bump):
 # --- anything else inside the allowed files fails ------------------------------
 
 TAMPERING = {
+    # `path =` in a comment, or inside another field's string, names no workspace
+    # crate: only a `path` field of the table itself does.
+    "an external version moved beside a commented-out path": (
+        lambda r: edit(
+            r,
+            "Cargo.toml",
+            'docs-only = { version = "1.0.0" }',
+            'docs-only = { version = "2.0.0" }',
+        ),
+        "Cargo.toml: it changes more than the package version",
+    ),
+    "an external version moved beside a path inside a string": (
+        lambda r: edit(
+            r,
+            "Cargo.toml",
+            'tricky = { version = "1.0.0"',
+            'tricky = { version = "2.0.0"',
+        ),
+        "Cargo.toml: it changes more than the package version",
+    ),
     "a dependency added to Cargo.toml": (
         lambda r: edit(r, "Cargo.toml", 'serde = "1.0.200"', 'serde = "1.0.200"\nevil = "0.1.0"'),
         "Cargo.toml: it changes more than the package version",
