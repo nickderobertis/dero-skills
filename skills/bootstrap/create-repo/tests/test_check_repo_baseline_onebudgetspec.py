@@ -284,7 +284,10 @@ def test_a_root_file_check_never_reads_fails(tmp_path):
     repo = wired_repo(tmp_path)
     justfile = repo / "justfile"
     text = justfile.read_text(encoding="utf-8")
-    root_line = "    [ ! -f budgets.yaml ] || bunx onebudgetspec check budgets.yaml\n"
+    root_line = (
+        "    [ ! -f budgets.yaml ] || bunx onebudgetspec check budgets.yaml "
+        "--exclude-label release-tail --exclude-label host-variable\n"
+    )
     assert root_line in text
     justfile.write_text(text.replace(root_line, ""), encoding="utf-8")
     [error] = levels(budget_findings(repo), "ERROR")

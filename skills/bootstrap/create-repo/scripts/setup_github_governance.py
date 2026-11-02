@@ -5,18 +5,22 @@
 """Apply the create-repo merge model and branch protection to a GitHub repo.
 
 Usage:
-    uv run --script scripts/setup_github_governance.py CHECK [CHECK ...] \
-        [--repo OWNER/NAME] [--branch NAME] [--approvals N] \
+    uv run --script scripts/setup_github_governance.py [CHECK ...] \
+        [--repo-dir DIR] [--repo OWNER/NAME] [--branch NAME] [--approvals N] \
         [--fork-pr-approval POLICY] [--visibility VISIBILITY] [--enforce-admins] \
         [--dry-run] [--verify]
 
 The positional ``CHECK`` arguments are the status-check contexts that must be
-green before a PR can merge. List *every* gating check by name — including the
-full-e2e gate job (the one that runs ``just check``); a check that is not
-required is only advisory, and a red one can still be merged past. One of these
-MUST be the llmlint job (the LLM-judge tier is a mandated blocking PR check),
-else auto-merge lands past a red llmlint run — pass --allow-missing-llmlint only
-for a repo that genuinely has no llmlint tier.
+green before a PR can merge. With none given, they are the ``required_checks``
+of the repository's ``.github/governance.json`` (under ``--repo-dir``, default
+``.``), which ``compose_repo_plan.py --ci-cd`` writes: ``lint`` and one
+``test-<platform>`` job per supported platform, the CI shape references/ci.md
+states. Given explicitly, list *every* gating check by name; a check that is not
+required is only advisory, and a red one can still be merged past. The llmlint
+tier (a mandated blocking PR check) must be among them — a context named
+llmlint, or a ``lint`` context whose job in ``.github/workflows/ci.yml`` runs
+``just lint-llm-diff`` — else auto-merge lands past a red llmlint run; pass
+--allow-missing-llmlint only for a repo that genuinely has no llmlint tier.
 
 What it sets (the model the create-repo skill prescribes — see references/ci.md):
   * Merge model: squash-merge only (merge commits and rebase-merging disabled),
@@ -27,9 +31,11 @@ What it sets (the model the create-repo skill prescribes — see references/ci.m
     Admins can override by default (``enforce_admins: false``); pass
     --enforce-admins to bind them too. Checks are non-strict by default — a PR
     need not be rebased onto the latest default branch before merging, which
-    avoids the re-update-and-re-run-CI churn every time the base moves. Pass
-    --strict to require branches be up to date (catches semantic conflicts
-    between independently-green PRs, at the cost of that friction).
+    avoids the re-update-and-re-run-CI churn every time the base moves, at the
+    cost of not catching a semantic conflict between two independently green
+    PRs (CI does not run on push to main to catch it later either). Up-to-date
+    branches are an explicit opt-in only: --strict, or ``"strict": true`` in
+    ``.github/governance.json``.
   * Fork-PR workflow approval: requires a maintainer to approve before a fork's
     CI runs (default: all external contributors). Credential-gated checks (the
     live/llmlint tiers) fail fast without their secret, so fork PRs must not
@@ -80,6 +86,7 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import NamedTuple
 
 # The llmlint job's status-check context. The create-repo CI names the job so
@@ -204,7 +211,70 @@ def normalize_contexts(contexts: Sequence[str]) -> list[str]:
     return seen
 
 
-def require_llmlint(contexts: Sequence[str], *, allow_missing: bool) -> None:
+# The governance record ``compose_repo_plan.py --ci-cd`` writes, and the CI workflow
+# whose `lint` job carries the llmlint tier in the composed shape.
+GOVERNANCE_FILE = ".github/governance.json"
+CI_WORKFLOW = ".github/workflows/ci.yml"
+LLMLINT_DIFF_RE = re.compile(r"\bjust\s+lint-llm-diff\b")
+
+
+class Governance(NamedTuple):
+    """A repository's recorded governance: its required checks and strictness."""
+
+    required_checks: list[str]
+    strict: bool
+
+
+def read_governance(repo_dir: Path) -> Governance | None:
+    """``.github/governance.json`` under ``repo_dir``; None when there is none."""
+    path = repo_dir / GOVERNANCE_FILE
+    if not path.is_file():
+        return None
+    fix = (
+        f"make {GOVERNANCE_FILE} an object with `required_checks` (a list of check "
+        "names) and an optional boolean `strict`, as compose_repo_plan.py --ci-cd "
+        "writes it"
+    )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise GhError(f"{path} is not valid JSON ({exc.msg})", fix) from exc
+    checks = data.get("required_checks") if isinstance(data, dict) else None
+    strict = data.get("strict", False) if isinstance(data, dict) else None
+    if (
+        not isinstance(checks, list)
+        or not all(isinstance(c, str) for c in checks)
+        or not isinstance(strict, bool)
+    ):
+        raise GhError(f"{path} is not a governance record", fix)
+    return Governance(checks, strict)
+
+
+def lint_job_runs_llmlint(repo_dir: Path) -> bool:
+    """Whether the composed CI's `lint` job runs the diff-scoped llmlint tier."""
+    path = repo_dir / CI_WORKFLOW
+    if not path.is_file():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    try:
+        start = lines.index("  lint:")
+    except ValueError:
+        return False
+    body = []
+    for line in lines[start + 1 :]:
+        if (
+            line.startswith("  ")
+            and not line.startswith("   ")
+            and line.rstrip().endswith(":")
+        ):
+            break
+        body.append(line.split("#", 1)[0])
+    return bool(LLMLINT_DIFF_RE.search("\n".join(body)))
+
+
+def require_llmlint(
+    contexts: Sequence[str], *, allow_missing: bool, repo_dir: Path | None = None
+) -> None:
     """Fail unless an llmlint check is among the required contexts.
 
     The create-repo skill mandates the llmlint LLM-judge tier as a blocking PR
@@ -212,14 +282,18 @@ def require_llmlint(contexts: Sequence[str], *, allow_missing: bool) -> None:
     the only thing making a red llmlint run block a merge is its presence in the
     required status checks. Leave it out and auto-merge lands past it — the exact
     hole this guard closes. ``allow_missing`` (the --allow-missing-llmlint flag)
-    waives it for the rare repo with no llmlint tier.
+    waives it for the rare repo with no llmlint tier. In the composed CI shape
+    the tier is a step of the `lint` job, so a required `lint` whose job in
+    ``repo_dir``'s ci.yml runs ``just lint-llm-diff`` satisfies it too.
     """
     if allow_missing or any(LLMLINT_CONTEXT_RE.search(c) for c in contexts):
         return
+    if repo_dir is not None and "lint" in contexts and lint_job_runs_llmlint(repo_dir):
+        return
     raise GhError(
         "no llmlint check among the required status checks",
-        "add the llmlint job's context (the create-repo CI names it `llmlint`) so "
-        "a red llmlint run blocks merge — the LLM-judge tier is a mandated blocking "
+        "require the context of the job that runs llmlint (`lint` in the composed "
+        "CI shape, whose job runs `just lint-llm-diff`) so a red llmlint run blocks merge — the LLM-judge tier is a mandated blocking "
         "PR check; pass --allow-missing-llmlint only if this repo has no llmlint tier",
     )
 
@@ -658,9 +732,18 @@ def _get_json(
 
 
 def _render_dry_run(
-    repo: str, branch: str, calls: Sequence[GhCall], visibility: Visibility
+    repo: str,
+    branch: str,
+    calls: Sequence[GhCall],
+    visibility: Visibility,
+    contexts: Sequence[str] = (),
+    strict: bool = False,
 ) -> str:
-    lines = [f"DRY-RUN would configure {repo}@{branch}:"]
+    strictness = "strict" if strict else "non-strict"
+    lines = [
+        f"DRY-RUN would configure {repo}@{branch}:",
+        f"  required checks: {', '.join(contexts)} ({strictness})",
+    ]
     for call in calls:
         lines.append(f"  {call.method} {call.path}  # {call.summary}")
         for body_line in json.dumps(call.body, indent=2).splitlines():
@@ -695,9 +778,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
         "checks",
-        nargs="+",
+        nargs="*",
         metavar="CHECK",
-        help="required status-check context(s); list every gating check",
+        help="required status-check context(s); list every gating check (default: "
+        f"the required_checks of --repo-dir's {GOVERNANCE_FILE})",
+    )
+    parser.add_argument(
+        "--repo-dir",
+        type=Path,
+        default=Path("."),
+        help=f"the checkout whose {GOVERNANCE_FILE} and {CI_WORKFLOW} are read "
+        "(default: .)",
     )
     parser.add_argument("--repo", help="OWNER/NAME (default: the current repo)")
     parser.add_argument("--branch", help="branch to protect (default: repo default)")
@@ -722,8 +813,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="require branches be up to date before merging (default: off, to "
-        "avoid the re-sync/re-run-CI churn each time the base branch moves)",
+        help="require branches be up to date before merging — an explicit opt-in "
+        f"(default: off, or {GOVERNANCE_FILE}'s `strict`, to avoid the "
+        "re-sync/re-run-CI churn each time the base branch moves)",
     )
     parser.add_argument(
         "--fork-pr-approval",
@@ -778,8 +870,22 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         run = _subprocess_run
 
     try:
-        contexts = normalize_contexts(args.checks)
-        require_llmlint(contexts, allow_missing=args.allow_missing_llmlint)
+        recorded = read_governance(args.repo_dir)
+        checks = args.checks or (recorded.required_checks if recorded else [])
+        if not checks:
+            raise GhError(
+                f"no required status checks given and no {GOVERNANCE_FILE} under "
+                f"{args.repo_dir}",
+                "pass the check contexts, or run from (or --repo-dir) a checkout "
+                "compose_repo_plan.py --ci-cd wrote its governance record into",
+            )
+        contexts = normalize_contexts(checks)
+        args.strict = args.strict or bool(recorded and recorded.strict)
+        require_llmlint(
+            contexts,
+            allow_missing=args.allow_missing_llmlint,
+            repo_dir=args.repo_dir,
+        )
         repo = resolve_repo(run, args.repo)
         branch = resolve_branch(run, repo, args.branch)
         if args.verify:
@@ -827,7 +933,9 @@ def main(argv: list[str], run: Runner | None = None) -> int:
             visibility,
         )
         if args.dry_run:
-            print(_render_dry_run(repo, branch, calls, visibility))
+            print(
+                _render_dry_run(repo, branch, calls, visibility, contexts, args.strict)
+            )
             return 0
         execute(run, calls)
     except GhError as exc:

@@ -49,6 +49,36 @@ bootstrap:
 check tier="affected": && (test-e2e tier)
     {{ if tier == "all" { "bunx nx run-many" } else if tier == "affected" { "bunx nx affected --base=" + base } else { error("unknown tier '" + tier + "' — use 'affected' (the default) or 'all'") } }} -t lint typecheck test build
 
+# The full local gate, timed: the everyday gate plus the supply chain, run inside
+# scripts/gate-time.sh, which records its wall clock to .gate-time.json and then checks
+# `<name>-gate-time` (budgets.yaml, `host-variable`) against it — over its 30 minutes
+# warns and still passes, a missing record or an invalid budgets file fails. No pre-push
+# hook runs it: CI owns the gate, holding each job to its own `timeout-minutes`.
+gate:
+    @bash scripts/gate-time.sh just gate-body
+
+# What `just gate` times.
+gate-body: check supply-chain
+
+# The supply-chain checks the CI `lint` job runs once, platform-independent: dependency
+# licenses and advisories, and (Rust) the minimum supported Rust version.
+supply-chain:
+    @echo "TODO: check the supply chain (e.g. cargo deny check && cargo hack check --rust-version, or bun audit)"
+
+# What each CI test job runs on its platform: the tests, builds, e2e journeys and
+# per-project budgets of the projects this change can reach. Formatting, linting and the
+# supply chain run once, in the `lint` job, not again per platform.
+ci-test:
+    bunx nx affected --base={{base}} -t test build e2e budgets budgets-host
+
+# One phase of one release job (references/releasing.md): `just release <job> <phase>
+# --tag <tag>`, where <job> is a build job of .github/workflows/release.yml (build-linux,
+# build-linux-arm64, build-macos, build-windows) or `publish`, and <phase> is `build`,
+# `publish`, `verify` or `available`. Each build job builds its platform's artifacts once,
+# installs and runs those files, publishes them and verifies them from the registries.
+release job phase *args:
+    @echo "TODO: implement phase {{phase}} of release job {{job}} ({{args}})" && exit 1
+
 # The test tier on its own, for iterating: the same `test` target the gate fans
 # out over, scoped to the projects this change can reach. Each project's `test`
 # target enforces coverage (95% line coverage is the default bar); lower the bar

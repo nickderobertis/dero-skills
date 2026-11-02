@@ -535,12 +535,14 @@ def test_main_rejects_unknown_fork_pr_approval_policy():
         )
 
 
-def test_main_requires_at_least_one_check():
-    import pytest
-
+def test_main_requires_at_least_one_check(tmp_path, capsys):
+    # No check given and no governance record to default from: refused, naming
+    # both ways to supply them, before any call to GitHub.
     fake = FakeGh()
-    with pytest.raises(SystemExit):
-        gov.main([], run=fake)
+    assert gov.main(["--repo-dir", str(tmp_path)], run=fake) == 1
+    err = capsys.readouterr().err
+    assert "no required status checks given and no .github/governance.json" in err
+    assert fake.calls == []
 
 
 def test_main_missing_gh_binary_errors(monkeypatch, capsys):

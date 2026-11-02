@@ -1,210 +1,216 @@
-# Prove the artifact from a clean checkout: bootstrap, then the gate — at the
-# tier that run is for.
+#% # The pull-request CI every repository create-repo composes starts from. Render it with
+#% # `compose_repo_plan.py --ci-cd REPO_DIR`, which keeps the blocks between `#% if FLAG`
+#% # and `#% endif` for the flags the composition sets (rust, typescript, windows, macos,
+#% # visual-docs, visual-docs-arch), fills each @@KEY@@, and drops every `#%` line.
+# Prove each pull request from a clean checkout, in one job per concern: `lint` once, on
+# Linux, for everything platform-independent, and one test job per platform the repository
+# supports. None needs another, so they all start at once, and each is held to 30 minutes
+# (`timeout-minutes`) — the CI half of the budgets in budgets.yaml (references/ci.md,
+# "CI and CD time budgets"). Branch protection requires exactly `lint` and the test jobs
+# (.github/governance.json); branches need not be up to date with main before they merge,
+# which trades catching a semantic conflict between two independently green pull requests
+# for not re-running every open pull request each time main moves.
 #
-# CI must reproduce what a future maintainer or user hits on a fresh machine —
-# not a developer's warm local environment. Both gate jobs below run the SAME
-# `just check` recipe, so local and CI cannot drift; the tier is a flag on it:
+# CI does not run on push to main: the squash commit's tree is the one its pull request's
+# jobs already proved, and nothing downstream re-runs these checks — the release workflow
+# builds, installs and publishes that tree's artifacts without re-testing it.
 #
-#   * pull requests run the AFFECTED tier — the projects the diff can reach,
-#     keyed off an explicitly derived merge base. Fast feedback, and the
-#     required status check.
-#   * the default branch runs the BROADER tier — one full sweep over every
-#     project, catching what affected detection or a stale cache could miss.
-#
-# Each commit is gated once at each tier, so nothing downstream re-runs these
-# targets: a tag/release workflow builds and publishes an already-swept commit,
-# it does not re-gate it. That placement assumes this repo RELEASES ON MERGE (the
-# merged commit is the released commit). If instead it batches releases behind a
-# release train or a release PR, move the sweep to release-prep and leave
-# merge-to-main on the affected tier — see "Staged gates" in references/ci.md,
-# and record which model you chose in AGENTS.md.
-#
-# Fill in the TODOs: drop the OS matrix to one runner unless the artifact is
-# genuinely cross-platform (CLIs, plugins, binaries), and install only the
-# toolchain `just bootstrap` needs (e.g. uv / Node / Rust).
+# Every job runs the same `just` recipes a contributor runs locally, over the projects its
+# diff can reach (Nx affected), from a base derived explicitly rather than guessed. The line
+# is held by cutting work — affected-only selection, caches keyed on their inputs, no check
+# run twice, no needless `needs` — never by sharding a job.
 
 name: ci
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
-# Cancel superseded runs on the same ref to save CI minutes.
+# Cancel superseded runs on the same ref: only the newest push of a pull request matters.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least privilege: default the GITHUB_TOKEN to read-only and widen per-job only
-# where a job genuinely needs more (e.g. a release job adding `contents: write`,
-# the pr-title job's `pull-requests: read`). See references/ci.md.
+# Least privilege: the token is read-only by default and widened per job only where a job
+# genuinely needs more.
 permissions:
   contents: read
 
 jobs:
-  # The AFFECTED tier: what a pull request pays for. This is the required status
-  # check — branch protection gates merges on it.
-  check:
-    if: github.event_name == 'pull_request'
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # TODO: collapse to `[ubuntu-latest]` unless the artifact ships
-        # cross-platform; test the versions you actually support.
-        os: [ubuntu-latest]
+  # Everything platform-independent, once: the pull-request title, the suppressions comment,
+  # format/lint/type checks over the affected projects, the supply chain, the judged lint
+  # (llmlint) and the visual docs. On the release pull request it is the one job that runs in
+  # full, and it holds that branch to the release tool's own edits.
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # visual docs: push the pull request's gallery preview to gh-pages
+      pull-requests: write # the suppressions and visual docs comments; read the PR title
+#% if visual-docs
+      pages: read # visual docs: wait on the Pages build the preview triggers
+#% endif
     steps:
-      # Full history: affected detection resolves the merge base from it, and a
-      # shallow checkout would make that base non-deterministic.
+      # The merge base, llmlint's diff and notignored's scan all need the full history.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      # Derive the base/head SHAs EXPLICITLY — this exports NX_BASE/NX_HEAD, which
-      # the justfile's `base` reads — rather than leaving the orchestrator to its
-      # implicit default. See references/project-graph.md.
+          persist-credentials: false
+      # Under squash-merge the title becomes the commit that lands and that the release tool
+      # reads, so a malformed one must not merge.
+      - name: Check the pull request title
+        uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # A fork's pull request is granted a read-only token, so the comment upsert would fail
+      # on something the contributor has no way to fix.
+      - name: Comment the suppressions this change adds
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: nickderobertis/notignored@v0
+      # The release pull request runs lint alone (the test jobs skip it), which is sound only
+      # while its tree is a tested main plus the release tool's version and changelog edits.
+      # Anything else on that branch fails here rather than merging untested.
+      - name: Hold the release branch to the release tool's edits
+        if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, '@@RELEASE_BRANCH_PREFIX@@')
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          others="$(git diff --name-only "$BASE_SHA"...HEAD | grep -Ev '@@RELEASE_EDITS_RE@@' || true)"
+          if [ -n "$others" ]; then
+            echo "::error::this release branch changes more than versions and changelogs, so the test jobs it skips must run: $others. Land the change through an ordinary branch." >&2
+            exit 1
+          fi
       - uses: nrwl/nx-set-shas@v4
-
-      - name: Install just
-        uses: extractions/setup-just@v2
-
-      # TODO: install the toolchain `just bootstrap` needs, e.g.
-      #   - uses: actions/setup-node@v4          # the runtime the orchestrator runs on
-      #   - uses: astral-sh/setup-uv@v5          # Python (uv)
-      #   - uses: oven-sh/setup-bun@v2           # JavaScript/TypeScript (bun)
-      #   - uses: dtolnay/rust-toolchain@stable  # Rust
-
-      - name: Bootstrap
-        run: just bootstrap
-
-      - name: Check (affected tier)
-        run: just check
-
-  # The BROADER tier: one full sweep over every project, at the single lifecycle
-  # point this repo's release model puts it (see the header). It catches what
-  # affected detection or a stale cache could miss. A squash commit's tree never
-  # existed before, so this is a first gating of it, not a re-run of the PR's.
-  check-all:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install just
-        uses: extractions/setup-just@v2
-
-      # TODO: the same toolchain steps as the `check` job above.
-
-      - name: Bootstrap
-        run: just bootstrap
-
-      - name: Check (full sweep)
-        run: just check all
-
-  # LLM-judge tier (llmlint) — a blocking PR check, SEPARATE from the `check`
-  # gate. It is non-deterministic and needs an authenticated harness, so it never
-  # runs inside `just check`. Scoped to the files this PR changed (the merge-base
-  # diff with main) so a PR pays for its own changes, not a full-repo sweep.
-  # It REQUIRES the harness credential and fails fast without it — it never
-  # no-ops to green, which would report unlinted files as clean. Handle fork PRs
-  # at the repo level, not here: Settings → Actions → General → Fork pull request
-  # workflows → Require approval for all (or first-time) contributors, so a
-  # maintainer approves before fork CI runs (secrets stay restricted on
-  # pull_request from forks). This `llmlint` context MUST be a required status
-  # check in branch protection (setup_github_governance.py enforces it) — else
-  # auto-merge lands a PR past a red llmlint run. See references/llmlint.md and
-  # references/ci.md.
-  llmlint:
-    if: github.event_name == 'pull_request' && github.event.action != 'edited'
-    runs-on: ubuntu-latest
-    steps:
-      # Check out the PR head (not the synthetic merge ref) with full history so
-      # the merge-base with main resolves.
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - name: Fetch main (diff base)
-        run: git fetch --no-tags --depth=2147483647 origin main
       - uses: extractions/setup-just@v2
-
-      - name: Install oneharness + llmlint
+      - uses: oven-sh/setup-bun@v2
+#% if rust
+      # Its built-in cache keys `target` and the cargo registry on Cargo.lock, the toolchain
+      # and the OS, so a hit is never stale.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-key: lint
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-hack
+#% endif
+      # The Nx cache, keyed on every lockfile: Nx serves an entry only for an unchanged input
+      # hash, so restoring the newest one never replays a stale result.
+      - uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: nx-${{ github.job }}-${{ runner.os }}-${{ hashFiles('bun.lock'@@LOCKFILES@@) }}-${{ github.sha }}
+          restore-keys: nx-${{ github.job }}-${{ runner.os }}-${{ hashFiles('bun.lock'@@LOCKFILES@@) }}-
+      - name: Bootstrap
+        run: just bootstrap
+      - name: Format, lint and type-check the affected projects
+        run: just lint
+      - name: Check the supply chain@@SUPPLY_CHAIN_EXTRA@@
+        run: just supply-chain
+      - name: Install oneharness and llmlint
         run: |
           ./scripts/setup-llmlint.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      # REQUIRED: setup-llmlint.sh installs llmlint + oneharness only, NOT a
-      # harness — so CI must install one your oneharness.toml fallback list names,
-      # else the lint step skips every file yet still passes. See references/llmlint.md.
+      # setup-llmlint.sh installs no harness, so without this the lint would skip every file.
       - name: Install the coding harness (claude-code)
         run: npm i -g @anthropic-ai/claude-code
-
-      # Deterministic, model-free gate first: validate the config structure, that
-      # every `llmlint: ignore` directive names a real rule, and that any edited
-      # versioned fragment bumped its `version:`. No harness credential needed, so
-      # it runs before the paid model tier and fails fast on a config/version-bump
-      # slip. Scoped to the branch's changes vs main.
-      - name: Validate llmlint config (no model)
+      - name: Validate the llmlint config (no model)
         run: just lint-llm-validate --diff-base origin/main
-
-      # The harness is installed above; here, authenticate it from secrets and run
-      # the tier over only the changed files. TODO: point HARNESS_KEY at the
-      # credential secret for the harness you installed.
-      - name: Lint changed files
+      - name: Lint the changed files with llmlint
         env:
-          # TODO: your harness's credential secret (e.g. CLAUDE_CODE_OAUTH_TOKEN
-          # for Claude Code — generate with `claude setup-token`; OPENAI_API_KEY
-          # for Codex).
-          HARNESS_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          # Fail with a clear, actionable message instead of an opaque harness
-          # error (or a misleading green pass) when the credential is missing.
-          if [ -z "${HARNESS_KEY:-}" ]; then
-            echo "::error::llmlint needs a harness credential. Add its repo secret" \
-                 "(Settings → Secrets and variables → Actions). Fork PRs are gated by" \
-                 "the require-approval-for-fork-workflows setting; see references/ci.md." >&2
+          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+            echo "::error::llmlint needs a harness credential. Add the" \
+                 "CLAUDE_CODE_OAUTH_TOKEN repository secret. Fork pull requests are gated" \
+                 "by the require-approval-for-fork-workflows setting; see references/ci.md." >&2
             exit 1
           fi
           just lint-llm-diff origin/main
+#% if visual-docs
+      # screencomp's own composite actions, as steps of this job rather than its reusable
+      # workflow, which would add jobs of its own: capture, compare against the committed
+      # shots, publish the gallery preview and comment the before/after.
+      - uses: nickderobertis/screencomp@@@SCREENCOMP_VERSION@@
+        with:
+          version: @@SCREENCOMP_VERSION@@
+      - name: Capture the visual docs
+        run: just screenshots
+      - uses: nickderobertis/screencomp/visual-docs@@@SCREENCOMP_VERSION@@
+        with:
+          arch: x64
+          current: shots/current
+          gallery-title: Visual docs
+          fail-on-drift: true
+          publish: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          comment-mode: aggregated
+          github-token: ${{ github.token }}
+      - uses: nickderobertis/screencomp/visual-docs-pages@@@SCREENCOMP_VERSION@@
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          github-token: ${{ github.token }}
+#% endif
 
-  # Prove the end-user install path on the real platform matrix. Enable this
-  # when the repo ships something users install (CLI, binary, package, plugin).
-  # It is deliberately separate from `check`: `just bootstrap` sets up the *dev*
-  # toolchain, this installs the artifact the way a user actually would. See
-  # references/ci.md.
-  #
-  # install:
-  #   needs: check
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       os: [ubuntu-latest, macos-latest, windows-latest]
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     # TODO: build (or download) the artifact the release will ship — wheel,
-  #     # binary, tarball — then install it with the SAME command your README
-  #     # tells users to run, so docs and CI never drift. Prefer one
-  #     # cross-platform command:
-  #     #   uvx --from ./dist/<pkg>.whl <tool>   | pipx install ./dist/<pkg>.whl
-  #     #   npm i -g ./<pkg>.tgz                 | cargo install --path .
-  #     - name: Install (recommended end-user method)
-  #       run: echo "TODO: run the documented install command"
-  #     - name: Smoke-test the installed entry point
-  #       run: <tool> --version
+#% if visual-docs-arch
+  # The visual docs on their second architecture, natively on that architecture's runner.
+  visual-docs-@@VISUAL_DOCS_ARCH@@:
+    runs-on: @@VISUAL_DOCS_RUNNER@@
+    timeout-minutes: 30
+    permissions:
+      contents: write # push the gallery preview to gh-pages
+      pull-requests: write # the before/after comment
+      pages: read # wait on the Pages build the preview triggers
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: extractions/setup-just@v2
+      - uses: nickderobertis/screencomp@@@SCREENCOMP_VERSION@@
+        with:
+          version: @@SCREENCOMP_VERSION@@
+      - name: Capture the visual docs
+        run: just screenshots
+      - uses: nickderobertis/screencomp/visual-docs@@@SCREENCOMP_VERSION@@
+        with:
+          arch: @@VISUAL_DOCS_ARCH@@
+          current: shots/current
+          gallery-title: Visual docs (@@VISUAL_DOCS_ARCH@@)
+          fail-on-drift: true
+          publish: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          comment-mode: aggregated
+          github-token: ${{ github.token }}
 
-  # Lint the PR title as a required check. Under squash-merge the PR title
-  # becomes the one commit that lands and that the release pipeline reads, so a
-  # malformed title must not merge. Enable this when you adopt the
-  # Conventional-Commits release flow (see references/releasing.md), and add the
-  # job name to the required checks in branch protection.
-  #
-  # pr-title:
-  #   if: github.event_name == 'pull_request'
-  #   runs-on: ubuntu-latest
-  #   permissions:
-  #     pull-requests: read
-  #   steps:
-  #     - uses: amannn/action-semantic-pull-request@v5
-  #       env:
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#% endif
+#% for platform in linux windows macos
+  # The tests, coverage, budgets and e2e journeys of the affected projects on @@PLATFORM_TITLE@@.
+  # Skipped on the release pull request, whose tree lint holds to a tested main plus the
+  # release tool's edits.
+  test-@@PLATFORM@@:
+    if: "!(github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, '@@RELEASE_BRANCH_PREFIX@@'))"
+    runs-on: @@PLATFORM_RUNNER@@
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: nrwl/nx-set-shas@v4
+      - uses: extractions/setup-just@v2
+      - uses: oven-sh/setup-bun@v2
+#% if rust
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-key: test
+#% endif
+      - uses: actions/cache@v4
+        with:
+          path: .nx/cache
+          key: nx-${{ github.job }}-${{ runner.os }}-${{ hashFiles('bun.lock'@@LOCKFILES@@) }}-${{ github.sha }}
+          restore-keys: nx-${{ github.job }}-${{ runner.os }}-${{ hashFiles('bun.lock'@@LOCKFILES@@) }}-
+      - name: Bootstrap
+        shell: bash
+        run: just bootstrap
+      - name: Test the affected projects
+        shell: bash
+        run: just ci-test
+
+#% endfor

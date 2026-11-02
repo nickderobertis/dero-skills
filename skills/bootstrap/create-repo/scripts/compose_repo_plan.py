@@ -848,6 +848,348 @@ class ToolWiring(Protocol):
 TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 
 
+# --- The CI/CD shape ----------------------------------------------------------
+# `--ci-cd REPO_DIR` writes the CI and CD workflows, the root budgets and the gate's
+# timing wrapper every repository starts inside (references/ci.md, "CI and CD time
+# budgets"), rendered from the templates under assets/ for the composition: its
+# language, the platforms it supports and its visual-docs lanes. The shape is the one
+# onepipeline, onetaskgraph and onepipeline-ui landed; the job ids and budget ids are
+# shared interfaces other repositories build against, so they are fixed here.
+
+# The onevcs release `publish`'s release tail installs: the first carrying the
+# `onevcs host` queries the figures script reads at the contract it states.
+ONEVCS_CLI_VERSION = "0.57.6"
+# The screencomp release whose composite actions the visual-docs steps use.
+SCREENCOMP_VERSION = "v0.4.8"
+# The languages whose toolchain the templates know how to install.
+CI_CD_LANGUAGES = ("rust", "typescript")
+PROJECT_NAME_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# The platforms a repository supports, as `--platforms` names them, to the CI test
+# jobs each runs (one per platform, `test-<platform>`).
+PLATFORM_SETS: dict[str, tuple[str, ...]] = {
+    "cross-platform": ("linux", "windows", "macos"),
+    "linux": ("linux",),
+}
+# Each CI test job's platform: its title and its hosted runner.
+CI_PLATFORMS: dict[str, dict[str, str]] = {
+    "linux": {"PLATFORM_TITLE": "Linux", "PLATFORM_RUNNER": "ubuntu-latest"},
+    "windows": {"PLATFORM_TITLE": "Windows", "PLATFORM_RUNNER": "windows-latest"},
+    "macos": {"PLATFORM_TITLE": "macOS", "PLATFORM_RUNNER": "macos-latest"},
+}
+# Each CD build job (`build-<build>`): what it releases, natively, on which runner.
+# Linux arm64 is released on every repository that releases Linux, on GitHub's hosted
+# ARM runner; macOS is Apple Silicon only.
+CD_BUILDS: dict[str, dict[str, str]] = {
+    "linux": {
+        "BUILD_TITLE": "Linux",
+        "BUILD_RUNNER": "ubuntu-latest",
+        "BUILD_TARGET": "x86_64-unknown-linux-gnu",
+        "BUILD_NOTE": "Linux x86_64.",
+    },
+    "linux-arm64": {
+        "BUILD_TITLE": "Linux arm64",
+        "BUILD_RUNNER": "ubuntu-24.04-arm",
+        "BUILD_TARGET": "aarch64-unknown-linux-gnu",
+        "BUILD_NOTE": "Linux arm64, natively on GitHub's hosted ARM Linux runner: the same "
+        "kinds of artifact build-linux publishes, for aarch64.",
+    },
+    "macos": {
+        "BUILD_TITLE": "macOS",
+        "BUILD_RUNNER": "macos-latest",
+        "BUILD_TARGET": "aarch64-apple-darwin",
+        "BUILD_NOTE": "macOS, Apple Silicon only: nothing here cross-compiles or emulates "
+        "x86_64.",
+    },
+    "windows": {
+        "BUILD_TITLE": "Windows",
+        "BUILD_RUNNER": "windows-latest",
+        "BUILD_TARGET": "x86_64-pc-windows-msvc",
+        "BUILD_NOTE": "Windows x86_64.",
+    },
+}
+# The CD builds each CI platform releases.
+PLATFORM_BUILDS: dict[str, tuple[str, ...]] = {
+    "linux": ("linux", "linux-arm64"),
+    "windows": ("windows",),
+    "macos": ("macos",),
+}
+# A second visual-docs architecture, to the runner that captures it natively.
+VISUAL_DOCS_ARCH_RUNNERS = {"arm64": "ubuntu-24.04-arm"}
+# Per language: the release pull request's branch prefix, the files that branch may
+# change (the release tool's version and changelog edits), and the lockfiles the Nx
+# cache key hashes beside bun.lock.
+LANGUAGE_VALUES: dict[str, dict[str, str]] = {
+    "rust": {
+        "RELEASE_BRANCH_PREFIX": "release-plz-",
+        "RELEASE_EDITS_RE": r"(^|/)(Cargo\.toml|Cargo\.lock|CHANGELOG\.md)$",
+        "LOCKFILES": ", 'Cargo.lock'",
+        "SUPPLY_CHAIN_EXTRA": " and the MSRV",
+    },
+    "typescript": {
+        "RELEASE_BRANCH_PREFIX": "release-please--",
+        "RELEASE_EDITS_RE": (
+            r"(^|/)(package\.json|bun\.lock|CHANGELOG\.md|\.release-please-manifest\.json)$"
+        ),
+        "LOCKFILES": "",
+        "SUPPLY_CHAIN_EXTRA": "",
+    },
+}
+# Each file the shape writes, from the template it is rendered from (None: copied
+# byte for byte), and whether it is executable.
+CI_CD_FILES: tuple[tuple[str, str, bool, bool], ...] = (
+    (".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
+    (
+        ".github/workflows/release-plz.yml",
+        "assets/release-plz.yml.template",
+        True,
+        False,
+    ),
+    (".github/workflows/release.yml", "assets/release.yml.template", True, False),
+    ("budgets.yaml", "assets/budgets.yaml.template", True, False),
+    ("scripts/gate-time.sh", "assets/budgets/gate-time.sh.template", True, True),
+    (
+        "scripts/gate-time-budget.mjs",
+        "assets/budgets/gate-time-budget.mjs",
+        False,
+        False,
+    ),
+    (
+        "scripts/actions-budget-figures.sh",
+        "assets/budgets/actions-budget-figures.sh",
+        False,
+        True,
+    ),
+)
+GOVERNANCE_FILE = ".github/governance.json"
+GATE_RECORD = ".gate-time.json"
+# The recipes the workflows and the gate call, which assets/justfile.template declares.
+CI_CD_RECIPES = ("gate", "gate-body", "supply-chain", "ci-test", "release")
+ONEBUDGETSPEC_SDK_NPM_PACKAGE = "@onebudgetspec/sdk"
+TEMPLATE_DIRECTIVE = "#%"
+TEMPLATE_VALUE_RE = re.compile(r"@@([A-Z_]+)@@")
+
+
+class CiCdShape(NamedTuple):
+    """One composition's CI/CD shape: what the templates render for it."""
+
+    name: str
+    language: str
+    platforms: tuple[str, ...]
+    visual_docs: bool
+    visual_docs_arch: str | None
+
+    @property
+    def ci_jobs(self) -> list[str]:
+        """The pull-request CI jobs, in the order ci.yml declares them."""
+        jobs = ["lint"]
+        if self.visual_docs_arch:
+            jobs.append(f"visual-docs-{self.visual_docs_arch}")
+        return jobs + [f"test-{platform}" for platform in self.platforms]
+
+    @property
+    def required_checks(self) -> list[str]:
+        """The contexts branch protection requires: `lint` and the test jobs."""
+        return ["lint"] + [f"test-{platform}" for platform in self.platforms]
+
+    @property
+    def builds(self) -> list[str]:
+        """The CD build jobs' platforms, in the order release.yml declares them."""
+        wanted = {b for p in self.platforms for b in PLATFORM_BUILDS[p]}
+        return [build for build in CD_BUILDS if build in wanted]
+
+    @property
+    def cd_jobs(self) -> list[str]:
+        return ["release-plz", *(f"build-{b}" for b in self.builds), "publish"]
+
+    def flags(self) -> set[str]:
+        flags = {self.language, *self.platforms}
+        if self.visual_docs or self.visual_docs_arch:
+            flags.add("visual-docs")
+        if self.visual_docs_arch:
+            flags.add("visual-docs-arch")
+        return flags
+
+    def values(self) -> dict[str, str]:
+        def prose(jobs: list[str]) -> str:
+            named = [f"`{job}`" for job in jobs]
+            return ", ".join(named[:-1]) + " and " + named[-1]
+
+        arch = self.visual_docs_arch or ""
+        return {
+            "NAME": self.name,
+            **LANGUAGE_VALUES[self.language],
+            "SCREENCOMP_VERSION": SCREENCOMP_VERSION,
+            "VISUAL_DOCS_ARCH": arch,
+            "VISUAL_DOCS_RUNNER": VISUAL_DOCS_ARCH_RUNNERS.get(arch, ""),
+            "ONEVCS_CLI_VERSION": ONEVCS_CLI_VERSION,
+            "ONEBUDGETSPEC_VERSION": ONEBUDGETSPEC_VERSION,
+            "BUILD_JOBS": ", ".join(f"build-{b}" for b in self.builds),
+            "CI_JOB_COUNT": str(len(self.ci_jobs)),
+            "CD_JOB_COUNT": str(len(self.cd_jobs)),
+            "CI_JOBS_PROSE": prose(self.ci_jobs),
+            "CD_JOBS_PROSE": prose(self.cd_jobs),
+        }
+
+    def loops(self) -> dict[str, dict[str, dict[str, str]]]:
+        return {
+            "platform": {p: {"PLATFORM": p, **CI_PLATFORMS[p]} for p in self.platforms},
+            "build": {b: {"BUILD": b, **CD_BUILDS[b]} for b in self.builds},
+        }
+
+
+def _template_block(lines: list[str], start: int, opener: str, closer: str) -> int:
+    """The index of the directive closing the block opened at ``start``."""
+    depth = 0
+    for index in range(start, len(lines)):
+        directive = lines[index].strip()
+        if directive.startswith(f"{TEMPLATE_DIRECTIVE} {opener} "):
+            depth += 1
+        elif directive == f"{TEMPLATE_DIRECTIVE} {closer}":
+            depth -= 1
+            if depth == 0:
+                return index
+    raise ValueError(f"template line {start + 1}: `{opener}` has no `{closer}`")
+
+
+def _expand_template(
+    lines: list[str],
+    flags: set[str],
+    values: dict[str, str],
+    loops: dict[str, dict[str, dict[str, str]]],
+) -> list[str]:
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        directive = line.strip()
+        if not directive.startswith(TEMPLATE_DIRECTIVE):
+            out.append(
+                TEMPLATE_VALUE_RE.sub(lambda match: values[match.group(1)], line)
+            )
+            index += 1
+            continue
+        words = directive[len(TEMPLATE_DIRECTIVE) :].split()
+        if words[:1] == ["if"]:
+            end = _template_block(lines, index, "if", "endif")
+            if words[1] in flags:
+                out += _expand_template(lines[index + 1 : end], flags, values, loops)
+            index = end + 1
+        elif words[:1] == ["for"]:
+            end = _template_block(lines, index, "for", "endfor")
+            items = loops[words[1]]
+            for item in words[3:]:
+                if item in items:
+                    out += _expand_template(
+                        lines[index + 1 : end], flags, values | items[item], loops
+                    )
+            index = end + 1
+        else:  # `#% #` is a comment about the template itself; nothing renders.
+            index += 1
+    return out
+
+
+def render_template(text: str, shape: CiCdShape) -> str:
+    """``text`` rendered for ``shape``: its blocks chosen, its values filled."""
+    lines = text.splitlines(keepends=True)
+    return "".join(
+        _expand_template(lines, shape.flags(), shape.values(), shape.loops())
+    )
+
+
+def governance_config(shape: CiCdShape) -> str:
+    """The `.github/governance.json` setup_github_governance.py reads as its default."""
+    return (
+        json.dumps(
+            {"required_checks": shape.required_checks, "strict": False}, indent=2
+        )
+        + "\n"
+    )
+
+
+def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str, bytes]:
+    """Every file the shape writes, by repo-relative path, refusing a differing one."""
+    planned: dict[str, bytes] = {}
+    for target, source, rendered, _executable in CI_CD_FILES:
+        data = (skill_dir / source).read_bytes()
+        if rendered:
+            data = render_template(data.decode("utf-8"), shape).encode("utf-8")
+        planned[target] = data
+    planned[GOVERNANCE_FILE] = governance_config(shape).encode("utf-8")
+    for target, data in planned.items():
+        path = repo / target
+        if path.exists() and path.read_bytes() != data:
+            raise WiringError(
+                f"{path} already exists and differs from what the CI/CD shape writes\n"
+                "      fix: move it aside (or merge it into the shape's version by hand "
+                "after this run), then re-run --ci-cd."
+            )
+    return planned
+
+
+def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
+    """Write the shape into ``repo``; a note per change. Validates before writing."""
+    justfile = next(
+        (
+            repo / n
+            for n in ("justfile", "Justfile", ".justfile")
+            if (repo / n).is_file()
+        ),
+        None,
+    )
+    if justfile is None:
+        raise WiringError(
+            f"no justfile in {repo}\n"
+            "      fix: copy the skill's assets/justfile.template there first."
+        )
+    missing = [
+        name
+        for name in CI_CD_RECIPES
+        if name not in recipe_headers(justfile.read_text(encoding="utf-8"))
+    ]
+    if missing:
+        raise WiringError(
+            f"{justfile} has no {', '.join(f'`{n}`' for n in missing)} recipe(s), which "
+            "the workflows and `gate` call\n"
+            "      fix: add them as assets/justfile.template declares them, then re-run "
+            "--ci-cd."
+        )
+    planned = plan_ci_cd_files(repo, skill_dir, shape)
+    # The onebudgetspec setup step first (it validates before it writes), then the SDK
+    # the gate-time budget's command imports, pinned beside the CLI.
+    changes = wire_onebudgetspec(repo, skill_dir)
+    package_json = repo / "package.json"
+    package = _read_json_object(package_json)
+    dev = _json_table(package, "devDependencies", package_json)
+    if dev.get(ONEBUDGETSPEC_SDK_NPM_PACKAGE) != ONEBUDGETSPEC_VERSION:
+        dev[ONEBUDGETSPEC_SDK_NPM_PACKAGE] = ONEBUDGETSPEC_VERSION
+        _write_json(package_json, package)
+        changes.append(
+            f"package.json pins {ONEBUDGETSPEC_SDK_NPM_PACKAGE} {ONEBUDGETSPEC_VERSION}"
+        )
+    gitignore = repo / ".gitignore"
+    ignored = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    executable = {target for target, _s, _r, x in CI_CD_FILES if x}
+    for target, data in planned.items():
+        path = repo / target
+        if path.exists():
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        if target in executable:
+            path.chmod(0o755)
+        changes.append(f"wrote {target}")
+    if GATE_RECORD not in ignored.splitlines():
+        gitignore.write_text(
+            ignored
+            + ("" if not ignored or ignored.endswith("\n") else "\n")
+            + GATE_RECORD
+            + "\n",
+            encoding="utf-8",
+        )
+        changes.append(f".gitignore ignores {GATE_RECORD}")
+    return changes
+
+
 def build_parser(
     shapes: list[str],
     languages: list[str],
@@ -883,6 +1225,37 @@ def build_parser(
         metavar="REPO_DIR",
         help="apply the baseline tools' setup step (onebudgetspec budgets) to the "
         "repository at REPO_DIR (idempotent); needs no other flag",
+    )
+    parser.add_argument(
+        "--ci-cd",
+        metavar="REPO_DIR",
+        help="write the CI/CD shape into the repository at REPO_DIR: ci.yml, "
+        "release-plz.yml, release.yml, the root budgets.yaml, the gate's timing "
+        "wrapper, the figures script and .github/governance.json (needs --language "
+        "rust or typescript and --name; runs the --wiring setup step too)",
+    )
+    parser.add_argument(
+        "--name",
+        help="the project name the budget ids are prefixed with (with --ci-cd)",
+    )
+    parser.add_argument(
+        "--platforms",
+        choices=tuple(PLATFORM_SETS),
+        default="cross-platform",
+        help="the platforms the repository supports (with --ci-cd; default: "
+        "cross-platform — Linux, Windows and macOS)",
+    )
+    parser.add_argument(
+        "--visual-docs",
+        action="store_true",
+        help="the repository captures visual docs: the CI lint job runs screencomp's "
+        "composite actions (with --ci-cd)",
+    )
+    parser.add_argument(
+        "--visual-docs-arch",
+        choices=tuple(VISUAL_DOCS_ARCH_RUNNERS),
+        help="also capture the visual docs on this second architecture, in a "
+        "`visual-docs-<arch>` CI job of its own (with --ci-cd; implies --visual-docs)",
     )
     parser.add_argument(
         "-o",
@@ -977,9 +1350,30 @@ def main(argv: list[str]) -> int:
             args.oneharness_config,
         )
     )
-    if args.wiring and not composing:
+    if args.wiring and not composing and not args.ci_cd:
         # The setup step on its own: nothing is composed, so no flag is needed.
         return wire(Path(args.wiring), skill_dir)
+    shape_flags = [
+        flag
+        for flag, given in (
+            ("--name", args.name),
+            ("--platforms", args.platforms != "cross-platform"),
+            ("--visual-docs", args.visual_docs),
+            ("--visual-docs-arch", args.visual_docs_arch),
+        )
+        if given
+    ]
+    if shape_flags and not args.ci_cd:
+        parser.error(
+            f"{', '.join(shape_flags)} describe(s) the --ci-cd shape; pass --ci-cd"
+        )
+    if (
+        args.ci_cd
+        and not args.shape
+        and not any((args.output, args.llmlint_config, args.llmlint_buildout_config))
+    ):
+        # The shape on its own: it needs the language, not a plan.
+        return ci_cd(parser, args, skill_dir)
 
     missing = [
         name
@@ -1071,8 +1465,55 @@ def main(argv: list[str]) -> int:
             f"{', '.join(included) or 'none'})",
             file=sys.stderr,
         )
-    if args.wiring:
-        return wire(Path(args.wiring), skill_dir)
+    if args.wiring and (code := wire(Path(args.wiring), skill_dir)):
+        return code
+    if args.ci_cd:
+        return ci_cd(parser, args, skill_dir)
+    return 0
+
+
+def ci_cd(
+    parser: argparse.ArgumentParser, args: argparse.Namespace, skill_dir: Path
+) -> int:
+    """Write the CI/CD shape the flags describe into ``--ci-cd``; the exit code."""
+    languages = [lang for lang in args.language or [] if lang in CI_CD_LANGUAGES]
+    if len(languages) != 1:
+        parser.error(
+            "--ci-cd needs exactly one of --language "
+            + " / --language ".join(CI_CD_LANGUAGES)
+            + "\n      fix: name the language whose toolchain CI installs."
+        )
+    if not args.name or not PROJECT_NAME_RE.fullmatch(args.name):
+        parser.error(
+            f"--ci-cd needs --name, a lowercase kebab-case project name (got {args.name!r})"
+            "\n      fix: pass the name the budget ids are prefixed with, e.g. --name my-tool."
+        )
+    repo = Path(args.ci_cd)
+    if not repo.is_dir():
+        print(
+            f"ERROR --ci-cd {repo} is not a directory\n"
+            "      fix: pass the root of the repository being set up.",
+            file=sys.stderr,
+        )
+        return 2
+    shape = CiCdShape(
+        name=args.name,
+        language=languages[0],
+        platforms=PLATFORM_SETS[args.platforms],
+        visual_docs=args.visual_docs,
+        visual_docs_arch=args.visual_docs_arch,
+    )
+    try:
+        changes = apply_ci_cd(repo, skill_dir, shape)
+    except WiringError as exc:
+        print(f"ERROR ci-cd shape: {exc}", file=sys.stderr)
+        return 2
+    summary = "; ".join(changes) if changes else "already in place"
+    print(
+        f"wrote the CI/CD shape into {repo} (CI jobs: {', '.join(shape.ci_jobs)}; CD "
+        f"jobs: {', '.join(shape.cd_jobs)}): {summary}",
+        file=sys.stderr,
+    )
     return 0
 
 
