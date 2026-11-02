@@ -472,7 +472,9 @@ composer's `--intersection` choices automatically.
   [`assets/release.yml.template`](./assets/release.yml.template),
   [`assets/budgets.yaml.template`](./assets/budgets.yaml.template) and
   [`assets/budgets/gate-time.sh.template`](./assets/budgets/gate-time.sh.template)
-  (with `assets/budgets/gate-time-budget.mjs`) — the CI/CD shape `--ci-cd`
+  (with `assets/budgets/gate-time-budget.mjs` and `assets/release-branch-guard.mjs`,
+  the content check `lint` runs on the release branch the test jobs skip) — the
+  CI/CD shape `--ci-cd`
   renders: pull-request CI (`lint`, whose llmlint step requires its harness
   credential and fails fast without it, plus a test job per platform), the
   release workflows ending in the release tail, the eight root budgets, and

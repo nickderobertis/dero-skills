@@ -68,18 +68,15 @@ jobs:
         uses: nickderobertis/notignored@v0
       # The release pull request runs lint alone (the test jobs skip it), which is sound only
       # while its tree is a tested main plus the release tool's version and changelog edits.
-      # Anything else on that branch fails here rather than merging untested.
+      # scripts/release-branch-guard.mjs reads each change by content, not by file name, so
+      # a dependency, build setting or script edited inside Cargo.toml or package.json fails
+      # here rather than merging untested.
       - name: Hold the release branch to the release tool's edits
         if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, '@@RELEASE_BRANCH_PREFIX@@')
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          others="$(git diff --name-only "$BASE_SHA"...HEAD | grep -Ev '@@RELEASE_EDITS_RE@@' || true)"
-          if [ -n "$others" ]; then
-            echo "::error::this release branch changes more than versions and changelogs, so the test jobs it skips must run: $others. Land the change through an ordinary branch." >&2
-            exit 1
-          fi
+        run: node scripts/release-branch-guard.mjs --base "$BASE_SHA" --head HEAD
       - uses: nrwl/nx-set-shas@v4
       - uses: extractions/setup-just@v2
       - uses: oven-sh/setup-bun@v2

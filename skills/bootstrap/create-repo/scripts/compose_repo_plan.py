@@ -915,21 +915,17 @@ PLATFORM_BUILDS: dict[str, tuple[str, ...]] = {
 }
 # A second visual-docs architecture, to the runner that captures it natively.
 VISUAL_DOCS_ARCH_RUNNERS = {"arm64": "ubuntu-24.04-arm"}
-# Per language: the release pull request's branch prefix, the files that branch may
-# change (the release tool's version and changelog edits), and the lockfiles the Nx
-# cache key hashes beside bun.lock.
+# Per language: the release pull request's branch prefix (whose edits
+# scripts/release-branch-guard.mjs holds to versions and changelogs), and the
+# lockfiles the Nx cache key hashes beside bun.lock.
 LANGUAGE_VALUES: dict[str, dict[str, str]] = {
     "rust": {
         "RELEASE_BRANCH_PREFIX": "release-plz-",
-        "RELEASE_EDITS_RE": r"(^|/)(Cargo\.toml|Cargo\.lock|CHANGELOG\.md)$",
         "LOCKFILES": ", 'Cargo.lock'",
         "SUPPLY_CHAIN_EXTRA": " and the MSRV",
     },
     "typescript": {
         "RELEASE_BRANCH_PREFIX": "release-please--",
-        "RELEASE_EDITS_RE": (
-            r"(^|/)(package\.json|bun\.lock|CHANGELOG\.md|\.release-please-manifest\.json)$"
-        ),
         "LOCKFILES": "",
         "SUPPLY_CHAIN_EXTRA": "",
     },
@@ -950,6 +946,12 @@ CI_CD_FILES: tuple[tuple[str, str, bool, bool], ...] = (
     (
         "scripts/gate-time-budget.mjs",
         "assets/budgets/gate-time-budget.mjs",
+        False,
+        False,
+    ),
+    (
+        "scripts/release-branch-guard.mjs",
+        "assets/release-branch-guard.mjs",
         False,
         False,
     ),

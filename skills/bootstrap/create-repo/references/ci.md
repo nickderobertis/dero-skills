@@ -98,8 +98,13 @@ request did not need is a slot another repository waited for.
   proved; nothing re-runs them afterwards.
 - **The release pull request runs `lint` alone.** The test jobs skip the release
   tool's own branch, which is sound only while that tree is a tested main plus the
-  release tool's version and changelog edits — so `lint` fails a release branch
-  carrying anything else.
+  release tool's version and changelog edits — so `lint` runs
+  `scripts/release-branch-guard.mjs`, which reads each change by content, not
+  by file name: a CHANGELOG, the package and workspace-crate `version`s in
+  `Cargo.toml`, workspace members' versions in `Cargo.lock`, the top-level
+  `version` of `package.json` and the release-please manifest's versions pass;
+  a dependency, build setting or script edited inside those same files, or any
+  other file, fails `lint` naming the file and why.
 
 **CD:** `release-plz` (`.github/workflows/release-plz.yml`, push to main) opens
 the release pull request and arms auto-merge on it, so it merges itself once its
