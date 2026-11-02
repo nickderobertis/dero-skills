@@ -202,8 +202,10 @@ function problem(path, before, after) {
   }
   if (name === "package.json") {
     const [old, now] = [parseJson(before, "base"), parseJson(after, "head")];
-    if (typeof now?.version === "string" && !SEMVER.test(now.version))
-      return `its version ${JSON.stringify(now.version)} is not a semantic version`;
+    // A release only ever writes a semantic version: a version the head removed
+    // or made a non-string is as much a non-release edit as "latest".
+    if (typeof now?.version !== "string" || !SEMVER.test(now.version))
+      return `its version ${JSON.stringify(now?.version) ?? "undefined"} is not a semantic version`;
     const strip = (pkg) => ({ ...pkg, version: undefined });
     return isDeepStrictEqual(strip(old), strip(now))
       ? null

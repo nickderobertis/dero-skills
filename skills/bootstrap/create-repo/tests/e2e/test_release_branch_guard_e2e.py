@@ -275,6 +275,14 @@ TAMPERING = {
         lambda r: edit_json(r, "package.json", lambda p: p.update(version="latest")),
         'package.json: its version "latest" is not a semantic version',
     ),
+    "a package.json version removed": (
+        lambda r: edit_json(r, "package.json", lambda p: p.pop("version")),
+        "package.json: its version undefined is not a semantic version",
+    ),
+    "a package.json version that is not a string": (
+        lambda r: edit_json(r, "package.json", lambda p: p.update(version=3)),
+        "package.json: its version 3 is not a semantic version",
+    ),
     "a manifest value that is not a version": (
         lambda r: edit_json(r, ".release-please-manifest.json", lambda m: m.update({".": "x"})),
         ".release-please-manifest.json: . is not given a semantic version",
