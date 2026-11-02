@@ -98,21 +98,34 @@ clone, run one command, and trust.
    happy path *and* failure/recovery — not one smoke test. Coverage is a floor
    (satisfiable with mocks that prove nothing), not the target. Enumerate the
    journeys in `AGENTS.md` so coverage is auditable and grows with the repo.
-7. **Add CI that proves the artifact.** A clean checkout must bootstrap from
-   scratch and run the complete gate (`just bootstrap` then `just check`), on
-   the supported platform matrix. Start from
-   [`assets/ci.yml.template`](./assets/ci.yml.template). CI that doesn't
-   actually invoke the gate proves nothing. If the repo ships something users
+7. **Add CI that proves the artifact, inside its time budgets.** Write the CI
+   and CD shape with `uv run --script scripts/compose_repo_plan.py --ci-cd <repo>
+   --language rust|typescript --name <name> [--platforms linux]
+   [--visual-docs] [--visual-docs-arch arm64]`: a `lint` job and one test job per
+   supported platform on every pull request, each held to 30 minutes and never on
+   push to main; `release-plz`, a build job per platform and `publish` ending in
+   the release tail; the root `budgets.yaml` with the eight CI/CD budgets; `just
+   gate`'s timing wrapper; and `.github/governance.json`. The rules — every CI
+   check and CD job within 30 minutes, a change's last checks plus merge to
+   release within 90, job counts budgeted because the account's 20 concurrent
+   jobs are shared, met by cutting work and never by sharding, and where each is
+   enforced — are "CI and CD time budgets" in
+   [`references/ci.md`](./references/ci.md) and the CI/CD budgets section of
+   [`references/tools/onebudgetspec.md`](./references/tools/onebudgetspec.md).
+   (release-plz versions Cargo workspaces only, so a TypeScript repository's
+   `release-plz` job runs release-please.) No pre-push hook runs the gate: CI
+   owns it. CI that doesn't actually invoke the gate proves nothing. If the repo ships something users
    install, CI must *also* prove the **end-user install path**: a separate job
    that installs the artifact via the recommended end-user method (ideally one
    cross-platform script or command) on the real platform matrix and smoke-tests
    the installed entry point — `just bootstrap` sets up the *dev* environment,
    not the user's. See [`references/ci.md`](./references/ci.md). CI only gates if
    the platform blocks a merge until it is green, so also configure the repo's
-   merge model and branch protection — squash-merge only, auto-merge on, all
-   gating checks (including the full-e2e gate job and the separate
-   `llmlint` LLM-judge check — see [`references/llmlint.md`](./references/llmlint.md))
-   required, head branches deleted on merge, admins able to override — per the
+   merge model and branch protection — squash-merge only, auto-merge on, exactly
+   `lint` (which carries the `llmlint` LLM-judge check — see
+   [`references/llmlint.md`](./references/llmlint.md)) and the test jobs
+   required, branches not required to be up to date, head branches deleted on
+   merge, admins able to override — per the
    "Repository settings"
    section of [`references/ci.md`](./references/ci.md). Record the model in the
    "Commits, releases, and merging" section of `AGENTS.md`. Add a required
@@ -122,17 +135,18 @@ clone, run one command, and trust.
    (**What**) and its driver and impact (**Why**) in terse, pithy prose — not a
    walkthrough of the diff; a third **Additional info** section is optional and
    usually omitted. Because the squash body is taken from the PR description,
-   this is also what lands in history. Finally, add the suppressions review
-   comment
-   ([`assets/notignored.yml.template`](./assets/notignored.yml.template) →
-   `.github/workflows/notignored.yml`): it posts every lint/type-check
-   suppression a PR adds, with its reason, so a human reviewing agent-written
-   code at a high level sees the checks it switched off. It is deliberately
-   *not* a required check — see the "suppressions review comment" section of
-   [`references/ci.md`](./references/ci.md).
+   this is also what lands in history. The suppressions review comment
+   (notignored) runs as a step of the composed `lint` job: it posts every
+   lint/type-check suppression a PR adds, with its reason, so a human reviewing
+   agent-written code at a high level sees the checks it switched off. A repo
+   without the composed shape adds it from
+   [`assets/notignored.yml.template`](./assets/notignored.yml.template) →
+   `.github/workflows/notignored.yml` — see the "suppressions review comment"
+   section of [`references/ci.md`](./references/ci.md).
 8. **Run the gate yourself and iterate to green.** Do not declare the repo done
-   from inspection. Actually run `just check` (which includes `test-e2e`) and
-   iterate until it passes from a clean state.
+   from inspection. Actually run `just check` (which includes `test-e2e`) — or
+   `just gate`, which adds the supply chain and records its wall clock against
+   `<name>-gate-time` — and iterate until it passes from a clean state.
 9. **Upgrade to the latest dependencies, then audit.** As one of the last steps,
    run `just upgrade` so the repo lands on *current* dependency versions instead
    of whatever you happened to scaffold with — a freshly-created repo should
@@ -148,7 +162,7 @@ clone, run one command, and trust.
    It is silent on success and, on failure, names each missing invariant with a
    suggested fix. Pass `--buildout` to also run the one-time llmlint buildout tier
    (the structural checks the deterministic pass can't express; needs `llmlint` on
-   PATH), and run `setup_github_governance.py --verify <checks>` to confirm the
+   PATH), and run `setup_github_governance.py --verify` to confirm the
    repo-side branch protection the filesystem can't see. The repo is not done until
    `just upgrade`, the checker with `--buildout`, and the governance `--verify` all
    pass — fix failures, don't narrate them.
@@ -182,7 +196,7 @@ gate, coverage, real e2e, upgrade) and closes with the two automated gates:
 3. the repo-side governance matches (the filesystem checker cannot see it):
 
    ```bash
-   uv run --script scripts/setup_github_governance.py <every-required-check> --verify
+   uv run --script scripts/setup_github_governance.py --verify   # reads .github/governance.json
    ```
 
    `--verify` refuses divergence or failed reads of every applicable setting.
@@ -442,18 +456,27 @@ composer's `--intersection` choices automatically.
   a fallback-mode `oneharness.toml` beside it (codex + gpt-5.5 primary, claude-code
   + opus-4.8 secondary; override the path with `--oneharness-config`).
   `--wiring <repo>`, alone or beside a composition, applies the budgets setup
-  step to the repository (idempotent). Self-contained via PEP 723. Run `--list`
-  to see the catalog.
+  step to the repository (idempotent). `--ci-cd <repo>` (with `--language`
+  `rust` or `typescript`, `--name`, and optionally `--platforms linux`,
+  `--visual-docs`, `--visual-docs-arch arm64`) writes the CI/CD shape and its
+  budgets — refusing, before writing anything, a file there that differs.
+  Self-contained via PEP 723. Run `--list` to see the catalog.
 - [`assets/AGENTS.md.template`](./assets/AGENTS.md.template) — starter durable
   instruction layer.
 - [`assets/claude-settings.json.template`](./assets/claude-settings.json.template)
   — narrow `.claude/settings.json` allowlist for the `just` command surface.
 - [`assets/justfile.template`](./assets/justfile.template) — starter command
   surface with the six required recipes plus `test-e2e` wired into `check`.
-- [`assets/ci.yml.template`](./assets/ci.yml.template) — GitHub Actions workflow
-  that bootstraps a clean checkout and runs the full gate on a platform matrix,
-  plus a separate `llmlint` job (the diff-scoped LLM-judge check) that requires
-  its harness credential and fails fast without it.
+- [`assets/ci.yml.template`](./assets/ci.yml.template),
+  [`assets/release-plz.yml.template`](./assets/release-plz.yml.template),
+  [`assets/release.yml.template`](./assets/release.yml.template),
+  [`assets/budgets.yaml.template`](./assets/budgets.yaml.template) and
+  [`assets/budgets/gate-time.sh.template`](./assets/budgets/gate-time.sh.template)
+  (with `assets/budgets/gate-time-budget.mjs`) — the CI/CD shape `--ci-cd`
+  renders: pull-request CI (`lint`, whose llmlint step requires its harness
+  credential and fails fast without it, plus a test job per platform), the
+  release workflows ending in the release tail, the eight root budgets, and
+  `just gate`'s wall-clock record and warning.
 - [`assets/oneharness.toml.template`](./assets/oneharness.toml.template) — drop at
   the repo root as `oneharness.toml` (the composer emits it automatically with
   `--llmlint-config`). Fallback-mode harness/model selection for llmlint: codex +
@@ -472,7 +495,8 @@ composer's `--intersection` choices automatically.
   — required GitHub PR template: terse **What** (the behavior change) and **Why**
   (its driver and impact), with an optional **Additional info** section. Drop it
   at `.github/pull_request_template.md`.
-- [`assets/notignored.yml.template`](./assets/notignored.yml.template) — drop at
+- [`assets/notignored.yml.template`](./assets/notignored.yml.template) — for a
+  repo without the composed shape (whose `lint` job runs it as a step), drop at
   `.github/workflows/notignored.yml`. Posts one sticky PR comment naming every
   lint/type-check suppression the change added, with its rules, its stated reason,
   and a link to the line — the review artifact that makes a high-level review of
@@ -482,7 +506,7 @@ composer's `--intersection` choices automatically.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — the
   deterministic, stdlib-only audit. It checks the agent layer, recorded
   composition, command surface, e2e/coverage signals, CI, the PR template, the
-  suppressions review comment, and the
+  suppressions review comment, the CI/CD shape and its eight budgets, and the
   llmlint tier — going past presence (placeholder recipes, a `check` that skips
   `test`, a do-nothing CI file all fail). `--help` lists the checks; `--buildout`
   additionally *runs* the one-time llmlint buildout tier for the recorded stack
@@ -493,6 +517,8 @@ composer's `--intersection` choices automatically.
   [`references/ci.md`](./references/ci.md) via `gh`. `--verify` reports where the
   live repo-side state — which the filesystem checker can't see — diverges from
   the desired one, closing the gap where a repo passes every file gate while its
-  checks aren't actually required to merge. It refuses to apply (or verify)
-  governance that omits an `llmlint` required check — the mandated blocking
-  LLM-judge tier — unless `--allow-missing-llmlint` is passed.
+  checks aren't actually required to merge. With no contexts given it reads
+  them from `.github/governance.json` (`lint` and the test jobs, non-strict;
+  `--strict` is an explicit opt-in). It refuses to apply (or verify)
+  governance that omits the `llmlint` tier — a context named `llmlint`, or a
+  required `lint` whose job runs it — unless `--allow-missing-llmlint` is passed.

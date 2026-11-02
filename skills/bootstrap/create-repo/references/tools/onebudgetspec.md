@@ -438,6 +438,52 @@ baseline checker reports a copy whose body does not match its `sha256` line
 (unknown), or that is older than the source (outdated, naming both versions);
 the fix is always to copy the source again.
 
+## The CI and CD budgets every repository starts with
+
+`compose_repo_plan.py --ci-cd` writes the root `budgets.yaml` from
+[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the eight
+budgets onepipeline, onetaskgraph and onepipeline-ui register, each id under the
+project name the composer fills in. Every CI check and CD job is held to 30
+minutes and a change's last-commit pull-request checks plus merge to release to
+90; job counts are budgeted per pull-request push and per release because the
+account's 20 concurrent jobs are shared. `../ci.md` ("CI and CD time budgets")
+states the CI and CD shape they measure.
+
+| id | unit | threshold | label | command |
+| --- | --- | --- | --- | --- |
+| `<name>-ci-check-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage pr` |
+| `<name>-cd-job-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage cd` |
+| `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time` |
+| `<name>-ci-job-count` | jobs | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage pr` |
+| `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage cd` |
+| `<name>-release-read-requests` | requests | 6 | `release-tail` | `bash scripts/actions-budget-figures.sh release-read-requests` |
+| `<name>-pr-read-requests` | requests | 2 | `release-tail` | `bash scripts/actions-budget-figures.sh pr-read-requests` |
+| `<name>-gate-time` | seconds | 1800 | `host-variable` | `node scripts/gate-time-budget.mjs` |
+
+A repository that adds a push workflow delivering nothing (a cache warmer) passes
+it to the CD budgets' commands with `--exclude-workflow`, as the three
+repositories do; the composed shape has none, so its commands name none.
+
+- **Where each is enforced.** `timeout-minutes: 30` holds every CI job at pull-
+  request time. The seven `release-tail` budgets are the last step of
+  release.yml's `publish` — `onebudgetspec check budgets.yaml --label
+  release-tail`, after it installs `onevcs-cli` at the version the skill pins —
+  whose result nothing reads. `<name>-gate-time` is `just gate`'s own wall clock,
+  recorded by `scripts/gate-time.sh` to `.gate-time.json` (gitignored) and read
+  back by `scripts/gate-time-budget.mjs` through the SDK: over its line it warns
+  and the gate passes (a development machine's timing varies too much to refuse
+  on); a missing record or an invalid budgets file fails it.
+- **The strict check leaves both labels out.** The `budgets` recipe `check` runs
+  passes `--exclude-label release-tail --exclude-label host-variable`, so the
+  gate neither reads GitHub nor fails on a machine's speed.
+- **Cut work, never shard.** A figure over its line is met by affected-only
+  selection, caches keyed on their inputs, no check run twice and no needless
+  serialization; a coverage-reducing alternative is the owner's decision.
+- **`llmlint: ignore[budgets_track_product_owner_outcomes]`** sits on each of the
+  eight, with its reason: the brief fixes these units — a line per check and per
+  job beside the cycle that contains them, job counts, GitHub reads — rather than
+  one product-owner outcome.
+
 ## Verification
 
 - [ ] **Pinned.** `@onebudgetspec/cli` (or `onebudgetspec-cli` in a uv project)
@@ -457,6 +503,10 @@ the fix is always to copy the source again.
   its own.
 - [ ] **Cached by kind.** Deterministic `reported` budgets run in the cached
   `budgets` target; `elapsed` and host-reading ones carry the `host` label.
+- [ ] **The eight CI/CD budgets are registered.** The root `budgets.yaml`
+  carries them as the table above states, the `release-tail` seven run by
+  `publish`'s last step and `<name>-gate-time` by `just gate`; the checker
+  reports a missing one, or budgets naming the figures script with no copy.
 - [ ] **Actions figures are the skill's copy.** Any `scripts/actions-budget-figures.sh`
   is an unedited copy of the source at its latest version; the checker reports
   one that is not.
