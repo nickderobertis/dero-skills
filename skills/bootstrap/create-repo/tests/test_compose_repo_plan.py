@@ -898,3 +898,61 @@ def test_the_onebudgetspec_release_is_named_once_in_lockstep():
     assert tags == {version}, tags
     pyproject = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert re.findall(r'"onebudgetspec-cli==([\d.]+)"', pyproject) == [version]
+
+
+def assert_bare_sidecar_cancels(workflow: str) -> None:
+    """Read rendered job steps at their YAML indentation, including every step key."""
+    from ci_cd_shape import jobs
+
+    sidecars = 0
+    for job, body in jobs(workflow).items():
+        steps = re.split(r"^      - ", body, flags=re.MULTILINE)[1:]
+        for index, step in enumerate(steps):
+            if not re.search(
+                r"^        background: true$", "        " + step, re.MULTILINE
+            ):
+                continue
+            sidecars += 1
+            identity = re.search(
+                r"^        id: (\S+)$", "        " + step, re.MULTILINE
+            )
+            assert identity, f"{job}: background step needs an id"
+            expected = f"cancel: {identity[1]}"
+            cancels = [s for s in steps[index + 1 :] if s.startswith("cancel:")]
+            assert len(cancels) == 1, f"{job}: expected one later cancel"
+            # Comments and blank lines do not add YAML keys; all other lines do.
+            lines = [
+                s.strip()
+                for s in cancels[0].splitlines()
+                if s.strip() and not s.lstrip().startswith("#")
+            ]
+            assert lines == [expected], f"{job}: cancel must be bare: {lines}"
+    assert sidecars, "workflow did not start any sidecars"
+
+
+@pytest.mark.parametrize("template", ["ci.yml.template", "release-plz.yml.template"])
+@pytest.mark.parametrize("language", ["rust", "typescript"])
+@pytest.mark.parametrize("platforms", [("linux",), ("linux", "windows", "macos")])
+@pytest.mark.parametrize("docs", [False, True, "x64", "arm64"])
+def test_rendered_sidecars_have_matching_bare_cancels(
+    template, language, platforms, docs
+):
+    shape = crp.CiCdShape(
+        "demo", language, platforms, bool(docs), docs if isinstance(docs, str) else None
+    )
+    source = (SKILL_DIR / "assets" / template).read_text()
+    assert_bare_sidecar_cancels(crp.render_template(source, shape))
+
+
+@pytest.mark.parametrize("template", ["ci.yml.template", "release-plz.yml.template"])
+@pytest.mark.parametrize("key", ["if: always()", "continue-on-error: true"])
+def test_rendered_cancel_guard_rejects_extra_keys(template, key):
+    shape = crp.CiCdShape("demo", "rust", ("linux",), False, None)
+    source = (SKILL_DIR / "assets" / template).read_text()
+    rejected = source.replace(
+        "- cancel: nx-cache", f"- cancel: nx-cache\n        {key}"
+    )
+    rendered = crp.render_template(rejected, shape)
+    assert key in rendered
+    with pytest.raises(AssertionError, match="cancel must be bare"):
+        assert_bare_sidecar_cancels(rendered)
