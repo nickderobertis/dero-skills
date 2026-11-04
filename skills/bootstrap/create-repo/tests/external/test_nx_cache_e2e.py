@@ -82,6 +82,7 @@ class GithubCache:
         self.calls = []
         self.mode = "live"
         self.metadata = {}
+        self.metadata_reads = []
         self.bases = {}
         owner = self
 
@@ -190,6 +191,7 @@ class GithubCache:
 
             def do_GET(self):
                 if self.path.startswith("/repos/"):
+                    owner.metadata_reads.append(self.path)
                     value = owner.metadata.get(
                         self.path, owner.metadata.get(self.path.split("?")[0])
                     )
@@ -493,12 +495,22 @@ def source_metadata(
         ),
         "updated_at": utc_now(),
     }
+    # A merge follows the final CI completion, even when the host pauses while
+    # constructing metadata. Sampling it before reading the reports can race.
+    pr["merged_at"] = utc_now(0.001)
     artifact = {
         "id": run_id * 100 + attempt,
         "name": "nx-cache-entries-test-linux",
         "expired": False,
         "created_at": utc_now(-0.001),
         "workflow_run": {"id": run_id, "head_sha": head, "head_repository_id": 1},
+    }
+    cache.metadata[f"/repos/example/project/commits/{head}/pulls"] = [pr]
+    cache.metadata[f"/repos/example/project/compare/{base}...{head}"] = {
+        "status": "ahead"
+    }
+    cache.metadata[f"/repos/example/project/compare/{base}...main"] = {
+        "status": "identical"
     }
     cache.metadata[f"/repos/example/project/commits/{merge}/pulls"] = [pr]
     cache.metadata[f"/repos/example/project/pulls/{pr_number}"] = pr
@@ -936,6 +948,110 @@ def test_cache_use_joins_real_writer_records_and_excludes_local_hits(
     assert "release PR: 1/1" in result["detail"]
     assert "same-PR retry/push: 1/1" in result["detail"]
     assert "skipped local hits: 1" in result["detail"]
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [None, "current-head", "not-in-pr", "fork", "wrong-base", "base-off-branch"],
+)
+def test_cache_use_accepts_historical_push_only_with_run_evidence(
+    telemetry_history, tmp_path, fault
+):
+    import copy
+
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        # Recorded run 41674998643/1 of PR 602 has this earlier head while
+        # GitHub's live PR association reports the later head below.
+        head = "850b8ce7e25cf2fd64eeb6e79755b7fed754dc5d"
+        later = "705d3530e2c17af7992293aa6bf17667887321da"
+        # Add a distinct push carrying a proven replay, leaving the final push
+        # and its promotion receipt intact. Losing this run changes 3/3 to 2/2.
+        run_id = 41674998643
+        run = copy.deepcopy(
+            cache.metadata["/repos/example/project/actions/runs/1/attempts/2"]
+        )
+        if fault == "current-head":
+            head = later = run["head_sha"]
+        run.update(id=run_id, run_attempt=1, head_sha=head)
+        cache.metadata[f"/repos/example/project/actions/runs/{run_id}/attempts/1"] = run
+        cache.metadata["/repos/example/project/actions/workflows/ci.yml/runs"][
+            "workflow_runs"
+        ].append(run)
+        cache.metadata[
+            f"/repos/example/project/actions/runs/{run_id}/attempts/1/jobs"
+        ] = copy.deepcopy(
+            cache.metadata["/repos/example/project/actions/runs/1/attempts/2/jobs"]
+        )
+        association = copy.deepcopy(run["pull_requests"][0])
+        association["head"]["sha"] = later
+        association["base"]["sha"] = "c" * 40  # live base has moved too
+        run["pull_requests"] = [association]
+        if fault == "fork":
+            association["head"]["repo"]["full_name"] = "other/project"
+        membership = f"/repos/example/project/commits/{head}/pulls"
+        cache.metadata[membership] = [] if fault == "not-in-pr" else [association]
+        artifact = copy.deepcopy(
+            cache.metadata["/repos/example/project/actions/runs/1/artifacts"][
+                "artifacts"
+            ][1]
+        )
+        artifact["id"] = 602
+        artifact["workflow_run"].update(id=run_id, head_sha=head)
+        cache.metadata[f"/repos/example/project/actions/runs/{run_id}/artifacts"] = {
+            "artifacts": [artifact]
+        }
+        key = "/repos/example/project/actions/artifacts/602/zip"
+        with zipfile.ZipFile(
+            io.BytesIO(
+                cache.metadata["/repos/example/project/actions/artifacts/102/zip"]
+            )
+        ) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+        doc = json.loads(files["executions.json"])
+        doc.update(run_id=run_id, attempt=1, head_sha=head)
+        doc["selection"]["head_sha"] = head
+        base = doc["selection"]["base_sha"]
+        files["executions.json"] = json.dumps(doc).encode()
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            for name, body in files.items():
+                archive.writestr(name, body)
+        cache.metadata[key] = output.getvalue()
+        head_compare = f"/repos/example/project/compare/{base}...{head}"
+        branch_compare = f"/repos/example/project/compare/{base}...main"
+        cache.metadata[head_compare] = {
+            "status": "diverged" if fault == "wrong-base" else "ahead"
+        }
+        cache.metadata[branch_compare] = {
+            "status": "diverged" if fault == "base-off-branch" else "ahead"
+        }
+        cache.metadata_reads.clear()
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        if fault not in (None, "current-head"):
+            assert done.returncode != 0, result
+            assert result["actual"] is None
+            assert result["verdict"] == "error"
+            expected = {
+                "not-in-pr": "run head is not a commit of the source PR",
+                "fork": "untrusted source PR repository",
+                "wrong-base": "selection base is not an ancestor of the run head",
+                "base-off-branch": "selection base is not on the source PR base branch",
+            }
+            assert expected[fault] in result["error"], result
+        else:
+            assert done.returncode == 0, (result, done.stderr)
+            assert result["actual"] == 100
+            assert "aggregate: 3/3 remote hits (100%)" in result["detail"]
+            assert "same-PR retry/push: 2/2" in result["detail"]
+            assert head_compare.removeprefix("/") in result["detail"]
+            assert branch_compare.removeprefix("/") in result["detail"]
+            assert cache.metadata_reads.count(head_compare) == 1
+            assert cache.metadata_reads.count(branch_compare) == 1
+            assert f"requests: {len(cache.metadata_reads)};" in result["detail"]
+    finally:
+        cache.metadata = original
 
 
 @pytest.mark.parametrize(
