@@ -194,3 +194,95 @@ def test_package_named_metadata_is_a_real_input_not_a_version_field(repo):
         file = repo / relative
         file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
     assert digest(repo, "npm")[0] != before
+
+
+@pytest.mark.parametrize("operator", ["", "=", "^", "~", ">=", ">", "<=", "<"])
+def test_owned_cargo_requirement_release_is_version_free(repo, operator):
+    root = repo / "Cargo.toml"
+    root.write_text(
+        root.read_text()
+        + f'member = {{ path = "crates/member", version = "{operator}1.0.0" }}\n'
+    )
+    before, stderr = digest(repo, "cargo")
+    assert stderr == ""
+    for relative in ("Cargo.toml", "crates/member/Cargo.toml", "Cargo.lock"):
+        file = repo / relative
+        file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
+    after, stderr = digest(repo, "cargo")
+    assert stderr == ""
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        'member = { path = "crates/member", version = "^1.0.0" }',
+        'member = { path = "crates/member", version = "=1.0.1" }',
+        'member = { path = "elsewhere", version = "=1.0.0" }',
+    ],
+)
+def test_owned_cargo_requirement_semantic_edits_are_inputs(repo, replacement):
+    root = repo / "Cargo.toml"
+    original = 'member = { path = "crates/member", version = "=1.0.0" }'
+    root.write_text(root.read_text() + original + "\n")
+    before = digest(repo, "cargo")[0]
+    root.write_text(root.read_text().replace(original, replacement))
+    assert digest(repo, "cargo")[0] != before
+
+
+def test_consumer_cargo_requirement_is_literal(repo):
+    root = repo / "Cargo.toml"
+    root.write_text(root.read_text() + 'external = { version = "=1.0.0" }\n')
+    before = digest(repo, "cargo")[0]
+    root.write_text(
+        root.read_text().replace(
+            'external = { version = "=1.0.0"', 'external = { version = "=1.0.1"'
+        )
+    )
+    assert digest(repo, "cargo")[0] != before
+
+
+def test_version_header_and_previous_copy_baseline(repo):
+    from test_check_repo_baseline import crb
+
+    header = crb.parse_figures_header(SCRIPT.read_bytes())
+    assert header.version == 2
+    assert crb.figures_digest(header.body) == header.sha256
+    versions = SCRIPT.with_suffix(".versions")
+    assert crb.read_figures_versions(versions)[-1] == crb.FiguresVersion(
+        header.version, header.sha256
+    )
+    old = (
+        Path(__file__).parent / "fixtures/nx-version-free-inputs/v1.mjs"
+    ).read_bytes()
+    copy = repo / "scripts/nx-version-free-inputs.mjs"
+    copy.parent.mkdir()
+    copy.write_bytes(old)
+    findings = crb.check_actions_budget_figures(
+        repo,
+        versions=versions,
+        copy_name="scripts/nx-version-free-inputs.mjs",
+        source_name="assets/ci/nx-version-free-inputs.mjs",
+    )
+    assert len(findings) == 1
+    assert (
+        "outdated: it is at version 1, the source at version 2" in findings[0].message
+    )
+
+
+@pytest.mark.parametrize("ecosystem", ["npm", "python"])
+def test_other_ecosystems_keep_the_previous_digest(repo, ecosystem):
+    previous = Path(__file__).parent / "fixtures/nx-version-free-inputs/v1.mjs"
+    for version in ("1.0.0", "1.0.1"):
+        for path in repo.rglob("*"):
+            if path.is_file() and ".git" not in path.relative_to(repo).parts:
+                path.write_text(path.read_text().replace("1.0.0", version))
+        old = subprocess.run(
+            ["node", str(previous), "--ecosystem", ecosystem],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert old.stderr == ""
+        assert digest(repo, ecosystem) == (old.stdout.strip(), "")

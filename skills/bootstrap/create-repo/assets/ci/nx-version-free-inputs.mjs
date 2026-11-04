@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-version-free-inputs.mjs
-// version: 1
-// sha256: 72a6b39be03813a81f5f86067a236b53cd41a450b5121f8586db23843573d5ff
+// version: 2
+// sha256: b1a0ab3137d8fa8ea0196aafcc2b846d38b2e472996b1bfb537600f94b7aab1e
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -493,7 +493,17 @@ try {
                 (table.name.includes('dependencies') ||
                   /^\s*\{/.test(line.split('=')[1] ?? ''))
               )
-                line = line.replaceAll('"' + v + '"', '"<version>"');
+                if (ecosystem === 'cargo') {
+                  const escapedVersion = v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                  line = line.replace(
+                    new RegExp(
+                      `((?:version\\s*=\\s*|^\\s*(?:"${escaped}"|${escaped})\\s*=\\s*)["'])([=^~<>]{0,2}\\s*)${escapedVersion}(["'])`,
+                    ),
+                    '$1$2<version>$3',
+                  );
+                } else {
+                  line = line.replaceAll('"' + v + '"', '"<version>"');
+                }
             }
             return line;
           });
