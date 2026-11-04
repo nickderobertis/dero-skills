@@ -597,10 +597,12 @@ def test_every_nx_job_uses_the_shared_cache_and_reports_trusted_artifacts(compos
         )
         assert "name: nx-cache-entries-${{ github.job }}" in body
         assert "retention-days: 7" in body
-        assert (
-            "- cancel: nx-cache\n        if: always()\n        continue-on-error: true"
-            in body
-        )
+        step_lines = [
+            line.strip()
+            for line in body.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        assert step_lines[-1] == "- cancel: nx-cache"
     assert len(
         [name for name in jobs(ci) if not name.startswith("visual-docs-")]
     ) == len(CI_JOBS[platforms])

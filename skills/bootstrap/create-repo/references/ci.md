@@ -110,7 +110,8 @@ request did not need is a slot another repository waited for.
   `report` runs with `if: always()` and uploads bodies plus task telemetry for
   trusted same-repository PRs, retaining seven days. Fork and Dependabot runs
   read through the sidecar's read-only mode and never write reusable entries.
-  Sidecar teardown uses `continue-on-error: true`. The pinned sidecar reports
+  Sidecar teardown uses a bare `cancel: nx-cache` step with no other keys.
+  The pinned sidecar reports
   upstream throttling or outages as HTTP 409 or 500, so failed-store detail can
   include hidden throttling. A 409 is not proof of presence; promotion confirms it
   with a GET. Only a directly observed cache-API 429 is labelled throttled.

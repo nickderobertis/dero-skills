@@ -170,8 +170,6 @@ jobs:
           path: ${{ runner.temp }}/nx-cache-report
           retention-days: 7
       - cancel: nx-cache
-        if: always()
-        continue-on-error: true
 
 #% if visual-docs-arch
   # The visual docs on their second architecture, natively on that architecture's runner.
@@ -262,7 +260,5 @@ jobs:
           path: ${{ runner.temp }}/nx-cache-report
           retention-days: 7
       - cancel: nx-cache
-        if: always()
-        continue-on-error: true
 
 #% endfor
