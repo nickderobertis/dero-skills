@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 11
-# sha256: f21fb1398eba0ccf25dc0e11ce987b5ef3e2ab6052849ad431f1bec2a31b8a2d
+# sha256: 4e712406a1b09dac07d496be28d6a71141958de3259efb5c85f1dc23744fa5a4
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -57,6 +57,8 @@ fi
 figure="${1:-}"
 if [ "$figure" = cache-use ]; then
   shift
+  command -v node >/dev/null 2>&1 || missing "node is not on PATH" "install Node.js 24 and rerun this budget"
+  # llmlint: ignore[typescript_and_npm_launched_via_bun] This portable consumer helper uses Node built-ins and the shared contract requires node; consuming repositories need no bun package for it.
   exec node "$(dirname "$0")/nx-remote-cache.mjs" cache-use "$@"
 fi
 case "$figure" in

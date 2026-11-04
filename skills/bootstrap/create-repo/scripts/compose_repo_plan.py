@@ -1317,31 +1317,34 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
                 continue
             if isinstance(item, str) and item.startswith("^"):
                 continue  # Dependencies use each dependency project's testInputs below.
-            if isinstance(item, str) and item in definitions:
-                if item in seen:
-                    raise WiringError(f"{path}: cyclic named input {item}")
-                definition = definitions[item]
-                if isinstance(definition, list):
-                    kept.extend(retained_inputs(definition, definitions, seen | {item}))
-            elif isinstance(item, str):
-                if Path(item).name not in {
-                    "Cargo.toml",
-                    "Cargo.lock",
-                    "package.json",
-                    "bun.lock",
-                    "package-lock.json",
-                    "pnpm-lock.yaml",
-                    "pyproject.toml",
-                    "uv.lock",
-                    "CHANGELOG.md",
-                }:
+            match item:
+                case str() if item in definitions:
+                    if item in seen:
+                        raise WiringError(f"{path}: cyclic named input {item}")
+                    definition = definitions[item]
+                    if isinstance(definition, list):
+                        kept.extend(
+                            retained_inputs(definition, definitions, seen | {item})
+                        )
+                case str():
+                    if Path(item).name not in {
+                        "Cargo.toml",
+                        "Cargo.lock",
+                        "package.json",
+                        "bun.lock",
+                        "package-lock.json",
+                        "pnpm-lock.yaml",
+                        "pyproject.toml",
+                        "uv.lock",
+                        "CHANGELOG.md",
+                    }:
+                        kept.append(item)
+                case dict():
+                    if item == {"runtime": "node -p process.platform"} or item == {
+                        "externalDependencies": []
+                    }:
+                        continue
                     kept.append(item)
-            elif isinstance(item, dict):
-                if item == {"runtime": "node -p process.platform"} or item == {
-                    "externalDependencies": []
-                }:
-                    continue
-                kept.append(item)
         return list({json.dumps(item, sort_keys=True): item for item in kept}.values())
 
     named["testInputs"] += retained_inputs(original_test_inputs, original_named)

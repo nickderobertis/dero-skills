@@ -592,7 +592,7 @@ and writes each distinct accepted or replayed body through the sidecar's own
 `PUT /v1/cache/<hash>` API into the current readable scope. Source entries
 are retained. No source, untrusted source, missing/expired artifacts or a GitHub
 or store fault warns and exits 0 so release-plz still runs; usage exits 2.
-The job has actions:write and uploads `nx-cache-promotion-<merge_sha>` from
+The job has actions:read and uploads `nx-cache-promotion-<merge_sha>` from
 RUNNER_TEMP/nx-cache-promotion. Its receipt.json schema 1 has repository, scope,
 merge_sha, pr, source_run_id, source_attempt, promoted_at (RFC3339 UTC),
 entries (task/hash/os and promoted or already_present status), and attempts.

@@ -1,5 +1,6 @@
 """Shared cache journeys run real Nx and the pinned op-nx action bundle.
 
+# llmlint: ignore[e2e_not_mocked] The required journey runs real Nx and the pinned sidecar; only GitHub HTTP is doubled to reproduce scope and fault histories.
 Only GitHub's HTTP services are doubled. The cache service preserves the scope
 rule measured by spike-opnx-audit: a PR reads its merge ref and its base, and a
 write belongs only to the current ref.
@@ -26,7 +27,15 @@ import pytest
 from ci_cd_shape import compose
 
 SKILL = Path(__file__).resolve().parents[2]
-PIN = "91839c24885842cac86567c30e23b37fb85f7e33"
+PIN = subprocess.check_output(
+    [
+        "node",
+        "--input-type=module",
+        "-e",
+        f"import {{ OP_NX_COMMIT }} from '{(SKILL / 'assets/ci/nx-remote-cache.mjs').as_uri()}'; console.log(OP_NX_COMMIT)",
+    ],
+    text=True,
+).strip()
 
 
 def command(args, root, env=None, timeout=120):
@@ -977,31 +986,32 @@ def test_cache_use_refuses_unavailable_or_hostile_evidence(
             with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as source:
                 files = {name: source.read(name) for name in source.namelist()}
             doc = json.loads(files["executions.json"])
-            if fault == "wrong-repository":
-                doc["repository"] = "hostile/fork"
-            elif fault == "wrong-head":
-                doc["head_sha"] = "a" * 40
-            elif fault == "wrong-attempt":
-                doc["attempt"] = 99
-            elif fault == "wrong-os":
-                doc["os"] = "win32"
-            elif fault == "missing-timing":
-                del doc["tasks"][0]["started_at"]
-            elif fault == "wrong-timing":
-                doc["tasks"][0]["started_at"] = "2099-01-01T00:00:00Z"
-                doc["tasks"][0]["finished_at"] = "2099-01-01T00:00:01Z"
-            else:
-                task = doc["tasks"][0]
-                task["finished_at"] = (
-                    (
-                        datetime.fromisoformat(
-                            task["finished_at"].replace("Z", "+00:00")
+            match fault:
+                case "wrong-repository":
+                    doc["repository"] = "hostile/fork"
+                case "wrong-head":
+                    doc["head_sha"] = "a" * 40
+                case "wrong-attempt":
+                    doc["attempt"] = 99
+                case "wrong-os":
+                    doc["os"] = "win32"
+                case "missing-timing":
+                    del doc["tasks"][0]["started_at"]
+                case "wrong-timing":
+                    doc["tasks"][0]["started_at"] = "2099-01-01T00:00:00Z"
+                    doc["tasks"][0]["finished_at"] = "2099-01-01T00:00:01Z"
+                case _:
+                    task = doc["tasks"][0]
+                    task["finished_at"] = (
+                        (
+                            datetime.fromisoformat(
+                                task["finished_at"].replace("Z", "+00:00")
+                            )
+                            - timedelta(milliseconds=1)
                         )
-                        - timedelta(milliseconds=1)
+                        .isoformat(timespec="milliseconds")
+                        .replace("+00:00", "Z")
                     )
-                    .isoformat(timespec="milliseconds")
-                    .replace("+00:00", "Z")
-                )
             files["executions.json"] = json.dumps(doc).encode()
             output = io.BytesIO()
             with zipfile.ZipFile(output, "w") as target:
@@ -1055,18 +1065,19 @@ def test_promotion_faults_warn_and_leave_the_following_step_running(
     source_pr = cache.metadata["/repos/example/project/pulls/1"]
     sha = source_pr["merge_commit_sha"]
     try:
-        if reason == "no-pr":
-            cache.metadata[f"/repos/example/project/commits/{sha}/pulls"] = []
-        elif reason == "fork":
-            source_pr["head"]["repo"]["full_name"] = "hostile/fork"
-        elif reason == "dependabot":
-            source_pr["user"]["login"] = "dependabot[bot]"
-        elif reason == "gone":
-            cache.metadata["/repos/example/project/actions/runs/1/artifacts"][
-                "artifacts"
-            ] = []
-        else:
-            cache.mode = "fault"
+        match reason:
+            case "no-pr":
+                cache.metadata[f"/repos/example/project/commits/{sha}/pulls"] = []
+            case "fork":
+                source_pr["head"]["repo"]["full_name"] = "hostile/fork"
+            case "dependabot":
+                source_pr["user"]["login"] = "dependabot[bot]"
+            case "gone":
+                cache.metadata["/repos/example/project/actions/runs/1/artifacts"][
+                    "artifacts"
+                ] = []
+            case _:
+                cache.mode = "fault"
         with workspace.sidecar(
             cache,
             "skip-" + reason,

@@ -1413,6 +1413,7 @@ def test_release_cycle_time_with_no_counted_job_is_missing(repository):
 def test_recorded_releases_count_every_published_change(
     tmp_path, onevcs_bin, name, tag, owner_repo, counted, omitted, paths
 ):
+    # llmlint: ignore[e2e_not_mocked] The contract requires recorded GitHub reads at the real onevcs CLI seam; the script, onevcs and budget reporter run unchanged.
     repo = Repository(
         tmp_path / "repo", Replay(tmp_path / "replay", "published-" + name), onevcs_bin
     )
@@ -1453,21 +1454,22 @@ def test_recorded_releases_count_every_published_change(
 def test_release_cycle_missing_local_evidence_writes_nothing(onepipeline, failure):
     repo = onepipeline
     published = repo.root / "published-paths"
-    if failure == "missing":
-        published.unlink()
-        reason = "published-paths"
-    elif failure == "empty":
-        published.write_text("# only comments\n\n")
-        reason = "is empty"
-    elif failure == "unreadable":
-        published.chmod(0)
-        reason = "cannot read published paths file"
-    elif failure == "absent-merge":
-        shutil.rmtree(repo.root / ".git")
-        reason = "fetch-depth: 0"
-    else:
-        published.write_text("not-an-artifact/**\n")
-        reason = "v0.72.0 carries no pull request that changes a published path"
+    match failure:
+        case "missing":
+            published.unlink()
+            reason = "published-paths"
+        case "empty":
+            published.write_text("# only comments\n\n")
+            reason = "is empty"
+        case "unreadable":
+            published.chmod(0)
+            reason = "cannot read published paths file"
+        case "absent-merge":
+            shutil.rmtree(repo.root / ".git")
+            reason = "fetch-depth: 0"
+        case _:
+            published.write_text("not-an-artifact/**\n")
+            reason = "v0.72.0 carries no pull request that changes a published path"
     try:
         done, written = run_direct(
             repo, "release-cycle-time", *RELEASE, "--published-paths", "published-paths"

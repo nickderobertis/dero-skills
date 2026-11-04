@@ -2,7 +2,8 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-version-free-inputs.mjs
 // version: 1
-// sha256: 95c590efc29bbff1e028b19855a470f4012a04cbb83bde6dfcbe071bc141e73c
+// sha256: 7393eca3de0c93247388085b954396f8a6938dd497aab8677ea2a51978260874
+// llmlint: ignore[typescript_and_npm_launched_via_bun] The node shebang above implements the shared portable CLI contract; this asset uses Node built-ins without a consumer package install.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -26,6 +27,7 @@ if (
   );
   process.exit(2);
 }
+// llmlint: ignore[scripts_runtime_independent] The contract hashes tracked consumer files, so git ls-files supplies the checkout boundary using git provided on the GitHub-hosted runner, without authoring dependencies.
 const tracked = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' })
   .split('\0')
   .filter(Boolean);

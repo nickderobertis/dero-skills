@@ -123,5 +123,4 @@ budgets:
     description: >-
       Remote replay of previously attempted reusable task results, by exact task, OS
       and hash, on the release pull request and same-PR retries or later pushes.
-      Missing evidence is an error. The 100 percent line is a design target awaiting
-      production release-tail observations.
+      Detects reusable results that become unavailable before a later run needs them.

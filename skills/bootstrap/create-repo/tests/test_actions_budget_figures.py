@@ -706,3 +706,17 @@ def test_version_ten_copy_is_outdated_against_eleven(tmp_path):
     done = checked(repo)
     assert done.returncode == 0, done.stdout + done.stderr
     assert "outdated: it is at version 10, the source at version 11" in done.stdout
+
+
+def test_cache_use_missing_node_reports_action_without_writing(tmp_path):
+    result = tmp_path / "result.json"
+    done = subprocess.run(
+        [shutil.which("bash"), str(SOURCE), "cache-use"],
+        env={**os.environ, "PATH": str(tmp_path), "ONEBUDGETSPEC_RESULT": str(result)},
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 1
+    assert "node is not on PATH" in done.stderr
+    assert "install Node.js 24 and rerun this budget" in done.stderr
+    assert not result.exists()

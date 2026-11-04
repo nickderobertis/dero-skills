@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
+      actions: read
     concurrency:
       group: release-plz
       cancel-in-progress: false

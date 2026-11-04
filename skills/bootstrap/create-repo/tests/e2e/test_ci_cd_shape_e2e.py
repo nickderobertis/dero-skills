@@ -617,7 +617,7 @@ def test_promotion_has_a_real_push_scope_and_precedes_release_tools(composed):
     exports = cache_exports()
     assert "workflow_dispatch:" not in text
     assert f"branches: [main, '{exports['branch']}']" in text
-    assert "actions: write" in text
+    assert "actions: read" in text
     assert f"start-cache-server@{exports['pin']}" in text
     assert text.index("nx-remote-cache.mjs promote") < min(
         (

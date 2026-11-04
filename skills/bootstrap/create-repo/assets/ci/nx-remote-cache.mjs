@@ -2,7 +2,8 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 1
-// sha256: 3a20fb5d5e8372cbab5652e9c87ad950ddf350a232cd365d306a75440698194a
+// sha256: 324bf97a1192734484c3775af19e4e92544969cd0e98ec735e701aa2b1c6f113
+// llmlint: ignore[typescript_and_npm_launched_via_bun] The node shebang above implements the shared portable CLI contract; this asset uses Node built-ins without a consumer package install.
 import {
   appendFileSync,
   readFileSync,
@@ -212,6 +213,7 @@ async function ready(opts) {
     return;
   }
   const secret = randomUUID();
+  // llmlint: ignore[typescript_and_npm_launched_via_bun] Restart this same portable Node CLI with its current interpreter; consumers do not install a bun package for the proxy.
   const child = spawn(process.execPath, [self, '_proxy'], {
     env: { ...env, NX_RECORDING_SECRET: secret },
     detached: true,
@@ -573,6 +575,7 @@ class Github {
         (binary ? '.zip' : '.json'),
     );
     if (!existsSync(path)) {
+      // llmlint: ignore[scripts_runtime_independent] The budget contract requires read-only gh API pagination with the runner authentication; gh is provided on the GitHub-hosted runner, with no authoring dependency.
       const body = execFileSync(
         'gh',
         [
@@ -1177,6 +1180,7 @@ function commitChangesPublished(sha) {
   check(specs.length > 0, 'empty .github/release-published-paths');
   try {
     return (
+      // llmlint: ignore[scripts_runtime_independent] The published-path contract reads merge diffs from the consumer checkout with git; git is provided on the GitHub-hosted runner, with no authoring dependency.
       execFileSync(
         'git',
         ['diff', '--name-only', `${sha}^1`, sha, '--', ...specs],
