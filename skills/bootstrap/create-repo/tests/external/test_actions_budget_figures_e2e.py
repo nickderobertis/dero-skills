@@ -1381,6 +1381,7 @@ def test_release_cycle_time_with_no_counted_job_is_missing(repository):
     assert_refused_writing_nothing(repo, args, reason)
 
 
+# llmlint: ignore[e2e_not_mocked] Recorded GitHub HTTP is the required boundary double; real onevcs, git merge diffs, the figures CLI and onebudgetspec exercise the counted-change rule.
 @pytest.mark.parametrize(
     ("name", "tag", "owner_repo", "counted", "omitted", "paths"),
     [

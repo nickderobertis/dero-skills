@@ -523,146 +523,43 @@ repositories do; the composed shape has none, so its commands name none.
 
 ## Shared Nx cache
 
-The verbatim sources are `assets/ci/nx-remote-cache.mjs` and
-`assets/ci/nx-version-free-inputs.mjs`, each version 1. Their headers digest
-every byte after the sha256 line; their adjacent `.versions` files and the
-baseline checker detect stale or edited copies. `OP_NX_COMMIT` exports the
-full pinned op-nx commit; the composer reads it for every sidecar step.
+Copy the two sources unchanged: [nx-remote-cache.mjs](../../assets/ci/nx-remote-cache.mjs)
+and [nx-version-free-inputs.mjs](../../assets/ci/nx-version-free-inputs.mjs).
+The source owns the command interface, telemetry schemas, validation and readers;
+consult it for fields and statuses rather than maintaining a second contract here.
+The adjacent versions files and baseline checker detect edited or stale copies.
+The composer reads the sidecar pin and promotion branch pattern from its exports.
 
-`node scripts/nx-remote-cache.mjs trust` reads the actual event payload,
-repository and PR author, and writes `read_only` and `promotable` to
-GITHUB_OUTPUT. Forks and Dependabot are read-only and not promotable; other
-same-repository PRs are promotable; other events are not. The workflow translates
-read_only true to a nonempty CACHE_READ_ONLY; false leaves it empty, because the
-pinned library treats even the string "false" as read-only.
+Each existing CI job decides trust, starts the pinned sidecar at the workspace
+root, waits for its recording proxy, runs Nx and reports its results even after
+failure. Only trusted PR reports are uploaded. Forks and Dependabot cannot write
+shared entries. Cache outages warn and fall back to local execution; missing
+telemetry remains unavailable evidence rather than a successful measurement.
+Reports preserve both accepted uploads and remote replay bodies for promotion.
 
-`ready [--timeout-seconds N]` defaults to 60 seconds. An unauthenticated 401
-proves liveness without consulting the store. It starts a loopback recording
-proxy before appending NX_SELF_HOSTED_REMOTE_CACHE_SERVER and its access token
-to GITHUB_ENV. Failure appends neither, warns and exits 0, leaving Nx local.
-The proxy forwards cache requests unchanged and records GET/PUT statuses and
-accepted bodies. A failed PUT receives a nonfatal status so a passing task stays
-passing. No cache inventory or deletion is used.
+Promotion runs before release-plz because the upstream cache only publishes a
+shared store from a default-branch push: a PR's own cache scope cannot serve
+another PR. The merge job promotes the latest trusted PR run into the base
+scope. Manual promotion uses a push to the dedicated branch pattern exported by
+the script, naming the source PR. A demonstration PR based on that branch can
+read that scope. There is no dispatch write or fabricated GitHub event.
+Release-plz's own steps run only on main pushes and authenticate with the release
+PAT; the job's default token needs only read access. Promotion failures warn so
+release-plz can proceed. Receipts retain failed attempts as well as successful
+writes, because later re-execution of an expected result must count as a miss.
 
-`report --job NAME --out DIR` runs after the existing Nx commands, always.
-It stops the proxy and writes:
+The cache-use figure reads production reports and receipts without running tests.
+Its eligibility and trust joins are implemented alongside the writers in the
+shared script. Local hits and previously unseen hashes are excluded; failed
+store or promotion attempts still establish expectations for later matching
+executions. Missing or expired required evidence cannot produce a passing figure.
+The release-tail budget's full-replay threshold is a design target supported by
+the spike's three OS replays, not a measured release baseline. Revisit it after
+real release observations. The conservative workload exceeds the spike's upload
+ceiling; no aggregate quota headroom, rate control or cache deletion is promised.
 
-- `manifest.json`: schema 1, job, entries with hash, bytes and source
-  (`stored` or `replayed`), and stored_bytes. Each `<hash>.tar` is the
-  exact accepted Nx request body or the exact body served from the remote.
-  Accepted uploads and replays are both retained for later promotion.
-- `executions.json`: schema 1, repository, ref, pr (integer or null),
-  head_sha, run_id, attempt, job, os (`process.platform`), tasks and
-  store_attempts. Each task has task identifier, exact hash, cacheable, result
-  (`remote_hit`, `local_hit`, `executed`, `failed`), remote_status,
-  started_at and finished_at (RFC3339 UTC from Nx task timing).
-  `selection` records mode affected with base_sha/head_sha, the exact
-  NX_BASE/NX_HEAD values compared; non-affected all-project runs record mode all.
-  PR workflows explicitly select the event's base/head SHAs.
-- Store attempts have task, hash, os, attempted_at (RFC3339 UTC), status
-  (`stored`, `throttled`, `failed`), and nullable http_status. Every PUT
-  is recorded before forwarding and updated with its result. A successful
-  cacheable execution with no usable remote records a failed/null attempt.
-  Failed tasks never prove reusable results.
-
-The same script exports Nx pre/post execution hooks, registered in nx.json.
-They append one record per existing invocation, so later commands cannot
-overwrite earlier evidence. Hooks only collect telemetry: failures warn and
-never alter Nx's exit status or run a task again. Missing or incomplete
-invocations produce unavailable evidence, never an empty success. Remote hits
-require an observed GET 200 joined to Nx's own result by hash; terminal wording,
-local hits and passing tasks never stand in for a remote hit. Distinct task
-identifiers sharing a hash remain distinct executions. The reporter logs and
-summarizes stored entry count and bytes separately from replay count, and
-exits 0 for operational faults (2 for usage).
-
-`promote (--sha SHA | --pr N) --workflow FILE [--repo OWNER/NAME]` runs in the
-existing release-plz job after the sidecar/ready and before release-plz.
-On main it resolves the merged PR from the commit's associated pulls; on a push
-to `cache-promote/<PR>` it validates the branch's named PR.
-PROMOTION_BRANCH_PATTERN is defined by the shared script, and the composer uses
-that constant in the trigger. The pinned sidecar deliberately denies dispatch
-writes: there is no workflow_dispatch trigger or fabricated GitHub event.
-Release-plz itself runs only on main pushes.
-
-Promotion admits only same-repository, non-Dependabot sources. It selects the
-latest successful PR run on the head, validates affected selection against the
-source run's base/head, downloads every expected job's seven-day report artifact,
-and writes each distinct accepted or replayed body through the sidecar's own
-`PUT /v1/cache/<hash>` API into the current readable scope. Source entries
-are retained. No source, untrusted source, missing/expired artifacts or a GitHub
-or store fault warns and exits 0 so release-plz still runs; usage exits 2.
-The job has actions:read and uploads `nx-cache-promotion-<merge_sha>` from
-RUNNER_TEMP/nx-cache-promotion. Its receipt.json schema 1 has repository, scope,
-merge_sha, pr, source_run_id, source_attempt, promoted_at (RFC3339 UTC),
-entries (task/hash/os and promoted or already_present status), and attempts.
-Each attempt has task/hash/os, attempted_at, status (promoted, already_present,
-throttled, failed or never_promoted), and nullable http_status. Only accepted or
-confirmed existing entries enter entries; all known source expectations enter
-attempts, including recorded failures. Missing source evidence remains missing
-measurement.
-
-`cache-use [--release TAG] [--repo OWNER/NAME]` reads only release metadata
-and the counted PRs' run/artifact evidence through paginated read-only GitHub API
-calls, memoized under RUNNER_TEMP for the job. It never runs tests or a sidecar.
-The observation interval starts after the previous release's published_at and
-ends at this release's published_at, inclusive. With no previous release it
-starts at the first CI run. A run completing after the end is left out and named.
-The release PR contributes its final successful pre-merge CI attempt and later
-same-PR reruns in the interval; ordinary counted PRs contribute retries and later
-pushes. Earlier attempts establish expectations.
-
-Deduplicate (run_id, attempt, job, task, os, hash). A cacheable execution is eligible
-only if a matching task/OS/hash had a preceding store attempt in an earlier run
-of the same PR, or in the merged PR's latest run or its promotion into the readable
-base scope. A validated replayed body in that latest run establishes the same
-expectation as a stored body: without a recorded promotion, a later matching
-re-execution is never_promoted; after promotion, a 404/re-execution is evicted. Attempts, including failed/null and throttled writes, establish
-eligibility; successful receipts are not a precondition. The execution's own
-store cannot qualify it. New hashes and local hits are outside both numerator
-and denominator. A qualifying GET 200 remote replay counts as a hit even after
-an earlier failed store; re-execution, failure and remote unavailability count
-as misses. The value is 100 * remote_hits / eligible_executions.
-
-Detail includes aggregate and separate release-PR and same-PR retry/push rates,
-every miss's task/OS/hash and age since attempt, raw statuses and causes:
-429 throttled; transport/5xx or disabled store failed; accepted/promoted then
-404 evicted; no promotion attempted never_promoted. It reports skipped local
-hits, unavailable artifacts, promotion failures, stored bytes and request counts.
-Repository, PR, source head/run/attempt, selection, OS and readable scope are
-validated against GitHub metadata; artifact names alone confer no trust. GitHub
-can return empty run.pull_requests after merge. In that case the reader uses
-commits/{head_sha}/pulls to associate the same trusted merged PR/head repository
-and author, then verifies selection.base_sha is an ancestor of the merge's first
-parent through compare. An unassociable run is missing data named by run/attempt,
-not silently omitted. These extra read-only responses use the same memoization. The
-writer and reader schemas are owned and validated by the same script. The pinned
-sidecar can turn hidden throttling or service outages into cache-API 409
-(save failed, then its existence probe found nothing) or 500. See the
-[pinned backend's save/probe handling](https://github.com/op-nx/github-cache/blob/91839c24885842cac86567c30e23b37fb85f7e33/packages/github-cache/src/backend/actions-cache-backend.ts#L376).
-Source store_attempts records a 409 as failed with its raw status. Only promotion
-can report already_present, after a confirming GET of the same hash/body.
-Only a directly observed cache-API 429 is labelled throttled; statuses are never
-guessed from logs. Zero
-eligible executions, invalid schema, missing expected job/attempt telemetry and
-expired required artifacts exit 1 without a figure; usage exits 2.
-
-The composed `<name>-nx-cache-use` budget is reported percent, direction min,
-threshold 100, labelled release-tail. This is a design target supported by the
-spike's three successful OS replays, not a measured release baseline; revisit it
-after real release-tail observations. At the conservative envelope there are
-2,540 stores plus 2,540 promotion writes in a minute, 25.4 times the spike's
-200 uploads/minute ceiling. There is no claim of aggregate quota headroom and
-no second budget, rate-control job or deletion mechanism.
-
-`node scripts/nx-version-free-inputs.mjs --ecosystem cargo|npm|python|files
-[--keep-version]` prints one sha256 of tracked paths and contents. Cargo covers
-Cargo.toml/Cargo.lock; npm covers package.json and bun/package-lock/pnpm locks;
-Python covers pyproject.toml/uv.lock; files reads the tracked literal version
-files named by .github/nx-version-files. Only workspace packages' own version
-fields and their own lock entries are blanked, or each current workspace-version
-occurrence in literal files. Changelogs are never read. Keep-version blanks
-nothing for tests that read the version. Unparseable input warns and hashes the
-same raw files, never a constant, exiting 0 because Nx hashes runtime stdout
-regardless of exit status. Ecosystem digests prevent a Cargo edit from invalidating
-npm-only targets; OS runtime inputs prevent cross-platform replay.
+Version-free ecosystem inputs keep release version and changelog edits from
+invalidating proven tests while retaining dependency and source changes. Targets
+that inspect versions keep them in their inputs. Separate ecosystem digests avoid
+cross-ecosystem invalidation, and platform inputs prevent cross-OS replay.
+Unparseable files retain their raw content digest instead of a constant.

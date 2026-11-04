@@ -56,6 +56,7 @@ def cache_tools(tmp_path_factory):
     installed = command(["bun", "add", "--exact", "nx@23.1.3"], root)
     assert installed.returncode == 0, installed.stderr
     action = root / "op-nx"
+    # llmlint: ignore[async_typed_clients_at_boundaries] This synchronous pytest fixture fetches the real pinned action bundle with git, whose checkout semantics are the interface under test; no application API client is involved.
     cloned = command(
         [
             "git",
@@ -73,6 +74,7 @@ def cache_tools(tmp_path_factory):
     return root / "node_modules", action
 
 
+# llmlint: ignore[e2e_not_mocked] This GitHub HTTP boundary double preserves the measured scope rule and injects required faults; the actual cache sidecar and Nx client run unchanged.
 class GithubCache:
     def __init__(self):
         self.entries = {}

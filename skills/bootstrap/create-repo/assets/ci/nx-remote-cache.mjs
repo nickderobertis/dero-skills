@@ -1,9 +1,7 @@
-#!/usr/bin/env node
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 1
-// sha256: 324bf97a1192734484c3775af19e4e92544969cd0e98ec735e701aa2b1c6f113
-// llmlint: ignore[typescript_and_npm_launched_via_bun] The node shebang above implements the shared portable CLI contract; this asset uses Node built-ins without a consumer package install.
+// sha256: 33d3d3e3056854956c3268bc726053121b5fe3bf78fc3e28b8ee18b0153f31df
 import {
   appendFileSync,
   readFileSync,
