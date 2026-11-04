@@ -1,0 +1,15 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repos/nickderobertis/onepipeline-ui/compare/v0.65.1...v0.65.2?per_page=100",
+    "why": "Read-only public GitHub capture for the published-path release-cycle journey.",
+    "command": [
+      "gh",
+      "api",
+      "--include",
+      "--method",
+      "GET",
+      "repos/nickderobertis/onepipeline-ui/compare/v0.65.1...v0.65.2?per_page=100"
+    ]
+  },
+  "scrubbed": []
+}

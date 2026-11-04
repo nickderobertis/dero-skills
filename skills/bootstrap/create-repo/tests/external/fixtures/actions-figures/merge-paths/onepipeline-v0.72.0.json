@@ -1,0 +1,103 @@
+{
+  "recorded": {
+    "command": "gh api repos/{repository}/commits/{merge_commit_sha}?per_page=100",
+    "why": "Exact changed filenames of each recorded merge commit, read-only from GitHub; file contents are unnecessary for name-only diffs."
+  },
+  "merges": [
+    {
+      "repository": "nickderobertis/onepipeline",
+      "merge_commit_sha": "5091d998c1926b2d097501cba085863077440c28",
+      "paths": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "README.md",
+        "crates/testfakes/src/lib.rs",
+        "docs/contract-divergences.md",
+        "docs/contract.md",
+        "docs/stop-guard.md",
+        "package-lock.json",
+        "package.json",
+        "schemas/events.json",
+        "screenshots/images/demo.gif",
+        "screenshots/images/help.svg",
+        "screenshots/images/monitor.svg",
+        "scripts/smoke-published.sh",
+        "shots/baseline/x86_64.json",
+        "src/cli.rs",
+        "src/driver.rs",
+        "src/event.rs",
+        "src/filter.rs",
+        "src/flow.rs",
+        "src/flowwatch.rs",
+        "src/land.rs",
+        "src/maintenance.rs",
+        "src/payload.rs",
+        "src/sys.rs",
+        "src/unpublished.rs",
+        "src/unwatched.rs",
+        "src/vocabulary.rs",
+        "src/watch.rs",
+        "tests/contract.rs",
+        "tests/e2e/flow.rs",
+        "tests/e2e/main.rs",
+        "tests/e2e/manager_landings.rs",
+        "tests/e2e/out_of_band.rs",
+        "tests/recorded/pipeline-kinds.jsonl",
+        "tests/registry.rs",
+        "tests/vocabulary_tables.rs"
+      ]
+    },
+    {
+      "repository": "nickderobertis/onepipeline",
+      "merge_commit_sha": "dfde02c3832a6f4fc8bdeaa94477f2194a89cc96",
+      "paths": [
+        "Cargo.lock",
+        "crates/testfakes/src/bin/fake-gh.rs",
+        "docs/contract-divergences.md",
+        "schemas/events.json",
+        "schemas/planner-channel.json",
+        "screenshots/images/demo.gif",
+        "screenshots/images/help.svg",
+        "screenshots/images/monitor.svg",
+        "scripts/smoke-published.sh",
+        "shots/baseline/x86_64.json",
+        "src/channel.rs",
+        "src/channel/layout.rs",
+        "src/channel/layout/document.rs",
+        "src/checkpoint.rs",
+        "src/cli.rs",
+        "src/driver.rs",
+        "src/edits.rs",
+        "src/engine.rs",
+        "src/event.rs",
+        "src/lib.rs",
+        "src/lifecycle.rs",
+        "src/payload.rs",
+        "src/projection.rs",
+        "src/readjust.rs",
+        "src/review.rs",
+        "src/stack.rs",
+        "src/trigger.rs",
+        "src/vcs.rs",
+        "src/verbs.rs",
+        "src/views.rs",
+        "src/writeback.rs",
+        "tests/contract.rs",
+        "tests/e2e/main.rs",
+        "tests/e2e/readjust.rs",
+        "tests/e2e/review.rs",
+        "tests/e2e/rework.rs",
+        "tests/recorded/pipeline-kinds.jsonl"
+      ]
+    },
+    {
+      "repository": "nickderobertis/onepipeline",
+      "merge_commit_sha": "d8d674f1f0b46fff580540ab70137ebc91e6b15b",
+      "paths": [
+        "CHANGELOG.md",
+        "Cargo.lock",
+        "Cargo.toml"
+      ]
+    }
+  ]
+}

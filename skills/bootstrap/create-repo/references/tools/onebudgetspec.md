@@ -339,9 +339,10 @@ when the two differ.
 ```
 scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
-scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] --published-paths FILE
 scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
+scripts/actions-budget-figures.sh cache-use                 [--release TAG] [--repo OWNER/NAME]
 ```
 
 - **A `measure: reported` budget's `command`.** It writes `{"value", "detail"}`
@@ -407,9 +408,15 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   longest per runner OS. `job-count` (jobs): counted jobs, each matrix leg one;
   detail by workflow and runner OS. Under `--stage pr` each detail is one block
   per pull request headed `#<number>`. `release-cycle-time` (seconds): per
-  change, from the earliest `created_at` of its runs to the latest end of their
+  published change, selected by matching its local merge-commit diff to the required
+  `--published-paths FILE` git pathspecs (one per line, ignoring blank and comment
+  lines), from the earliest `created_at` of its runs to the latest end of their
   counted jobs, plus `merged_at` to `--now`; detail `#<n>: checks <s>s + merge to
-  release <s>s`. `release-read-requests` (requests): the `cost.rest_requests` of
+  release <s>s`, followed by `#<n>: left out, changes no published path` for
+  every excluded PR. A missing, unreadable or empty paths file, absent merge
+  commit/parent (checkout needs `fetch-depth: 0`), or no published change is
+  missing data, exit 1. Missing `--published-paths` is usage, exit 2.
+  `release-read-requests` (requests): the `cost.rest_requests` of
   the release's `release-changes`, `commit-runs` and `--stage cd` `run-jobs`
   answers; `pr-read-requests` (requests): the most one pull request's
   `change-checks` answer cost. Their detail lists every request under the query
@@ -441,8 +448,9 @@ the fix is always to copy the source again.
 ## The CI and CD budgets every repository starts with
 
 `compose_repo_plan.py --ci-cd` writes the root `budgets.yaml` from
-[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the eight
-budgets onepipeline, onetaskgraph and onepipeline-ui register, each id under the
+[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the nine
+budgets, the eight established by onepipeline, onetaskgraph and onepipeline-ui
+plus the shared-cache replay figure, each id under the
 project name the composer fills in. Every CI check and CD job is held to 30
 minutes and a change's last-commit pull-request checks plus merge to release to
 90; job counts are budgeted per pull-request push and per release because the
@@ -452,11 +460,12 @@ account's 20 concurrent jobs are shared.
 | --- | --- | --- | --- | --- |
 | `<name>-ci-check-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage pr` |
 | `<name>-cd-job-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage cd` |
-| `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time` |
+| `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time --published-paths .github/release-published-paths` |
 | `<name>-ci-job-count` | jobs | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage pr` |
 | `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage cd` |
 | `<name>-release-read-requests` | requests | 6 | `release-tail` | `bash scripts/actions-budget-figures.sh release-read-requests` |
 | `<name>-pr-read-requests` | requests | 2 | `release-tail` | `bash scripts/actions-budget-figures.sh pr-read-requests` |
+| `<name>-nx-cache-use` | percent | 100 (minimum) | `release-tail` | `bash scripts/actions-budget-figures.sh cache-use` |
 | `<name>-gate-time` | seconds | 1800 | `host-variable` | `node scripts/gate-time-budget.mjs` |
 
 A repository that adds a push workflow delivering nothing (a cache warmer) passes
@@ -464,7 +473,7 @@ it to the CD budgets' commands with `--exclude-workflow`, as the three
 repositories do; the composed shape has none, so its commands name none.
 
 - **Where each is enforced.** `timeout-minutes: 30` holds every CI job at pull-
-  request time. The seven `release-tail` budgets are the last step of
+  request time. The eight `release-tail` budgets are the last step of
   release.yml's `publish` — `onebudgetspec check budgets.yaml --label
   release-tail`, after it installs `onevcs-cli` at the version the skill pins —
   whose result nothing reads. `<name>-gate-time` is `just gate`'s own wall clock,
@@ -479,7 +488,7 @@ repositories do; the composed shape has none, so its commands name none.
   selection, caches keyed on their inputs, no check run twice and no needless
   serialization; a coverage-reducing alternative is the owner's decision.
 - **`llmlint: ignore[budgets_track_product_owner_outcomes]`** sits on each of the
-  eight, with its reason: the brief fixes these units — a line per check and per
+  eight existing operational budgets, with its reason: the brief fixes these units — a line per check and per
   job beside the cycle that contains them, job counts, GitHub reads — rather than
   one product-owner outcome.
 
@@ -502,8 +511,8 @@ repositories do; the composed shape has none, so its commands name none.
   its own.
 - [ ] **Cached by kind.** Deterministic `reported` budgets run in the cached
   `budgets` target; `elapsed` and host-reading ones carry the `host` label.
-- [ ] **The eight CI/CD budgets are registered.** The root `budgets.yaml`
-  carries them as the table above states, the `release-tail` seven run by
+- [ ] **The nine CI/CD budgets are registered.** The root `budgets.yaml`
+  carries them as the table above states, the `release-tail` eight run by
   `publish`'s last step and `<name>-gate-time` by `just gate`; the checker
   reports a missing one, or budgets naming the figures script with no copy.
 - [ ] **Actions figures are the skill's copy.** Any `scripts/actions-budget-figures.sh`
@@ -511,3 +520,46 @@ repositories do; the composed shape has none, so its commands name none.
   one that is not.
 - [ ] **Figures come from existing tests where they can**, each standalone
   measurement covering a behaviour no gate exercises.
+
+## Shared Nx cache
+
+Copy the two sources unchanged: [nx-remote-cache.mjs](../../assets/ci/nx-remote-cache.mjs)
+and [nx-version-free-inputs.mjs](../../assets/ci/nx-version-free-inputs.mjs).
+The source owns the command interface, telemetry schemas, validation and readers;
+consult it for fields and statuses rather than maintaining a second contract here.
+The adjacent versions files and baseline checker detect edited or stale copies.
+The composer reads the sidecar pin and promotion branch pattern from its exports.
+
+Each existing CI job decides trust, starts the pinned sidecar at the workspace
+root, waits for its recording proxy, runs Nx and reports its results even after
+failure. Only trusted PR reports are uploaded. Forks and Dependabot cannot write
+shared entries. Cache outages warn and fall back to local execution; missing
+telemetry remains unavailable evidence rather than a successful measurement.
+Reports preserve both accepted uploads and remote replay bodies for promotion.
+
+Promotion runs before release-plz because the upstream cache only publishes a
+shared store from a default-branch push: a PR's own cache scope cannot serve
+another PR. The merge job promotes the latest trusted PR run into the base
+scope. Manual promotion uses a push to the dedicated branch pattern exported by
+the script, naming the source PR. A demonstration PR based on that branch can
+read that scope. There is no dispatch write or fabricated GitHub event.
+Release-plz's own steps run only on main pushes and authenticate with the release
+PAT; the job's default token needs only read access. Promotion failures warn so
+release-plz can proceed. Receipts retain failed attempts as well as successful
+writes, because later re-execution of an expected result must count as a miss.
+
+The cache-use figure reads production reports and receipts without running tests.
+Its eligibility and trust joins are implemented alongside the writers in the
+shared script. Local hits and previously unseen hashes are excluded; failed
+store or promotion attempts still establish expectations for later matching
+executions. Missing or expired required evidence cannot produce a passing figure.
+The release-tail budget's full-replay threshold is a design target supported by
+the spike's three OS replays, not a measured release baseline. Revisit it after
+real release observations. The conservative workload exceeds the spike's upload
+ceiling; no aggregate quota headroom, rate control or cache deletion is promised.
+
+Version-free ecosystem inputs keep release version and changelog edits from
+invalidating proven tests while retaining dependency and source changes. Targets
+that inspect versions keep them in their inputs. Separate ecosystem digests avoid
+cross-ecosystem invalidation, and platform inputs prevent cross-OS replay.
+Unparseable files retain their raw content digest instead of a constant.

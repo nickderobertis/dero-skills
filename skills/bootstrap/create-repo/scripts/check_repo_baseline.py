@@ -131,7 +131,7 @@ Checks:
     platform the record requires (`test-linux` always), each with
     `timeout-minutes: 30`; no workflow runs any other job on a pull request but
     a `visual-docs-<arch>`; CI does not run on push to main; the root
-    `budgets.yaml` registers the eight CI/CD budgets (`<name>-ci-check-time`,
+    `budgets.yaml` registers the nine CI/CD budgets (`<name>-ci-check-time`,
     `-cd-job-time`, `-release-cycle-time`, `-ci-job-count`, `-cd-job-count`,
     `-release-read-requests`, `-pr-read-requests`, `-gate-time`) and, when it
     runs `scripts/actions-budget-figures.sh`, the repository holds that copy;
@@ -2820,8 +2820,8 @@ FIGURES_VERSIONS = (
     / "budgets"
     / "actions-budget-figures.versions"
 )
-FIGURES_VERSION_RE = re.compile(r"# version: ([1-9]\d*)")
-FIGURES_SHA256_RE = re.compile(r"# sha256: ([0-9a-f]{64})")
+FIGURES_VERSION_RE = re.compile(r"(?:#|//) version: ([1-9]\d*)")
+FIGURES_SHA256_RE = re.compile(r"(?:#|//) sha256: ([0-9a-f]{64})")
 # The header is the first lines, ending at the `sha256` line; the body is every
 # byte after it.
 FIGURES_HEADER_LINES = 8
@@ -2868,22 +2868,25 @@ def read_figures_versions(path: Path) -> list[FiguresVersion]:
 
 
 def check_actions_budget_figures(
-    repo: Path, versions: Path = FIGURES_VERSIONS
+    repo: Path,
+    versions: Path = FIGURES_VERSIONS,
+    copy_name: str = FIGURES_COPY,
+    source_name: str = "assets/budgets/actions-budget-figures.sh",
 ) -> list[Finding]:
     """A copy of the figures script is one the skill released, and its latest."""
-    copy = repo / FIGURES_COPY
+    copy = repo / copy_name
     if not copy.is_file():
         return []
     restore = (
-        "copy the create-repo skill's assets/budgets/actions-budget-figures.sh over "
-        f"{FIGURES_COPY}; change the figures in the skill, never in a copy"
+        f"copy the create-repo skill's {source_name} over "
+        f"{copy_name}; change the figures in the skill, never in a copy"
     )
     header = parse_figures_header(copy.read_bytes())
     if header is None:
         return [
             Finding(
                 "ERROR",
-                f"{FIGURES_COPY} carries no `# version:` and `# sha256:` header",
+                f"{copy_name} carries no `# version:` and `# sha256:` header",
                 restore,
             )
         ]
@@ -2891,7 +2894,7 @@ def check_actions_budget_figures(
         return [
             Finding(
                 "ERROR",
-                f"{FIGURES_COPY} was edited in place: its body does not match its "
+                f"{copy_name} was edited in place: its body does not match its "
                 "own `sha256` line",
                 restore,
             )
@@ -2900,7 +2903,7 @@ def check_actions_budget_figures(
         return [
             Finding(
                 "WARN",
-                f"{FIGURES_COPY} is at version {header.version}, but {versions} is "
+                f"{copy_name} is at version {header.version}, but {versions} is "
                 "missing, so whether it is current is unknown",
                 "run the checker from the whole create-repo skill",
             )
@@ -2910,7 +2913,7 @@ def check_actions_budget_figures(
         return [
             Finding(
                 "ERROR",
-                f"{FIGURES_COPY} is unknown: version {header.version} with sha256 "
+                f"{copy_name} is unknown: version {header.version} with sha256 "
                 f"{header.sha256} is no version the source has had",
                 restore,
             )
@@ -2920,12 +2923,12 @@ def check_actions_budget_figures(
         return [
             Finding(
                 "WARN",
-                f"{FIGURES_COPY} is outdated: it is at version {header.version}, the "
+                f"{copy_name} is outdated: it is at version {header.version}, the "
                 f"source at version {latest}",
                 restore,
             )
         ]
-    return [Finding("OK", f"{FIGURES_COPY} is the source's version {latest}")]
+    return [Finding("OK", f"{copy_name} is the source's version {latest}")]
 
 
 # --- buildout llmlint tier (opt-in, non-deterministic) ---------------------
@@ -3209,11 +3212,12 @@ CI_JOB_TIMEOUT_MINUTES = 30
 # platform, and a `visual-docs-<arch>` per second visual-docs architecture.
 CI_TEST_JOB_RE = re.compile(r"test-[a-z0-9-]+")
 CI_VISUAL_DOCS_JOB_RE = re.compile(r"visual-docs-[a-z0-9-]+")
-# The eight root budgets, by id suffix after the project-name prefix.
+# The nine root budgets, by id suffix after the project-name prefix.
 SHAPE_BUDGET_SUFFIXES = (
     "ci-check-time",
     "cd-job-time",
     "release-cycle-time",
+    "nx-cache-use",
     "ci-job-count",
     "cd-job-count",
     "release-read-requests",
@@ -3477,7 +3481,7 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
                 "ERROR",
                 f"the root {BUDGETS_FILE} lacks the budget(s) "
                 + ", ".join(f"<name>-{s}" for s in lacking),
-                f"register the eight CI/CD budgets of assets/budgets.yaml.template; {compose}",
+                f"register the nine CI/CD budgets of assets/budgets.yaml.template; {compose}",
             )
         )
     if (
@@ -3496,7 +3500,7 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
     return problems or [
         Finding(
             "OK",
-            "CI/CD shape: lint and test jobs held to 30 minutes, the eight budgets, "
+            "CI/CD shape: lint and test jobs held to 30 minutes, the nine budgets, "
             "governance requiring exactly those checks",
         )
     ]
@@ -3524,6 +3528,13 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
     findings += check_actions_budget_figures(repo)
+    for script in ("nx-remote-cache", "nx-version-free-inputs"):
+        findings += check_actions_budget_figures(
+            repo,
+            FIGURES_VERSIONS.parent.parent / "ci" / f"{script}.versions",
+            f"scripts/{script}.mjs",
+            f"assets/ci/{script}.mjs",
+        )
     findings += check_ci_cd_shape(repo)
     return findings
 

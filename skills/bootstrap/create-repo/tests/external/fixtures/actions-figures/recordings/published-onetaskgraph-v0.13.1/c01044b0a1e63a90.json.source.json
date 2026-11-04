@@ -1,0 +1,15 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repos/nickderobertis/onetaskgraph/releases?per_page=100",
+    "why": "Read-only public GitHub capture for the published-path release-cycle journey.",
+    "command": [
+      "gh",
+      "api",
+      "--include",
+      "--method",
+      "GET",
+      "repos/nickderobertis/onetaskgraph/releases?per_page=100"
+    ]
+  },
+  "scrubbed": []
+}

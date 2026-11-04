@@ -1,0 +1,96 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38553682932/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4861",
+    "x-ratelimit-reset": "1793753873",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "139"
+  },
+  "body": {
+    "total_count": 1,
+    "jobs": [
+      {
+        "id": 115817452493,
+        "run_id": 38553682932,
+        "workflow_name": "Engine currency",
+        "head_branch": "release-plz-2026-10-14T11-01-36Z",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38553682932",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa90ITzQ",
+        "head_sha": "4e3dee6c0842603388d96db3d4e8a6f64aac99d2",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115817452493",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38553682932/job/115817452493",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-10-14T11:01:42Z",
+        "started_at": "2026-10-14T11:01:44Z",
+        "completed_at": "2026-10-14T11:01:52Z",
+        "name": "engines-current",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T11:01:45Z",
+            "completed_at": "2026-10-14T11:01:46Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T11:01:46Z",
+            "completed_at": "2026-10-14T11:01:48Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T11:01:48Z",
+            "completed_at": "2026-10-14T11:01:48Z"
+          },
+          {
+            "name": "Run just engines-current",
+            "status": "completed",
+            "conclusion": "failure",
+            "number": 4,
+            "started_at": "2026-10-14T11:01:48Z",
+            "completed_at": "2026-10-14T11:01:50Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T11:01:50Z",
+            "completed_at": "2026-10-14T11:01:50Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T11:01:50Z",
+            "completed_at": "2026-10-14T11:01:50Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115817452493",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000231305,
+        "runner_name": "GitHub Actions 1000231305",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ]
+  }
+}

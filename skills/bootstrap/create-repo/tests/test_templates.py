@@ -76,7 +76,9 @@ def test_pull_requests_run_lint_and_one_test_job_per_platform(ci_workflow):
         assert "    timeout-minutes: 30" in job.splitlines(), name
         # Affected detection needs the history the merge base is derived from,
         # and the base derived explicitly, not left to the implicit default.
-        assert "fetch-depth: 0" in job and "nrwl/nx-set-shas@" in job, name
+        assert "fetch-depth: 0" in job, name
+        assert "NX_BASE: ${{ github.event.pull_request.base.sha }}" in ci_workflow
+        assert "NX_HEAD: ${{ github.event.pull_request.head.sha }}" in ci_workflow
         assert recipe in job, name
         assert "needs:" not in job, name
 

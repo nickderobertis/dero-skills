@@ -73,6 +73,7 @@ import argparse
 import json
 import re
 import sys
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple, Protocol
@@ -944,26 +945,30 @@ VISUAL_DOCS_ARCH_RUNNERS = {"arm64": "ubuntu-24.04-arm"}
 
 
 class LanguageValues(NamedTuple):
-    """Per language: the release pull request's branch prefix (whose edits
-    scripts/release-branch-guard.mjs holds to versions and changelogs), the lockfiles
-    the Nx cache key hashes beside bun.lock, and what the supply-chain step adds."""
+    """The stack-specific supply-chain check title."""
 
-    release_branch_prefix: str
-    lockfiles: str
     supply_chain_extra: str
 
     def values(self) -> dict[str, str]:
-        return {
-            "RELEASE_BRANCH_PREFIX": self.release_branch_prefix,
-            "LOCKFILES": self.lockfiles,
-            "SUPPLY_CHAIN_EXTRA": self.supply_chain_extra,
-        }
+        return {"SUPPLY_CHAIN_EXTRA": self.supply_chain_extra}
 
 
 LANGUAGE_VALUES: dict[str, LanguageValues] = {
-    "rust": LanguageValues("release-plz-", ", 'Cargo.lock'", " and the MSRV"),
-    "typescript": LanguageValues("release-please--", "", ""),
+    "rust": LanguageValues(" and the MSRV"),
+    "typescript": LanguageValues(""),
 }
+
+
+def cache_workflow_values(skill_dir: Path) -> dict[str, str]:
+    """Pins and manual branch naming have one source in the shared script."""
+    script = (skill_dir / "assets/ci/nx-remote-cache.mjs").read_text()
+    values = {}
+    for key in ("OP_NX_COMMIT", "PROMOTION_BRANCH_PATTERN"):
+        match = re.search(rf"export const {key} = '([^']+)';", script)
+        if match is None:
+            raise WiringError(f"shared cache script defines no {key}")
+        values[key] = match.group(1)
+    return values
 
 
 class CiCdFile(NamedTuple):
@@ -998,8 +1003,11 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
         False,
     ),
     CiCdFile(
-        "scripts/release-branch-guard.mjs",
-        "assets/release-branch-guard.mjs",
+        "scripts/nx-remote-cache.mjs", "assets/ci/nx-remote-cache.mjs", False, False
+    ),
+    CiCdFile(
+        "scripts/nx-version-free-inputs.mjs",
+        "assets/ci/nx-version-free-inputs.mjs",
         False,
         False,
     ),
@@ -1145,7 +1153,13 @@ def render_template(text: str, shape: CiCdShape) -> str:
     """``text`` rendered for ``shape``: its blocks chosen, its values filled."""
     lines = text.splitlines(keepends=True)
     return "".join(
-        _expand_template(lines, shape.flags(), shape.values(), shape.loops())
+        _expand_template(
+            lines,
+            shape.flags(),
+            shape.values()
+            | cache_workflow_values(Path(__file__).resolve().parent.parent),
+            shape.loops(),
+        )
     )
 
 
@@ -1159,15 +1173,303 @@ def governance_config(shape: CiCdShape) -> str:
     )
 
 
+def published_paths(repo: Path, shape: CiCdShape) -> str:
+    """Artifact source paths derived from the packages present at composition."""
+    paths: set[str] = set()
+    if shape.language == "rust" and not (repo / "Cargo.toml").is_file():
+        paths.update({"Cargo.toml", "Cargo.lock", "build.rs", "src/**"})
+    for manifest in sorted(repo.rglob("Cargo.toml")):
+        if any(
+            part in {"node_modules", "target", ".git", "tests", "fixtures"}
+            for part in manifest.relative_to(repo).parts
+        ):
+            continue
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        package = data.get("package")
+        if not package or package.get("publish") is False:
+            continue
+        parent = manifest.parent.relative_to(repo).as_posix()
+        prefix = "" if parent == "." else parent + "/"
+        paths.update({prefix + "Cargo.toml", prefix + "src/**", prefix + "build.rs"})
+        for kind in ("lib", "bin"):
+            targets = data.get(kind, [])
+            if isinstance(targets, dict):
+                targets = [targets]
+            for target in targets:
+                if target.get("path"):
+                    paths.add(prefix + target["path"])
+        for included in package.get("include", []):
+            paths.add(prefix + included)
+        paths.update({"Cargo.toml", "Cargo.lock", "rust-toolchain.toml"})
+    for manifest in sorted(repo.rglob("package.json")):
+        if any(
+            part in {"node_modules", ".git", "tests", "fixtures"}
+            for part in manifest.relative_to(repo).parts
+        ):
+            continue
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if data.get("private") is True:
+            continue
+        prefix = manifest.parent.relative_to(repo).as_posix()
+        prefix = "" if prefix == "." else prefix + "/"
+        paths.update({prefix + "package.json", prefix + "src/**"})
+        for included in data.get("files", []):
+            paths.add(prefix + included)
+        paths.update({"bun.lock", "package-lock.json", "pnpm-lock.yaml"})
+    for manifest in sorted(repo.rglob("pyproject.toml")):
+        if any(
+            part in {"node_modules", ".git", ".venv", "tests", "fixtures"}
+            for part in manifest.relative_to(repo).parts
+        ):
+            continue
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        if (
+            "project" not in data
+            or data.get("tool", {}).get("uv", {}).get("package") is False
+        ):
+            continue
+        prefix = manifest.parent.relative_to(repo).as_posix()
+        prefix = "" if prefix == "." else prefix + "/"
+        paths.update({prefix + "pyproject.toml", prefix + "src/**", "uv.lock"})
+    if not paths:
+        # Composition may precede the first source file, but its chosen language
+        # already determines the package whose artifact the plan creates.
+        paths.update(
+            {"src/**", "Cargo.toml", "Cargo.lock", "build.rs"}
+            if shape.language == "rust"
+            else {"src/**", "package.json", "bun.lock"}
+        )
+    return (
+        "# Files the published artifacts are built from; git pathspecs.\n"
+        + "\n".join(sorted(paths))
+        + "\n"
+    )
+
+
+def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
+    """Install test runtime inputs and the append-only Nx telemetry hook."""
+    path = repo / "nx.json"
+    nx = _read_json_object(path)
+    plugins = nx.setdefault("plugins", [])
+    plugin = "./scripts/nx-remote-cache.mjs"
+    if plugin not in plugins:
+        plugins.append(plugin)
+    named = _json_table(nx, "namedInputs", path)
+    original_named = dict(named)
+    excluded = [
+        "!{projectRoot}/**/CHANGELOG.md",
+        "!{projectRoot}/**/Cargo.toml",
+        "!{projectRoot}/**/Cargo.lock",
+        "!{projectRoot}/**/package.json",
+        "!{projectRoot}/**/bun.lock",
+        "!{projectRoot}/**/package-lock.json",
+        "!{projectRoot}/**/pnpm-lock.yaml",
+        "!{projectRoot}/**/pyproject.toml",
+        "!{projectRoot}/**/uv.lock",
+    ]
+    base = [
+        "{projectRoot}/**/*",
+        *excluded,
+        *(item.replace("{projectRoot}", "{workspaceRoot}") for item in excluded),
+        "{workspaceRoot}/.tool-versions",
+        "{workspaceRoot}/rust-toolchain.toml",
+        "{workspaceRoot}/scripts/nx-version-free-inputs.mjs",
+        {"runtime": "node -p process.platform"},
+        {"externalDependencies": []},
+    ]
+    version_files = repo / ".github/nx-version-files"
+    literal_inputs: list[object] = []
+    if version_files.is_file():
+        for line in version_files.read_text().splitlines():
+            if line.strip() and not line.lstrip().startswith("#"):
+                base.append("!{workspaceRoot}/" + line.strip())
+                base.append("!{projectRoot}/" + line.strip())
+        literal_inputs.append(
+            {"runtime": "node scripts/nx-version-free-inputs.mjs --ecosystem files"}
+        )
+    for ecosystem in ("cargo", "npm", "python"):
+        named[f"{ecosystem}TestInputs"] = [
+            *base,
+            *literal_inputs,
+            {
+                "runtime": f"node scripts/nx-version-free-inputs.mjs --ecosystem {ecosystem}"
+            },
+        ]
+    ecosystem = "cargo" if shape.language == "rust" else "npm"
+    named["testInputs"] = list(named[f"{ecosystem}TestInputs"])
+    defaults = _json_table(nx, "targetDefaults", path)
+    test = defaults.setdefault("test", {})
+    original_test_inputs = list(test.get("inputs", ["default", "^production"]))
+
+    def retained_inputs(
+        inputs: list[object],
+        definitions: dict[str, object],
+        seen: frozenset[str] = frozenset(),
+    ) -> list[object]:
+        """Retain declared source/global/env inputs while replacing release metadata."""
+        kept: list[object] = []
+        for item in inputs:
+            if isinstance(item, str) and item in {
+                "cargoTestInputs",
+                "npmTestInputs",
+                "pythonTestInputs",
+            }:
+                continue
+            if isinstance(item, str) and item.startswith("^"):
+                continue  # Dependencies use each dependency project's testInputs below.
+            match item:
+                case str() if item in definitions:
+                    if item in seen:
+                        raise WiringError(f"{path}: cyclic named input {item}")
+                    definition = definitions[item]
+                    if isinstance(definition, list):
+                        kept.extend(
+                            retained_inputs(definition, definitions, seen | {item})
+                        )
+                case str():
+                    if Path(item).name not in {
+                        "Cargo.toml",
+                        "Cargo.lock",
+                        "package.json",
+                        "bun.lock",
+                        "package-lock.json",
+                        "pnpm-lock.yaml",
+                        "pyproject.toml",
+                        "uv.lock",
+                        "CHANGELOG.md",
+                    }:
+                        kept.append(item)
+                case dict():
+                    if item == {"runtime": "node -p process.platform"} or item == {
+                        "externalDependencies": []
+                    }:
+                        continue
+                    kept.append(item)
+        return list({json.dumps(item, sort_keys=True): item for item in kept}.values())
+
+    named["testInputs"] += retained_inputs(original_test_inputs, original_named)
+    named["testInputs"] = list(
+        {
+            json.dumps(item, sort_keys=True): item for item in named["testInputs"]
+        }.values()
+    )
+    test.update({"cache": True, "inputs": ["testInputs", "^testInputs"], "outputs": []})
+    for target_name in ("build", "e2e", "budgets", "budgets-host"):
+        target = defaults.setdefault(target_name, {})
+        inputs = target.setdefault("inputs", ["default", "^production"])
+        platform = {"runtime": "node -p process.platform"}
+        if platform not in inputs:
+            inputs.append(platform)
+    for project_path in sorted(repo.rglob("project.json")):
+        if any(
+            part in {"node_modules", ".git", ".nx"}
+            for part in project_path.relative_to(repo).parts
+        ):
+            continue
+        project = _read_json_object(project_path)
+        root = project_path.parent
+        project_ecosystem = next(
+            (
+                kind
+                for manifest, kind in (
+                    ("Cargo.toml", "cargo"),
+                    ("pyproject.toml", "python"),
+                    ("package.json", "npm"),
+                )
+                if (root / manifest).is_file()
+            ),
+            ecosystem,
+        )
+        changed = True
+        definitions = original_named | project.get("namedInputs", {})
+        own_inputs = [f"{project_ecosystem}TestInputs"]
+        for target_name, candidate in project.get("targets", {}).items():
+            if target_name.startswith("test") or target_name in {"coverage", "e2e"}:
+                own_inputs += retained_inputs(
+                    candidate.get("inputs", original_test_inputs), definitions
+                )
+        if version_files.is_file():
+            for literal in version_files.read_text().splitlines():
+                file = repo / literal.strip()
+                if (
+                    literal.strip()
+                    and not literal.lstrip().startswith("#")
+                    and file.is_relative_to(root)
+                ):
+                    own_inputs.append(
+                        "!{projectRoot}/" + file.relative_to(root).as_posix()
+                    )
+        project.setdefault("namedInputs", {})["testInputs"] = list(
+            {json.dumps(item, sort_keys=True): item for item in own_inputs}.values()
+        )
+        for name, target in project.get("targets", {}).items():
+            if (name.startswith("test") or name in {"coverage", "e2e"}) and target.get(
+                "cache", True
+            ):
+                target["inputs"] = [
+                    "testInputs",
+                    "^testInputs",
+                ]
+                if version_files.is_file():
+                    for literal in version_files.read_text().splitlines():
+                        file = repo / literal.strip()
+                        if (
+                            literal.strip()
+                            and not literal.lstrip().startswith("#")
+                            and file.is_relative_to(root)
+                        ):
+                            target["inputs"].append(
+                                "!{projectRoot}/" + file.relative_to(root).as_posix()
+                            )
+                # Existing small file patterns survive; generated directories and
+                # build trees cannot enter the shared test-result store.
+                outputs = target.get("outputs", [])
+                target["outputs"] = [
+                    output
+                    for output in outputs
+                    if isinstance(output, str)
+                    and "." in Path(output).name
+                    and Path(output).suffix
+                    not in {".exe", ".dll", ".so", ".dylib", ".bin"}
+                    and not any(
+                        part in {"target", "build", "dist"}
+                        for part in Path(output).parts
+                    )
+                ]
+                changed = True
+        for target_name, target in project.get("targets", {}).items():
+            if target_name in {"test", "build", "e2e", "budgets", "budgets-host"}:
+                inputs = target.setdefault("inputs", ["default", "^production"])
+                platform = {"runtime": "node -p process.platform"}
+                if platform not in inputs:
+                    inputs.append(platform)
+                changed = True
+        if changed:
+            _write_json(project_path, project)
+    _write_json(path, nx)
+    package_path = repo / "package.json"
+    package = _read_json_object(package_path)
+    package.setdefault("name", shape.name)
+    _json_table(package, "devDependencies", package_path).update(nx="23.1.3")
+    _write_json(package_path, package)
+    return ["wired shared Nx test cache and telemetry"]
+
+
 def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str, bytes]:
     """Every file the shape writes, by repo-relative path, refusing a differing one."""
     planned: dict[str, bytes] = {}
     for file in CI_CD_FILES:
         data = (skill_dir / file.source).read_bytes()
         if file.rendered:
-            data = render_template(data.decode("utf-8"), shape).encode("utf-8")
+            text = data.decode("utf-8")
+            for key, value in cache_workflow_values(skill_dir).items():
+                text = text.replace(f"@@{key}@@", value)
+            data = render_template(text, shape).encode("utf-8")
         planned[file.target] = data
     planned[GOVERNANCE_FILE] = governance_config(shape).encode("utf-8")
+    planned[".github/release-published-paths"] = published_paths(repo, shape).encode(
+        "utf-8"
+    )
     for target, data in planned.items():
         path = repo / target
         if path.exists() and path.read_bytes() != data:
@@ -1210,6 +1512,7 @@ def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
     # The onebudgetspec setup step first (it validates before it writes), then the SDK
     # the gate-time budget's command imports, pinned beside the CLI.
     changes = wire_onebudgetspec(repo, skill_dir)
+    changes += wire_test_cache(repo, shape)
     package_json = repo / "package.json"
     package = _read_json_object(package_json)
     dev = _json_table(package, "devDependencies", package_json)
