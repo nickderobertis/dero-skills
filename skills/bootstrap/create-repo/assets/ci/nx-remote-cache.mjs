@@ -1,11 +1,12 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
-// version: 5
-// sha256: 0f332ee2a180413173c173753ef525e6ff7254ea29b2b179c8a32315d67752b4
+// version: 6
+// sha256: 4f8c6453390a78485d0ca44438d82e5331ded65eded366afca764144531901cc
 import {
   appendFileSync,
   readFileSync,
   writeFileSync,
+  renameSync,
   mkdirSync,
   existsSync,
   readdirSync,
@@ -328,10 +329,13 @@ async function proxy() {
     req.pipe(upstream);
   });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  save(join(state(), 'proxy.json'), {
+  const proxyPath = join(state(), 'proxy.json');
+  const temporaryPath = `${proxyPath}.${randomUUID()}.tmp`;
+  save(temporaryPath, {
     url: `http://127.0.0.1:${server.address().port}`,
     secret: env.NX_RECORDING_SECRET,
   });
+  renameSync(temporaryPath, proxyPath);
 }
 
 function validateExecutions(doc) {
