@@ -1,11 +1,12 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
-// version: 5
-// sha256: 0f332ee2a180413173c173753ef525e6ff7254ea29b2b179c8a32315d67752b4
+// version: 6
+// sha256: eca50dc8b5456743e3dbb2af76966a5f1d6538a73d4839e5a4102c8cca9d1899
 import {
   appendFileSync,
   readFileSync,
   writeFileSync,
+  renameSync,
   mkdirSync,
   existsSync,
   readdirSync,
@@ -222,16 +223,23 @@ async function ready(opts) {
   });
   child.unref();
   const deadline = Date.now() + 5000;
-  while (!existsSync(join(state(), 'proxy.json')) && Date.now() < deadline)
+  let proxy;
+  while (Date.now() < deadline) {
+    try {
+      proxy = json(join(state(), 'proxy.json'));
+      break;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
+    }
     await new Promise((done) => setTimeout(done, 50));
-  if (!existsSync(join(state(), 'proxy.json'))) {
+  }
+  if (!proxy) {
     child.kill();
     warning(
       'Nx recording proxy unavailable; tasks will run without remote cache',
     );
     return;
   }
-  const proxy = json(join(state(), 'proxy.json'));
   check(env.GITHUB_ENV, 'GITHUB_ENV is unset');
   appendFileSync(
     env.GITHUB_ENV,
@@ -328,10 +336,13 @@ async function proxy() {
     req.pipe(upstream);
   });
   await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  save(join(state(), 'proxy.json'), {
+  const proxyPath = join(state(), 'proxy.json');
+  const temporaryPath = `${proxyPath}.${randomUUID()}.tmp`;
+  save(temporaryPath, {
     url: `http://127.0.0.1:${server.address().port}`,
     secret: env.NX_RECORDING_SECRET,
   });
+  renameSync(temporaryPath, proxyPath);
 }
 
 function validateExecutions(doc) {
