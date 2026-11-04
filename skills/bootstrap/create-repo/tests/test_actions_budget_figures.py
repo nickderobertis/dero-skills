@@ -673,7 +673,7 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("name", "version"), [("nx-remote-cache", 4), ("nx-version-free-inputs", 3)]
+    ("name", "version"), [("nx-remote-cache", 5), ("nx-version-free-inputs", 3)]
 )
 def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version):
     source = SKILL_DIR / "assets" / "ci" / f"{name}.mjs"
@@ -725,7 +725,7 @@ def test_cache_use_missing_node_reports_action_without_writing(tmp_path):
     assert not result.exists()
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
 def test_remote_cache_previous_copy_is_outdated(tmp_path, version):
     repo = baseline_repo(tmp_path)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
@@ -734,6 +734,6 @@ def test_remote_cache_previous_copy_is_outdated(tmp_path, version):
     done = checked(repo)
     assert done.returncode == 0, done.stdout + done.stderr
     assert (
-        f"scripts/nx-remote-cache.mjs is outdated: it is at version {version}, the source at version 4"
+        f"scripts/nx-remote-cache.mjs is outdated: it is at version {version}, the source at version 5"
         in done.stdout
     )
