@@ -1811,17 +1811,29 @@ def test_changed_hash_is_fresh_then_later_push_retry_replays(
         command(["git", "add", "src/library.js"], workspace.root)
 
 
-@pytest.mark.parametrize("fork", [False, True])
+@pytest.mark.parametrize("fork,jobless", [(False, False), (True, False), (False, True)])
 def test_recorded_run_counts_in_promote_and_cache_use(
-    telemetry_history, tmp_path, fork
+    telemetry_history, tmp_path, fork, jobless
 ):
-    """Replay the complete run response unchanged; only a hostile case edits it."""
+    """Drive CLI promotion and measurement through recorded GitHub HTTP shapes."""
     workspace, cache, _, _ = telemetry_history
     original = cache.metadata
     recorded = json.loads(
         (SKILL / "tests/fixtures/nx-remote-cache/run-41674998643.json").read_text()
     )
     run = copy.deepcopy(recorded)
+    no_jobs_run = json.loads(
+        (SKILL / "tests/fixtures/nx-remote-cache/run-41771574673.json").read_text()
+    )
+    no_jobs = json.loads(
+        (SKILL / "tests/fixtures/nx-remote-cache/run-41771574673-jobs.json").read_text()
+    )
+    if jobless:
+        # The completed-run HTTP response joins the recorded jobless run's PR.
+        # Keep the rejected workflow's run and jobs responses unaltered.
+        run["pull_requests"] = copy.deepcopy(no_jobs_run["pull_requests"])
+        run["run_started_at"] = "2026-11-04T05:00:00Z"
+        run["updated_at"] = "2026-11-04T05:01:00Z"
     repo = run["repository"]["full_name"]
     prefix = f"/repos/{repo}"
     pr = copy.deepcopy(run["pull_requests"][0])
@@ -1842,12 +1854,15 @@ def test_recorded_run_counts_in_promote_and_cache_use(
             "name": "onepipeline-ui",
             "url": "https://api.github.com/repos/other/onepipeline-ui",
         }
-    else:
+    elif not jobless:
         assert run == recorded
     earlier = copy.deepcopy(run)
     earlier["id"] -= 1
     earlier["run_started_at"] = "2026-01-01T00:00:00Z"
     earlier["updated_at"] = "2026-01-01T00:01:00Z"
+    if jobless:
+        earlier["run_started_at"] = "2026-11-04T04:30:00Z"
+        earlier["updated_at"] = "2026-11-04T04:31:00Z"
     # The cache body was produced by real Nx in telemetry_history. The two
     # artifacts model its writer and subsequent replay in the recorded run.
     with zipfile.ZipFile(
@@ -1961,11 +1976,22 @@ def test_recorded_run_counts_in_promote_and_cache_use(
             )
             archive.writestr(f"{hash_value}.tar", body)
         metadata[f"{prefix}/actions/artifacts/{run_id}/zip"] = output.getvalue()
+    if jobless:
+        metadata[f"{prefix}/actions/workflows/ci.yml/runs"]["workflow_runs"].append(
+            no_jobs_run
+        )
+        run_id = no_jobs_run["id"]
+        metadata[f"{prefix}/actions/runs/{run_id}/attempts/1"] = no_jobs_run
+        metadata[f"{prefix}/actions/runs/{run_id}/attempts/1/jobs"] = no_jobs
+        metadata[f"{prefix}/actions/runs/{run_id}/artifacts"] = {
+            "total_count": 0,
+            "artifacts": [],
+        }
     cache.metadata = metadata
     try:
         with workspace.sidecar(
             cache,
-            "recorded-fork" if fork else "recorded",
+            "recorded-fork" if fork else "recorded-jobless" if jobless else "recorded",
             "refs/heads/main",
             GITHUB_REPOSITORY=repo,
             GITHUB_EVENT_NAME="push",
@@ -2005,41 +2031,11 @@ def test_recorded_run_counts_in_promote_and_cache_use(
                 result = json.loads((tmp_path / "result.json").read_text())
                 assert result["value"] == 100
                 assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
-    finally:
-        cache.metadata = original
-
-
-@pytest.mark.parametrize("conclusion", ["failure", "startup_failure"])
-def test_cache_use_excludes_run_that_started_no_job(
-    telemetry_history, tmp_path, conclusion
-):
-    _, cache, _, _ = telemetry_history
-    original = copy.deepcopy(cache.metadata)
-    run_id = 41771574673
-    try:
-        run = copy.deepcopy(
-            cache.metadata["/repos/example/project/actions/runs/1/attempts/1"]
-        )
-        run.update(id=run_id, run_attempt=1, conclusion=conclusion)
-        cache.metadata["/repos/example/project/actions/workflows/ci.yml/runs"][
-            "workflow_runs"
-        ].append(run)
-        cache.metadata[f"/repos/example/project/actions/runs/{run_id}/attempts/1"] = run
-        cache.metadata[
-            f"/repos/example/project/actions/runs/{run_id}/attempts/1/jobs"
-        ] = {"total_count": 0, "jobs": []}
-        cache.metadata[f"/repos/example/project/actions/runs/{run_id}/artifacts"] = {
-            "total_count": 0,
-            "artifacts": [],
-        }
-        done, result = measure_cache_use(telemetry_history, tmp_path)
-        assert done.returncode == 0, (result, done.stderr)
-        assert result["actual"] == 100
-        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
-        assert (
-            f"run {run_id}/1 started no job (conclusion: {conclusion})"
-            in result["detail"]
-        )
+                if jobless:
+                    assert (
+                        f"run {no_jobs_run['id']}/1 started no job "
+                        f"(conclusion: {no_jobs_run['conclusion']})"
+                    ) in result["detail"]
     finally:
         cache.metadata = original
 
