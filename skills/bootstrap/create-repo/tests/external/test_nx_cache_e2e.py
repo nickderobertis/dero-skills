@@ -2009,6 +2009,41 @@ def test_recorded_run_counts_in_promote_and_cache_use(
         cache.metadata = original
 
 
+@pytest.mark.parametrize("conclusion", ["failure", "startup_failure"])
+def test_cache_use_excludes_run_that_started_no_job(
+    telemetry_history, tmp_path, conclusion
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    run_id = 41771574673
+    try:
+        run = copy.deepcopy(
+            cache.metadata["/repos/example/project/actions/runs/1/attempts/1"]
+        )
+        run.update(id=run_id, run_attempt=1, conclusion=conclusion)
+        cache.metadata["/repos/example/project/actions/workflows/ci.yml/runs"][
+            "workflow_runs"
+        ].append(run)
+        cache.metadata[f"/repos/example/project/actions/runs/{run_id}/attempts/1"] = run
+        cache.metadata[
+            f"/repos/example/project/actions/runs/{run_id}/attempts/1/jobs"
+        ] = {"total_count": 0, "jobs": []}
+        cache.metadata[f"/repos/example/project/actions/runs/{run_id}/artifacts"] = {
+            "total_count": 0,
+            "artifacts": [],
+        }
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+        assert (
+            f"run {run_id}/1 started no job (conclusion: {conclusion})"
+            in result["detail"]
+        )
+    finally:
+        cache.metadata = original
+
+
 @pytest.mark.parametrize("artifact_kind", ["missing", "unavailable"])
 @pytest.mark.parametrize("scope", ["job", "run"])
 @pytest.mark.parametrize("conclusion", ["cancelled", "failure", "skipped", "success"])
