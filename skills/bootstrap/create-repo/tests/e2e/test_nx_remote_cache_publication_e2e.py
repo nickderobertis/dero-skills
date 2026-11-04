@@ -3,83 +3,17 @@
 import json
 import os
 import subprocess
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 
 import pytest
 
-from test_nx_remote_cache import SCRIPT, cli
+from test_nx_remote_cache import SCRIPT
 
 
-def slow_publication(tmp_path, mode):
-    """Delay real disk writes in the child to make publication races observable."""
-    preload = tmp_path / "slow-publication.cjs"
-    preload.write_text(
-        """
-if (process.argv.includes('_proxy')) setTimeout(() => process.exit(0), 8000).unref();
-const fs = require('node:fs');
-const path = require('node:path');
-const { syncBuiltinESMExports } = require('node:module');
-const write = fs.writeFileSync;
-const rename = fs.renameSync;
-const pause = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
-fs.writeFileSync = (file, body, ...args) => {
-  if (!path.basename(file).startsWith('proxy.json')) return write(file, body, ...args);
-  const target = process.env.PUBLICATION_MODE === 'atomic'
-    ? file : path.join(path.dirname(file), 'proxy.json');
-  pause(); // ready first sees an absent file.
-  write(target, body.slice(0, 1), ...args);
-  pause(); // Readers must observe this incomplete write if it is published directly.
-  if (process.env.PUBLICATION_MODE !== 'invalid') write(target, body, ...args);
-};
-fs.renameSync = (from, to) => {
-  if (process.env.PUBLICATION_MODE === 'atomic') return rename(from, to);
-};
-syncBuiltinESMExports();
-"""
-    )
-    return {
-        **os.environ,
-        "RUNNER_TEMP": str(tmp_path / "temp"),
-        "GITHUB_JOB": "test-linux",
-        "NODE_OPTIONS": f"--require={preload}",
-        "PUBLICATION_MODE": mode,
-        "NX_RECORDING_SECRET": "test-secret",
-    }
-
-
-def test_proxy_publication_is_atomic_to_polling_reader(tmp_path):
-    import time
-
-    env = slow_publication(tmp_path, "atomic")
-    proxy_file = tmp_path / "temp/nx-cache-recording/test-linux/proxy.json"
-    child = subprocess.Popen(["node", str(SCRIPT), "_proxy"], env=env)
-    absent = 0
-    try:
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            try:
-                published = json.loads(proxy_file.read_text())
-            except FileNotFoundError:
-                absent += 1
-                time.sleep(0.001)
-                continue
-            assert published["url"].startswith("http://127.0.0.1:")
-            assert published["secret"] == "test-secret"
-            break
-        else:
-            pytest.fail("proxy never published its address")
-        assert absent > 0
-        assert list(proxy_file.parent.glob("proxy.json*")) == [proxy_file]
-    finally:
-        child.terminate()
-        child.wait(timeout=5)
-
-
-@pytest.mark.parametrize("mode", ["recovery", "invalid"])
-def test_ready_waits_for_parseable_proxy_publication(tmp_path, mode):
-    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from threading import Thread
-    from urllib.request import Request, urlopen
-
+@pytest.fixture
+def sidecar():
     class Sidecar(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(401)
@@ -88,51 +22,139 @@ def test_ready_waits_for_parseable_proxy_publication(tmp_path, mode):
         def log_message(self, *_args):
             pass
 
-    sidecar = ThreadingHTTPServer(("127.0.0.1", 0), Sidecar)
-    thread = Thread(target=sidecar.serve_forever)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Sidecar)
+    thread = Thread(target=server.serve_forever)
     thread.start()
-    output = tmp_path / "env"
-    env = slow_publication(tmp_path, mode)
     try:
-        done = cli(
-            tmp_path,
-            "ready",
-            "--timeout-seconds",
-            "1",
-            **{
-                **env,
-                "NX_SELF_HOSTED_REMOTE_CACHE_SERVER": f"http://127.0.0.1:{sidecar.server_port}",
-                "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN": "test",
-                "GITHUB_ENV": str(output),
-            },
-        )
-        assert done.returncode == 0, done.stderr
-        if mode == "invalid":
+        yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def start_ready(tmp_path, sidecar, delay=0):
+    # Delay only child startup; all filesystem publication calls remain real.
+    preload = tmp_path / "startup.cjs"
+    preload.write_text(
+        "if (process.argv.includes('_proxy')) "
+        f"Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, {delay});"
+    )
+    return subprocess.Popen(
+        ["node", str(SCRIPT), "ready", "--timeout-seconds", "1"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "RUNNER_TEMP": str(tmp_path / "temp"),
+            "GITHUB_JOB": "test-linux",
+            "NODE_OPTIONS": f"--require={preload}",
+            "NX_SELF_HOSTED_REMOTE_CACHE_SERVER": sidecar,
+            "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN": "test",
+            "GITHUB_ENV": str(tmp_path / "env"),
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def stop_proxy(proxy_file):
+    try:
+        proxy = json.loads(proxy_file.read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+    subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            "const [url, secret] = process.argv.slice(1); "
+            "await fetch(url + '/stop', {headers: {Authorization: secret}});",
+            proxy["url"],
+            proxy["secret"],
+        ],
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+
+def test_proxy_publication_is_atomic_to_polling_reader(tmp_path, sidecar):
+    child = start_ready(tmp_path, sidecar, delay=250)
+    proxy_file = tmp_path / "temp/nx-cache-recording/test-linux/proxy.json"
+    absent = 0
+    try:
+        deadline = time.monotonic() + 5
+        # The publication file is the contract under test: inspect it concurrently
+        # with the real writer, then verify ready's public environment output.
+        while time.monotonic() < deadline:
+            try:
+                published = json.loads(proxy_file.read_text())
+            except FileNotFoundError:
+                absent += 1
+                time.sleep(0.0001)
+                continue
+            assert published["url"].startswith("http://127.0.0.1:")
+            assert published["secret"]
+            break
+        else:
+            pytest.fail("proxy never published its address")
+        stdout, stderr = child.communicate(timeout=10)
+        assert child.returncode == 0, (stdout, stderr)
+        assert stderr == ""
+        assert absent > 0
+        assert published["url"] in (tmp_path / "env").read_text()
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+        stop_proxy(proxy_file)
+
+
+@pytest.mark.parametrize("recover", [True, False])
+def test_ready_waits_for_parseable_proxy_publication(tmp_path, sidecar, recover):
+    # Hold the real child before it starts so an external interrupted publisher
+    # can supply absent, partial and complete files to the public ready command.
+    child = start_ready(tmp_path, sidecar, delay=8000)
+    state = tmp_path / "temp/nx-cache-recording/test-linux"
+    proxy_file = state / "proxy.json"
+    try:
+        deadline = time.monotonic() + 3
+        while not (state / "session.json").exists():
+            assert time.monotonic() < deadline, "ready never started"
+            time.sleep(0.01)
+        time.sleep(0.2)
+        assert not proxy_file.exists()
+        proxy_file.write_text('{"url":')
+        time.sleep(0.2)
+        assert child.poll() is None, "ready did not wait for a complete file"
+        if recover:
+            proxy_file.write_text(json.dumps({"url": sidecar, "secret": "test"}))
+        stdout, stderr = child.communicate(timeout=10)
+        assert child.returncode == 0, (stdout, stderr)
+        output = tmp_path / "env"
+        if recover:
+            assert stderr == ""
+            assert output.read_text().splitlines() == [
+                f"NX_SELF_HOSTED_REMOTE_CACHE_SERVER={sidecar}",
+                "NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN=test",
+            ]
+        else:
             assert (
                 "Nx recording proxy unavailable; tasks will run without remote cache"
-                in done.stderr
+                in stderr
             )
             assert not output.exists()
-        else:
-            assert done.stderr == ""
-            entries = dict(
-                line.split("=", 1) for line in output.read_text().splitlines()
-            )
-            assert entries["NX_SELF_HOSTED_REMOTE_CACHE_ACCESS_TOKEN"] == "test"
     finally:
-        proxy_file = tmp_path / "temp/nx-cache-recording/test-linux/proxy.json"
-        try:
-            proxy = json.loads(proxy_file.read_text())
-        except (FileNotFoundError, json.JSONDecodeError):
-            pass
-        else:
-            with urlopen(
-                Request(
-                    proxy["url"] + "/stop", headers={"Authorization": proxy["secret"]}
-                ),
-                timeout=5,
-            ):
-                pass
-        sidecar.shutdown()
-        sidecar.server_close()
-        thread.join(timeout=5)
+        if child.poll() is None:
+            child.kill()
+            child.wait(timeout=5)
+        # On recovery ready has detached a delayed child. Wait for its real
+        # publication before stopping it through the authenticated endpoint.
+        if recover:
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                if proxy_file.exists() and '"test"' not in proxy_file.read_text():
+                    break
+                time.sleep(0.05)
+            stop_proxy(proxy_file)
