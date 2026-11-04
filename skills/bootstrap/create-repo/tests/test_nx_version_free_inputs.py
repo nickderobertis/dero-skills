@@ -203,9 +203,32 @@ def test_owned_cargo_requirement_release_is_version_free(repo, operator):
         root.read_text()
         + f'member = {{ path = "crates/member", version = "{operator}1.0.0" }}\n'
     )
+    root.write_text(
+        root.read_text().replace(
+            'members = ["crates/member"]', 'members = ["crates/member", "crates/peer"]'
+        )
+    )
+    peer = repo / "crates/peer/Cargo.toml"
+    peer.parent.mkdir()
+    peer.write_text('[package]\nname = "peer"\nversion = "1.0.0"\n')
+    member = repo / "crates/member/Cargo.toml"
+    member.write_text(
+        member.read_text()
+        + f'[dependencies]\npeer = {{ path = "../peer", version = "{operator}1.0.0" }}\n'
+    )
+    lock = repo / "Cargo.lock"
+    lock.write_text(
+        lock.read_text() + '[[package]]\nname = "peer"\nversion = "1.0.0"\n'
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     before, stderr = digest(repo, "cargo")
     assert stderr == ""
-    for relative in ("Cargo.toml", "crates/member/Cargo.toml", "Cargo.lock"):
+    for relative in (
+        "Cargo.toml",
+        "crates/member/Cargo.toml",
+        "crates/peer/Cargo.toml",
+        "Cargo.lock",
+    ):
         file = repo / relative
         file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
     after, stderr = digest(repo, "cargo")
