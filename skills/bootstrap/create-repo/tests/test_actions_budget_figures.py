@@ -672,15 +672,19 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
     assert "no repository: pass --repo OWNER/NAME" in done.stderr
 
 
-@pytest.mark.parametrize("name", ["nx-remote-cache", "nx-version-free-inputs"])
-def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name):
+@pytest.mark.parametrize(
+    ("name", "version"), [("nx-remote-cache", 1), ("nx-version-free-inputs", 2)]
+)
+def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version):
     source = SKILL_DIR / "assets" / "ci" / f"{name}.mjs"
     versions = source.with_suffix(".versions")
     header = crb.parse_figures_header(source.read_bytes())
     assert header is not None
-    assert header.version == 1
+    assert header.version == version
     assert crb.figures_digest(header.body) == header.sha256
-    assert crb.read_figures_versions(versions) == [crb.FiguresVersion(1, header.sha256)]
+    entries = crb.read_figures_versions(versions)
+    assert [entry.version for entry in entries] == list(range(1, version + 1))
+    assert entries[-1] == crb.FiguresVersion(version, header.sha256)
     target = tmp_path / "scripts" / source.name
     target.parent.mkdir()
     shutil.copyfile(source, target)
@@ -697,10 +701,9 @@ def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name):
 
 
 def test_version_ten_copy_is_outdated_against_eleven(tmp_path):
-    old = subprocess.check_output(
-        ["git", "show", f"{merge_base()}:{SOURCE.relative_to(REPO_ROOT).as_posix()}"],
-        cwd=REPO_ROOT,
-    )
+    old = (
+        Path(__file__).parent / "fixtures/actions-budget-figures/v10.sh"
+    ).read_bytes()
     assert crb.parse_figures_header(old).version == 10
     repo = with_copy(tmp_path, old)
     done = checked(repo)
