@@ -8,6 +8,7 @@ write belongs only to the current ref.
 
 from __future__ import annotations
 
+import copy
 import contextlib
 import io
 import tarfile
@@ -479,6 +480,20 @@ def source_metadata(
         if any(task["result"] == "failed" for task in execution["tasks"])
         else "success"
     )
+    recorded = json.loads(
+        (SKILL / "tests/fixtures/nx-remote-cache/run-41674998643.json").read_text()
+    )
+    run_pr = copy.deepcopy(recorded["pull_requests"][0])
+    run_pr["number"] = pr_number
+    for side in ("head", "base"):
+        run_pr[side].update(sha=pr[side]["sha"], ref=pr[side]["ref"])
+    for side in ("head", "base"):
+        run_pr[side]["repo"] = {
+            **recorded["pull_requests"][0][side]["repo"],
+            "id": 1,
+            "name": "project",
+            "url": "https://api.github.com/repos/example/project",
+        }
     run = {
         "id": run_id,
         "run_attempt": attempt,
@@ -486,7 +501,7 @@ def source_metadata(
         "head_branch": f"change-{pr_number}",
         "event": "pull_request",
         "head_repository": repository,
-        "pull_requests": [pr],
+        "pull_requests": [run_pr],
         "status": "completed",
         "conclusion": conclusion,
         "run_started_at": min(
@@ -984,12 +999,16 @@ def test_cache_use_accepts_historical_push_only_with_run_evidence(
         ] = copy.deepcopy(
             cache.metadata["/repos/example/project/actions/runs/1/attempts/2/jobs"]
         )
-        association = copy.deepcopy(run["pull_requests"][0])
+        association = copy.deepcopy(cache.metadata["/repos/example/project/pulls/1"])
         association["head"]["sha"] = later
         association["base"]["sha"] = "c" * 40  # live base has moved too
-        run["pull_requests"] = [association]
+        run["pull_requests"][0]["head"]["sha"] = later
         if fault == "fork":
-            association["head"]["repo"]["full_name"] = "other/project"
+            run["pull_requests"][0]["head"]["repo"] = {
+                "id": 99,
+                "name": "project",
+                "url": "https://api.github.com/repos/other/project",
+            }
         membership = f"/repos/example/project/commits/{head}/pulls"
         cache.metadata[membership] = [] if fault == "not-in-pr" else [association]
         artifact = copy.deepcopy(
@@ -1172,7 +1191,9 @@ def test_cache_use_refuses_unavailable_or_hostile_evidence(
         cache.metadata = original
 
 
-@pytest.mark.parametrize("reason", ["no-pr", "fork", "dependabot", "gone", "put-fault"])
+@pytest.mark.parametrize(
+    "reason", ["no-pr", "fork", "run-fork", "dependabot", "gone", "put-fault"]
+)
 def test_promotion_faults_warn_and_leave_the_following_step_running(
     telemetry_history, tmp_path, reason
 ):
@@ -1188,6 +1209,14 @@ def test_promotion_faults_warn_and_leave_the_following_step_running(
                 cache.metadata[f"/repos/example/project/commits/{sha}/pulls"] = []
             case "fork":
                 source_pr["head"]["repo"]["full_name"] = "hostile/fork"
+            case "run-fork":
+                cache.metadata["/repos/example/project/actions/runs/1/attempts/2"][
+                    "pull_requests"
+                ][0]["head"]["repo"] = {
+                    "id": 99,
+                    "name": "project",
+                    "url": "https://api.github.com/repos/hostile/project",
+                }
             case "dependabot":
                 source_pr["user"]["login"] = "dependabot[bot]"
             case "gone":
@@ -1228,6 +1257,7 @@ def test_promotion_faults_warn_and_leave_the_following_step_running(
                 assert {
                     "no-pr": "no pull request",
                     "fork": "fork head",
+                    "run-fork": "untrusted source PR repository",
                     "dependabot": "Dependabot",
                     "gone": "missing artifact",
                 }[reason] in done.stdout
@@ -1699,3 +1729,201 @@ def test_changed_hash_is_fresh_then_later_push_retry_replays(
         cache.metadata = original
         source.write_text(original_source)
         command(["git", "add", "src/library.js"], workspace.root)
+
+
+@pytest.mark.parametrize("fork", [False, True])
+def test_recorded_run_counts_in_promote_and_cache_use(
+    telemetry_history, tmp_path, fork
+):
+    """Replay the complete run response unchanged; only a hostile case edits it."""
+    workspace, cache, _, _ = telemetry_history
+    original = cache.metadata
+    recorded = json.loads(
+        (SKILL / "tests/fixtures/nx-remote-cache/run-41674998643.json").read_text()
+    )
+    run = copy.deepcopy(recorded)
+    repo = run["repository"]["full_name"]
+    prefix = f"/repos/{repo}"
+    pr = copy.deepcopy(run["pull_requests"][0])
+    assert all(
+        set(pr[side]["repo"]) == {"id", "name", "url"} for side in ("head", "base")
+    )
+    for side in ("head", "base"):
+        pr[side]["repo"]["full_name"] = repo
+    pr["head"]["sha"] = run["head_sha"]
+    pr.update(
+        user={"login": "maintainer"},
+        merged_at=run["updated_at"],
+        merge_commit_sha="a" * 40,
+    )
+    if fork:
+        run["pull_requests"][0]["head"]["repo"] = {
+            "id": 99,
+            "name": "onepipeline-ui",
+            "url": "https://api.github.com/repos/other/onepipeline-ui",
+        }
+    else:
+        assert run == recorded
+    earlier = copy.deepcopy(run)
+    earlier["id"] -= 1
+    earlier["run_started_at"] = "2026-01-01T00:00:00Z"
+    earlier["updated_at"] = "2026-01-01T00:01:00Z"
+    # The cache body was produced by real Nx in telemetry_history. The two
+    # artifacts model its writer and subsequent replay in the recorded run.
+    with zipfile.ZipFile(
+        io.BytesIO(cache.metadata["/repos/example/project/actions/artifacts/201/zip"])
+    ) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+        body = archive.read(f"{manifest['entries'][0]['hash']}.tar")
+    hash_value = manifest["entries"][0]["hash"]
+    metadata = {
+        f"{prefix}/actions/workflows/ci.yml/runs": {"workflow_runs": [earlier, run]},
+        f"{prefix}/commits/{pr['merge_commit_sha']}/pulls": [pr],
+        f"{prefix}/commits/{run['head_sha']}/pulls": [pr],
+        f"{prefix}/compare/{pr['base']['sha']}...{run['head_sha']}": {
+            "status": "ahead"
+        },
+        f"{prefix}/compare/{pr['base']['sha']}...main": {"status": "ahead"},
+        f"{prefix}/releases": [
+            {
+                "tag_name": "recording",
+                "draft": False,
+                "published_at": run["updated_at"],
+            }
+        ],
+        f"{prefix}/commits/recording": {"sha": pr["merge_commit_sha"]},
+        f"{prefix}/commits": [{"sha": pr["merge_commit_sha"]}],
+        f"{prefix}/actions/workflows/release-plz.yml/runs": {"workflow_runs": []},
+    }
+    for source, replay in ((earlier, False), (run, True)):
+        run_id = source["id"]
+        metadata[f"{prefix}/actions/runs/{run_id}/attempts/1"] = source
+        metadata[f"{prefix}/actions/runs/{run_id}/attempts/1/jobs"] = {
+            "jobs": [
+                {
+                    "name": "test-linux",
+                    "conclusion": "success",
+                    "labels": ["ubuntu-latest"],
+                }
+            ],
+        }
+        artifact = {
+            "id": run_id,
+            "name": "nx-cache-entries-test-linux",
+            "expired": False,
+            "created_at": source["updated_at"],
+            "workflow_run": {
+                "id": run_id,
+                "head_sha": source["head_sha"],
+                "head_repository_id": source["head_repository"]["id"],
+            },
+        }
+        metadata[f"{prefix}/actions/runs/{run_id}/artifacts"] = {
+            "artifacts": [artifact]
+        }
+        task = {
+            "task": "library:build",
+            "hash": hash_value,
+            "cacheable": True,
+            "result": "remote_hit" if replay else "executed",
+            "remote_status": 200 if replay else 404,
+            "started_at": source["run_started_at"],
+            "finished_at": source["updated_at"],
+        }
+        doc = {
+            "schema": 1,
+            "repository": repo,
+            "ref": f"refs/pull/{pr['number']}/merge",
+            "pr": pr["number"],
+            "head_sha": source["head_sha"],
+            "run_id": run_id,
+            "attempt": 1,
+            "job": "test-linux",
+            "os": "linux",
+            "selection": {
+                "mode": "affected",
+                "base_sha": pr["base"]["sha"],
+                "head_sha": source["head_sha"],
+            },
+            "tasks": [task],
+            "store_attempts": []
+            if replay
+            else [
+                {
+                    "task": task["task"],
+                    "hash": hash_value,
+                    "os": "linux",
+                    "attempted_at": source["updated_at"],
+                    "status": "stored",
+                    "http_status": 200,
+                }
+            ],
+        }
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            archive.writestr("executions.json", json.dumps(doc))
+            archive.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "job": "test-linux",
+                        "stored_bytes": 0 if replay else len(body),
+                        "entries": [
+                            {
+                                "hash": hash_value,
+                                "bytes": len(body),
+                                "source": "replayed" if replay else "stored",
+                            }
+                        ],
+                    }
+                ),
+            )
+            archive.writestr(f"{hash_value}.tar", body)
+        metadata[f"{prefix}/actions/artifacts/{run_id}/zip"] = output.getvalue()
+    cache.metadata = metadata
+    try:
+        with workspace.sidecar(
+            cache,
+            "recorded-fork" if fork else "recorded",
+            "refs/heads/main",
+            GITHUB_REPOSITORY=repo,
+            GITHUB_EVENT_NAME="push",
+            GITHUB_SHA=pr["merge_commit_sha"],
+            ONEBUDGETSPEC_RESULT=str(tmp_path / "result.json"),
+        ) as (env, temp):
+            promoted = workspace.cli(
+                "promote",
+                "--repo",
+                repo,
+                "--sha",
+                pr["merge_commit_sha"],
+                "--workflow",
+                "ci.yml",
+                env=env,
+            )
+            measured = workspace.cli(
+                "cache-use",
+                "--repo",
+                repo,
+                "--release",
+                "recording",
+                env=env,
+            )
+            receipt = temp / "nx-cache-promotion/receipt.json"
+            assert promoted.returncode == 0, promoted.stderr
+            if fork:
+                assert not receipt.exists()
+                assert "untrusted source PR repository" in promoted.stderr
+                assert measured.returncode != 0
+                assert "untrusted source PR repository" in measured.stderr
+            else:
+                evidence = json.loads(receipt.read_text())
+                assert evidence["source_run_id"] == recorded["id"]
+                assert evidence["entries"]
+                assert measured.returncode == 0, measured.stderr
+                result = json.loads((tmp_path / "result.json").read_text())
+                assert result["value"] == 100
+                assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+    finally:
+        cache.metadata = original
