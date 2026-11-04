@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 6
-// sha256: eca50dc8b5456743e3dbb2af76966a5f1d6538a73d4839e5a4102c8cca9d1899
+// sha256: 4f8c6453390a78485d0ca44438d82e5331ded65eded366afca764144531901cc
 import {
   appendFileSync,
   readFileSync,
@@ -223,23 +223,16 @@ async function ready(opts) {
   });
   child.unref();
   const deadline = Date.now() + 5000;
-  let proxy;
-  while (Date.now() < deadline) {
-    try {
-      proxy = json(join(state(), 'proxy.json'));
-      break;
-    } catch (error) {
-      if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
-    }
+  while (!existsSync(join(state(), 'proxy.json')) && Date.now() < deadline)
     await new Promise((done) => setTimeout(done, 50));
-  }
-  if (!proxy) {
+  if (!existsSync(join(state(), 'proxy.json'))) {
     child.kill();
     warning(
       'Nx recording proxy unavailable; tasks will run without remote cache',
     );
     return;
   }
+  const proxy = json(join(state(), 'proxy.json'));
   check(env.GITHUB_ENV, 'GITHUB_ENV is unset');
   appendFileSync(
     env.GITHUB_ENV,
