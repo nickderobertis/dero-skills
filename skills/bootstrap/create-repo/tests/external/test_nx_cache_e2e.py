@@ -22,6 +22,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -37,6 +38,15 @@ PIN = subprocess.check_output(
     ],
     text=True,
 ).strip()
+
+
+class CompareCommit(TypedDict):
+    sha: str | None
+
+
+class CompareResponse(TypedDict):
+    status: str
+    merge_base_commit: CompareCommit
 
 
 def command(args, root, env=None, timeout=120):
@@ -967,7 +977,16 @@ def test_cache_use_joins_real_writer_records_and_excludes_local_hits(
 
 @pytest.mark.parametrize(
     "fault",
-    [None, "current-head", "not-in-pr", "fork", "wrong-base", "base-off-branch"],
+    [
+        None,
+        "current-head",
+        "behind-base",
+        "head-behind-base",
+        "not-in-pr",
+        "fork",
+        "wrong-base",
+        "base-off-branch",
+    ],
 )
 def test_cache_use_accepts_historical_push_only_with_run_evidence(
     telemetry_history, tmp_path, fault
@@ -1040,22 +1059,36 @@ def test_cache_use_accepts_historical_push_only_with_run_evidence(
         cache.metadata[key] = output.getvalue()
         head_compare = f"/repos/example/project/compare/{base}...{head}"
         branch_compare = f"/repos/example/project/compare/{base}...main"
-        cache.metadata[head_compare] = {
-            "status": "diverged" if fault == "wrong-base" else "ahead"
-        }
+        status = "ahead"
+        merge_base = "d" * 40
+        match fault:
+            case "head-behind-base":
+                # The event base contains the entire run head: GitHub's merge-base
+                # is that head itself, rather than the branch point of a divergence.
+                status = "behind"
+                merge_base = head
+            case "behind-base" | "base-off-branch":
+                status = "diverged"
+            case "wrong-base":
+                status = "diverged"
+                merge_base = None
+        cache.metadata[head_compare] = CompareResponse(
+            status=status,
+            merge_base_commit=CompareCommit(sha=merge_base),
+        )
         cache.metadata[branch_compare] = {
             "status": "diverged" if fault == "base-off-branch" else "ahead"
         }
         cache.metadata_reads.clear()
         done, result = measure_cache_use(telemetry_history, tmp_path)
-        if fault not in (None, "current-head"):
+        if fault not in (None, "current-head", "behind-base", "head-behind-base"):
             assert done.returncode != 0, result
             assert result["actual"] is None
             assert result["verdict"] == "error"
             expected = {
                 "not-in-pr": "run head is not a commit of the source PR",
                 "fork": "untrusted source PR repository",
-                "wrong-base": "selection base is not an ancestor of the run head",
+                "wrong-base": "missing effective selection merge-base",
                 "base-off-branch": "selection base is not on the source PR base branch",
             }
             assert expected[fault] in result["error"], result
