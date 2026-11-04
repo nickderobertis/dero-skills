@@ -673,7 +673,7 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("name", "version"), [("nx-remote-cache", 1), ("nx-version-free-inputs", 3)]
+    ("name", "version"), [("nx-remote-cache", 2), ("nx-version-free-inputs", 3)]
 )
 def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version):
     source = SKILL_DIR / "assets" / "ci" / f"{name}.mjs"
@@ -723,3 +723,16 @@ def test_cache_use_missing_node_reports_action_without_writing(tmp_path):
     assert "node is not on PATH" in done.stderr
     assert "install Node.js 24 and rerun this budget" in done.stderr
     assert not result.exists()
+
+
+def test_remote_cache_version_one_copy_is_outdated(tmp_path):
+    repo = baseline_repo(tmp_path)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    old = Path(__file__).parent / "fixtures/nx-remote-cache/v1.mjs"
+    shutil.copyfile(old, repo / "scripts/nx-remote-cache.mjs")
+    done = checked(repo)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert (
+        "scripts/nx-remote-cache.mjs is outdated: it is at version 1, the source at version 2"
+        in done.stdout
+    )
