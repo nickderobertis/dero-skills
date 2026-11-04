@@ -51,6 +51,7 @@ def compose(
     language: str = "rust",
     platforms: str = "cross-platform",
     visual_docs_arch: str | None = None,
+    files: dict[str, str] | None = None,
 ) -> Path:
     """A conformant repository at ``root`` with the shape written into it."""
     justfile = (ASSETS / "justfile.template").read_text(encoding="utf-8")
@@ -59,6 +60,10 @@ def compose(
         justfile = justfile.replace(placeholder, body)
     root.mkdir(parents=True, exist_ok=True)
     repo = make_repo(root, justfile=justfile, ci=False, notignored=False)
+    for relative, text in (files or {}).items():
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text)
     args = ["uv", "run", "--script", str(COMPOSER), "--ci-cd", str(repo)]
     args += ["--language", language, "--name", NAME, "--platforms", platforms]
     if visual_docs_arch:

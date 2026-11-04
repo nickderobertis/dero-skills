@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 from ci_cd_shape import NAME, compose
+from actions_figures_replay import recorded_merges
+from test_nx_cache_e2e import GithubCache
 
 RELEASE_TAIL = Path(__file__).resolve().parent / "fixtures" / "release-tail"
 RECORDINGS = RELEASE_TAIL / "onetaskgraph-v0.13.0"
@@ -199,6 +201,7 @@ def run_tail(released, tmp_path: Path, thresholds: dict[str, float]):
         )
         assert n == 1, budget
     budgets.write_text(text, encoding="utf-8")
+    recorded_merges(checkout, "onetaskgraph-v0.13.0")
     replay = Replay(tmp_path / "replay")
     event = tmp_path / "event.json"
     event.write_text(
@@ -207,28 +210,83 @@ def run_tail(released, tmp_path: Path, thresholds: dict[str, float]):
     (tmp_path / "home").mkdir()
     (tmp_path / "runner-temp").mkdir()
     assert tail["env"].strip() == "GH_TOKEN: ${{ github.token }}"
-    done = subprocess.run(
-        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", tail["run"]],
-        cwd=checkout,
-        env={
-            "PATH": path,
-            "HOME": str(tmp_path / "home"),
-            "ONEVCS_HOME": str(tmp_path / "home" / "onevcs"),
-            "ONEVCS_GH": str(replay.program),
-            "GH_TOKEN": "replay-token",
-            "GITHUB_REPOSITORY": REPOSITORY,
-            "GITHUB_EVENT_PATH": str(event),
-            "GITHUB_RUN_ID": str(RELEASE_RUN),
-            "RUNNER_NAME": replay.tail_runner(),
-            "RUNNER_TEMP": str(tmp_path / "runner-temp"),
-        },
-        capture_output=True,
-        text=True,
-        timeout=900,
-    )
+    cache_api = historical_cache_metadata()
+    try:
+        done = subprocess.run(
+            ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", tail["run"]],
+            cwd=checkout,
+            env={
+                "PATH": path,
+                "HOME": str(tmp_path / "home"),
+                "ONEVCS_HOME": str(tmp_path / "home" / "onevcs"),
+                "ONEVCS_GH": str(replay.program),
+                "GH_TOKEN": "replay-token",
+                "GITHUB_REPOSITORY": REPOSITORY,
+                "GITHUB_EVENT_PATH": str(event),
+                "GITHUB_RUN_ID": str(RELEASE_RUN),
+                "RUNNER_NAME": replay.tail_runner(),
+                "RUNNER_TEMP": str(tmp_path / "runner-temp"),
+                "GITHUB_API_URL": cache_api.url.rstrip("/"),
+            },
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+    finally:
+        cache_api.close()
     output = done.stdout + done.stderr
     results = {m[0]: m for m in RESULT_RE.findall(output)}
     return done.returncode, output, results, replay.served()
+
+
+def historical_cache_metadata() -> GithubCache:
+    """Serve recorded metadata, with no cache artifacts on this pre-cache release."""
+    api = GithubCache()
+    answers = {}
+    ci_runs = []
+    for recording in RECORDINGS.glob("*.http"):
+        source = json.loads(Path(f"{recording}.source.json").read_text())
+        body = json.loads(recording.read_bytes().decode().partition("\r\n\r\n")[2])
+        request = source["path"]
+        answers[request] = body
+        api.metadata["/" + request.split("?")[0]] = body
+        if recording.name.startswith("runs-at-pr-"):
+            ci_runs.extend(
+                run for run in body["workflow_runs"] if run["event"] == "pull_request"
+            )
+    pulls = answers[
+        f"repos/{REPOSITORY}/pulls?state=closed&sort=updated&direction=desc&per_page=100"
+    ]
+    compare = answers[f"repos/{REPOSITORY}/compare/v0.12.14...{RELEASE}?per_page=100"]
+    api.metadata[f"/repos/{REPOSITORY}/commits/{RELEASE}"] = {
+        "sha": compare["commits"][-1]["sha"]
+    }
+    for commit in compare["commits"]:
+        api.metadata[f"/repos/{REPOSITORY}/commits/{commit['sha']}/pulls"] = [
+            pr
+            for pr in pulls
+            if pr["merge_commit_sha"] == commit["sha"] and pr["merged_at"]
+        ]
+        api.metadata[f"/repos/{REPOSITORY}/commits/{commit['sha']}"] = commit
+    for pr in pulls:
+        api.metadata[f"/repos/{REPOSITORY}/pulls/{pr['number']}"] = pr
+        api.metadata[f"/repos/{REPOSITORY}/commits/{pr['head']['sha']}/pulls"] = [pr]
+    api.metadata[f"/repos/{REPOSITORY}/actions/workflows/ci.yml/runs"] = {
+        "workflow_runs": ci_runs
+    }
+    for run in ci_runs:
+        api.metadata[
+            f"/repos/{REPOSITORY}/actions/runs/{run['id']}/attempts/{run['run_attempt']}"
+        ] = run
+        job_path = f"repos/{REPOSITORY}/actions/runs/{run['id']}/jobs?per_page=100&filter=latest"
+        if job_path in answers:
+            api.metadata[
+                f"/repos/{REPOSITORY}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs"
+            ] = answers[job_path]
+        api.metadata[f"/repos/{REPOSITORY}/actions/runs/{run['id']}/artifacts"] = {
+            "artifacts": []
+        }
+    return api
 
 
 HIGH = dict.fromkeys(TAIL_IDS, 10**9)
@@ -242,16 +300,19 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
         "Report the release-tail budgets",
     )["run"] == ("onebudgetspec check budgets.yaml --label release-tail")
     code, output, results, served = run_tail(released, tmp_path, HIGH)
-    assert code == 0, output
-    assert sorted(results) == sorted(TAIL_IDS), output
-    assert all(verdict == "within" for *_, verdict in results.values()), output
+    assert code == 3, output
+    assert sorted(results) == sorted([*TAIL_IDS, f"{NAME}-nx-cache-use"]), output
+    assert all(results[budget][-1] == "within" for budget in TAIL_IDS), output
+    assert "missing artifact" in output
+    assert results[f"{NAME}-nx-cache-use"][-1] == ""
     # The host-variable budget is not the tail's.
     assert f"{NAME}-gate-time" not in output
     # Each figure's breakdown, from the script's detail.
     assert "longest per runner OS:" in output
-    assert re.search(r"^#3843: checks \d+s \+ merge to release \d+s$", output, re.M), (
+    assert re.search(r"^#3844: checks \d+s \+ merge to release \d+s$", output, re.M), (
         output
     )
+    assert "#3843: left out, changes no published path" in output
     assert "per workflow:" in output and "per runner OS:" in output
     assert f"release-changes --tag {RELEASE}: 3 requests" in output
     assert (
@@ -289,7 +350,8 @@ def test_a_figure_over_its_threshold_turns_the_tail_non_zero_naming_it(
 ):
     reads = f"{NAME}-pr-read-requests"
     code, output, results, _served = run_tail(released, tmp_path, {**HIGH, reads: 1})
-    assert code == 1, output
+    assert code == 3, output  # Missing historical cache telemetry remains an error.
+    assert "missing artifact" in output
     budget, actual, threshold, verdict = results[reads]
     # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold of 1 is the input this test seeds below the replayed figure to prove the tail exits non-zero naming the budget; it holds the code to no request count.
     assert (verdict, threshold) == ("over", "1"), output

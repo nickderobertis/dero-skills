@@ -1,0 +1,15 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs?per_page=100&head_sha=18b71d22b87a1e96f129ed6d734c3f830160bfb9&event=pull_request",
+    "why": "Read-only public GitHub capture for the published-path release-cycle journey.",
+    "command": [
+      "gh",
+      "api",
+      "--include",
+      "--method",
+      "GET",
+      "repos/nickderobertis/onetaskgraph/actions/runs?per_page=100&head_sha=18b71d22b87a1e96f129ed6d734c3f830160bfb9&event=pull_request"
+    ]
+  },
+  "scrubbed": []
+}

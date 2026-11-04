@@ -1,0 +1,32 @@
+{
+  "about": "Recorded release and check reads, unchanged; changed paths are replayed in a local fixture git repository.",
+  "serve": [
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/301c69b170700c18.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/36fd0aced985c911.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/542b8b7b437ea65b.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/607e62c2a537dfab.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/840980e94160af49.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/a031e67c60bbabdf.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/a05cbfc64b0bd075.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/e11bab403be6e479.json"
+    },
+    {
+      "recording": "published-onepipeline-ui-v0.65.2/f27a260e97dcac03.json"
+    }
+  ]
+}

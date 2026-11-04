@@ -1,0 +1,473 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4866",
+    "x-ratelimit-reset": "1793753873",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "134"
+  },
+  "body": {
+    "total_count": 8,
+    "jobs": [
+      {
+        "id": 116086113653,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB0WFdQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086113653",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116086113653",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:26:47Z",
+        "started_at": "2026-10-14T20:27:49Z",
+        "completed_at": "2026-10-14T20:27:51Z",
+        "name": "visual-docs / pages-preflight",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:27:50Z",
+            "completed_at": "2026-10-14T20:27:50Z"
+          },
+          {
+            "name": "Validate external Pages configuration",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:27:50Z",
+            "completed_at": "2026-10-14T20:27:50Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:27:50Z",
+            "completed_at": "2026-10-14T20:27:50Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086113653",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232811,
+        "runner_name": "GitHub Actions 1000232811",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086629335,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB01j1w",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086629335",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116086629335",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:27:52Z",
+        "started_at": "2026-10-14T20:27:54Z",
+        "completed_at": "2026-10-14T20:28:01Z",
+        "name": "visual-docs / arches",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:27:55Z",
+            "completed_at": "2026-10-14T20:27:56Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:27:56Z",
+            "completed_at": "2026-10-14T20:27:58Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:27:58Z",
+            "completed_at": "2026-10-14T20:27:59Z"
+          },
+          {
+            "name": "Resolve [capture].arches",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:27:59Z",
+            "completed_at": "2026-10-14T20:27:59Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T20:27:59Z",
+            "completed_at": "2026-10-14T20:28:00Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T20:28:00Z",
+            "completed_at": "2026-10-14T20:28:00Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086629335",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232812,
+        "runner_name": "GitHub Actions 1000232812",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086631350,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB01rtg",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086631350",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116086631350",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-14T20:27:52Z",
+        "started_at": "2026-10-14T20:27:52Z",
+        "completed_at": "2026-10-14T20:27:52Z",
+        "name": "visual-docs / cleanup-preview",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086631350",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      },
+      {
+        "id": 116086632191,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB01u_w",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086632191",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116086632191",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-14T20:27:52Z",
+        "started_at": "2026-10-14T20:27:52Z",
+        "completed_at": "2026-10-14T20:27:52Z",
+        "name": "visual-docs / prune-history",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086632191",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      },
+      {
+        "id": 116086711394,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB06kYg",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086711394",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116086711394",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:02Z",
+        "started_at": "2026-10-14T20:28:05Z",
+        "completed_at": "2026-10-14T20:47:40Z",
+        "name": "visual-docs / capture (x86_64, shots/current, shots/verify, Visual docs)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:05Z",
+            "completed_at": "2026-10-14T20:28:06Z"
+          },
+          {
+            "name": "Initialize containers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:06Z",
+            "completed_at": "2026-10-14T20:28:26Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:26Z",
+            "completed_at": "2026-10-14T20:28:28Z"
+          },
+          {
+            "name": "Log runner CPU (cross-CPU anti-aliasing drift diagnostics)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:28:28Z"
+          },
+          {
+            "name": "Capture screenshots",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:47:13Z"
+          },
+          {
+            "name": "Capture again for the reproducibility gate",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:47:13Z",
+            "completed_at": "2026-10-14T20:47:36Z"
+          },
+          {
+            "name": "Run actions/upload-artifact@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:47:36Z",
+            "completed_at": "2026-10-14T20:47:37Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T20:47:37Z",
+            "completed_at": "2026-10-14T20:47:37Z"
+          },
+          {
+            "name": "Stop containers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-14T20:47:37Z",
+            "completed_at": "2026-10-14T20:47:39Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T20:47:39Z",
+            "completed_at": "2026-10-14T20:47:39Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086711394",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232813,
+        "runner_name": "GitHub Actions 1000232813",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116095943561,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB9uDiQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116095943561",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116095943561",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:47:41Z",
+        "started_at": "2026-10-14T20:47:43Z",
+        "completed_at": "2026-10-14T20:47:55Z",
+        "name": "visual-docs / report (x86_64, shots/current, shots/verify, Visual docs)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:47:44Z",
+            "completed_at": "2026-10-14T20:47:46Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:47:46Z",
+            "completed_at": "2026-10-14T20:47:48Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:47:48Z",
+            "completed_at": "2026-10-14T20:47:49Z"
+          },
+          {
+            "name": "Run actions/download-artifact@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:47:49Z",
+            "completed_at": "2026-10-14T20:47:49Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:47:49Z",
+            "completed_at": "2026-10-14T20:47:53Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T20:47:53Z",
+            "completed_at": "2026-10-14T20:47:54Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:47:54Z",
+            "completed_at": "2026-10-14T20:47:54Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116095943561",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232829,
+        "runner_name": "GitHub Actions 1000232829",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116096066867,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB91lMw",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116096066867",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116096066867",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:47:56Z",
+        "started_at": "2026-10-14T20:47:58Z",
+        "completed_at": "2026-10-14T20:48:36Z",
+        "name": "visual-docs / deploy-pages",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:47:58Z",
+            "completed_at": "2026-10-14T20:47:59Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs-pages@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:47:59Z",
+            "completed_at": "2026-10-14T20:48:35Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:48:35Z",
+            "completed_at": "2026-10-14T20:48:35Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116096066867",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232830,
+        "runner_name": "GitHub Actions 1000232830",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116096069456,
+        "run_id": 38632125278,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632125278",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB91vUA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116096069456",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632125278/job/116096069456",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-14T20:47:56Z",
+        "started_at": "2026-10-14T20:47:56Z",
+        "completed_at": "2026-10-14T20:47:56Z",
+        "name": "visual-docs / aggregate-comment",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116096069456",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      }
+    ]
+  }
+}

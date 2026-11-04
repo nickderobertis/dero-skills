@@ -403,10 +403,10 @@ def test_a_copy_without_the_header_is_reported(tmp_path):
             "pr-read-requests takes no --now",
         ),
         (
-            ["release-cycle-time", "--now", "2026-10-15 07:20:03"],
+            ["longest-job", "--stage", "pr", "--now", "2026-10-15 07:20:03"],
             "--now must be an RFC 3339 UTC timestamp",
         ),
-        (["release-cycle-time", "--repo", "onepipeline"], "--repo must be OWNER/NAME"),
+        (["pr-read-requests", "--repo", "onepipeline"], "--repo must be OWNER/NAME"),
     ],
 )
 def test_an_invalid_invocation_exits_2_naming_what_is_wrong(tmp_path, args, reason):
@@ -459,6 +459,10 @@ def handed(tmp_path: Path, answer: object, *args: str, **env: str):
     """The script, with `ONEVCS` naming a program that answers every query with
     `answer`: the shapes a broken or different onevcs could hand it, which the real
     release never answers."""
+    if args[0] == "release-cycle-time":
+        published = tmp_path / "published-paths"
+        published.write_text("src/**\n")
+        args = (*args, "--published-paths", str(published))
     answer_file = tmp_path / "answer.json"
     answer_file.write_text(
         answer if isinstance(answer, str) else json.dumps(answer), encoding="utf-8"
@@ -666,3 +670,39 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
     done = handed(tmp_path, release_changes(), "job-count", "--stage", "cd")
     assert done.returncode == 1, done
     assert "no repository: pass --repo OWNER/NAME" in done.stderr
+
+
+@pytest.mark.parametrize("name", ["nx-remote-cache", "nx-version-free-inputs"])
+def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name):
+    source = SKILL_DIR / "assets" / "ci" / f"{name}.mjs"
+    versions = source.with_suffix(".versions")
+    header = crb.parse_figures_header(source.read_bytes())
+    assert header is not None
+    assert header.version == 1
+    assert crb.figures_digest(header.body) == header.sha256
+    assert crb.read_figures_versions(versions) == [crb.FiguresVersion(1, header.sha256)]
+    target = tmp_path / "scripts" / source.name
+    target.parent.mkdir()
+    shutil.copyfile(source, target)
+    findings = crb.check_actions_budget_figures(
+        tmp_path, versions, f"scripts/{source.name}", f"assets/ci/{source.name}"
+    )
+    assert [finding.level for finding in findings] == ["OK"]
+    target.write_bytes(target.read_bytes() + b"\n// edited\n")
+    findings = crb.check_actions_budget_figures(
+        tmp_path, versions, f"scripts/{source.name}", f"assets/ci/{source.name}"
+    )
+    assert [finding.level for finding in findings] == ["ERROR"]
+    assert "edited in place" in findings[0].message
+
+
+def test_version_ten_copy_is_outdated_against_eleven(tmp_path):
+    old = subprocess.check_output(
+        ["git", "show", f"{merge_base()}:{SOURCE.relative_to(REPO_ROOT).as_posix()}"],
+        cwd=REPO_ROOT,
+    )
+    assert crb.parse_figures_header(old).version == 10
+    repo = with_copy(tmp_path, old)
+    done = checked(repo)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "outdated: it is at version 10, the source at version 11" in done.stdout

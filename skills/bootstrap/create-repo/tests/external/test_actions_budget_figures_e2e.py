@@ -105,7 +105,12 @@ def repository(tmp_path: Path, onevcs_bin: Path):
     def make(scenario: str) -> Repository:
         # llmlint: ignore[e2e_not_mocked] the task fixes GitHub as the one boundary doubled, by a replay of the scrubbed recordings onevcs's own journeys replay; onebudgetspec, jq, the script and the released onevcs all run for real against it.
         replay = Replay(tmp_path / "replay", scenario)
-        return Repository(tmp_path / "repo", replay, onevcs_bin)
+        repo = Repository(tmp_path / "repo", replay, onevcs_bin)
+        repo.recorded_merges("onepipeline-v0.72.0")
+        (repo.root / "published-paths").write_text(
+            "# Artifact source files\n\nsrc/**\nCargo.toml\nCargo.lock\n"
+        )
+        return repo
 
     return make
 
@@ -765,7 +770,14 @@ def test_every_run_skipped_or_named_at_the_release_commit_is_missing(
             "--exclude-workflow applies to the CD figures only, not --stage pr",
         ),
         (
-            ["release-cycle-time", *RELEASE, "--exclude-workflow", "CI"],
+            [
+                "release-cycle-time",
+                "--published-paths",
+                "published-paths",
+                *RELEASE,
+                "--exclude-workflow",
+                "CI",
+            ],
             "release-cycle-time takes no --exclude-workflow",
         ),
         (
@@ -825,7 +837,13 @@ def test_release_cycle_time_adds_each_pull_requests_checks_to_its_wait_for_relea
     derived = derive(RELEASE_END)
     repo = repository("onepipeline-v0.72.0")
     result = repo.figure(
-        "release-cycle-time", *RELEASE, "--now", RELEASE_END, unit="seconds"
+        "release-cycle-time",
+        "--published-paths",
+        "published-paths",
+        *RELEASE,
+        "--now",
+        RELEASE_END,
+        unit="seconds",
     )
     assert_within(result, 83074)
     assert derived["release_cycle_time"] == 83074
@@ -868,7 +886,14 @@ ALL_FIGURES = [
     },
     {
         "id": "release-cycle-time",
-        "args": ["release-cycle-time", *RELEASE, "--now", RELEASE_END],
+        "args": [
+            "release-cycle-time",
+            "--published-paths",
+            "published-paths",
+            *RELEASE,
+            "--now",
+            RELEASE_END,
+        ],
         "unit": "seconds",
     },
     {
@@ -1113,11 +1138,18 @@ def test_a_commit_that_maps_to_no_merged_pull_request_is_missing(repository):
     for args, unit in (
         (["job-count", "--stage", "pr", *release], "jobs"),
         (["longest-job", "--stage", "pr", *release], "seconds"),
-        (["release-cycle-time", *release], "seconds"),
+        (
+            ["release-cycle-time", "--published-paths", "published-paths", *release],
+            "seconds",
+        ),
         (["pr-read-requests", *release], "requests"),
     ):
         assert_error(repo.figure(*args, unit=unit), reason)
-    assert_refused_writing_nothing(repo, ["release-cycle-time", *release], reason)
+    assert_refused_writing_nothing(
+        repo,
+        ["release-cycle-time", "--published-paths", "published-paths", *release],
+        reason,
+    )
 
 
 def test_a_pull_request_with_no_pull_request_run_is_missing(repository):
@@ -1125,7 +1157,17 @@ def test_a_pull_request_with_no_pull_request_run_is_missing(repository):
     reason = f"missing: #916 has no pull_request run at its head {HEADS[916]}"
     for args, unit in (
         (["job-count", "--stage", "pr", *RELEASE], "jobs"),
-        (["release-cycle-time", *RELEASE, "--now", RELEASE_END], "seconds"),
+        (
+            [
+                "release-cycle-time",
+                "--published-paths",
+                "published-paths",
+                *RELEASE,
+                "--now",
+                RELEASE_END,
+            ],
+            "seconds",
+        ),
     ):
         assert_error(repo.figure(*args, unit=unit), reason)
         assert_refused_writing_nothing(repo, args, reason)
@@ -1136,7 +1178,17 @@ def test_a_selected_run_whose_job_list_is_empty_is_missing(repository):
     reason = "missing: run 38632124776 (CI, pull_request) at #916's head lists no job"
     for args, unit in (
         (["job-count", "--stage", "pr", *RELEASE], "jobs"),
-        (["release-cycle-time", *RELEASE, "--now", RELEASE_END], "seconds"),
+        (
+            [
+                "release-cycle-time",
+                "--published-paths",
+                "published-paths",
+                *RELEASE,
+                "--now",
+                RELEASE_END,
+            ],
+            "seconds",
+        ),
     ):
         assert_error(repo.figure(*args, unit=unit), reason)
         assert_refused_writing_nothing(repo, args, reason)
@@ -1316,7 +1368,120 @@ def test_a_run_id_that_is_not_a_number_is_an_error(repository):
 
 def test_release_cycle_time_with_no_counted_job_is_missing(repository):
     repo = repository("all-skipped")
-    args = ["release-cycle-time", *RELEASE, "--now", RELEASE_END]
+    args = [
+        "release-cycle-time",
+        "--published-paths",
+        "published-paths",
+        *RELEASE,
+        "--now",
+        RELEASE_END,
+    ]
     reason = "missing: #914: no counted job ends its checks"
     assert_error(repo.figure(*args, unit="seconds"), reason)
     assert_refused_writing_nothing(repo, args, reason)
+
+
+@pytest.mark.parametrize(
+    ("name", "tag", "owner_repo", "counted", "omitted", "paths"),
+    [
+        (
+            "onepipeline-ui-v0.65.2",
+            "v0.65.2",
+            "nickderobertis/onepipeline-ui",
+            {581, 586},
+            {580},
+            "src/**\nCargo.toml\nCargo.lock\napps/dag-ui/src/**\npackages/*/src/**\n",
+        ),
+        (
+            "onetaskgraph-v0.13.1",
+            "v0.13.1",
+            "nickderobertis/onetaskgraph",
+            {3841, 3842, 3848, 3849},
+            {3845, 3846},
+            "crates/*/src/**\ncrates/*/Cargo.toml\nCargo.toml\nCargo.lock\nsdks/**\nnpm/**\npyproject.toml\nuv.lock\n",
+        ),
+        (
+            "onepipeline-v0.72.0",
+            "v0.72.0",
+            "nickderobertis/onepipeline",
+            {914, 916, 919},
+            set(),
+            "src/**\nCargo.toml\nCargo.lock\nschemas/**\n",
+        ),
+    ],
+)
+def test_recorded_releases_count_every_published_change(
+    tmp_path, onevcs_bin, name, tag, owner_repo, counted, omitted, paths
+):
+    repo = Repository(
+        tmp_path / "repo", Replay(tmp_path / "replay", "published-" + name), onevcs_bin
+    )
+    repo.recorded_merges(name)
+    (repo.root / "published-paths").write_text(
+        "# Published artifact inputs\n\n" + paths
+    )
+    result = repo.figure(
+        "release-cycle-time",
+        "--release",
+        tag,
+        "--repo",
+        owner_repo,
+        "--now",
+        "2026-11-03T23:00:00Z",
+        "--published-paths",
+        "published-paths",
+        unit="seconds",
+    )
+    assert result["exit"] == 0, result
+    rows = result["detail"].splitlines()
+    assert {int(row.split(":")[0][1:]) for row in rows if ": checks " in row} == counted
+    assert {
+        int(row.split(":")[0][1:])
+        for row in rows
+        if ": left out, changes no published path" in row
+    } == omitted
+    # No check read is made for an omitted PR.
+    for number in omitted:
+        assert not any(
+            f"/pulls/{number}/" in request for request in repo.replay.served()
+        )
+
+
+@pytest.mark.parametrize(
+    "failure", ["missing", "empty", "unreadable", "absent-merge", "no-published-change"]
+)
+def test_release_cycle_missing_local_evidence_writes_nothing(onepipeline, failure):
+    repo = onepipeline
+    published = repo.root / "published-paths"
+    if failure == "missing":
+        published.unlink()
+        reason = "published-paths"
+    elif failure == "empty":
+        published.write_text("# only comments\n\n")
+        reason = "is empty"
+    elif failure == "unreadable":
+        published.chmod(0)
+        reason = "cannot read published paths file"
+    elif failure == "absent-merge":
+        shutil.rmtree(repo.root / ".git")
+        reason = "fetch-depth: 0"
+    else:
+        published.write_text("not-an-artifact/**\n")
+        reason = "v0.72.0 carries no pull request that changes a published path"
+    try:
+        done, written = run_direct(
+            repo, "release-cycle-time", *RELEASE, "--published-paths", "published-paths"
+        )
+        assert done.returncode == 1, done
+        assert reason in done.stderr
+        assert written == ""
+    finally:
+        if published.exists():
+            published.chmod(0o644)
+
+
+def test_release_cycle_requires_the_published_paths_flag(onepipeline):
+    done, written = run_direct(onepipeline, "release-cycle-time", *RELEASE)
+    assert done.returncode == 2
+    assert "needs --published-paths FILE" in done.stderr
+    assert written == ""

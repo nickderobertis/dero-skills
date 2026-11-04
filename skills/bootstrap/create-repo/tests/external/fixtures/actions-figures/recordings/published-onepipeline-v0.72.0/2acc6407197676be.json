@@ -1,0 +1,473 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4873",
+    "x-ratelimit-reset": "1793753873",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "127"
+  },
+  "body": {
+    "total_count": 8,
+    "jobs": [
+      {
+        "id": 115753353259,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa83AAKw",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115753353259",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115753353259",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T08:19:33Z",
+        "started_at": "2026-10-14T08:19:35Z",
+        "completed_at": "2026-10-14T08:19:38Z",
+        "name": "visual-docs / pages-preflight",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T08:19:36Z",
+            "completed_at": "2026-10-14T08:19:36Z"
+          },
+          {
+            "name": "Validate external Pages configuration",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T08:19:36Z",
+            "completed_at": "2026-10-14T08:19:36Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T08:19:36Z",
+            "completed_at": "2026-10-14T08:19:36Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115753353259",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000231160,
+        "runner_name": "GitHub Actions 1000231160",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 115753384147,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa83B40w",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115753384147",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115753384147",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T08:19:38Z",
+        "started_at": "2026-10-14T08:19:41Z",
+        "completed_at": "2026-10-14T08:19:48Z",
+        "name": "visual-docs / arches",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T08:19:42Z",
+            "completed_at": "2026-10-14T08:19:43Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T08:19:43Z",
+            "completed_at": "2026-10-14T08:19:45Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T08:19:45Z",
+            "completed_at": "2026-10-14T08:19:45Z"
+          },
+          {
+            "name": "Resolve [capture].arches",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T08:19:45Z",
+            "completed_at": "2026-10-14T08:19:45Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T08:19:45Z",
+            "completed_at": "2026-10-14T08:19:45Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T08:19:45Z",
+            "completed_at": "2026-10-14T08:19:45Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115753384147",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000231161,
+        "runner_name": "GitHub Actions 1000231161",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 115753385371,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa83B9mw",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115753385371",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115753385371",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-14T08:19:38Z",
+        "started_at": "2026-10-14T08:19:38Z",
+        "completed_at": "2026-10-14T08:19:38Z",
+        "name": "visual-docs / prune-history",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115753385371",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      },
+      {
+        "id": 115753386361,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa83CBeQ",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115753386361",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115753386361",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-14T08:19:39Z",
+        "started_at": "2026-10-14T08:19:39Z",
+        "completed_at": "2026-10-14T08:19:38Z",
+        "name": "visual-docs / cleanup-preview",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115753386361",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      },
+      {
+        "id": 115753444863,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa83Fl_w",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115753444863",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115753444863",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T08:19:48Z",
+        "started_at": "2026-10-14T08:19:50Z",
+        "completed_at": "2026-10-14T08:39:35Z",
+        "name": "visual-docs / capture (x86_64, shots/current, shots/verify, Visual docs)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T08:19:51Z",
+            "completed_at": "2026-10-14T08:19:52Z"
+          },
+          {
+            "name": "Initialize containers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T08:19:52Z",
+            "completed_at": "2026-10-14T08:20:10Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T08:20:10Z",
+            "completed_at": "2026-10-14T08:20:12Z"
+          },
+          {
+            "name": "Log runner CPU (cross-CPU anti-aliasing drift diagnostics)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T08:20:12Z",
+            "completed_at": "2026-10-14T08:20:12Z"
+          },
+          {
+            "name": "Capture screenshots",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T08:20:12Z",
+            "completed_at": "2026-10-14T08:39:09Z"
+          },
+          {
+            "name": "Capture again for the reproducibility gate",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T08:39:09Z",
+            "completed_at": "2026-10-14T08:39:30Z"
+          },
+          {
+            "name": "Run actions/upload-artifact@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T08:39:30Z",
+            "completed_at": "2026-10-14T08:39:32Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T08:39:32Z",
+            "completed_at": "2026-10-14T08:39:33Z"
+          },
+          {
+            "name": "Stop containers",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-14T08:39:33Z",
+            "completed_at": "2026-10-14T08:39:34Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T08:39:34Z",
+            "completed_at": "2026-10-14T08:39:34Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115753444863",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000231162,
+        "runner_name": "GitHub Actions 1000231162",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 115761126481,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa8-acUQ",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115761126481",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115761126481",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T08:39:36Z",
+        "started_at": "2026-10-14T08:39:38Z",
+        "completed_at": "2026-10-14T08:39:50Z",
+        "name": "visual-docs / report (x86_64, shots/current, shots/verify, Visual docs)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T08:39:38Z",
+            "completed_at": "2026-10-14T08:39:40Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T08:39:40Z",
+            "completed_at": "2026-10-14T08:39:42Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T08:39:42Z",
+            "completed_at": "2026-10-14T08:39:43Z"
+          },
+          {
+            "name": "Run actions/download-artifact@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T08:39:43Z",
+            "completed_at": "2026-10-14T08:39:43Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T08:39:43Z",
+            "completed_at": "2026-10-14T08:39:48Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T08:39:48Z",
+            "completed_at": "2026-10-14T08:39:48Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T08:39:48Z",
+            "completed_at": "2026-10-14T08:39:48Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115761126481",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000231175,
+        "runner_name": "GitHub Actions 1000231175",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 115761219520,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa8-gHwA",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115761219520",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115761219520",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T08:39:50Z",
+        "started_at": "2026-10-14T08:39:52Z",
+        "completed_at": "2026-10-14T08:40:01Z",
+        "name": "visual-docs / deploy-pages",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T08:39:53Z",
+            "completed_at": "2026-10-14T08:39:55Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs-pages@v0",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T08:39:55Z",
+            "completed_at": "2026-10-14T08:39:59Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T08:39:59Z",
+            "completed_at": "2026-10-14T08:39:59Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115761219520",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000231176,
+        "runner_name": "GitHub Actions 1000231176",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 115761220895,
+        "run_id": 38534306473,
+        "workflow_name": "Visual docs",
+        "head_branch": "nick/890/supervise-landings",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38534306473",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAa8-gNHw",
+        "head_sha": "62631f7c3936c095c6973f5108e9265360466e84",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/115761220895",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38534306473/job/115761220895",
+        "status": "completed",
+        "conclusion": "skipped",
+        "created_at": "2026-10-14T08:39:50Z",
+        "started_at": "2026-10-14T08:39:50Z",
+        "completed_at": "2026-10-14T08:39:50Z",
+        "name": "visual-docs / aggregate-comment",
+        "steps": [],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/115761220895",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": null,
+        "runner_name": null,
+        "runner_group_id": null,
+        "runner_group_name": null
+      }
+    ]
+  }
+}

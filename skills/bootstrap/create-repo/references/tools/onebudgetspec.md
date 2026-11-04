@@ -339,9 +339,10 @@ when the two differ.
 ```
 scripts/actions-budget-figures.sh longest-job --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh job-count   --stage pr|cd [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] [--exclude-workflow NAME]...
-scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP]
+scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--repo OWNER/NAME] [--now TIMESTAMP] --published-paths FILE
 scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
+scripts/actions-budget-figures.sh cache-use                 [--release TAG] [--repo OWNER/NAME]
 ```
 
 - **A `measure: reported` budget's `command`.** It writes `{"value", "detail"}`
@@ -407,9 +408,15 @@ scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--r
   longest per runner OS. `job-count` (jobs): counted jobs, each matrix leg one;
   detail by workflow and runner OS. Under `--stage pr` each detail is one block
   per pull request headed `#<number>`. `release-cycle-time` (seconds): per
-  change, from the earliest `created_at` of its runs to the latest end of their
+  published change, selected by matching its local merge-commit diff to the required
+  `--published-paths FILE` git pathspecs (one per line, ignoring blank and comment
+  lines), from the earliest `created_at` of its runs to the latest end of their
   counted jobs, plus `merged_at` to `--now`; detail `#<n>: checks <s>s + merge to
-  release <s>s`. `release-read-requests` (requests): the `cost.rest_requests` of
+  release <s>s`, followed by `#<n>: left out, changes no published path` for
+  every excluded PR. A missing, unreadable or empty paths file, absent merge
+  commit/parent (checkout needs `fetch-depth: 0`), or no published change is
+  missing data, exit 1. Missing `--published-paths` is usage, exit 2.
+  `release-read-requests` (requests): the `cost.rest_requests` of
   the release's `release-changes`, `commit-runs` and `--stage cd` `run-jobs`
   answers; `pr-read-requests` (requests): the most one pull request's
   `change-checks` answer cost. Their detail lists every request under the query
@@ -441,8 +448,9 @@ the fix is always to copy the source again.
 ## The CI and CD budgets every repository starts with
 
 `compose_repo_plan.py --ci-cd` writes the root `budgets.yaml` from
-[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the eight
-budgets onepipeline, onetaskgraph and onepipeline-ui register, each id under the
+[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the nine
+budgets, the eight established by onepipeline, onetaskgraph and onepipeline-ui
+plus the shared-cache replay figure, each id under the
 project name the composer fills in. Every CI check and CD job is held to 30
 minutes and a change's last-commit pull-request checks plus merge to release to
 90; job counts are budgeted per pull-request push and per release because the
@@ -452,11 +460,12 @@ account's 20 concurrent jobs are shared.
 | --- | --- | --- | --- | --- |
 | `<name>-ci-check-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage pr` |
 | `<name>-cd-job-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage cd` |
-| `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time` |
+| `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time --published-paths .github/release-published-paths` |
 | `<name>-ci-job-count` | jobs | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage pr` |
 | `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage cd` |
 | `<name>-release-read-requests` | requests | 6 | `release-tail` | `bash scripts/actions-budget-figures.sh release-read-requests` |
 | `<name>-pr-read-requests` | requests | 2 | `release-tail` | `bash scripts/actions-budget-figures.sh pr-read-requests` |
+| `<name>-nx-cache-use` | percent | 100 (minimum) | `release-tail` | `bash scripts/actions-budget-figures.sh cache-use` |
 | `<name>-gate-time` | seconds | 1800 | `host-variable` | `node scripts/gate-time-budget.mjs` |
 
 A repository that adds a push workflow delivering nothing (a cache warmer) passes
@@ -464,7 +473,7 @@ it to the CD budgets' commands with `--exclude-workflow`, as the three
 repositories do; the composed shape has none, so its commands name none.
 
 - **Where each is enforced.** `timeout-minutes: 30` holds every CI job at pull-
-  request time. The seven `release-tail` budgets are the last step of
+  request time. The eight `release-tail` budgets are the last step of
   release.yml's `publish` — `onebudgetspec check budgets.yaml --label
   release-tail`, after it installs `onevcs-cli` at the version the skill pins —
   whose result nothing reads. `<name>-gate-time` is `just gate`'s own wall clock,
@@ -479,7 +488,7 @@ repositories do; the composed shape has none, so its commands name none.
   selection, caches keyed on their inputs, no check run twice and no needless
   serialization; a coverage-reducing alternative is the owner's decision.
 - **`llmlint: ignore[budgets_track_product_owner_outcomes]`** sits on each of the
-  eight, with its reason: the brief fixes these units — a line per check and per
+  eight existing operational budgets, with its reason: the brief fixes these units — a line per check and per
   job beside the cycle that contains them, job counts, GitHub reads — rather than
   one product-owner outcome.
 
@@ -502,8 +511,8 @@ repositories do; the composed shape has none, so its commands name none.
   its own.
 - [ ] **Cached by kind.** Deterministic `reported` budgets run in the cached
   `budgets` target; `elapsed` and host-reading ones carry the `host` label.
-- [ ] **The eight CI/CD budgets are registered.** The root `budgets.yaml`
-  carries them as the table above states, the `release-tail` seven run by
+- [ ] **The nine CI/CD budgets are registered.** The root `budgets.yaml`
+  carries them as the table above states, the `release-tail` eight run by
   `publish`'s last step and `<name>-gate-time` by `just gate`; the checker
   reports a missing one, or budgets naming the figures script with no copy.
 - [ ] **Actions figures are the skill's copy.** Any `scripts/actions-budget-figures.sh`
@@ -511,3 +520,149 @@ repositories do; the composed shape has none, so its commands name none.
   one that is not.
 - [ ] **Figures come from existing tests where they can**, each standalone
   measurement covering a behaviour no gate exercises.
+
+## Shared Nx cache
+
+The verbatim sources are `assets/ci/nx-remote-cache.mjs` and
+`assets/ci/nx-version-free-inputs.mjs`, each version 1. Their headers digest
+every byte after the sha256 line; their adjacent `.versions` files and the
+baseline checker detect stale or edited copies. `OP_NX_COMMIT` exports the
+full pinned op-nx commit; the composer reads it for every sidecar step.
+
+`node scripts/nx-remote-cache.mjs trust` reads the actual event payload,
+repository and PR author, and writes `read_only` and `promotable` to
+GITHUB_OUTPUT. Forks and Dependabot are read-only and not promotable; other
+same-repository PRs are promotable; other events are not. The workflow translates
+read_only true to a nonempty CACHE_READ_ONLY; false leaves it empty, because the
+pinned library treats even the string "false" as read-only.
+
+`ready [--timeout-seconds N]` defaults to 60 seconds. An unauthenticated 401
+proves liveness without consulting the store. It starts a loopback recording
+proxy before appending NX_SELF_HOSTED_REMOTE_CACHE_SERVER and its access token
+to GITHUB_ENV. Failure appends neither, warns and exits 0, leaving Nx local.
+The proxy forwards cache requests unchanged and records GET/PUT statuses and
+accepted bodies. A failed PUT receives a nonfatal status so a passing task stays
+passing. No cache inventory or deletion is used.
+
+`report --job NAME --out DIR` runs after the existing Nx commands, always.
+It stops the proxy and writes:
+
+- `manifest.json`: schema 1, job, entries with hash, bytes and source
+  (`stored` or `replayed`), and stored_bytes. Each `<hash>.tar` is the
+  exact accepted Nx request body or the exact body served from the remote.
+  Accepted uploads and replays are both retained for later promotion.
+- `executions.json`: schema 1, repository, ref, pr (integer or null),
+  head_sha, run_id, attempt, job, os (`process.platform`), tasks and
+  store_attempts. Each task has task identifier, exact hash, cacheable, result
+  (`remote_hit`, `local_hit`, `executed`, `failed`), remote_status,
+  started_at and finished_at (RFC3339 UTC from Nx task timing).
+  `selection` records mode affected with base_sha/head_sha, the exact
+  NX_BASE/NX_HEAD values compared; non-affected all-project runs record mode all.
+  PR workflows explicitly select the event's base/head SHAs.
+- Store attempts have task, hash, os, attempted_at (RFC3339 UTC), status
+  (`stored`, `throttled`, `failed`), and nullable http_status. Every PUT
+  is recorded before forwarding and updated with its result. A successful
+  cacheable execution with no usable remote records a failed/null attempt.
+  Failed tasks never prove reusable results.
+
+The same script exports Nx pre/post execution hooks, registered in nx.json.
+They append one record per existing invocation, so later commands cannot
+overwrite earlier evidence. Hooks only collect telemetry: failures warn and
+never alter Nx's exit status or run a task again. Missing or incomplete
+invocations produce unavailable evidence, never an empty success. Remote hits
+require an observed GET 200 joined to Nx's own result by hash; terminal wording,
+local hits and passing tasks never stand in for a remote hit. Distinct task
+identifiers sharing a hash remain distinct executions. The reporter logs and
+summarizes stored entry count and bytes separately from replay count, and
+exits 0 for operational faults (2 for usage).
+
+`promote (--sha SHA | --pr N) --workflow FILE [--repo OWNER/NAME]` runs in the
+existing release-plz job after the sidecar/ready and before release-plz.
+On main it resolves the merged PR from the commit's associated pulls; on a push
+to `cache-promote/<PR>` it validates the branch's named PR.
+PROMOTION_BRANCH_PATTERN is defined by the shared script, and the composer uses
+that constant in the trigger. The pinned sidecar deliberately denies dispatch
+writes: there is no workflow_dispatch trigger or fabricated GitHub event.
+Release-plz itself runs only on main pushes.
+
+Promotion admits only same-repository, non-Dependabot sources. It selects the
+latest successful PR run on the head, validates affected selection against the
+source run's base/head, downloads every expected job's seven-day report artifact,
+and writes each distinct accepted or replayed body through the sidecar's own
+`PUT /v1/cache/<hash>` API into the current readable scope. Source entries
+are retained. No source, untrusted source, missing/expired artifacts or a GitHub
+or store fault warns and exits 0 so release-plz still runs; usage exits 2.
+The job has actions:write and uploads `nx-cache-promotion-<merge_sha>` from
+RUNNER_TEMP/nx-cache-promotion. Its receipt.json schema 1 has repository, scope,
+merge_sha, pr, source_run_id, source_attempt, promoted_at (RFC3339 UTC),
+entries (task/hash/os and promoted or already_present status), and attempts.
+Each attempt has task/hash/os, attempted_at, status (promoted, already_present,
+throttled, failed or never_promoted), and nullable http_status. Only accepted or
+confirmed existing entries enter entries; all known source expectations enter
+attempts, including recorded failures. Missing source evidence remains missing
+measurement.
+
+`cache-use [--release TAG] [--repo OWNER/NAME]` reads only release metadata
+and the counted PRs' run/artifact evidence through paginated read-only GitHub API
+calls, memoized under RUNNER_TEMP for the job. It never runs tests or a sidecar.
+The observation interval starts after the previous release's published_at and
+ends at this release's published_at, inclusive. With no previous release it
+starts at the first CI run. A run completing after the end is left out and named.
+The release PR contributes its final successful pre-merge CI attempt and later
+same-PR reruns in the interval; ordinary counted PRs contribute retries and later
+pushes. Earlier attempts establish expectations.
+
+Deduplicate (run_id, attempt, job, task, os, hash). A cacheable execution is eligible
+only if a matching task/OS/hash had a preceding store attempt in an earlier run
+of the same PR, or in the merged PR's latest run or its promotion into the readable
+base scope. A validated replayed body in that latest run establishes the same
+expectation as a stored body: without a recorded promotion, a later matching
+re-execution is never_promoted; after promotion, a 404/re-execution is evicted. Attempts, including failed/null and throttled writes, establish
+eligibility; successful receipts are not a precondition. The execution's own
+store cannot qualify it. New hashes and local hits are outside both numerator
+and denominator. A qualifying GET 200 remote replay counts as a hit even after
+an earlier failed store; re-execution, failure and remote unavailability count
+as misses. The value is 100 * remote_hits / eligible_executions.
+
+Detail includes aggregate and separate release-PR and same-PR retry/push rates,
+every miss's task/OS/hash and age since attempt, raw statuses and causes:
+429 throttled; transport/5xx or disabled store failed; accepted/promoted then
+404 evicted; no promotion attempted never_promoted. It reports skipped local
+hits, unavailable artifacts, promotion failures, stored bytes and request counts.
+Repository, PR, source head/run/attempt, selection, OS and readable scope are
+validated against GitHub metadata; artifact names alone confer no trust. GitHub
+can return empty run.pull_requests after merge. In that case the reader uses
+commits/{head_sha}/pulls to associate the same trusted merged PR/head repository
+and author, then verifies selection.base_sha is an ancestor of the merge's first
+parent through compare. An unassociable run is missing data named by run/attempt,
+not silently omitted. These extra read-only responses use the same memoization. The
+writer and reader schemas are owned and validated by the same script. The pinned
+sidecar can turn hidden throttling or service outages into cache-API 409
+(save failed, then its existence probe found nothing) or 500. See the
+[pinned backend's save/probe handling](https://github.com/op-nx/github-cache/blob/91839c24885842cac86567c30e23b37fb85f7e33/packages/github-cache/src/backend/actions-cache-backend.ts#L376).
+Source store_attempts records a 409 as failed with its raw status. Only promotion
+can report already_present, after a confirming GET of the same hash/body.
+Only a directly observed cache-API 429 is labelled throttled; statuses are never
+guessed from logs. Zero
+eligible executions, invalid schema, missing expected job/attempt telemetry and
+expired required artifacts exit 1 without a figure; usage exits 2.
+
+The composed `<name>-nx-cache-use` budget is reported percent, direction min,
+threshold 100, labelled release-tail. This is a design target supported by the
+spike's three successful OS replays, not a measured release baseline; revisit it
+after real release-tail observations. At the conservative envelope there are
+2,540 stores plus 2,540 promotion writes in a minute, 25.4 times the spike's
+200 uploads/minute ceiling. There is no claim of aggregate quota headroom and
+no second budget, rate-control job or deletion mechanism.
+
+`node scripts/nx-version-free-inputs.mjs --ecosystem cargo|npm|python|files
+[--keep-version]` prints one sha256 of tracked paths and contents. Cargo covers
+Cargo.toml/Cargo.lock; npm covers package.json and bun/package-lock/pnpm locks;
+Python covers pyproject.toml/uv.lock; files reads the tracked literal version
+files named by .github/nx-version-files. Only workspace packages' own version
+fields and their own lock entries are blanked, or each current workspace-version
+occurrence in literal files. Changelogs are never read. Keep-version blanks
+nothing for tests that read the version. Unparseable input warns and hashes the
+same raw files, never a constant, exiting 0 because Nx hashes runtime stdout
+regardless of exit status. Ecosystem digests prevent a Cargo edit from invalidating
+npm-only targets; OS runtime inputs prevent cross-platform replay.

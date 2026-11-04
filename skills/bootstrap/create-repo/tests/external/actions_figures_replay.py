@@ -198,6 +198,10 @@ class Repository:
         shutil.copy(SCRIPT, copy)
         (root / "home").mkdir()
 
+    def recorded_merges(self, name: str) -> None:
+        """Reproduce recorded merge diffs using git replacement refs."""
+        recorded_merges(self.root, name)
+
     def env(self, **extra: str) -> dict[str, str]:
         # Only what a runner would hand the job: no GITHUB_* of this suite's own
         # CI leaks in, so a case names every variable the script reads.
@@ -254,3 +258,46 @@ class Repository:
         result["exit"] = code
         result["stderr"] = stderr
         return result
+
+
+def recorded_merges(root: Path, name: str) -> None:
+    """Build real fixture commits with exactly the public recorded merge paths."""
+
+    def git(*args: str, input: str | None = None) -> str:
+        return subprocess.check_output(
+            [
+                "git",
+                "-c",
+                "user.name=fixture",
+                "-c",
+                "user.email=fixture@example.com",
+                *args,
+            ],
+            cwd=root,
+            text=True,
+            input=input,
+            stderr=subprocess.PIPE,
+        ).strip()
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "fixture base")
+    merges = json.loads((FIXTURES / "merge-paths" / f"{name}.json").read_text())[
+        "merges"
+    ]
+    parent = git("rev-parse", "HEAD")
+    for merge in merges:
+        blob = git(
+            "hash-object", "-w", "--stdin", input=merge["merge_commit_sha"] + "\n"
+        )
+        git(
+            "update-index",
+            "-z",
+            "--index-info",
+            input="".join(
+                f"100644 {blob}\t{relative}\0" for relative in merge["paths"]
+            ),
+        )
+        tree = git("write-tree")
+        parent = git("commit-tree", tree, "-p", parent, "-m", "recorded changed paths")
+        git("update-ref", "refs/replace/" + merge["merge_commit_sha"], parent)

@@ -1,0 +1,50 @@
+{
+  "about": "Recorded release and check reads, unchanged; changed paths are replayed in a local fixture git repository.",
+  "serve": [
+    {
+      "recording": "published-onetaskgraph-v0.13.1/44a19aa2754932f3.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/4b8b1e89ff8640f0.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/4ec2075d342e264a.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/54cb325c51e7e018.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/578d88a4e52a6dbc.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/591d5dcccfcc6b9f.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/6b014f1108bf4d93.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/7038d66b09dfc4ea.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/8aaac4d1b593a680.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/98f6d985cd1870fc.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/b2beffc62d56ac81.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/c01044b0a1e63a90.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/cebd2c464d19a784.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/e1973af174998b1c.json"
+    },
+    {
+      "recording": "published-onetaskgraph-v0.13.1/edfe736970f42ba1.json"
+    }
+  ]
+}

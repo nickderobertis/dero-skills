@@ -1,0 +1,15 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repos/nickderobertis/onepipeline-ui/actions/runs?per_page=100&head_sha=fa687bbfaf8cae63e136669e5896ba90c3dc619d&event=pull_request",
+    "why": "Read-only public GitHub capture for the published-path release-cycle journey.",
+    "command": [
+      "gh",
+      "api",
+      "--include",
+      "--method",
+      "GET",
+      "repos/nickderobertis/onepipeline-ui/actions/runs?per_page=100&head_sha=fa687bbfaf8cae63e136669e5896ba90c3dc619d&event=pull_request"
+    ]
+  },
+  "scrubbed": []
+}

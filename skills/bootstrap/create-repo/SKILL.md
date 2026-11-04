@@ -469,13 +469,17 @@ composer's `--intersection` choices automatically.
   [`assets/release.yml.template`](./assets/release.yml.template),
   [`assets/budgets.yaml.template`](./assets/budgets.yaml.template) and
   [`assets/budgets/gate-time.sh.template`](./assets/budgets/gate-time.sh.template)
-  (with `assets/budgets/gate-time-budget.mjs` and `assets/release-branch-guard.mjs`,
-  the content check `lint` runs on the release branch the test jobs skip) — the
+  (with `assets/budgets/gate-time-budget.mjs` and the versioned shared scripts
+  `assets/ci/nx-remote-cache.mjs` and `assets/ci/nx-version-free-inputs.mjs`) — the
   CI/CD shape `--ci-cd`
   renders: pull-request CI (`lint`, whose llmlint step requires its harness
   credential and fails fast without it, plus a test job per platform), the
-  release workflows ending in the release tail, the eight root budgets, and
-  `just gate`'s wall-clock record and warning.
+  release workflows ending in the release tail, the nine root budgets, and
+  `just gate`'s wall-clock record and warning. Release PRs run every job and
+  replay proven test results using version-free inputs. The existing release-plz
+  job promotes trusted results into the readable base scope before versioning;
+  manual promotion uses a dedicated push branch, because the pinned sidecar
+  refuses dispatch writes. See the [cache contract](./references/tools/onebudgetspec.md#shared-nx-cache).
 - [`assets/oneharness.toml.template`](./assets/oneharness.toml.template) — drop at
   the repo root as `oneharness.toml` (the composer emits it automatically with
   `--llmlint-config`). Fallback-mode harness/model selection for llmlint: codex +
@@ -505,7 +509,7 @@ composer's `--intersection` choices automatically.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — the
   deterministic, stdlib-only audit. It checks the agent layer, recorded
   composition, command surface, e2e/coverage signals, CI, the PR template, the
-  suppressions review comment, the CI/CD shape and its eight budgets, and the
+  suppressions review comment, the CI/CD shape and its nine budgets, and the
   llmlint tier — going past presence (placeholder recipes, a `check` that skips
   `test`, a do-nothing CI file all fail). `--help` lists the checks; `--buildout`
   additionally *runs* the one-time llmlint buildout tier for the recorded stack

@@ -1,0 +1,1100 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41271834160/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4921",
+    "x-ratelimit-reset": "1793753873",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "79"
+  },
+  "body": {
+    "total_count": 4,
+    "jobs": [
+      {
+        "id": 124746011653,
+        "run_id": 41271834160,
+        "workflow_name": "ci",
+        "head_branch": "nick/ci-time-budgets-wave1/onetaskgraph-live-test-phases",
+        "run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41271834160",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUBBgxs8AAAAdC3EUBQ",
+        "head_sha": "01fa542f1204472c9f7da6aa6d25f963af70cd5c",
+        "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/jobs/124746011653",
+        "html_url": "https://github.com/nickderobertis/onetaskgraph/actions/runs/41271834160/job/124746011653",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-01T04:07:30Z",
+        "started_at": "2026-11-01T04:07:32Z",
+        "completed_at": "2026-11-01T04:14:14Z",
+        "name": "lint",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-11-01T04:07:33Z",
+            "completed_at": "2026-11-01T04:07:36Z"
+          },
+          {
+            "name": "Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-11-01T04:07:36Z",
+            "completed_at": "2026-11-01T04:07:44Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp@v0.4.8",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-11-01T04:07:44Z",
+            "completed_at": "2026-11-01T04:07:44Z"
+          },
+          {
+            "name": "Read the visual docs lane",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-11-01T04:07:44Z",
+            "completed_at": "2026-11-01T04:07:44Z"
+          },
+          {
+            "name": "Start the visual docs capture",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-11-01T04:07:44Z",
+            "completed_at": "2026-11-01T04:07:44Z"
+          },
+          {
+            "name": "Check the pull request title",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-11-01T04:07:44Z",
+            "completed_at": "2026-11-01T04:07:44Z"
+          },
+          {
+            "name": "Comment the suppressions this change adds",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-11-01T04:07:44Z",
+            "completed_at": "2026-11-01T04:07:46Z"
+          },
+          {
+            "name": "Run extractions/setup-just@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-11-01T04:07:46Z",
+            "completed_at": "2026-11-01T04:07:47Z"
+          },
+          {
+            "name": "Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-11-01T04:07:47Z",
+            "completed_at": "2026-11-01T04:07:48Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-11-01T04:07:48Z",
+            "completed_at": "2026-11-01T04:07:50Z"
+          },
+          {
+            "name": "Exclude the unused floating compiler from the build cache",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-11-01T04:07:50Z",
+            "completed_at": "2026-11-01T04:07:50Z"
+          },
+          {
+            "name": "Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-11-01T04:07:50Z",
+            "completed_at": "2026-11-01T04:08:09Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-11-01T04:08:09Z",
+            "completed_at": "2026-11-01T04:08:10Z"
+          },
+          {
+            "name": "Read the pinned bootstrap tool versions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-11-01T04:08:10Z",
+            "completed_at": "2026-11-01T04:08:10Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-11-01T04:08:10Z",
+            "completed_at": "2026-11-01T04:08:11Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-11-01T04:08:11Z",
+            "completed_at": "2026-11-01T04:08:11Z"
+          },
+          {
+            "name": "Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-11-01T04:08:11Z",
+            "completed_at": "2026-11-01T04:08:12Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-11-01T04:08:12Z",
+            "completed_at": "2026-11-01T04:08:23Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 19,
+            "started_at": "2026-11-01T04:08:23Z",
+            "completed_at": "2026-11-01T04:08:23Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 20,
+            "started_at": "2026-11-01T04:08:23Z",
+            "completed_at": "2026-11-01T04:08:23Z"
+          },
+          {
+            "name": "Hold a release branch that skips macOS to its version and changelog edits",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 21,
+            "started_at": "2026-11-01T04:08:23Z",
+            "completed_at": "2026-11-01T04:08:23Z"
+          },
+          {
+            "name": "Derive the comparison base",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 22,
+            "started_at": "2026-11-01T04:08:23Z",
+            "completed_at": "2026-11-01T04:08:23Z"
+          },
+          {
+            "name": "Format, lint and type-check the affected projects, generated code and the supply chain",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 23,
+            "started_at": "2026-11-01T04:08:23Z",
+            "completed_at": "2026-11-01T04:10:14Z"
+          },
+          {
+            "name": "Pool-maintenance pass-time budget on the release pull request",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 24,
+            "started_at": "2026-11-01T04:10:14Z",
+            "completed_at": "2026-11-01T04:10:14Z"
+          },
+          {
+            "name": "Install oneharness and llmlint",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 25,
+            "started_at": "2026-11-01T04:10:14Z",
+            "completed_at": "2026-11-01T04:10:14Z"
+          },
+          {
+            "name": "Install the coding harness (claude-code)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 26,
+            "started_at": "2026-11-01T04:10:14Z",
+            "completed_at": "2026-11-01T04:10:24Z"
+          },
+          {
+            "name": "Validate the llmlint config (no model)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 27,
+            "started_at": "2026-11-01T04:10:24Z",
+            "completed_at": "2026-11-01T04:10:25Z"
+          },
+          {
+            "name": "Lint the changed files with llmlint",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 28,
+            "started_at": "2026-11-01T04:10:25Z",
+            "completed_at": "2026-11-01T04:13:17Z"
+          },
+          {
+            "name": "Wait for the visual docs capture",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 29,
+            "started_at": "2026-11-01T04:13:17Z",
+            "completed_at": "2026-11-01T04:14:07Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs@v0.4.8",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 30,
+            "started_at": "2026-11-01T04:14:07Z",
+            "completed_at": "2026-11-01T04:14:09Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs-pages@v0.4.8",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 31,
+            "started_at": "2026-11-01T04:14:09Z",
+            "completed_at": "2026-11-01T04:14:11Z"
+          },
+          {
+            "name": "Run nickderobertis/screencomp/visual-docs-aggregate@v0.4.8",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 32,
+            "started_at": "2026-11-01T04:14:11Z",
+            "completed_at": "2026-11-01T04:14:11Z"
+          },
+          {
+            "name": "Post Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 60,
+            "started_at": "2026-11-01T04:14:11Z",
+            "completed_at": "2026-11-01T04:14:12Z"
+          },
+          {
+            "name": "Post Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 61,
+            "started_at": "2026-11-01T04:14:12Z",
+            "completed_at": "2026-11-01T04:14:12Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 62,
+            "started_at": "2026-11-01T04:14:12Z",
+            "completed_at": "2026-11-01T04:14:12Z"
+          },
+          {
+            "name": "Post Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 63,
+            "started_at": "2026-11-01T04:14:12Z",
+            "completed_at": "2026-11-01T04:14:12Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 64,
+            "started_at": "2026-11-01T04:14:12Z",
+            "completed_at": "2026-11-01T04:14:13Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 65,
+            "started_at": "2026-11-01T04:14:13Z",
+            "completed_at": "2026-11-01T04:14:13Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/check-runs/124746011653",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000291895,
+        "runner_name": "GitHub Actions 1000291895",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 124746011872,
+        "run_id": 41271834160,
+        "workflow_name": "ci",
+        "head_branch": "nick/ci-time-budgets-wave1/onetaskgraph-live-test-phases",
+        "run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41271834160",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUBBgxs8AAAAdC3EU4A",
+        "head_sha": "01fa542f1204472c9f7da6aa6d25f963af70cd5c",
+        "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/jobs/124746011872",
+        "html_url": "https://github.com/nickderobertis/onetaskgraph/actions/runs/41271834160/job/124746011872",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-01T04:07:30Z",
+        "started_at": "2026-11-01T04:07:32Z",
+        "completed_at": "2026-11-01T04:25:00Z",
+        "name": "test-linux",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-11-01T04:07:32Z",
+            "completed_at": "2026-11-01T04:07:34Z"
+          },
+          {
+            "name": "Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-11-01T04:07:34Z",
+            "completed_at": "2026-11-01T04:07:41Z"
+          },
+          {
+            "name": "Run extractions/setup-just@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-11-01T04:07:41Z",
+            "completed_at": "2026-11-01T04:07:42Z"
+          },
+          {
+            "name": "Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-11-01T04:07:42Z",
+            "completed_at": "2026-11-01T04:07:43Z"
+          },
+          {
+            "name": "Install the workflow tooling",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-11-01T04:07:43Z",
+            "completed_at": "2026-11-01T04:07:43Z"
+          },
+          {
+            "name": "Decide whether the release shortcut applies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-11-01T04:07:43Z",
+            "completed_at": "2026-11-01T04:07:43Z"
+          },
+          {
+            "name": "Report the release shortcut",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 7,
+            "started_at": "2026-11-01T04:07:43Z",
+            "completed_at": "2026-11-01T04:07:43Z"
+          },
+          {
+            "name": "Free the disk the two builds need",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-11-01T04:07:43Z",
+            "completed_at": "2026-11-01T04:07:43Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-11-01T04:07:43Z",
+            "completed_at": "2026-11-01T04:07:45Z"
+          },
+          {
+            "name": "Exclude the unused floating compiler from the build cache",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-11-01T04:07:45Z",
+            "completed_at": "2026-11-01T04:07:45Z"
+          },
+          {
+            "name": "Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-11-01T04:07:45Z",
+            "completed_at": "2026-11-01T04:08:13Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-11-01T04:08:13Z",
+            "completed_at": "2026-11-01T04:08:15Z"
+          },
+          {
+            "name": "Read the pinned bootstrap tool versions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-11-01T04:08:15Z",
+            "completed_at": "2026-11-01T04:08:15Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-11-01T04:08:15Z",
+            "completed_at": "2026-11-01T04:08:15Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-11-01T04:08:15Z",
+            "completed_at": "2026-11-01T04:08:16Z"
+          },
+          {
+            "name": "Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-11-01T04:08:16Z",
+            "completed_at": "2026-11-01T04:08:16Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-11-01T04:08:16Z",
+            "completed_at": "2026-11-01T04:08:24Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 18,
+            "started_at": "2026-11-01T04:08:24Z",
+            "completed_at": "2026-11-01T04:08:24Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 19,
+            "started_at": "2026-11-01T04:08:24Z",
+            "completed_at": "2026-11-01T04:08:24Z"
+          },
+          {
+            "name": "Derive the comparison base",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20,
+            "started_at": "2026-11-01T04:08:24Z",
+            "completed_at": "2026-11-01T04:08:24Z"
+          },
+          {
+            "name": "Test the affected projects",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-11-01T04:08:24Z",
+            "completed_at": "2026-11-01T04:24:56Z"
+          },
+          {
+            "name": "Remove this run's live artifacts after a cancellation",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 22,
+            "started_at": "2026-11-01T04:24:56Z",
+            "completed_at": "2026-11-01T04:24:56Z"
+          },
+          {
+            "name": "Release this run's Linear leases after a cancellation",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 23,
+            "started_at": "2026-11-01T04:24:56Z",
+            "completed_at": "2026-11-01T04:24:56Z"
+          },
+          {
+            "name": "Post Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 42,
+            "started_at": "2026-11-01T04:24:56Z",
+            "completed_at": "2026-11-01T04:24:57Z"
+          },
+          {
+            "name": "Post Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 43,
+            "started_at": "2026-11-01T04:24:57Z",
+            "completed_at": "2026-11-01T04:24:57Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 44,
+            "started_at": "2026-11-01T04:24:57Z",
+            "completed_at": "2026-11-01T04:24:57Z"
+          },
+          {
+            "name": "Post Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 45,
+            "started_at": "2026-11-01T04:24:57Z",
+            "completed_at": "2026-11-01T04:24:57Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 46,
+            "started_at": "2026-11-01T04:24:57Z",
+            "completed_at": "2026-11-01T04:24:57Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 47,
+            "started_at": "2026-11-01T04:24:57Z",
+            "completed_at": "2026-11-01T04:24:57Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/check-runs/124746011872",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000291897,
+        "runner_name": "GitHub Actions 1000291897",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 124746011881,
+        "run_id": 41271834160,
+        "workflow_name": "ci",
+        "head_branch": "nick/ci-time-budgets-wave1/onetaskgraph-live-test-phases",
+        "run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41271834160",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUBBgxs8AAAAdC3EU6Q",
+        "head_sha": "01fa542f1204472c9f7da6aa6d25f963af70cd5c",
+        "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/jobs/124746011881",
+        "html_url": "https://github.com/nickderobertis/onetaskgraph/actions/runs/41271834160/job/124746011881",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-01T04:07:30Z",
+        "started_at": "2026-11-01T04:07:32Z",
+        "completed_at": "2026-11-01T04:19:37Z",
+        "name": "test-windows",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-11-01T04:07:33Z",
+            "completed_at": "2026-11-01T04:07:38Z"
+          },
+          {
+            "name": "Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-11-01T04:07:38Z",
+            "completed_at": "2026-11-01T04:07:54Z"
+          },
+          {
+            "name": "Keep Defender's real-time scan off the build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-11-01T04:07:54Z",
+            "completed_at": "2026-11-01T04:08:02Z"
+          },
+          {
+            "name": "Widen the dynamic port range the loopback suites connect from",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-11-01T04:08:02Z",
+            "completed_at": "2026-11-01T04:08:03Z"
+          },
+          {
+            "name": "Run extractions/setup-just@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-11-01T04:08:03Z",
+            "completed_at": "2026-11-01T04:08:04Z"
+          },
+          {
+            "name": "Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-11-01T04:08:04Z",
+            "completed_at": "2026-11-01T04:08:06Z"
+          },
+          {
+            "name": "Install the workflow tooling",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-11-01T04:08:06Z",
+            "completed_at": "2026-11-01T04:08:08Z"
+          },
+          {
+            "name": "Decide whether the release shortcut applies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-11-01T04:08:08Z",
+            "completed_at": "2026-11-01T04:08:12Z"
+          },
+          {
+            "name": "Report the release shortcut",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 9,
+            "started_at": "2026-11-01T04:08:12Z",
+            "completed_at": "2026-11-01T04:08:12Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-11-01T04:08:12Z",
+            "completed_at": "2026-11-01T04:08:15Z"
+          },
+          {
+            "name": "Exclude the unused floating compiler from the build cache",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-11-01T04:08:15Z",
+            "completed_at": "2026-11-01T04:08:17Z"
+          },
+          {
+            "name": "Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-11-01T04:08:17Z",
+            "completed_at": "2026-11-01T04:08:46Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-11-01T04:08:46Z",
+            "completed_at": "2026-11-01T04:08:54Z"
+          },
+          {
+            "name": "Read the pinned bootstrap tool versions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-11-01T04:08:54Z",
+            "completed_at": "2026-11-01T04:08:54Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-11-01T04:08:54Z",
+            "completed_at": "2026-11-01T04:08:55Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-11-01T04:08:55Z",
+            "completed_at": "2026-11-01T04:08:56Z"
+          },
+          {
+            "name": "Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-11-01T04:08:56Z",
+            "completed_at": "2026-11-01T04:08:56Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-11-01T04:08:56Z",
+            "completed_at": "2026-11-01T04:09:29Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 19,
+            "started_at": "2026-11-01T04:09:29Z",
+            "completed_at": "2026-11-01T04:09:29Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 20,
+            "started_at": "2026-11-01T04:09:29Z",
+            "completed_at": "2026-11-01T04:09:29Z"
+          },
+          {
+            "name": "Derive the comparison base",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-11-01T04:09:29Z",
+            "completed_at": "2026-11-01T04:09:29Z"
+          },
+          {
+            "name": "Test the affected projects",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 22,
+            "started_at": "2026-11-01T04:09:29Z",
+            "completed_at": "2026-11-01T04:19:31Z"
+          },
+          {
+            "name": "Post Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 40,
+            "started_at": "2026-11-01T04:19:31Z",
+            "completed_at": "2026-11-01T04:19:32Z"
+          },
+          {
+            "name": "Post Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 41,
+            "started_at": "2026-11-01T04:19:32Z",
+            "completed_at": "2026-11-01T04:19:32Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 42,
+            "started_at": "2026-11-01T04:19:32Z",
+            "completed_at": "2026-11-01T04:19:33Z"
+          },
+          {
+            "name": "Post Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 43,
+            "started_at": "2026-11-01T04:19:33Z",
+            "completed_at": "2026-11-01T04:19:34Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 44,
+            "started_at": "2026-11-01T04:19:34Z",
+            "completed_at": "2026-11-01T04:19:36Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 45,
+            "started_at": "2026-11-01T04:19:36Z",
+            "completed_at": "2026-11-01T04:19:36Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/check-runs/124746011881",
+        "labels": [
+          "windows-latest"
+        ],
+        "runner_id": 1000291898,
+        "runner_name": "GitHub Actions 1000291898",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 124746011899,
+        "run_id": 41271834160,
+        "workflow_name": "ci",
+        "head_branch": "nick/ci-time-budgets-wave1/onetaskgraph-live-test-phases",
+        "run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/runs/41271834160",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOUBBgxs8AAAAdC3EU-w",
+        "head_sha": "01fa542f1204472c9f7da6aa6d25f963af70cd5c",
+        "url": "https://api.github.com/repos/nickderobertis/onetaskgraph/actions/jobs/124746011899",
+        "html_url": "https://github.com/nickderobertis/onetaskgraph/actions/runs/41271834160/job/124746011899",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-11-01T04:07:30Z",
+        "started_at": "2026-11-01T04:07:32Z",
+        "completed_at": "2026-11-01T04:18:38Z",
+        "name": "test-macos",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-11-01T04:07:32Z",
+            "completed_at": "2026-11-01T04:07:37Z"
+          },
+          {
+            "name": "Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-11-01T04:07:37Z",
+            "completed_at": "2026-11-01T04:07:46Z"
+          },
+          {
+            "name": "Run extractions/setup-just@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-11-01T04:07:46Z",
+            "completed_at": "2026-11-01T04:07:48Z"
+          },
+          {
+            "name": "Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-11-01T04:07:48Z",
+            "completed_at": "2026-11-01T04:07:49Z"
+          },
+          {
+            "name": "Install the workflow tooling",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-11-01T04:07:49Z",
+            "completed_at": "2026-11-01T04:07:49Z"
+          },
+          {
+            "name": "Decide whether the release shortcut applies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-11-01T04:07:49Z",
+            "completed_at": "2026-11-01T04:07:51Z"
+          },
+          {
+            "name": "Report the release shortcut",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 7,
+            "started_at": "2026-11-01T04:07:51Z",
+            "completed_at": "2026-11-01T04:07:51Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-11-01T04:07:51Z",
+            "completed_at": "2026-11-01T04:07:53Z"
+          },
+          {
+            "name": "Exclude the unused floating compiler from the build cache",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-11-01T04:07:53Z",
+            "completed_at": "2026-11-01T04:07:53Z"
+          },
+          {
+            "name": "Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-11-01T04:07:53Z",
+            "completed_at": "2026-11-01T04:08:23Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-11-01T04:08:23Z",
+            "completed_at": "2026-11-01T04:08:26Z"
+          },
+          {
+            "name": "Read the pinned bootstrap tool versions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-11-01T04:08:26Z",
+            "completed_at": "2026-11-01T04:08:26Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-11-01T04:08:26Z",
+            "completed_at": "2026-11-01T04:08:27Z"
+          },
+          {
+            "name": "Run actions/cache/restore@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-11-01T04:08:27Z",
+            "completed_at": "2026-11-01T04:08:28Z"
+          },
+          {
+            "name": "Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-11-01T04:08:28Z",
+            "completed_at": "2026-11-01T04:08:28Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-11-01T04:08:28Z",
+            "completed_at": "2026-11-01T04:08:42Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 17,
+            "started_at": "2026-11-01T04:08:42Z",
+            "completed_at": "2026-11-01T04:08:42Z"
+          },
+          {
+            "name": "Run actions/cache/save@v6",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 18,
+            "started_at": "2026-11-01T04:08:42Z",
+            "completed_at": "2026-11-01T04:08:42Z"
+          },
+          {
+            "name": "Derive the comparison base",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-11-01T04:08:42Z",
+            "completed_at": "2026-11-01T04:08:43Z"
+          },
+          {
+            "name": "Test the affected projects",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20,
+            "started_at": "2026-11-01T04:08:43Z",
+            "completed_at": "2026-11-01T04:18:33Z"
+          },
+          {
+            "name": "Post Run actions/cache@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 36,
+            "started_at": "2026-11-01T04:18:33Z",
+            "completed_at": "2026-11-01T04:18:34Z"
+          },
+          {
+            "name": "Post Run actions-rust-lang/setup-rust-toolchain@v1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 37,
+            "started_at": "2026-11-01T04:18:34Z",
+            "completed_at": "2026-11-01T04:18:34Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 38,
+            "started_at": "2026-11-01T04:18:34Z",
+            "completed_at": "2026-11-01T04:18:34Z"
+          },
+          {
+            "name": "Post Run oven-sh/setup-bun@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 39,
+            "started_at": "2026-11-01T04:18:34Z",
+            "completed_at": "2026-11-01T04:18:34Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v7",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 40,
+            "started_at": "2026-11-01T04:18:34Z",
+            "completed_at": "2026-11-01T04:18:34Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 41,
+            "started_at": "2026-11-01T04:18:34Z",
+            "completed_at": "2026-11-01T04:18:36Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onetaskgraph/check-runs/124746011899",
+        "labels": [
+          "macos-latest"
+        ],
+        "runner_id": 1000291896,
+        "runner_name": "GitHub Actions 1000291896",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ]
+  }
+}

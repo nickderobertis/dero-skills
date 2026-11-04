@@ -9,14 +9,16 @@ same compositions are then handed to the real baseline checker — unmodified
 (passes) and with one part of the shape taken away (each reported) — and to the
 real governance script's offline dry run.
 
-The budget values are the ones the three repositories that proved the shape
-registered in their root budgets.yaml at their landing commits:
+The original eight budget values are the ones the three repositories that proved
+the shape registered at their landing commits:
 
 * onepipeline     58ba93a881768108f0a66e1ffd193b65977995e4 (nick/949/onepipeline-ci-budgets)
 * onetaskgraph    a8f736ba4f53e56255ccac8a7be47f71c3672249 (nick/3633/onetaskgraph-ci-budgets)
 * onepipeline-ui  cc93c9ca1c1d10eca031eef245df084ccfa631ea (nick/343/onepipeline-ui-ci-budgets-clean)
 
-All three carry the same unit, label and threshold for every budget but
+The added cache-use minimum is a design threshold, first measured by each
+repository after adoption. The original three carry the same unit, label and
+threshold for every existing budget but
 `-ci-check-time`, where onepipeline's is 10800 and the other two's 1800, the
 30-minute line the skill ships. Their CD commands also pass `--exclude-workflow`
 naming each repository's own main-push cache warmer; the composed shape has no
@@ -61,11 +63,17 @@ LANDED = {
         "release-tail",
     ),
     "release-cycle-time": (
-        [*FIGURES, "release-cycle-time"],
+        [
+            *FIGURES,
+            "release-cycle-time",
+            "--published-paths",
+            ".github/release-published-paths",
+        ],
         "seconds",
         5400,
         "release-tail",
     ),
+    "nx-cache-use": ([*FIGURES, "cache-use"], "percent", 100, "release-tail"),
     "ci-job-count": (
         [*FIGURES, "job-count", "--stage", "pr"],
         "jobs",
@@ -228,12 +236,12 @@ def test_publish_ends_in_the_release_tail_after_installing_the_pinned_onevcs(com
         assert scope in publish
 
 
-def test_the_root_budgets_are_the_eight_the_three_repositories_register(composed):
+def test_the_root_budgets_include_the_shared_cache_use_figure(composed):
     repo, _language, platforms, arch = composed
     tool = onebudgetspec()
     valid = run([tool, "validate", "budgets.yaml"], cwd=repo)
     assert valid.returncode == 0, valid.stderr
-    assert "valid: 8 budget(s)" in valid.stdout
+    assert "valid: 9 budget(s)" in valid.stdout
     listed = run([tool, "list", "--json", "budgets.yaml"], cwd=repo)
     budgets = {b["id"]: b for b in json.loads(listed.stdout)["budgets"]}
     assert sorted(budgets) == sorted(f"{NAME}-{suffix}" for suffix in LANDED)
@@ -248,7 +256,9 @@ def test_the_root_budgets_are_the_eight_the_three_repositories_register(composed
         # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold is the composed repository's budgets.yaml content the task fixes to what the three repositories' landing commits register, not a performance bar this suite holds itself to: a wrong value here is a wrong file the composer wrote.
         assert budget["threshold"] == counts.get(suffix, threshold), suffix
         assert budget["labels"] == [label], suffix
-        assert budget["measure"] == "reported" and budget["direction"] == "max"
+        assert budget["measure"] == "reported" and budget["direction"] == (
+            "min" if suffix == "nx-cache-use" else "max"
+        )
 
 
 def test_the_figures_script_is_a_verbatim_copy_of_the_skills(composed):
@@ -538,3 +548,206 @@ def test_a_repository_without_the_shape_is_not_held_to_it(tmp_path):
     done = baseline(repo)
     assert "lacks the CI job" not in done.stderr
     assert done.returncode == 0, done.stderr
+
+
+def cache_exports():
+    source = ASSETS / "ci/nx-remote-cache.mjs"
+    done = run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            f"import * as cache from {json.dumps(source.as_uri())}; console.log(JSON.stringify({{pin:cache.OP_NX_COMMIT, branch:cache.PROMOTION_BRANCH_PATTERN}}))",
+        ]
+    )
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout)
+
+
+def test_every_nx_job_uses_the_shared_cache_and_reports_trusted_artifacts(composed):
+    repo, _, platforms, arch = composed
+    source = cache_exports()
+    ci = workflow(repo, "ci.yml")
+    assert "release-branch" not in ci
+    assert "startsWith(github.head_ref" not in ci
+    assert "NX_BASE: ${{ github.event.pull_request.base.sha }}" in ci
+    assert "NX_HEAD: ${{ github.event.pull_request.head.sha }}" in ci
+    for name, body in jobs(ci).items():
+        if name.startswith("visual-docs-"):
+            assert "nx-remote-cache.mjs" not in body
+            continue
+        assert body.count("node scripts/nx-remote-cache.mjs trust") == 1
+        assert f"uses: op-nx/github-cache/start-cache-server@{source['pin']}" in body
+        assert "background: true" in body
+        assert "working-directory:" not in body
+        assert (
+            "CACHE_READ_ONLY: ${{ steps.nx-cache-trust.outputs.read_only == 'true' && '1' || '' }}"
+            in body
+        )
+        assert (
+            body.index("nx-remote-cache.mjs trust")
+            < body.index("start-cache-server@")
+            < body.index("nx-remote-cache.mjs ready")
+        )
+        assert body.index("nx-remote-cache.mjs ready") < body.index(
+            "nx-remote-cache.mjs report"
+        )
+        assert (
+            "if: always() && steps.nx-cache-trust.outputs.promotable == 'true'" in body
+        )
+        assert "name: nx-cache-entries-${{ github.job }}" in body
+        assert "retention-days: 7" in body
+        assert (
+            "- cancel: nx-cache\n        if: always()\n        continue-on-error: true"
+            in body
+        )
+    assert len(
+        [name for name in jobs(ci) if not name.startswith("visual-docs-")]
+    ) == len(CI_JOBS[platforms])
+    assert not (repo / "scripts/release-branch-guard.mjs").exists()
+    for name in ("nx-remote-cache", "nx-version-free-inputs"):
+        assert (repo / "scripts" / f"{name}.mjs").read_bytes() == (
+            ASSETS / "ci" / f"{name}.mjs"
+        ).read_bytes()
+
+
+def test_promotion_has_a_real_push_scope_and_precedes_release_tools(composed):
+    repo, *_ = composed
+    text = workflow(repo, "release-plz.yml")
+    exports = cache_exports()
+    assert "workflow_dispatch:" not in text
+    assert f"branches: [main, '{exports['branch']}']" in text
+    assert "actions: write" in text
+    assert f"start-cache-server@{exports['pin']}" in text
+    assert text.index("nx-remote-cache.mjs promote") < min(
+        (
+            text.index(marker)
+            for marker in ("run: release-plz", "uses: googleapis/release-please")
+            if marker in text
+        )
+    )
+    for step in text.split("\n      - ")[1:]:
+        if any(
+            marker in step
+            for marker in (
+                "run: release-plz",
+                "uses: googleapis/release-please",
+                "gh pr merge",
+            )
+        ):
+            assert (
+                "github.event_name == 'push' && github.ref == 'refs/heads/main'" in step
+            )
+    assert "GITHUB_EVENT_NAME:" not in text
+    assert "GITHUB_REF:" not in text
+    assert "name: nx-cache-promotion-${{ github.sha }}" in text
+    publish = jobs(workflow(repo, "release.yml"))["publish"]
+    assert (
+        "uses: actions/checkout@v4\n        with:\n          fetch-depth: 0" in publish
+    )
+    assert (repo / ".github/release-published-paths").read_text().strip()
+
+
+def test_cached_test_inputs_exclude_release_metadata_and_cross_os_results(composed):
+    repo, language, *_ = composed
+    nx = json.loads((repo / "nx.json").read_text())
+    assert "./scripts/nx-remote-cache.mjs" in nx["plugins"]
+    inputs = nx["namedInputs"]["testInputs"]
+    assert {"runtime": "node -p process.platform"} in inputs
+    ecosystem = "cargo" if language == "rust" else "npm"
+    assert {
+        "runtime": f"node scripts/nx-version-free-inputs.mjs --ecosystem {ecosystem}"
+    } in inputs
+    assert "!{projectRoot}/**/CHANGELOG.md" in inputs
+    assert nx["targetDefaults"]["test"]["cache"] is True
+    assert nx["targetDefaults"]["test"]["outputs"] == []
+    assert (
+        json.loads((repo / "package.json").read_text())["devDependencies"]["nx"]
+        == "23.1.3"
+    )
+
+
+def test_composed_published_paths_cover_each_artifact_package_and_skip_test_fixtures(
+    tmp_path,
+):
+    files = {
+        "Cargo.toml": '[workspace]\nmembers = ["crates/library"]\n',
+        "crates/library/Cargo.toml": '[package]\nname = "library"\nversion = "1.0.0"\n[lib]\npath = "library.rs"\n',
+        "packages/client/package.json": '{"name":"client","version":"1.0.0","files":["README.md","assets/**"]}',
+        "sdks/python/pyproject.toml": '[project]\nname = "python-sdk"\nversion = "1.0.0"\n',
+        "tests/fixtures/Cargo.toml": "not a manifest",
+        "tests/fixtures/package.json": "not json",
+        "tests/fixtures/pyproject.toml": "not toml",
+        "crates/tool/Cargo.toml": '[package]\nname = "tool"\nversion = "1.0.0"\npublish = false\n',
+    }
+    repo = compose(tmp_path, files=files)
+    specs = (repo / ".github/release-published-paths").read_text().splitlines()
+    for expected in (
+        "crates/library/Cargo.toml",
+        "crates/library/src/**",
+        "crates/library/library.rs",
+        "packages/client/src/**",
+        "packages/client/README.md",
+        "packages/client/assets/**",
+        "sdks/python/pyproject.toml",
+        "sdks/python/src/**",
+    ):
+        assert expected in specs
+    assert not any("tests/fixtures" in spec or "crates/tool" in spec for spec in specs)
+
+
+def test_recomposing_preserves_cache_inputs_and_named_outputs(tmp_path):
+    from ci_cd_shape import COMPOSER
+
+    repo = compose(
+        tmp_path / "repo",
+        language="typescript",
+        files={
+            "packages/app/package.json": '{"name":"app","version":"1.0.0"}',
+            "packages/app/project.json": json.dumps(
+                {
+                    "name": "app",
+                    "namedInputs": {
+                        "sources": [
+                            "{projectRoot}/src/**/*",
+                            "{workspaceRoot}/schema.json",
+                        ]
+                    },
+                    "targets": {
+                        "test": {
+                            "command": "node test.js",
+                            "inputs": ["sources", {"env": "TEST_MODE"}],
+                            "outputs": [
+                                "{projectRoot}/results.xml",
+                                "{projectRoot}/target/test.exe",
+                            ],
+                        }
+                    },
+                }
+            ),
+        },
+    )
+    paths = [repo / "nx.json", repo / "packages/app/project.json"]
+    before = [path.read_text() for path in paths]
+    target = json.loads(before[1])
+    assert target["targets"]["test"]["outputs"] == ["{projectRoot}/results.xml"]
+    assert "{workspaceRoot}/schema.json" in target["namedInputs"]["testInputs"]
+    assert {"env": "TEST_MODE"} in target["namedInputs"]["testInputs"]
+    done = run(
+        [
+            "uv",
+            "run",
+            "--script",
+            str(COMPOSER),
+            "--ci-cd",
+            str(repo),
+            "--language",
+            "typescript",
+            "--name",
+            NAME,
+            "--platforms",
+            "cross-platform",
+        ]
+    )
+    assert done.returncode == 0, done.stderr
+    assert [path.read_text() for path in paths] == before

@@ -1,0 +1,59 @@
+{
+  "recorded": {
+    "command": "gh api repos/{repository}/commits/{merge_commit_sha}?per_page=100",
+    "why": "Exact changed filenames of each recorded merge commit, read-only from GitHub; file contents are unnecessary for name-only diffs."
+  },
+  "merges": [
+    {
+      "repository": "nickderobertis/onepipeline-ui",
+      "merge_commit_sha": "0d766a9bb53f8f81f830f23776ecba1152291e8a",
+      "paths": [
+        ".config/nextest.toml",
+        ".github/required-contexts.mjs",
+        ".github/tests/advisories.test.mjs",
+        ".github/tests/ci-shape.test.mjs",
+        ".github/workflows/ci-cache.yml",
+        ".github/workflows/ci.yml",
+        "AGENTS.md",
+        "justfile",
+        "scripts/deps-audit.mjs",
+        "tests/e2e/deps_audit.rs",
+        "tests/e2e/main.rs",
+        "tests/fixtures/deps-audit/advisory-db/crates/fixture-lib/RUSTSEC-2099-0002.md",
+        "tests/fixtures/deps-audit/advisory-db/crates/fixture-vuln/RUSTSEC-2099-0001.md",
+        "tests/fixtures/deps-audit/advisory-db/crates/fixture-whose-name-is-long-enough-to-overflow-a-status/RUSTSEC-2099-0003.md",
+        "tests/fixtures/deps-audit/clean-and-banned.Cargo.lock",
+        "tests/fixtures/deps-audit/clean-and-extra.Cargo.lock",
+        "tests/fixtures/deps-audit/clean-and-gpl.Cargo.lock",
+        "tests/fixtures/deps-audit/clean.Cargo.lock",
+        "tests/fixtures/deps-audit/three-advisories.Cargo.lock",
+        "tests/fixtures/deps-audit/vulnerable-and-extra.Cargo.lock",
+        "tests/fixtures/deps-audit/vulnerable-lib-2.1.Cargo.lock",
+        "tests/fixtures/deps-audit/vulnerable-released.Cargo.lock",
+        "tests/fixtures/deps-audit/vulnerable.Cargo.lock",
+        "tests/tiers/repo-tooling/project.json"
+      ]
+    },
+    {
+      "repository": "nickderobertis/onepipeline-ui",
+      "merge_commit_sha": "644b610e376185ce6dfc8e2b55e43bfa5ccfdd55",
+      "paths": [
+        "apps/dag-ui-e2e/dag-ui.spec.ts",
+        "apps/dag-ui-e2e/fixture-server.spec.ts",
+        "apps/dag-ui-e2e/fixture-server.ts",
+        "apps/dag-ui-e2e/fixtures/serve-fixture.mjs",
+        "src/live.rs",
+        "tests/e2e/live.rs"
+      ]
+    },
+    {
+      "repository": "nickderobertis/onepipeline-ui",
+      "merge_commit_sha": "fbe0ca8756f5f96255557257f136d4434af78e8d",
+      "paths": [
+        "CHANGELOG.md",
+        "Cargo.lock",
+        "Cargo.toml"
+      ]
+    }
+  ]
+}

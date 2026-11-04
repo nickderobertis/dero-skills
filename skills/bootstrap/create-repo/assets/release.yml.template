@@ -17,7 +17,7 @@
 # Each step is one phase of the `just release <job> <phase>` recipe (`build`, `publish`, `verify`,
 # `available`), so a release runs nothing a contributor cannot.
 #
-# Last, `publish` reports the seven `release-tail` budgets of budgets.yaml — the CI and CD
+# Last, `publish` reports the eight `release-tail` budgets of budgets.yaml — the CI and CD
 # figures of this release, measured by scripts/actions-budget-figures.sh from onevcs's
 # read-only answers. Reporting only: an over figure turns that last step red with every
 # figure's breakdown in its log, and nothing reads its result, so it never blocks, demotes or
@@ -86,6 +86,8 @@ jobs:
       TAG: ${{ github.event.release.tag_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: extractions/setup-just@v2
       - uses: oven-sh/setup-bun@v2
 #% if rust

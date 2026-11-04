@@ -1,0 +1,1996 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776/jobs?per_page=100&filter=latest"
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "5000",
+    "x-ratelimit-remaining": "4869",
+    "x-ratelimit-reset": "1793753873",
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-used": "131"
+  },
+  "body": {
+    "total_count": 18,
+    "jobs": [
+      {
+        "id": 116086731682,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB07zog",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086731682",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086731682",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:28:07Z",
+        "completed_at": "2026-10-14T20:28:24Z",
+        "name": "changes",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:08Z",
+            "completed_at": "2026-10-14T20:28:08Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:08Z",
+            "completed_at": "2026-10-14T20:28:14Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:14Z",
+            "completed_at": "2026-10-14T20:28:15Z"
+          },
+          {
+            "name": "Which projects the diff reaches",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:15Z",
+            "completed_at": "2026-10-14T20:28:22Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:28:22Z",
+            "completed_at": "2026-10-14T20:28:22Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T20:28:22Z",
+            "completed_at": "2026-10-14T20:28:22Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T20:28:22Z",
+            "completed_at": "2026-10-14T20:28:22Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086731682",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232816,
+        "runner_name": "GitHub Actions 1000232816",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086732072,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB071KA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086732072",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086732072",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:28:06Z",
+        "completed_at": "2026-10-14T21:40:01Z",
+        "name": "gate",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:07Z",
+            "completed_at": "2026-10-14T20:28:08Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:08Z",
+            "completed_at": "2026-10-14T20:28:13Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:13Z",
+            "completed_at": "2026-10-14T20:28:50Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:50Z",
+            "completed_at": "2026-10-14T20:28:52Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:52Z",
+            "completed_at": "2026-10-14T20:28:53Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:28:53Z",
+            "completed_at": "2026-10-14T20:33:29Z"
+          },
+          {
+            "name": "Quality gate (affected projects)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:33:29Z",
+            "completed_at": "2026-10-14T21:39:27Z"
+          },
+          {
+            "name": "Does each failed test fail again on this build",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 8,
+            "started_at": "2026-10-14T21:39:27Z",
+            "completed_at": "2026-10-14T21:39:27Z"
+          },
+          {
+            "name": "Committed generated files are up to date",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T21:39:27Z",
+            "completed_at": "2026-10-14T21:39:27Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-14T21:39:27Z",
+            "completed_at": "2026-10-14T21:39:28Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T21:39:28Z",
+            "completed_at": "2026-10-14T21:39:59Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-10-14T21:39:59Z",
+            "completed_at": "2026-10-14T21:39:59Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-10-14T21:39:59Z",
+            "completed_at": "2026-10-14T21:40:00Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086732072",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232814,
+        "runner_name": "GitHub Actions 1000232814",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086732189,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB071nQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086732189",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086732189",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:28:07Z",
+        "completed_at": "2026-10-14T20:28:11Z",
+        "name": "pr-title",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:08Z",
+            "completed_at": "2026-10-14T20:28:09Z"
+          },
+          {
+            "name": "Run amannn/action-semantic-pull-request@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:09Z",
+            "completed_at": "2026-10-14T20:28:10Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:10Z",
+            "completed_at": "2026-10-14T20:28:10Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086732189",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232819,
+        "runner_name": "GitHub Actions 1000232819",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086732263,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB0715w",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086732263",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086732263",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:28:07Z",
+        "completed_at": "2026-10-14T20:30:03Z",
+        "name": "install-documented (windows-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:09Z",
+            "completed_at": "2026-10-14T20:28:10Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:10Z",
+            "completed_at": "2026-10-14T20:28:16Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:16Z",
+            "completed_at": "2026-10-14T20:29:02Z"
+          },
+          {
+            "name": "Install (the command the README gives users)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:29:02Z",
+            "completed_at": "2026-10-14T20:29:09Z"
+          },
+          {
+            "name": "Smoke-test the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:29:09Z",
+            "completed_at": "2026-10-14T20:29:10Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T20:29:10Z",
+            "completed_at": "2026-10-14T20:29:59Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T20:29:59Z",
+            "completed_at": "2026-10-14T20:30:01Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:30:01Z",
+            "completed_at": "2026-10-14T20:30:01Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086732263",
+        "labels": [
+          "windows-latest"
+        ],
+        "runner_id": 1000232815,
+        "runner_name": "GitHub Actions 1000232815",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086732278,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB0719g",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086732278",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086732278",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:28:07Z",
+        "completed_at": "2026-10-14T20:34:32Z",
+        "name": "llmlint",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:07Z",
+            "completed_at": "2026-10-14T20:28:09Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:09Z",
+            "completed_at": "2026-10-14T20:28:16Z"
+          },
+          {
+            "name": "Run ./.github/actions/setup-just",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:16Z",
+            "completed_at": "2026-10-14T20:28:18Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:18Z",
+            "completed_at": "2026-10-14T20:28:19Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:19Z",
+            "completed_at": "2026-10-14T20:28:20Z"
+          },
+          {
+            "name": "Install the Codex harness",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:28:20Z",
+            "completed_at": "2026-10-14T20:28:24Z"
+          },
+          {
+            "name": "Install the Claude Code harness (oneharness fallback)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:28:24Z",
+            "completed_at": "2026-10-14T20:28:26Z"
+          },
+          {
+            "name": "Install llmlint toolchain",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T20:28:26Z",
+            "completed_at": "2026-10-14T20:28:27Z"
+          },
+          {
+            "name": "Validate llmlint config",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T20:28:27Z",
+            "completed_at": "2026-10-14T20:28:27Z"
+          },
+          {
+            "name": "Lint changed files",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T20:28:27Z",
+            "completed_at": "2026-10-14T20:34:30Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T20:34:30Z",
+            "completed_at": "2026-10-14T20:34:30Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-10-14T20:34:30Z",
+            "completed_at": "2026-10-14T20:34:30Z"
+          },
+          {
+            "name": "Post Run ./.github/actions/setup-just",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-10-14T20:34:30Z",
+            "completed_at": "2026-10-14T20:34:30Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20,
+            "started_at": "2026-10-14T20:34:30Z",
+            "completed_at": "2026-10-14T20:34:30Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21,
+            "started_at": "2026-10-14T20:34:30Z",
+            "completed_at": "2026-10-14T20:34:30Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086732278",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232817,
+        "runner_name": "GitHub Actions 1000232817",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086732313,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB072GQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086732313",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086732313",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:28:08Z",
+        "completed_at": "2026-10-14T20:29:21Z",
+        "name": "install-documented (ubuntu-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:09Z",
+            "completed_at": "2026-10-14T20:28:11Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:11Z",
+            "completed_at": "2026-10-14T20:28:14Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:14Z",
+            "completed_at": "2026-10-14T20:29:01Z"
+          },
+          {
+            "name": "Install (the command the README gives users)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:29:01Z",
+            "completed_at": "2026-10-14T20:29:08Z"
+          },
+          {
+            "name": "Smoke-test the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:29:08Z",
+            "completed_at": "2026-10-14T20:29:09Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T20:29:09Z",
+            "completed_at": "2026-10-14T20:29:18Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T20:29:18Z",
+            "completed_at": "2026-10-14T20:29:18Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:29:18Z",
+            "completed_at": "2026-10-14T20:29:18Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086732313",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232818,
+        "runner_name": "GitHub Actions 1000232818",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086732432,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB072kA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086732432",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086732432",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:05Z",
+        "started_at": "2026-10-14T20:55:32Z",
+        "completed_at": "2026-10-14T21:02:30Z",
+        "name": "install-documented (macos-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:55:33Z",
+            "completed_at": "2026-10-14T20:55:34Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:55:34Z",
+            "completed_at": "2026-10-14T20:55:37Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:55:37Z",
+            "completed_at": "2026-10-14T20:56:27Z"
+          },
+          {
+            "name": "Install (the command the README gives users)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:56:27Z",
+            "completed_at": "2026-10-14T21:02:14Z"
+          },
+          {
+            "name": "Smoke-test the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T21:02:14Z",
+            "completed_at": "2026-10-14T21:02:16Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T21:02:16Z",
+            "completed_at": "2026-10-14T21:02:26Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T21:02:26Z",
+            "completed_at": "2026-10-14T21:02:27Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T21:02:27Z",
+            "completed_at": "2026-10-14T21:02:29Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086732432",
+        "labels": [
+          "macos-latest"
+        ],
+        "runner_id": 1000232839,
+        "runner_name": "GitHub Actions 1000232839",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894088,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FuCA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894088",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894088",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:27Z",
+        "completed_at": "2026-10-14T20:31:36Z",
+        "name": "release-compat",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:28:30Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:30Z",
+            "completed_at": "2026-10-14T20:28:31Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:31Z",
+            "completed_at": "2026-10-14T20:28:59Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:59Z",
+            "completed_at": "2026-10-14T20:29:00Z"
+          },
+          {
+            "name": "Run astral-sh/setup-uv@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:29:00Z",
+            "completed_at": "2026-10-14T20:29:03Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:29:03Z",
+            "completed_at": "2026-10-14T20:29:03Z"
+          },
+          {
+            "name": "The 0.28.2 wheel against this build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:29:03Z",
+            "completed_at": "2026-10-14T20:31:22Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:31:22Z",
+            "completed_at": "2026-10-14T20:31:22Z"
+          },
+          {
+            "name": "Post Run astral-sh/setup-uv@v6",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-14T20:31:22Z",
+            "completed_at": "2026-10-14T20:31:22Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T20:31:22Z",
+            "completed_at": "2026-10-14T20:31:34Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-14T20:31:34Z",
+            "completed_at": "2026-10-14T20:31:34Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T20:31:34Z",
+            "completed_at": "2026-10-14T20:31:34Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894088",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232821,
+        "runner_name": "GitHub Actions 1000232821",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894096,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FuEA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894096",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894096",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:26Z",
+        "completed_at": "2026-10-14T22:31:17Z",
+        "name": "cross (windows-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:27Z",
+            "completed_at": "2026-10-14T20:28:29Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:29Z",
+            "completed_at": "2026-10-14T20:28:34Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:34Z",
+            "completed_at": "2026-10-14T20:29:11Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:29:11Z",
+            "completed_at": "2026-10-14T20:29:16Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:29:16Z",
+            "completed_at": "2026-10-14T20:29:20Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:29:20Z",
+            "completed_at": "2026-10-14T20:36:17Z"
+          },
+          {
+            "name": "Quality gate (cross-platform legs)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:36:17Z",
+            "completed_at": "2026-10-14T22:29:08Z"
+          },
+          {
+            "name": "What was still running when it stopped",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 8,
+            "started_at": "2026-10-14T22:29:08Z",
+            "completed_at": "2026-10-14T22:29:08Z"
+          },
+          {
+            "name": "Does each failed test fail again on this build",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 9,
+            "started_at": "2026-10-14T22:29:08Z",
+            "completed_at": "2026-10-14T22:29:08Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-14T22:29:09Z",
+            "completed_at": "2026-10-14T22:29:10Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T22:29:10Z",
+            "completed_at": "2026-10-14T22:31:14Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-10-14T22:31:14Z",
+            "completed_at": "2026-10-14T22:31:15Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-10-14T22:31:15Z",
+            "completed_at": "2026-10-14T22:31:16Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894096",
+        "labels": [
+          "windows-latest"
+        ],
+        "runner_id": 1000232820,
+        "runner_name": "GitHub Actions 1000232820",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894157,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FuTQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894157",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894157",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:27Z",
+        "completed_at": "2026-10-14T20:29:57Z",
+        "name": "msrv",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:27Z",
+            "completed_at": "2026-10-14T20:28:28Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:28:30Z"
+          },
+          {
+            "name": "Read the MSRV from Cargo.toml",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:30Z",
+            "completed_at": "2026-10-14T20:28:30Z"
+          },
+          {
+            "name": "Run dtolnay/rust-toolchain@master",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:30Z",
+            "completed_at": "2026-10-14T20:28:39Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:39Z",
+            "completed_at": "2026-10-14T20:29:01Z"
+          },
+          {
+            "name": "Run ./.github/actions/setup-just",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:29:01Z",
+            "completed_at": "2026-10-14T20:29:02Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:29:02Z",
+            "completed_at": "2026-10-14T20:29:02Z"
+          },
+          {
+            "name": "Run just msrv",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T20:29:02Z",
+            "completed_at": "2026-10-14T20:29:50Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T20:29:50Z",
+            "completed_at": "2026-10-14T20:29:51Z"
+          },
+          {
+            "name": "Post Run ./.github/actions/setup-just",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-14T20:29:51Z",
+            "completed_at": "2026-10-14T20:29:51Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T20:29:51Z",
+            "completed_at": "2026-10-14T20:29:56Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-14T20:29:56Z",
+            "completed_at": "2026-10-14T20:29:56Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T20:29:56Z",
+            "completed_at": "2026-10-14T20:29:56Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894157",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232824,
+        "runner_name": "GitHub Actions 1000232824",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894197,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FudQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894197",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894197",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:26Z",
+        "completed_at": "2026-10-14T20:29:00Z",
+        "name": "deny",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:27Z",
+            "completed_at": "2026-10-14T20:28:28Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:28:30Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:30Z",
+            "completed_at": "2026-10-14T20:28:31Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:31Z",
+            "completed_at": "2026-10-14T20:28:34Z"
+          },
+          {
+            "name": "Run just deps-check",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:34Z",
+            "completed_at": "2026-10-14T20:28:58Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T20:28:58Z",
+            "completed_at": "2026-10-14T20:28:58Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-14T20:28:58Z",
+            "completed_at": "2026-10-14T20:28:59Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:28:59Z",
+            "completed_at": "2026-10-14T20:28:59Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894197",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232823,
+        "runner_name": "GitHub Actions 1000232823",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894220,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FujA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894220",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894220",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:27Z",
+        "completed_at": "2026-10-14T20:34:04Z",
+        "name": "smoke",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:27Z",
+            "completed_at": "2026-10-14T20:28:28Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:28:30Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:30Z",
+            "completed_at": "2026-10-14T20:28:55Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:55Z",
+            "completed_at": "2026-10-14T20:28:56Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:56Z",
+            "completed_at": "2026-10-14T20:28:57Z"
+          },
+          {
+            "name": "The smoke's credential and scratch repository are present",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:28:57Z",
+            "completed_at": "2026-10-14T20:28:57Z"
+          },
+          {
+            "name": "Real onevcs, real git, real GitHub",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T20:28:57Z",
+            "completed_at": "2026-10-14T20:33:51Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-14T20:33:51Z",
+            "completed_at": "2026-10-14T20:33:51Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T20:33:51Z",
+            "completed_at": "2026-10-14T20:34:02Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-14T20:34:02Z",
+            "completed_at": "2026-10-14T20:34:03Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T20:34:03Z",
+            "completed_at": "2026-10-14T20:34:03Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894220",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232822,
+        "runner_name": "GitHub Actions 1000232822",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894332,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1Fu_A",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894332",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894332",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:27Z",
+        "completed_at": "2026-10-14T20:40:13Z",
+        "name": "wheel",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:28Z",
+            "completed_at": "2026-10-14T20:28:29Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:29Z",
+            "completed_at": "2026-10-14T20:28:31Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:31Z",
+            "completed_at": "2026-10-14T20:28:32Z"
+          },
+          {
+            "name": "Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:32Z",
+            "completed_at": "2026-10-14T20:28:32Z"
+          },
+          {
+            "name": "Build the wheel",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:32Z",
+            "completed_at": "2026-10-14T20:40:07Z"
+          },
+          {
+            "name": "Install it and smoke-test what it put on PATH",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:40:07Z",
+            "completed_at": "2026-10-14T20:40:10Z"
+          },
+          {
+            "name": "Post Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:40:10Z",
+            "completed_at": "2026-10-14T20:40:10Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-14T20:40:10Z",
+            "completed_at": "2026-10-14T20:40:10Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T20:40:10Z",
+            "completed_at": "2026-10-14T20:40:10Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894332",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232825,
+        "runner_name": "GitHub Actions 1000232825",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894352,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FvEA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894352",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894352",
+        "status": "completed",
+        "conclusion": "failure",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T21:05:05Z",
+        "completed_at": "2026-10-14T21:43:20Z",
+        "name": "cross (macos-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T21:05:06Z",
+            "completed_at": "2026-10-14T21:05:08Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T21:05:08Z",
+            "completed_at": "2026-10-14T21:05:11Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T21:05:11Z",
+            "completed_at": "2026-10-14T21:05:33Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T21:05:33Z",
+            "completed_at": "2026-10-14T21:05:34Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T21:05:34Z",
+            "completed_at": "2026-10-14T21:05:35Z"
+          },
+          {
+            "name": "Bootstrap",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T21:05:35Z",
+            "completed_at": "2026-10-14T21:12:08Z"
+          },
+          {
+            "name": "Quality gate (cross-platform legs)",
+            "status": "completed",
+            "conclusion": "failure",
+            "number": 7,
+            "started_at": "2026-10-14T21:12:08Z",
+            "completed_at": "2026-10-14T21:41:53Z"
+          },
+          {
+            "name": "What was still running when it stopped",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T21:41:53Z",
+            "completed_at": "2026-10-14T21:41:53Z"
+          },
+          {
+            "name": "Does each failed test fail again on this build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-14T21:41:53Z",
+            "completed_at": "2026-10-14T21:43:14Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 16,
+            "started_at": "2026-10-14T21:43:14Z",
+            "completed_at": "2026-10-14T21:43:14Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 17,
+            "started_at": "2026-10-14T21:43:14Z",
+            "completed_at": "2026-10-14T21:43:14Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18,
+            "started_at": "2026-10-14T21:43:14Z",
+            "completed_at": "2026-10-14T21:43:15Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19,
+            "started_at": "2026-10-14T21:43:15Z",
+            "completed_at": "2026-10-14T21:43:18Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894352",
+        "labels": [
+          "macos-latest"
+        ],
+        "runner_id": 1000232870,
+        "runner_name": "GitHub Actions 1000232870",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116086894398,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbB1FvPg",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116086894398",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116086894398",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T20:28:25Z",
+        "started_at": "2026-10-14T20:28:29Z",
+        "completed_at": "2026-10-14T20:37:17Z",
+        "name": "wheel (aarch64-unknown-linux-gnu)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T20:28:30Z",
+            "completed_at": "2026-10-14T20:28:31Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T20:28:31Z",
+            "completed_at": "2026-10-14T20:28:32Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T20:28:32Z",
+            "completed_at": "2026-10-14T20:28:33Z"
+          },
+          {
+            "name": "Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T20:28:33Z",
+            "completed_at": "2026-10-14T20:28:33Z"
+          },
+          {
+            "name": "Build the wheel",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T20:28:33Z",
+            "completed_at": "2026-10-14T20:37:12Z"
+          },
+          {
+            "name": "Install it and smoke-test what it put on PATH",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T20:37:12Z",
+            "completed_at": "2026-10-14T20:37:15Z"
+          },
+          {
+            "name": "Post Run actions/setup-python@v5",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-14T20:37:15Z",
+            "completed_at": "2026-10-14T20:37:15Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-14T20:37:15Z",
+            "completed_at": "2026-10-14T20:37:15Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-14T20:37:15Z",
+            "completed_at": "2026-10-14T20:37:15Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116086894398",
+        "labels": [
+          "ubuntu-24.04-arm"
+        ],
+        "runner_id": 1000232826,
+        "runner_name": "GitHub Actions 1000232826",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116119533677,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbCUN4bQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116119533677",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116119533677",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T21:40:01Z",
+        "started_at": "2026-10-14T22:33:01Z",
+        "completed_at": "2026-10-14T22:46:27Z",
+        "name": "install (macos-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T22:33:01Z",
+            "completed_at": "2026-10-14T22:33:04Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T22:33:04Z",
+            "completed_at": "2026-10-14T22:33:08Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T22:33:08Z",
+            "completed_at": "2026-10-14T22:33:31Z"
+          },
+          {
+            "name": "Install (this revision)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T22:33:31Z",
+            "completed_at": "2026-10-14T22:45:56Z"
+          },
+          {
+            "name": "Smoke-test the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T22:45:56Z",
+            "completed_at": "2026-10-14T22:45:56Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 6,
+            "started_at": "2026-10-14T22:45:56Z",
+            "completed_at": "2026-10-14T22:45:56Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 7,
+            "started_at": "2026-10-14T22:45:56Z",
+            "completed_at": "2026-10-14T22:45:56Z"
+          },
+          {
+            "name": "Measure and check host-view-time against the installed binary",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 8,
+            "started_at": "2026-10-14T22:45:56Z",
+            "completed_at": "2026-10-14T22:45:56Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T22:45:56Z",
+            "completed_at": "2026-10-14T22:46:18Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-14T22:46:18Z",
+            "completed_at": "2026-10-14T22:46:19Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T22:46:19Z",
+            "completed_at": "2026-10-14T22:46:25Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116119533677",
+        "labels": [
+          "macos-latest"
+        ],
+        "runner_id": 1000233034,
+        "runner_name": "GitHub Actions 1000233034",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116119533880,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbCUN5OA",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116119533880",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116119533880",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T21:40:01Z",
+        "started_at": "2026-10-14T21:40:03Z",
+        "completed_at": "2026-10-14T21:50:20Z",
+        "name": "install (ubuntu-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T21:40:04Z",
+            "completed_at": "2026-10-14T21:40:07Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T21:40:07Z",
+            "completed_at": "2026-10-14T21:40:09Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T21:40:09Z",
+            "completed_at": "2026-10-14T21:40:29Z"
+          },
+          {
+            "name": "Install (this revision)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T21:40:29Z",
+            "completed_at": "2026-10-14T21:49:56Z"
+          },
+          {
+            "name": "Smoke-test the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T21:49:56Z",
+            "completed_at": "2026-10-14T21:49:56Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-14T21:49:56Z",
+            "completed_at": "2026-10-14T21:49:56Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-14T21:49:56Z",
+            "completed_at": "2026-10-14T21:49:57Z"
+          },
+          {
+            "name": "Measure and check host-view-time against the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-14T21:49:57Z",
+            "completed_at": "2026-10-14T21:50:11Z"
+          },
+          {
+            "name": "Post Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14,
+            "started_at": "2026-10-14T21:50:11Z",
+            "completed_at": "2026-10-14T21:50:11Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T21:50:11Z",
+            "completed_at": "2026-10-14T21:50:18Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-14T21:50:18Z",
+            "completed_at": "2026-10-14T21:50:18Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T21:50:18Z",
+            "completed_at": "2026-10-14T21:50:18Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116119533880",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000232947,
+        "runner_name": "GitHub Actions 1000232947",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      },
+      {
+        "id": 116119533985,
+        "run_id": 38632124776,
+        "workflow_name": "CI",
+        "head_branch": "nick/847/op-readjust",
+        "run_url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/runs/38632124776",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOTx8aUc8AAAAbCUN5oQ",
+        "head_sha": "c5574ad1e2747b59be7bdf843f86cd6e7a4e4b97",
+        "url": "https://api.github.com/repos/nickderobertis/onepipeline/actions/jobs/116119533985",
+        "html_url": "https://github.com/nickderobertis/onepipeline/actions/runs/38632124776/job/116119533985",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-14T21:40:01Z",
+        "started_at": "2026-10-14T21:40:04Z",
+        "completed_at": "2026-10-14T21:54:08Z",
+        "name": "install (windows-latest)",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-14T21:40:04Z",
+            "completed_at": "2026-10-14T21:40:07Z"
+          },
+          {
+            "name": "Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-14T21:40:07Z",
+            "completed_at": "2026-10-14T21:40:21Z"
+          },
+          {
+            "name": "Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-14T21:40:21Z",
+            "completed_at": "2026-10-14T21:41:06Z"
+          },
+          {
+            "name": "Install (this revision)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-14T21:41:06Z",
+            "completed_at": "2026-10-14T21:53:06Z"
+          },
+          {
+            "name": "Smoke-test the installed binary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-14T21:53:06Z",
+            "completed_at": "2026-10-14T21:53:07Z"
+          },
+          {
+            "name": "Run actions/setup-node@v4",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 6,
+            "started_at": "2026-10-14T21:53:07Z",
+            "completed_at": "2026-10-14T21:53:07Z"
+          },
+          {
+            "name": "Run taiki-e/install-action@v2",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 7,
+            "started_at": "2026-10-14T21:53:07Z",
+            "completed_at": "2026-10-14T21:53:07Z"
+          },
+          {
+            "name": "Measure and check host-view-time against the installed binary",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 8,
+            "started_at": "2026-10-14T21:53:07Z",
+            "completed_at": "2026-10-14T21:53:07Z"
+          },
+          {
+            "name": "Post Run Swatinem/rust-cache@v2",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15,
+            "started_at": "2026-10-14T21:53:07Z",
+            "completed_at": "2026-10-14T21:54:05Z"
+          },
+          {
+            "name": "Post Run actions/checkout@v4",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-14T21:54:05Z",
+            "completed_at": "2026-10-14T21:54:07Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-14T21:54:07Z",
+            "completed_at": "2026-10-14T21:54:07Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/nickderobertis/onepipeline/check-runs/116119533985",
+        "labels": [
+          "windows-latest"
+        ],
+        "runner_id": 1000232946,
+        "runner_name": "GitHub Actions 1000232946",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ]
+  }
+}

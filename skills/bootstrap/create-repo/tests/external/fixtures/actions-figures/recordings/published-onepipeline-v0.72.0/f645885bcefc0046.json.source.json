@@ -1,0 +1,15 @@
+{
+  "recorded": {
+    "request": "https://api.github.com/repositories/1327438417/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "why": "Read-only public GitHub capture for the published-path release-cycle journey.",
+    "command": [
+      "gh",
+      "api",
+      "--include",
+      "--method",
+      "GET",
+      "repositories/1327438417/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2"
+    ]
+  },
+  "scrubbed": []
+}

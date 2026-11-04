@@ -96,15 +96,39 @@ request did not need is a slot another repository waited for.
 - Every job `timeout-minutes: 30`, none with a `needs` edge, so all start at once.
 - **No run on push to main.** The merged tree is the one its pull request's jobs
   proved; nothing re-runs them afterwards.
-- **The release pull request runs `lint` alone.** The test jobs skip the release
-  tool's own branch, which is sound only while that tree is a tested main plus the
-  release tool's version and changelog edits — so `lint` runs
-  `scripts/release-branch-guard.mjs`, which reads each change by content, not
-  by file name: a CHANGELOG, the package and workspace-crate `version`s in
-  `Cargo.toml`, workspace members' versions in `Cargo.lock`, the top-level
-  `version` of `package.json` and the release-please manifest's versions pass;
-  a dependency, build setting or script edited inside those same files, or any
-  other file, fails `lint` naming the file and why.
+- **Release PRs run every job.** Cached test inputs exclude changelogs and
+  replace raw manifest/lockfile inputs with the per-ecosystem digest from
+  `scripts/nx-version-free-inputs.mjs`. Only workspace package versions are
+  blanked; dependencies, source and toolchain edits still change the hash.
+  Use `--keep-version` for a target whose tests read the version. Every target
+  shared by OS legs includes `node -p process.platform`. Cached outputs name
+  small files only; terminal output is cached by Nx itself.
+- **Use the shared remote cache in the four Nx jobs.** Run `trust`, start the
+  pinned op-nx sidecar as a background `uses:` step at GITHUB_WORKSPACE, then
+  `ready` before existing Nx commands. A loopback proxy records accepted
+  uploads and actual remote replays; a failed upload cannot fail a passing task.
+  `report` runs with `if: always()` and uploads bodies plus task telemetry for
+  trusted same-repository PRs, retaining seven days. Fork and Dependabot runs
+  read through the sidecar's read-only mode and never write reusable entries.
+  Sidecar teardown uses `continue-on-error: true`. The pinned sidecar reports
+  upstream throttling or outages as HTTP 409 or 500, so failed-store detail can
+  include hidden throttling. A 409 is not proof of presence; promotion confirms it
+  with a GET. Only a directly observed cache-API 429 is labelled throttled.
+- **Promote before release-plz.** A PR writes only its merge-ref Actions-cache
+  scope. The pinned library publishes its shared store only on default-branch
+  pushes, so create-repo bridges that gap: the existing release-plz job promotes
+  the latest complete trusted successful PR run's accepted and replayed bodies
+  into the base scope, before opening/updating the release PR. Faults warn and
+  leave release-plz running; promotion never deletes source entries.
+- **Manual promotion is a real push.** The dedicated branch pattern is exported
+  by `nx-remote-cache.mjs` as `PROMOTION_BRANCH_PATTERN`, currently
+  `cache-promote/**`. Push `cache-promote/<PR>` to promote that trusted PR into
+  the branch's scope; a demonstration PR based on it can read those entries.
+  The pinned sidecar deliberately refuses workflow_dispatch writes, so there is
+  no dispatch trigger and no GitHub event variable override. Release-plz steps
+  run only on pushes to main. No PR or release job is added.
+  The shared scripts' versioned contracts, telemetry and release-tail cache-use
+  measurement are in [onebudgetspec.md](tools/onebudgetspec.md#shared-nx-cache).
 
 **CD:** `release-plz` (`.github/workflows/release-plz.yml`, push to main) opens
 the release pull request and arms auto-merge on it, so it merges itself once its
@@ -134,9 +158,10 @@ the project name):
 | `<name>-cd-job-count` | 6 cross-platform, 4 Linux-only | `release-tail` |
 | `<name>-release-read-requests` | 6 requests | `release-tail` |
 | `<name>-pr-read-requests` | 2 requests | `release-tail` |
+| `<name>-nx-cache-use` | 100% remote replay of eligible executions | `release-tail` |
 | `<name>-gate-time` | 1800 s | `host-variable` |
 
-The seven GitHub figures run the repository's verbatim copy of the figures script
+The eight GitHub figures run the repository's verbatim copy of the figures script
 (`tools/onebudgetspec.md`, "GitHub Actions budget figures").
 
 **Where each line is enforced.** At pull-request time, by each job's
@@ -558,7 +583,7 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   any `visual-docs-<arch>`), each `timeout-minutes: 30` with no `needs`; no other
   pull-request job; no CI on push to main; `release-plz`, a `build-<platform>`
   job per supported platform (Linux arm64 with Linux) and `publish` ending in the
-  release tail; the eight budgets in the root `budgets.yaml` with the figures
+  release tail; the nine budgets in the root `budgets.yaml` with the figures
   script copied unedited; `.github/governance.json` requiring exactly `lint` and
   the test jobs, non-strict unless the owner opted in.
 

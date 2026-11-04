@@ -1,0 +1,71 @@
+{
+  "about": "Recorded release and check reads, unchanged; changed paths are replayed in a local fixture git repository.",
+  "serve": [
+    {
+      "recording": "published-onepipeline-v0.72.0/044994487ee43f4e.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/19860e0424a10431.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/1d1dafa132ffb83d.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/2acc6407197676be.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/35a5eb4a408259d0.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/4abd48d85b245c5d.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/530022daa44424bf.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/564d31ccbc416c0b.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/62fb6dbb9df78123.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/6eecd94b7611b8ae.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/7469af319eab1c78.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/7d3d363e17f94933.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/8885c698a91f5055.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/901317bb8690388e.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/9997b24bdd24baeb.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/9c1cd2ee37a86609.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/a928b9e30351afc8.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/cb56ee312dbfe8df.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/cbd23c0eff83797f.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/dfbdfc382eb9056e.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/e3f5e35817c1d7ab.json"
+    },
+    {
+      "recording": "published-onepipeline-v0.72.0/f645885bcefc0046.json"
+    }
+  ]
+}
