@@ -673,7 +673,7 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("name", "version"), [("nx-remote-cache", 1), ("nx-version-free-inputs", 2)]
+    ("name", "version"), [("nx-remote-cache", 1), ("nx-version-free-inputs", 3)]
 )
 def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version):
     source = SKILL_DIR / "assets" / "ci" / f"{name}.mjs"
