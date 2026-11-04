@@ -18,6 +18,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -789,7 +790,7 @@ def test_real_nx_hashes_ignore_only_release_edits_per_ecosystem(tmp_path, cache_
 
 
 @pytest.fixture(scope="module")
-def telemetry_history(tmp_path_factory, cache_tools):
+def telemetry_history(tmp_path_factory, cache_tools, request):
     root = tmp_path_factory.mktemp("cache-telemetry-history")
     cache = GithubCache()
     workspace = Workspace(root / "workspace", cache_tools)
@@ -823,7 +824,8 @@ def telemetry_history(tmp_path_factory, cache_tools):
     git("commit", "-qm", "fix: published library")
     merged = git("rev-parse", "HEAD")
     try:
-        for attempt in (1, 2):
+        cancelled_history = getattr(request, "param", None) == "cancelled"
+        for attempt in (1, 2, 3) if cancelled_history else (1, 2):
             shutil.rmtree(workspace.root / ".nx", ignore_errors=True)
             with workspace.sidecar(
                 cache,
@@ -835,6 +837,46 @@ def telemetry_history(tmp_path_factory, cache_tools):
             ) as (env, temp):
                 done = workspace.nx(env)
                 assert done.returncode == 0, (done.stdout, done.stderr)
+                if cancelled_history and attempt < 3:
+                    project_path = workspace.root / "project.json"
+                    project_text = project_path.read_text()
+                    project = json.loads(project_text)
+                    sentinel = temp / "task-started"
+                    project["targets"]["unfinished"] = {
+                        "command": "node -e \"require('fs').writeFileSync(process.env.CANCEL_SENTINEL, 'started'); setTimeout(() => {}, 3000)\"",
+                        "cache": False,
+                    }
+                    project_path.write_text(json.dumps(project))
+                    process = subprocess.Popen(
+                        [
+                            "node",
+                            "node_modules/nx/dist/bin/nx.js",
+                            "run",
+                            "journey:unfinished",
+                            "--output-style=static",
+                        ],
+                        cwd=workspace.root,
+                        env={**os.environ, **env, "CANCEL_SENTINEL": str(sentinel)},
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    try:
+                        deadline = time.monotonic() + 30
+                        while (
+                            not sentinel.exists()
+                            and process.poll() is None
+                            and time.monotonic() < deadline
+                        ):
+                            time.sleep(0.05)
+                        assert sentinel.exists(), (
+                            "Nx never started the interrupted task"
+                        )
+                    finally:
+                        if process.poll() is None:
+                            process.kill()
+                        process.wait(timeout=10)
+                        project_path.write_text(project_text)
+
             pr, run, artifact = source_metadata(
                 cache,
                 temp / "report",
@@ -843,6 +885,11 @@ def telemetry_history(tmp_path_factory, cache_tools):
                 base=base,
                 merge=merged,
             )
+            if cancelled_history and attempt < 3:
+                run["conclusion"] = "cancelled"
+                cache.metadata[
+                    f"/repos/example/project/actions/runs/1/attempts/{attempt}/jobs"
+                ]["jobs"][0]["conclusion"] = "cancelled"
         with workspace.sidecar(
             cache,
             "promote-history",
@@ -1958,5 +2005,160 @@ def test_recorded_run_counts_in_promote_and_cache_use(
                 result = json.loads((tmp_path / "result.json").read_text())
                 assert result["value"] == 100
                 assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+@pytest.mark.parametrize("artifact_kind", ["missing", "unavailable"])
+@pytest.mark.parametrize("scope", ["job", "run"])
+@pytest.mark.parametrize("conclusion", ["cancelled", "failure", "skipped", "success"])
+def test_cache_use_missing_artifact_requires_cancellation(
+    telemetry_history, tmp_path, scope, conclusion, artifact_kind
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    prefix = "/repos/example/project/actions/runs/1/attempts/1"
+    try:
+        jobs = cache.metadata[f"{prefix}/jobs"]["jobs"]
+        jobs.append({"name": "lint", "conclusion": conclusion})
+        if artifact_kind == "unavailable":
+            artifacts = cache.metadata[
+                "/repos/example/project/actions/runs/1/artifacts"
+            ]["artifacts"]
+            artifact = copy.deepcopy(artifacts[0])
+            artifact.update(id=999, name="nx-cache-entries-lint")
+            artifacts.append(artifact)
+            output = io.BytesIO()
+            with zipfile.ZipFile(output, "w") as archive:
+                archive.writestr(
+                    "unavailable.json",
+                    json.dumps(
+                        {"schema": 1, "reason": "Nx run telemetry is incomplete"}
+                    ),
+                )
+            cache.metadata["/repos/example/project/actions/artifacts/999/zip"] = (
+                output.getvalue()
+            )
+        if scope == "run":
+            cache.metadata[prefix]["conclusion"] = conclusion
+            if conclusion == "cancelled":
+                jobs[-1]["conclusion"] = None
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        if conclusion == "cancelled":
+            assert done.returncode == 0, (result, done.stderr)
+            assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+            reason = (
+                "no artifact" if artifact_kind == "missing" else "telemetry unavailable"
+            )
+            assert f"cancelled run 1/1 job lint: {reason}" in result["detail"]
+        else:
+            assert done.returncode != 0
+            assert result["actual"] is None
+            assert "missing" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+@pytest.mark.parametrize("telemetry_history", ["cancelled"], indirect=True)
+def test_cache_use_cancelled_invocation_preserves_completed_records(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    for attempt in (1, 2):
+        key = f"/repos/example/project/actions/artifacts/{100 + attempt}/zip"
+        with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as archive:
+            doc = json.loads(archive.read("executions.json"))
+        assert doc["schema"] == 2
+        assert len(doc["cancelled_invocations"]) == 1
+        invocation = doc["cancelled_invocations"][0]
+        assert invocation["id"]
+        assert invocation["argv"][-3:] == [
+            "run",
+            "journey:unfinished",
+            "--output-style=static",
+        ]
+        assert len(doc["tasks"]) == 1
+        if attempt == 1:
+            assert doc["store_attempts"][0]["status"] == "stored"
+    done, result = measure_cache_use(telemetry_history, tmp_path)
+    assert done.returncode == 0, (result, done.stderr)
+    assert "aggregate: 3/3 remote hits (100%)" in result["detail"]
+    assert "same-PR retry/push: 2/2" in result["detail"]
+    for attempt in (1, 2):
+        assert (
+            f"cancelled run 1/{attempt} job test-linux invocation " in result["detail"]
+        )
+    assert '"run","journey:unfinished","--output-style=static"]' in result["detail"]
+    assert (
+        "unfinished tasks are not individually known; excluded from numerator and denominator"
+        in result["detail"]
+    )
+
+
+@pytest.mark.parametrize("scope", ["job", "run"])
+def test_cache_use_cancelled_job_without_any_artifact(
+    telemetry_history, tmp_path, scope
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    prefix = "/repos/example/project/actions/runs/1/attempts/1"
+    try:
+        cache.metadata["/repos/example/project/actions/runs/1/artifacts"][
+            "artifacts"
+        ] = [
+            a
+            for a in cache.metadata["/repos/example/project/actions/runs/1/artifacts"][
+                "artifacts"
+            ]
+            if a["id"] != 101
+        ]
+        if scope == "job":
+            cache.metadata[f"{prefix}/jobs"]["jobs"][0]["conclusion"] = "cancelled"
+        else:
+            cache.metadata[prefix]["conclusion"] = "cancelled"
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "cancelled run 1/1 job test-linux: no artifact" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+def test_cache_use_partial_report_requires_github_cancellation(
+    telemetry_history, tmp_path, cancelled
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        key = "/repos/example/project/actions/artifacts/101/zip"
+        with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as archive:
+            files = {name: archive.read(name) for name in archive.namelist()}
+        doc = json.loads(files["executions.json"])
+        doc.update(
+            schema=2,
+            cancelled_invocations=[
+                {"id": "interrupted", "argv": ["node", "nx", "affected", "-t", "test"]}
+            ],
+        )
+        files["executions.json"] = json.dumps(doc).encode()
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            for name, body in files.items():
+                archive.writestr(name, body)
+        cache.metadata[key] = output.getvalue()
+        if cancelled:
+            cache.metadata["/repos/example/project/actions/runs/1/attempts/1"][
+                "conclusion"
+            ] = "cancelled"
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        if cancelled:
+            assert done.returncode == 0, (result, done.stderr)
+            assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+            assert 'argv ["node","nx","affected","-t","test"]' in result["detail"]
+        else:
+            assert done.returncode != 0
+            assert result["actual"] is None
+            assert "telemetry is incomplete" in result["error"]
     finally:
         cache.metadata = original
