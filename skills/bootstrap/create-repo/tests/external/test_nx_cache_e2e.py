@@ -967,7 +967,15 @@ def test_cache_use_joins_real_writer_records_and_excludes_local_hits(
 
 @pytest.mark.parametrize(
     "fault",
-    [None, "current-head", "not-in-pr", "fork", "wrong-base", "base-off-branch"],
+    [
+        None,
+        "current-head",
+        "behind-base",
+        "not-in-pr",
+        "fork",
+        "wrong-base",
+        "base-off-branch",
+    ],
 )
 def test_cache_use_accepts_historical_push_only_with_run_evidence(
     telemetry_history, tmp_path, fault
@@ -1041,21 +1049,24 @@ def test_cache_use_accepts_historical_push_only_with_run_evidence(
         head_compare = f"/repos/example/project/compare/{base}...{head}"
         branch_compare = f"/repos/example/project/compare/{base}...main"
         cache.metadata[head_compare] = {
-            "status": "diverged" if fault == "wrong-base" else "ahead"
+            "status": "diverged"
+            if fault in ("behind-base", "wrong-base", "base-off-branch")
+            else "ahead",
+            "merge_base_commit": {"sha": "d" * 40 if fault != "wrong-base" else None},
         }
         cache.metadata[branch_compare] = {
             "status": "diverged" if fault == "base-off-branch" else "ahead"
         }
         cache.metadata_reads.clear()
         done, result = measure_cache_use(telemetry_history, tmp_path)
-        if fault not in (None, "current-head"):
+        if fault not in (None, "current-head", "behind-base"):
             assert done.returncode != 0, result
             assert result["actual"] is None
             assert result["verdict"] == "error"
             expected = {
                 "not-in-pr": "run head is not a commit of the source PR",
                 "fork": "untrusted source PR repository",
-                "wrong-base": "selection base is not an ancestor of the run head",
+                "wrong-base": "missing effective selection merge-base",
                 "base-off-branch": "selection base is not on the source PR base branch",
             }
             assert expected[fault] in result["error"], result

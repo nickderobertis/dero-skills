@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
-// version: 3
-// sha256: daadb26df896e42535abb648f463961435dfb6926f6c91438e569e7ef1974f13
+// version: 4
+// sha256: 187d4ac8a1a549f2b760a98be1422c323e73c235c0f63eb035b1b382160bc4f0
 import {
   appendFileSync,
   readFileSync,
@@ -1177,7 +1177,16 @@ function validateSelection(gh, doc, run) {
       const endpoint = `repos/${gh.repo}/compare/${selection.base_sha}...${encodeURIComponent(tip)}`;
       const ancestry = gh.read(endpoint);
       gh.selectionComparisons.add(endpoint);
-      check(['ahead', 'identical'].includes(ancestry.status), message);
+      if (tip === run.head_sha && ['behind', 'diverged'].includes(ancestry.status)) {
+        // Nx selects from this merge-base when the event base is newer than
+        // the PR's branch point. GitHub supplies it in the same bounded read.
+        check(
+          /^[a-f0-9]{40}$/.test(ancestry.merge_base_commit?.sha),
+          'missing effective selection merge-base',
+        );
+      } else {
+        check(['ahead', 'identical'].includes(ancestry.status), message);
+      }
     }
   } else {
     const merge = gh.read(`repos/${gh.repo}/commits/${pr.merge_commit_sha}`);
