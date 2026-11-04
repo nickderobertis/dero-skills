@@ -22,6 +22,7 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -37,6 +38,15 @@ PIN = subprocess.check_output(
     ],
     text=True,
 ).strip()
+
+
+class CompareCommit(TypedDict):
+    sha: str | None
+
+
+class CompareResponse(TypedDict):
+    status: str
+    merge_base_commit: CompareCommit
 
 
 def command(args, root, env=None, timeout=120):
@@ -1051,19 +1061,21 @@ def test_cache_use_accepts_historical_push_only_with_run_evidence(
         branch_compare = f"/repos/example/project/compare/{base}...main"
         status = "ahead"
         merge_base = "d" * 40
-        if fault == "head-behind-base":
-            # The event base contains the entire run head: GitHub's merge-base
-            # is that head itself, rather than the branch point of a divergence.
-            status = "behind"
-            merge_base = head
-        elif fault in ("behind-base", "wrong-base", "base-off-branch"):
-            status = "diverged"
-        if fault == "wrong-base":
-            merge_base = None
-        cache.metadata[head_compare] = {
-            "status": status,
-            "merge_base_commit": {"sha": merge_base},
-        }
+        match fault:
+            case "head-behind-base":
+                # The event base contains the entire run head: GitHub's merge-base
+                # is that head itself, rather than the branch point of a divergence.
+                status = "behind"
+                merge_base = head
+            case "behind-base" | "base-off-branch":
+                status = "diverged"
+            case "wrong-base":
+                status = "diverged"
+                merge_base = None
+        cache.metadata[head_compare] = CompareResponse(
+            status=status,
+            merge_base_commit=CompareCommit(sha=merge_base),
+        )
         cache.metadata[branch_compare] = {
             "status": "diverged" if fault == "base-off-branch" else "ahead"
         }
