@@ -194,3 +194,221 @@ def test_package_named_metadata_is_a_real_input_not_a_version_field(repo):
         file = repo / relative
         file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
     assert digest(repo, "npm")[0] != before
+
+
+@pytest.mark.parametrize("operator", ["", "=", "^", "~", ">=", ">", "<=", "<"])
+def test_owned_cargo_requirement_release_is_version_free(repo, operator):
+    root = repo / "Cargo.toml"
+    root.write_text(
+        root.read_text()
+        + f'member = {{ path = "crates/member", version = "{operator}1.0.0" }}\n'
+    )
+    root.write_text(
+        root.read_text().replace(
+            'members = ["crates/member"]', 'members = ["crates/member", "crates/peer"]'
+        )
+    )
+    peer = repo / "crates/peer/Cargo.toml"
+    peer.parent.mkdir()
+    peer.write_text('[package]\nname = "peer"\nversion = "1.0.0"\n')
+    member = repo / "crates/member/Cargo.toml"
+    member.write_text(
+        member.read_text()
+        + f'[dependencies]\npeer = {{ path = "../peer", version = "{operator}1.0.0" }}\n'
+    )
+    lock = repo / "Cargo.lock"
+    lock.write_text(
+        lock.read_text() + '[[package]]\nname = "peer"\nversion = "1.0.0"\n'
+    )
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    before, stderr = digest(repo, "cargo")
+    assert stderr == ""
+    for relative in (
+        "Cargo.toml",
+        "crates/member/Cargo.toml",
+        "crates/peer/Cargo.toml",
+        "Cargo.lock",
+    ):
+        file = repo / relative
+        file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
+    after, stderr = digest(repo, "cargo")
+    assert stderr == ""
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        'member = { path = "crates/member", version = "^1.0.0" }',
+        'member = { path = "crates/member", version = "=1.0.1" }',
+        'member = { path = "elsewhere", version = "=1.0.0" }',
+    ],
+)
+def test_owned_cargo_requirement_semantic_edits_are_inputs(repo, replacement):
+    root = repo / "Cargo.toml"
+    original = 'member = { path = "crates/member", version = "=1.0.0" }'
+    root.write_text(root.read_text() + original + "\n")
+    before = digest(repo, "cargo")[0]
+    root.write_text(root.read_text().replace(original, replacement))
+    assert digest(repo, "cargo")[0] != before
+
+
+def test_consumer_cargo_requirement_is_literal(repo):
+    root = repo / "Cargo.toml"
+    root.write_text(root.read_text() + 'external = { version = "=1.0.0" }\n')
+    before = digest(repo, "cargo")[0]
+    root.write_text(
+        root.read_text().replace(
+            'external = { version = "=1.0.0"', 'external = { version = "=1.0.1"'
+        )
+    )
+    assert digest(repo, "cargo")[0] != before
+
+
+@pytest.mark.parametrize("previous", [1, 2])
+def test_version_header_and_previous_copy_baseline(repo, previous):
+    from test_check_repo_baseline import crb
+
+    header = crb.parse_figures_header(SCRIPT.read_bytes())
+    assert header.version == 3
+    assert crb.figures_digest(header.body) == header.sha256
+    versions = SCRIPT.with_suffix(".versions")
+    assert crb.read_figures_versions(versions)[-1] == crb.FiguresVersion(
+        header.version, header.sha256
+    )
+    old = (
+        Path(__file__).parent / f"fixtures/nx-version-free-inputs/v{previous}.mjs"
+    ).read_bytes()
+    copy = repo / "scripts/nx-version-free-inputs.mjs"
+    copy.parent.mkdir()
+    copy.write_bytes(old)
+    findings = crb.check_actions_budget_figures(
+        repo,
+        versions=versions,
+        copy_name="scripts/nx-version-free-inputs.mjs",
+        source_name="assets/ci/nx-version-free-inputs.mjs",
+    )
+    assert len(findings) == 1
+    assert (
+        f"outdated: it is at version {previous}, the source at version 3"
+        in findings[0].message
+    )
+
+
+@pytest.mark.parametrize("ecosystem", ["npm", "python"])
+def test_other_ecosystems_keep_the_previous_digest(repo, ecosystem):
+    previous = Path(__file__).parent / "fixtures/nx-version-free-inputs/v1.mjs"
+    for version in ("1.0.0", "1.0.1"):
+        for path in repo.rglob("*"):
+            if path.is_file() and ".git" not in path.relative_to(repo).parts:
+                path.write_text(path.read_text().replace("1.0.0", version))
+        old = subprocess.run(
+            ["node", str(previous), "--ecosystem", ecosystem],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert old.stderr == ""
+        assert digest(repo, ecosystem) == (old.stdout.strip(), "")
+
+
+@pytest.mark.parametrize("path_pin", [False, True])
+def test_cargo_standalone_manifest_requires_a_dependency_path(repo, path_pin):
+    root = repo / "Cargo.toml"
+    root.write_text(
+        '[package]\nname = "consumer"\nversion = "1.0.0"\n[dependencies]\n'
+        + (
+            'external = { path = "examples/standalone", version = "=1.0.0" }\n'
+            if path_pin
+            else 'external = { version = "=1.0.0" }\n'
+        )
+    )
+    target = repo / "examples/standalone/Cargo.toml"
+    target.parent.mkdir(parents=True)
+    target.write_text('[package]\nname = "external"\nversion = "1.0.0"\n')
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    before, stderr = digest(repo, "cargo")
+    assert stderr == ""
+    root.write_text(root.read_text().replace("1.0.0", "1.0.1"))
+    target.write_text(target.read_text().replace("1.0.0", "1.0.1"))
+    after, stderr = digest(repo, "cargo")
+    assert stderr == ""
+    assert (after == before) == path_pin
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    [
+        "cli==1.0.0",
+        "cli[tools]==1.0.0; python_version >= '3.10'",
+    ],
+)
+def test_python_owned_requirement_release_is_version_free(repo, requirement):
+    root = repo / "pyproject.toml"
+    root.write_text(
+        '[project]\nname = "sdk"\nversion = "1.0.0"\ndependencies = ["'
+        + requirement
+        + '"]\n'
+    )
+    cli = repo / "packages/cli/pyproject.toml"
+    cli.parent.mkdir(parents=True)
+    cli.write_text('[project]\nname = "cli"\nversion = "1.0.0"\n')
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    before, stderr = digest(repo, "python")
+    assert stderr == ""
+    for file in (root, cli):
+        file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
+    after, stderr = digest(repo, "python")
+    assert stderr == ""
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    [
+        "cli[tools]>=1.0.0; python_version >= '3.10'",
+        "cli[other]==1.0.0; python_version >= '3.10'",
+        "cli[tools]==1.0.0; python_version >= '3.11'",
+        "cli[tools]==1.0.1; python_version >= '3.10'",
+        "external[tools]==1.0.1; python_version >= '3.10'",
+    ],
+)
+def test_python_requirement_semantic_edits_are_inputs(repo, replacement):
+    root = repo / "pyproject.toml"
+    original = "cli[tools]==1.0.0; python_version >= '3.10'"
+    root.write_text(
+        '[project]\nname = "sdk"\nversion = "1.0.0"\ndependencies = ["'
+        + original
+        + '", "external==1.0.0"]\n'
+    )
+    cli = repo / "packages/cli/pyproject.toml"
+    cli.parent.mkdir(parents=True)
+    cli.write_text('[project]\nname = "cli"\nversion = "1.0.0"\n')
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    before = digest(repo, "python")[0]
+    root.write_text(root.read_text().replace(original, replacement))
+    assert digest(repo, "python")[0] != before
+
+
+@pytest.mark.parametrize("target_name", ["external", "wrong"])
+def test_cargo_path_pin_checks_target_package_identity(repo, target_name):
+    root = repo / "Cargo.toml"
+    root.write_text(
+        '[package]\nname = "consumer"\nversion = "1.0.0"\n[dependencies]\nalias = { package = "external", path = "local", version = "=1.0.0" }\n'
+    )
+    target = repo / "local/Cargo.toml"
+    target.parent.mkdir()
+    target.write_text(f'[package]\nname = "{target_name}"\nversion = "1.0.0"\n')
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    before = digest(repo, "cargo")[0]
+    for file in (root, target):
+        file.write_text(file.read_text().replace("1.0.0", "1.0.1"))
+    assert (digest(repo, "cargo")[0] == before) == (target_name == "external")
+
+
+def test_python_external_requirement_is_literal(repo):
+    root = repo / "pyproject.toml"
+    before = digest(repo, "python")[0]
+    root.write_text(root.read_text().replace("third==2.0.0", "third==2.0.1"))
+    assert digest(repo, "python")[0] != before
