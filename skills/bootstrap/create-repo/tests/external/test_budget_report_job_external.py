@@ -280,8 +280,10 @@ class Journey:
         self.base_sha = sha
         return self.run("push", sha)
 
-    def pull_request(self, **event):
+    def pull_request(self, bundle_size: int | None = None, **event):
         self.repository.git("checkout", "--quiet", "-B", "change", self.base_sha)
+        if bundle_size is not None:
+            self.repository.write("packages/demo/bundle-size", f"{bundle_size}\n")
         head = self.repository.commit("change")
         self.host.head = head
         return self.run(
@@ -411,10 +413,7 @@ def test_history_is_unavailable_below_five_saved_commits_then_provisional(journe
 
 
 def test_an_enforced_budget_over_its_line_fails_and_report_only_ones_do_not(journey):
-    (journey.path / "packages/demo/bundle-size").write_text("5000\n")
-    journey.repository.commit("bundle grew")
-    journey.base_sha = journey.repository.git("rev-parse", "HEAD")
-    job = journey.pull_request()
+    job = journey.pull_request(bundle_size=5000)
     assert job.exit_code == 1, job.stdout
     rows = job.rows()
     assert rows["demo-bundle-bytes"]["verdict"] == "over"
@@ -425,17 +424,13 @@ def test_an_enforced_budget_over_its_line_fails_and_report_only_ones_do_not(jour
 def test_only_an_adverse_move_is_flagged_and_a_flag_fails_nothing(journey):
     for _ in range(5):
         assert journey.base_push().exit_code == 0
-    size = journey.path / "packages/demo/bundle-size"
-
-    size.write_text("900\n")
-    worse = journey.pull_request()
+    worse = journey.pull_request(bundle_size=900)
     assert worse.exit_code == 0, worse.stdout
     row = worse.rows()["demo-bundle-bytes"]
     assert row["verdict"] == "within"
     assert row["flag"] is True, row
 
-    size.write_text("100\n")
-    better = journey.pull_request()
+    better = journey.pull_request(bundle_size=100)
     assert better.exit_code == 0, better.stdout
     row = better.rows()["demo-bundle-bytes"]
     assert row["current"] == 100
@@ -487,11 +482,8 @@ def test_posting_and_history_failures_are_diagnostics_and_a_real_failure_survive
     assert unread.exit_code == 0, unread.stdout
     assert "baseline unavailable" in unread.markdown()
 
-    (journey.path / "packages/demo/bundle-size").write_text("5000\n")
-    journey.repository.commit("bundle grew")
-    journey.base_sha = journey.repository.git("rev-parse", "HEAD")
     journey.host.write_status = 403
-    failed = journey.pull_request()
+    failed = journey.pull_request(bundle_size=5000)
     assert failed.exit_code == 1, failed.stdout
     assert "not delivered" in failed.summary
 
