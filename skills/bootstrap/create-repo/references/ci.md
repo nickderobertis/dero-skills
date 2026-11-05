@@ -573,6 +573,25 @@ context — or a required `lint` whose job in `ci.yml` runs `just lint-llm-diff`
 as the composed shape's does — unless you pass `--allow-missing-llmlint` (only
 for a repo with no llmlint tier).
 
+**Adding one check to a repository already governed.** The commands above apply the
+whole profile, and their protection PUT replaces what is there. To require one more
+context while keeping everything else — other contexts, their app bindings,
+approvals, strictness, admins, restrictions and the merge and fork settings — use
+the additive mode instead:
+
+```bash
+uv run --script scripts/setup_github_governance.py --add-required-check budgets \
+  --repo OWNER/NAME --branch main [--dry-run | --verify]
+```
+
+It sends one POST to the required-status-checks subresource, naming only the missing
+contexts, so a repeated call writes nothing, and it reads the protection back and
+fails if anything but the addition moved. It writes classic protection only, which
+is what every repository it has been applied to uses: a branch governed by a
+ruleset, classic or not, is refused by name before any write, as is a failed read.
+Never run it before the job reporting that context has landed on the base branch,
+because every open pull request would then wait on a check nothing reports.
+
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
 merging") so the decision is auditable and the next maintainer can re-apply it.
