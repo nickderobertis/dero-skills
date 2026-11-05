@@ -57,7 +57,7 @@ LANDED = {
         "release-tail",
     ),
     "cd-job-time": (
-        [*FIGURES, "longest-job", "--stage", "cd"],
+        [*FIGURES, "longest-job", "--stage", "cd", "--exclude-workflow", "ci"],
         "seconds",
         1800,
         "release-tail",
@@ -81,13 +81,13 @@ LANDED = {
         "release-tail",
     ),
     "cd-job-count": (
-        [*FIGURES, "job-count", "--stage", "cd"],
+        [*FIGURES, "job-count", "--stage", "cd", "--exclude-workflow", "ci"],
         "jobs",
         None,
         "release-tail",
     ),
     "release-read-requests": (
-        [*FIGURES, "release-read-requests"],
+        [*FIGURES, "release-read-requests", "--exclude-workflow", "ci"],
         "requests",
         6,
         "release-tail",
@@ -103,8 +103,8 @@ LANDED = {
 # What each composition runs: its CI jobs and its CD jobs (release-plz.yml's one,
 # then release.yml's), in the order the workflows declare them.
 CI_JOBS = {
-    "cross-platform": ["lint", "test-linux", "test-windows", "test-macos"],
-    "linux": ["lint", "test-linux"],
+    "cross-platform": ["lint", "test-linux", "test-windows", "test-macos", "budgets"],
+    "linux": ["lint", "test-linux", "budgets"],
 }
 CD_JOBS = {
     "cross-platform": [
@@ -145,13 +145,28 @@ def test_ci_runs_lint_and_a_test_job_per_platform_each_held_to_30_minutes(compos
     assert list(found) == expected_ci_jobs(platforms, arch)
     for name, body in found.items():
         assert "    timeout-minutes: 30" in body.splitlines(), name
-        assert "needs:" not in body, f"{name} waits on another job"
-    # Pull requests only: no push to main, nothing re-run after the merge.
+    # Every pull request, unfiltered, and the base branch for its history.
     on = ci[ci.index("\non:\n") : ci.index("\nconcurrency:")].splitlines()
     assert [line for line in on if line and not line.startswith("#")] == [
         "on:",
         "  pull_request:",
+        "  push:",
+        "    branches: [main]",
     ]
+
+
+def test_only_budgets_waits_and_only_budgets_runs_on_a_base_push(composed):
+    repo, _language, platforms, arch = composed
+    found = jobs(workflow(repo, "ci.yml"))
+    predecessors = expected_ci_jobs(platforms, arch)[:-1]
+    for name in predecessors:
+        assert "needs:" not in found[name], f"{name} waits on another job"
+        assert (
+            "    if: github.event_name == 'pull_request'" in found[name].splitlines()
+        ), f"{name} would repeat its checks on a push to main"
+    budgets = found["budgets"].splitlines()
+    assert f"    needs: [{', '.join(predecessors)}]" in budgets
+    assert "    if: always()" in budgets
 
 
 def test_lint_runs_everything_platform_independent_once(composed):
@@ -367,7 +382,7 @@ def test_a_language_without_a_known_toolchain_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("platforms", ["cross-platform", "linux"])
-def test_the_governance_dry_run_requires_exactly_lint_and_the_test_jobs(
+def test_the_governance_dry_run_requires_lint_the_test_jobs_and_budgets(
     tmp_path, platforms
 ):
     repo = compose(tmp_path / "repo", platforms=platforms)
@@ -490,13 +505,69 @@ BREAKS = {
         ),
         "notignored.yml runs job(s) suppressions on pull requests",
     ),
-    "CI on push to main": (
-        lambda repo: edit(repo, CI, "\non:\n  pull_request:\n", "\non:\n  pull_request:\n  push:\n    branches: [main]\n"),
-        "ci.yml runs CI on push to main",
+    "a CI job left running on a push to main": (
+        lambda repo: edit(repo, CI, "  lint:\n    if: github.event_name == 'pull_request'\n", "  lint:\n"),
+        "ci.yml runs lint on push to main",
+    ),
+    "no budgets job": (
+        lambda repo: drop_job(repo, "budgets"),
+        "ci.yml has no `budgets` job",
+    ),
+    "budgets skipped when a predecessor fails": (
+        lambda repo: edit(repo, CI, "\n    if: always()\n", "\n"),
+        "runs `budgets` under `if: unset`",
+    ),
+    "budgets excluding drafts": (
+        lambda repo: edit(repo, CI, "\n    if: always()\n", "\n    if: ${{ !github.event.pull_request.draft }}\n"),
+        "so a failed or skipped predecessor can leave its required check unreported",
+    ),
+    "budgets not waiting on a test job": (
+        lambda repo: edit(repo, CI, "    needs: [lint, test-linux, test-windows, test-macos]\n", "    needs: [lint, test-linux, test-macos]\n"),
+        "runs `budgets` without waiting on test-windows",
+    ),
+    "budgets on a floating action reference": (
+        lambda repo: edit(repo, CI, "onebudgetspec-github-action@v0.1.0", "onebudgetspec-github-action@v0"),
+        "has `budgets` use no exact release",
+    ),
+    "budgets running a build of its own": (
+        lambda repo: edit(repo, CI, "          fetch-depth: 0\n          persist-credentials: false\n      - uses: nickderobertis/onebudgetspec", "          fetch-depth: 0\n          persist-credentials: false\n      - run: just build\n      - uses: nickderobertis/onebudgetspec"),
+        "has `budgets` run commands of its own",
+    ),
+    "budgets unable to read artifacts": (
+        lambda repo: edit(repo, CI, "      actions: read\n", ""),
+        "has `budgets` without `actions: read`",
+    ),
+    "budgets enforcing what it cannot measure": (
+        lambda repo: edit(repo, CI, "release-tail,host-variable", "host-variable"),
+        "enforces release-tail in `budgets`",
+    ),
+    "a path filter on pull requests": (
+        lambda repo: edit(repo, CI, "\non:\n  pull_request:\n", "\non:\n  pull_request:\n    paths: [src/**]\n"),
+        "does not run `budgets` on every pull request",
+    ),
+    "no base push": (
+        lambda repo: edit(repo, CI, "  push:\n    branches: [main]\n", ""),
+        "does not run `budgets` on push to main",
+    ),
+    "the report job's own budget dropped": (
+        lambda repo: (repo / ".github/reporting/budgets.yaml").unlink(),
+        "lacks the budget <name>-budget-report-command-seconds",
+    ),
+    "the report job's budgets out of the gate": (
+        lambda repo: (repo / ".github/reporting/project.json").unlink(),
+        ".github/reporting/budgets.yaml sits in no Nx project",
+    ),
+    "the budget policy dropped": (
+        lambda repo: edit(repo, "AGENTS.md", "## Budget reports\n", "## Other\n"),
+        "AGENTS.md has no `## Budget reports` section",
+    ),
+    "budgets left unrequired": (
+        lambda repo: rewrite_governance(repo, lambda g: {**g, "required_checks": [c for c in g["required_checks"] if c != "budgets"]}),
+        "governance.json does not require budgets",
     ),
     "an extra required context": (
         lambda repo: edit(repo, ".github/governance.json", '"lint",', '"lint",\n    "llmlint",'),
-        "governance.json requires llmlint, beyond `lint` and the test jobs",
+        "governance.json requires llmlint, beyond `lint`, the test jobs and `budgets`",
     ),
     "a test job left unrequired": (
         lambda repo: rewrite_governance(repo, lambda g: {**g, "required_checks": [c for c in g["required_checks"] if c != "test-windows"]}),
@@ -573,7 +644,7 @@ def test_every_nx_job_uses_the_shared_cache_and_reports_trusted_artifacts(compos
     assert "NX_BASE: ${{ github.event.pull_request.base.sha }}" in ci
     assert "NX_HEAD: ${{ github.event.pull_request.head.sha }}" in ci
     for name, body in jobs(ci).items():
-        if name.startswith("visual-docs-"):
+        if name == "budgets" or name.startswith("visual-docs-"):
             assert "nx-remote-cache.mjs" not in body
             continue
         assert body.count("node scripts/nx-remote-cache.mjs trust") == 1
@@ -603,9 +674,16 @@ def test_every_nx_job_uses_the_shared_cache_and_reports_trusted_artifacts(compos
             if line.strip() and not line.lstrip().startswith("#")
         ]
         assert step_lines[-1] == "- cancel: nx-cache"
-    assert len(
-        [name for name in jobs(ci) if not name.startswith("visual-docs-")]
-    ) == len(CI_JOBS[platforms])
+    assert (
+        len(
+            [
+                name
+                for name in jobs(ci)
+                if name != "budgets" and not name.startswith("visual-docs-")
+            ]
+        )
+        == len(CI_JOBS[platforms]) - 1
+    )
     assert not (repo / "scripts/release-branch-guard.mjs").exists()
     for name in ("nx-remote-cache", "nx-version-free-inputs"):
         assert (repo / "scripts" / f"{name}.mjs").read_bytes() == (

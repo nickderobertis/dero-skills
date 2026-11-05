@@ -1,0 +1,17 @@
+#% # The budget report job's own budget, rendered by `compose_repo_plan.py --ci-cd REPO_DIR`
+#% # (see ci.yml.template for the `#%` syntax).
+# The budgets job measures itself: only that job holds this telemetry, written after its main
+# result upload, so `just check` leaves this budget out (`--exclude-label ci-report`).
+schema_version: 1
+budgets:
+  - id: @@NAME@@-budget-report-command-seconds
+    description: >-
+      The budget report job from its cold install through the checks, the history read, the
+      comment and the main result upload. It protects the turnaround of the one required check
+      every pull request waits on. The limit is provisional until real runs have measured it.
+    labels: [ci-report]
+    measure: reported
+    command: [onebudgetspec-github-action, telemetry, --metric, report-command-seconds, --input, .telemetry/report-job.json]
+    unit: seconds
+    direction: max
+    threshold: 120

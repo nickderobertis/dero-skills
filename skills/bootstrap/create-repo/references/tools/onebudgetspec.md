@@ -323,6 +323,48 @@ and the two rules of "When is a requirement a budget" above. The fragment is
 listed by URL in the repo's own `llmlint.yml`, never named by `base.llmlint.yml`,
 so a config adopts the budget rules only by listing them.
 
+## The budget report job
+
+`compose_repo_plan.py --ci-cd` generates one `budgets` job in `ci.yml` from
+[`onebudgetspec-github-action`](https://github.com/nickderobertis/onebudgetspec-github-action),
+pinned to the exact release the composer names. Its `action.yml` states the inputs, and
+`tests/test_budget_report_contract.py` reconciles the job and its budget to a vendored
+copy of it. The action publishes its crate last, so a crate at a version means that
+release's whole payload is usable.
+
+- **When it runs.** Every pull request, draft or not and whatever it touches, and every
+  push to main, after the other jobs however they ended. It adds no build or test.
+- **What it checks.** The whole catalog gets one row. A budget runs once through ordinary
+  `onebudgetspec check --id`, with its original command, labels and threshold, unless its
+  own argv shows it cannot run: its program is missing, or a relative path it names is
+  absent. Then its row says why. A missing `ci-report` label is never a reason, and nothing
+  is rerun to fill a row. So name a budget's saved telemetry in its `command`: an absent
+  file then reads as unavailable rather than as a failed measurement.
+- **What fails it.** An enforced budget over its threshold, a measurement error or an
+  invalid budgets file. A missing baseline, a refused credential or a failed comment or
+  upload is a stated reason and changes nothing. Forks get the summary and the artifact,
+  with no comment and no credential.
+- **What is report-only.** `enforcement-exclude-labels` names `release-tail` and
+  `host-variable`, whose commands need a release or a developer's machine. They still run
+  once and keep their verdict and flags.
+- **Its own budget.** `.github/reporting/budgets.yaml` holds
+  `<name>-budget-report-command-seconds`, read from the job's own telemetry by the released
+  `onebudgetspec-github-action telemetry`. The interval runs from cold install through the
+  checks, the history read, the comment and the main result upload; the check of this
+  budget and the saving of its verdict come after it, and queueing and runner setup are
+  outside it. Only that job holds the telemetry, so the `report-job` project's `budgets`
+  target leaves it out with `--exclude-label ci-report`, and it is enforced in the job.
+- **The history.** Each push to main saves the same result artifact and one rolling file of
+  up to 20 commits, and a pull request compares with it: below 5 samples a row has no
+  baseline, and from 5 to 19 it is provisional. Every budget compares the same way, with no
+  baseline per kind of budget.
+
+**The policy** generated repositories carry is
+[`assets/budgets/budget-policy.md`](../../assets/budgets/budget-policy.md), which `--ci-cd`
+adds to `AGENTS.md`. That file is its one statement; read it there rather than a copy here.
+Approved thresholds alone decide failures, and the stored measurements are informational, so
+an improvement is never flagged and a stored figure never becomes a line to hold.
+
 ## GitHub Actions budget figures
 
 The figures CI and CD time budgets need — the longest check, the jobs per pull

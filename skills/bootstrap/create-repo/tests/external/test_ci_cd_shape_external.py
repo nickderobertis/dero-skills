@@ -279,10 +279,11 @@ def historical_cache_metadata() -> GithubCache:
             f"/repos/{REPOSITORY}/actions/runs/{run['id']}/attempts/{run['run_attempt']}"
         ] = run
         job_path = f"repos/{REPOSITORY}/actions/runs/{run['id']}/jobs?per_page=100&filter=latest"
-        if job_path in answers:
-            api.metadata[
-                f"/repos/{REPOSITORY}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs"
-            ] = answers[job_path]
+        # Cache use asks each run whether it started a job, and these recordings hold
+        # only the runs the job figures read; the rest ran on their pull requests too.
+        api.metadata[
+            f"/repos/{REPOSITORY}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs"
+        ] = answers.get(job_path, {"jobs": [{"name": "lint", "conclusion": "success"}]})
         api.metadata[f"/repos/{REPOSITORY}/actions/runs/{run['id']}/artifacts"] = {
             "artifacts": []
         }
@@ -339,8 +340,8 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
     assert sum("/releases?" in r for r in served) == 1
     assert not any("/runs/41252214397/jobs" in r for r in served)  # the skipped run
     # Counts, not durations: each pull request's CI jobs, and the CD jobs at the
-    # release commit — which, with no --exclude-workflow in the composed shape's
-    # commands, include onetaskgraph's cache warmer.
+    # release commit — which, since the composed shape's commands exclude only `ci`,
+    # include onetaskgraph's cache warmer.
     assert results[f"{NAME}-ci-job-count"][1] == "4"
     assert results[f"{NAME}-cd-job-count"][1] == "9"
 
@@ -410,6 +411,24 @@ def seed(repo: Path, started: str, ended: str, exit_status: int = 0) -> None:
             }
         )
     )
+
+
+def test_the_report_job_project_validates_its_budget_and_leaves_the_measurement_to_ci(
+    gated, tmp_path
+):
+    """Nx finds the hidden project, the gate target passes with no job telemetry,
+    and it still refuses an invalid file."""
+    checkout = tmp_path / "checkout"
+    shutil.copytree(gated, checkout, symlinks=True)
+    nx = ["bunx", "nx", "run", "report-job:budgets", "--skip-nx-cache"]
+    done = subprocess.run(nx, cwd=checkout, capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert not (checkout / ".github/reporting/.telemetry").exists()
+    (checkout / ".github/reporting/budgets.yaml").write_text("schema_version: 1\n")
+    refused = subprocess.run(
+        nx, cwd=checkout, capture_output=True, text=True, timeout=600
+    )
+    assert refused.returncode != 0, refused.stdout
 
 
 def test_the_gate_writes_a_fresh_record_of_its_wall_clock(gated):

@@ -20,6 +20,7 @@ COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 CHECKER = SKILL_DIR / "scripts" / "check_repo_baseline.py"
 GOVERNANCE = SKILL_DIR / "scripts" / "setup_github_governance.py"
 ASSETS = SKILL_DIR / "assets"
+FIXTURES = SKILL_DIR / "tests" / "fixtures"
 NAME = "demo"
 
 # The compositions the shape is proven over: each language's toolchain, cross-platform

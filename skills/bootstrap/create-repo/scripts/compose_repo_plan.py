@@ -859,6 +859,9 @@ TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 # The onevcs release `publish`'s release tail installs: the first carrying the
 # `onevcs host` queries the figures script reads at the contract it states.
 ONEVCS_CLI_VERSION = "0.57.6"
+# The onebudgetspec-github-action release ci.yml's `budgets` job uses. The action publishes
+# its crate last, so a crate at this version means the release's whole payload is usable.
+ONEBUDGETSPEC_ACTION_VERSION = "v0.1.0"
 # The screencomp release whose composite actions the visual-docs steps use.
 SCREENCOMP_VERSION = "v0.4.8"
 # The languages whose toolchain the templates know how to install.
@@ -981,6 +984,7 @@ class CiCdFile(NamedTuple):
     executable: bool
 
 
+REPORT_JOB_PROJECT = ".github/reporting/project.json"
 CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
     CiCdFile(
@@ -993,6 +997,16 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
         ".github/workflows/release.yml", "assets/release.yml.template", True, False
     ),
     CiCdFile("budgets.yaml", "assets/budgets.yaml.template", True, False),
+    CiCdFile(
+        ".github/reporting/budgets.yaml",
+        "assets/reporting/budgets.yaml.template",
+        True,
+        False,
+    ),
+    CiCdFile(REPORT_JOB_PROJECT, "assets/reporting/project.json", False, False),
+    CiCdFile(
+        ".github/reporting/.gitignore", "assets/reporting/gitignore", False, False
+    ),
     CiCdFile(
         "scripts/gate-time.sh", "assets/budgets/gate-time.sh.template", True, True
     ),
@@ -1019,6 +1033,8 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
     ),
 )
 GOVERNANCE_FILE = ".github/governance.json"
+BUDGET_POLICY_ASSET = "assets/budgets/budget-policy.md"
+AGENTS_FILE = "AGENTS.md"
 GATE_RECORD = ".gate-time.json"
 # The recipes the workflows and the gate call, which assets/justfile.template declares.
 CI_CD_RECIPES = ("gate", "gate-body", "supply-chain", "ci-test", "release")
@@ -1042,12 +1058,12 @@ class CiCdShape(NamedTuple):
         jobs = ["lint"]
         if self.visual_docs_arch:
             jobs.append(f"visual-docs-{self.visual_docs_arch}")
-        return jobs + [f"test-{platform}" for platform in self.platforms]
+        return [*jobs, *(f"test-{platform}" for platform in self.platforms), "budgets"]
 
     @property
     def required_checks(self) -> list[str]:
-        """The contexts branch protection requires: `lint` and the test jobs."""
-        return ["lint"] + [f"test-{platform}" for platform in self.platforms]
+        """The contexts branch protection requires: `lint`, the test jobs, `budgets`."""
+        return ["lint", *(f"test-{p}" for p in self.platforms), "budgets"]
 
     @property
     def builds(self) -> list[str]:
@@ -1081,6 +1097,8 @@ class CiCdShape(NamedTuple):
             "VISUAL_DOCS_RUNNER": VISUAL_DOCS_ARCH_RUNNERS.get(arch, ""),
             "ONEVCS_CLI_VERSION": ONEVCS_CLI_VERSION,
             "ONEBUDGETSPEC_VERSION": ONEBUDGETSPEC_VERSION,
+            "ONEBUDGETSPEC_ACTION_VERSION": ONEBUDGETSPEC_ACTION_VERSION,
+            "CI_PREDECESSORS": ", ".join(self.ci_jobs[:-1]),
             "BUILD_JOBS": ", ".join(f"build-{b}" for b in self.builds),
             "CI_JOB_COUNT": str(len(self.ci_jobs)),
             "CD_JOB_COUNT": str(len(self.cd_jobs)),
@@ -1361,6 +1379,10 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
         if platform not in inputs:
             inputs.append(platform)
     for project_path in sorted(repo.rglob("project.json")):
+        # The shape's own report-job project stays exactly as the shape writes it: it
+        # runs no test, and a rewrite would make composing again refuse the file.
+        if project_path == repo / REPORT_JOB_PROJECT:
+            continue
         if any(
             part in {"node_modules", ".git", ".nx"}
             for part in project_path.relative_to(repo).parts
@@ -1481,6 +1503,27 @@ def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str,
     return planned
 
 
+def plan_budget_policy(repo: Path, skill_dir: Path) -> str | None:
+    """The AGENTS.md carrying the budget policy, or None when it already does."""
+    policy = (skill_dir / BUDGET_POLICY_ASSET).read_text(encoding="utf-8")
+    path = repo / AGENTS_FILE
+    if not path.is_file():
+        raise WiringError(
+            f"no {AGENTS_FILE} in {repo}\n"
+            f"      fix: copy the skill's assets/{AGENTS_FILE}.template there first."
+        )
+    text = path.read_text(encoding="utf-8")
+    if policy in text:
+        return None
+    heading = policy.splitlines()[0]
+    if heading in text.splitlines():
+        raise WiringError(
+            f"{path} has a `{heading}` section that differs from {BUDGET_POLICY_ASSET}\n"
+            "      fix: replace that section with the skill's text, then re-run --ci-cd."
+        )
+    return text.rstrip("\n") + "\n\n" + policy
+
+
 def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
     """Write the shape into ``repo``; a note per change. Validates before writing."""
     justfile = next(
@@ -1509,6 +1552,7 @@ def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
             "--ci-cd."
         )
     planned = plan_ci_cd_files(repo, skill_dir, shape)
+    agents_with_policy = plan_budget_policy(repo, skill_dir)
     # The onebudgetspec setup step first (it validates before it writes), then the SDK
     # the gate-time budget's command imports, pinned beside the CLI.
     changes = wire_onebudgetspec(repo, skill_dir)
@@ -1534,6 +1578,9 @@ def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
         if target in executable:
             path.chmod(0o755)
         changes.append(f"wrote {target}")
+    if agents_with_policy is not None:
+        (repo / AGENTS_FILE).write_text(agents_with_policy, encoding="utf-8")
+        changes.append(f"{AGENTS_FILE} states the budget policy")
     if GATE_RECORD not in ignored.splitlines():
         gitignore.write_text(
             ignored

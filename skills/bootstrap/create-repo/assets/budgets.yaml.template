@@ -7,7 +7,9 @@
 # from read-only GitHub evidence (onevcs for the existing figures, the cache script for
 # replay telemetry), as the last step of release.yml's `publish` job, whose result nothing
 # reads. The ninth, `host-variable`, is the local gate's wall clock, which
-# `just gate` checks as a warning. The strict check `just check` runs excludes both labels.
+# `just gate` checks as a warning. The strict check `just check` runs excludes both labels, and
+# ci.yml's `budgets` job reports them without enforcing them. Its push run at the release commit
+# delivers nothing, so the CD figures leave out the `ci` workflow.
 # references/ci.md ("CI and CD time budgets") states why each line is where it is.
 schema_version: 1
 budgets:
@@ -27,7 +29,7 @@ budgets:
   # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships these constraints plus the requested shared-cache replay figure.
   - id: @@NAME@@-cd-job-time
     measure: reported
-    command: [bash, scripts/actions-budget-figures.sh, longest-job, --stage, cd]
+    command: [bash, scripts/actions-budget-figures.sh, longest-job, --stage, cd, --exclude-workflow, ci]
     unit: seconds
     direction: max
     threshold: 1800
@@ -64,7 +66,7 @@ budgets:
   # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships these constraints plus the requested shared-cache replay figure.
   - id: @@NAME@@-cd-job-count
     measure: reported
-    command: [bash, scripts/actions-budget-figures.sh, job-count, --stage, cd]
+    command: [bash, scripts/actions-budget-figures.sh, job-count, --stage, cd, --exclude-workflow, ci]
     unit: jobs
     direction: max
     threshold: @@CD_JOB_COUNT@@
@@ -76,7 +78,7 @@ budgets:
   # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships these constraints plus the requested shared-cache replay figure.
   - id: @@NAME@@-release-read-requests
     measure: reported
-    command: [bash, scripts/actions-budget-figures.sh, release-read-requests]
+    command: [bash, scripts/actions-budget-figures.sh, release-read-requests, --exclude-workflow, ci]
     unit: requests
     direction: max
     threshold: 6

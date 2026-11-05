@@ -16,9 +16,8 @@ Usage:
 The positional ``CHECK`` arguments are the status-check contexts that must be
 green before a PR can merge. With none given, they are the ``required_checks``
 of the repository's ``.github/governance.json`` (under ``--repo-dir``, default
-``.``), which ``compose_repo_plan.py --ci-cd`` writes: ``lint`` and one
-``test-<platform>`` job per supported platform, the CI shape references/ci.md
-states. Given explicitly, list *every* gating check by name; a check that is not
+``.``), which ``compose_repo_plan.py --ci-cd`` writes: ``lint``, one ``test-<platform>`` job
+per supported platform and ``budgets``, the CI shape references/ci.md states. Given explicitly, list *every* gating check by name; a check that is not
 required is only advisory, and a red one can still be merged past. The llmlint
 tier (a mandated blocking PR check) must be among them — a context named
 llmlint, or a ``lint`` context whose job in ``.github/workflows/ci.yml`` runs
