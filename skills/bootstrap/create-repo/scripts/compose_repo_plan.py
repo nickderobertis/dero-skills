@@ -1633,8 +1633,9 @@ def build_parser(
         "--ci-cd",
         metavar="REPO_DIR",
         help="write the CI/CD shape into the repository at REPO_DIR: ci.yml, "
-        "release-plz.yml, release.yml, the root budgets.yaml, the gate's timing "
-        "wrapper, the figures script and .github/governance.json (needs --language "
+        "release-plz.yml, release.yml, the root budgets.yaml, the report job's "
+        ".github/reporting, the gate's timing wrapper, the figures script, "
+        ".github/governance.json and AGENTS.md's budget policy (needs --language "
         "rust or typescript and --name; runs the --wiring setup step too)",
     )
     parser.add_argument(

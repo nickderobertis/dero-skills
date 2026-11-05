@@ -314,6 +314,13 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     every_composition,
 ):
     journey = every_composition
+    triggers = journey.workflow[True]  # YAML 1.1 reads the bare `on` key as true
+    assert set(triggers) == {"pull_request", "push"}
+    assert triggers["pull_request"] is None, "no path, branch or draft filter"
+    assert triggers["push"] == {"branches": ["main"]}
+    budgets = journey.workflow["jobs"]["budgets"]
+    assert budgets["if"] == "always()"
+    assert set(budgets["needs"]) == set(journey.workflow["jobs"]) - {"budgets"}
     # Discovery must skip these: either would make `list` refuse the whole catalog.
     journey.repository.write("tests/fixtures/budgets.yaml", "not: a budgets file\n")
     journey.repository.write("conformance/case/budgets.yaml", "not: a budgets file\n")
@@ -413,6 +420,26 @@ def test_an_enforced_budget_over_its_line_fails_and_report_only_ones_do_not(jour
     assert rows["demo-bundle-bytes"]["verdict"] == "over"
     assert journey.executed() == sorted(RUNNABLE)
     assert len(journey.host.comments) == 1
+
+
+def test_only_an_adverse_move_is_flagged_and_a_flag_fails_nothing(journey):
+    for _ in range(5):
+        assert journey.base_push().exit_code == 0
+    size = journey.path / "packages/demo/bundle-size"
+
+    size.write_text("900\n")
+    worse = journey.pull_request()
+    assert worse.exit_code == 0, worse.stdout
+    row = worse.rows()["demo-bundle-bytes"]
+    assert row["verdict"] == "within"
+    assert row["flag"] is True, row
+
+    size.write_text("100\n")
+    better = journey.pull_request()
+    assert better.exit_code == 0, better.stdout
+    row = better.rows()["demo-bundle-bytes"]
+    assert row["current"] == 100
+    assert row["flag"] is False, row
 
 
 def test_budgets_for_a_release_or_a_laptop_say_why_and_never_fail_the_job(journey):
