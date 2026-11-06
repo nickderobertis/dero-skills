@@ -80,7 +80,17 @@ def run_scratch_session(root: Path, test_source: str) -> subprocess.CompletedPro
         encoding="utf-8",
     )
     return subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(root)],
+        # Nx forces colour on, which would split the summary line with escapes.
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "--color=no",
+            "-p",
+            "no:cacheprovider",
+            str(root),
+        ],
         cwd=root,
         env={
             **{
