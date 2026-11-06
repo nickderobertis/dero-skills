@@ -254,7 +254,14 @@ def runner_path(tmp_path_factory, gh_session_bus_trap) -> str:
 class Journey:
     """A composed repository and one host double, driven through the generated job."""
 
-    def __init__(self, released: Released, runner_path: str, root: Path, kind: str):
+    def __init__(
+        self,
+        released: Released,
+        runner_path: str,
+        root: Path,
+        kind: str,
+        catalog: dict[str, str] = CATALOG_FILES,
+    ):
         self.token = "generated-job-token"
         self.released = released
         self.harness = released.harness
@@ -269,7 +276,7 @@ class Journey:
             self.repository.path,
             language=self.composition.language,
             platforms=self.composition.platforms,
-            files={**CATALOG_FILES, **self.composition.files},
+            files={**catalog, **self.composition.files},
             shape=self.composition.shape,
         )
         self.workflow = yaml.safe_load(
@@ -497,6 +504,24 @@ def test_under_the_actions_token_a_pull_request_keeps_one_comment_and_main_its_h
     row = one_table_row(journey.host.comments[0]["body"], "demo-bundle-bytes")
     assert row == one_table_row(second.markdown(), "demo-bundle-bytes")
     assert row != one_table_row(first.markdown(), "demo-bundle-bytes")
+
+
+def test_a_freshly_bootstrapped_repository_saves_history_from_its_own_budget(
+    released, runner_path, tmp_path
+):
+    """Nothing else measures in its job, and the own budget joins only the final upload."""
+    journey = Journey(released, runner_path, tmp_path, "rust-cli", catalog={})
+    try:
+        first = journey.base_push()
+        second = journey.base_push()
+        assert first.exit_code == second.exit_code == 0, second.stdout
+        saved = journey.host.artifact_files(second.run_id)["rolling-history.json"]
+        runs = json.loads(saved.decode())["runs"]
+        assert [run["head_sha"] for run in runs] == [first.sha, second.sha]
+        for run in runs:
+            assert [r["id"] for r in run["results"]["results"]] == [REPORT_BUDGET]
+    finally:
+        journey.close()
 
 
 def test_history_is_unavailable_below_five_saved_commits_then_provisional(journey):
