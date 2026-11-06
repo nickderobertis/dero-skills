@@ -792,9 +792,6 @@ def test_narrowed_rules_keep_both_sides_of_their_line(
         )
 
 
-# --- e2e: the gh session-bus convention a composed repository inherits --------
-
-
 def test_a_composed_repository_receives_the_gh_session_bus_convention(tmp_path):
     # The composer refuses a repository with no AGENTS.md and tells the agent to copy
     # the template there, so that copy is where a repository's AGENTS.md starts.

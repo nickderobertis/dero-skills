@@ -36,10 +36,10 @@ rules:
       true when every test in the target files that hands the real `gh` CLI a fake or
       local host, or no token for the host it targets, does so in an environment
       carrying `DBUS_SESSION_BUS_ADDRESS=disabled:`, set in that environment or inherited
-      from the test process's shared setup (a conftest, a test-runner setup file), and
-      true when the `gh` a test runs is a stand-in. false when such a test hands the real
-      `gh` an environment without that variable. A call that names no fake host and holds
-      a token for its target is NOT a violation.
+      from the test process's shared setup (a conftest, a test-runner setup file). false
+      when such a test hands the real `gh` an environment without that variable. Relevance
+      admits a whole file, so a test in it whose `gh` is a stand-in is true on its own, as
+      is a call that names no fake host and holds a token for its target.
     relevance: the target files define a test that runs the real `gh` CLI
     require_line_attribution: true
 

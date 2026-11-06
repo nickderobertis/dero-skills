@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 CONFTEST = Path(__file__).resolve().parent / "conftest.py"
+REPO_ROOT = Path(__file__).resolve().parents[4]
 VARIABLE = "DBUS_SESSION_BUS_ADDRESS"
 FAKE_HOST_CALL = ["gh", "api", "http://127.0.0.1:1/repos/owner/name"]
 
@@ -39,7 +40,7 @@ class Recorded:
             "GH_CONFIG_DIR": str(root / "gh-config"),
         }
 
-    def times_asked(self, env: dict[str, str]) -> int:
+    def asks_from_one_gh_call(self, env: dict[str, str]) -> int:
         self.record.unlink(missing_ok=True)
         subprocess.run(FAKE_HOST_CALL, env=env, capture_output=True, timeout=30)
         if not self.record.exists():
@@ -52,14 +53,14 @@ def recorded(tmp_path, recording_dbus_launch) -> Recorded:
     """The recorded environment, once a copy without the variable shows ``gh`` still asks."""
     recorded = Recorded(tmp_path, recording_dbus_launch)
     control = {k: v for k, v in recorded.env.items() if k != VARIABLE}
-    if not recorded.times_asked(control):
+    if not recorded.asks_from_one_gh_call(control):
         pytest.skip("this gh does not ask for a session bus, so no bus can leak")
     return recorded
 
 
 def test_the_conftest_environment_keeps_gh_from_asking_for_a_bus(recorded):
     assert recorded.env.get(VARIABLE) == "disabled:"
-    assert recorded.times_asked(recorded.env) == 0
+    assert recorded.asks_from_one_gh_call(recorded.env) == 0
 
 
 def run_scratch_session(root: Path, test_source: str) -> subprocess.CompletedProcess:
@@ -82,7 +83,11 @@ def run_scratch_session(root: Path, test_source: str) -> subprocess.CompletedPro
     return subprocess.run(
         # Nx forces colour on, which would split the summary line with escapes.
         [
-            sys.executable,
+            "uv",
+            "run",
+            "--project",
+            str(REPO_ROOT),
+            "python",
             "-m",
             "pytest",
             "-q",
