@@ -255,6 +255,7 @@ class Journey:
     """A composed repository and one host double, driven through the generated job."""
 
     def __init__(self, released: Released, runner_path: str, root: Path, kind: str):
+        self.token = "generated-job-token"
         self.released = released
         self.harness = released.harness
         self.host = self.harness.Host()
@@ -289,7 +290,7 @@ class Journey:
         assert [s["uses"] for s in uses] == [f"{ACTION_REPOSITORY}@{self.released.tag}"]
         given = dict(uses[0]["with"])
         assert given.pop("token") == "${{ github.token }}"
-        return {"token": "generated-job-token", **given}
+        return {"token": self.token, **given}
 
     def run(self, event_name: str, sha: str, **options):
         self.next_run += 1
@@ -561,6 +562,16 @@ def test_a_fork_gets_a_summary_and_artifact_without_a_comment_or_credential(jour
     assert "someone/fork" in job.summary
     assert journey.host.artifact_files(job.run_id) is not None
     assert base.exit_code == 0
+
+
+def test_a_budget_command_holding_no_token_runs_the_real_gh_without_a_session_bus(
+    journey,
+):
+    # Asking for a bus would fail this test at teardown through the conftest's trap, on
+    # the PATH `runner_path` hands the job: the one run here where `gh` would ask.
+    journey.token = ""
+    job = journey.base_push()
+    assert "demo-host-reads" in journey.executed(), job.stdout
 
 
 def test_posting_and_history_failures_are_diagnostics_and_a_real_failure_survives(
