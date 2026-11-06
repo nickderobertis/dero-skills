@@ -355,9 +355,11 @@ release's whole payload is usable.
   budget and the saving of its verdict come after it, and queueing and runner setup are
   outside it. Only that job holds the telemetry, so the `report-job` project's `budgets`
   target leaves it out with `--exclude-label ci-report`, and it is enforced in the job.
-- **The history.** Each push to main saves the same result artifact and one rolling file,
-  and a pull request compares with it. Every budget compares the same way, with no baseline
-  per kind of budget, and the action's README states how many samples a comparison needs.
+- **The history.** Each push to main saves the same result artifact and, when it measured at
+  least one budget, one rolling file, and a pull request compares with it. A push that measured
+  nothing saves no rolling file and says so, and the next push reads the one before it. Every
+  budget compares the same way, with no baseline per kind of budget, and the action's README
+  states how many samples a comparison needs.
 
 **The policy** generated repositories carry has one statement,
 `assets/budgets/budget-policy.md`, which `--ci-cd` adds to `AGENTS.md`.

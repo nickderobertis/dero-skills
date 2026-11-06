@@ -472,6 +472,33 @@ def test_a_base_push_saves_the_same_results_and_posts_nothing(journey):
     }
 
 
+def test_under_the_actions_token_a_pull_request_keeps_one_comment_and_main_its_history(
+    journey,
+):
+    """The token the generated job passes: one account GitHub spells two ways."""
+    journey.host.actions_bot()
+    first_base = journey.base_push()
+    second_base = journey.base_push()
+    assert first_base.exit_code == second_base.exit_code == 0, second_base.stdout
+    history = json.loads(
+        journey.host.artifact_files(second_base.run_id)["rolling-history.json"].decode()
+    )
+    assert [run["head_sha"] for run in history["runs"]] == [
+        first_base.sha,
+        second_base.sha,
+    ]
+
+    first = journey.pull_request()
+    second = journey.pull_request(bundle_size=600)
+    assert first.exit_code == second.exit_code == 0, second.stdout
+    assert len(journey.host.comments) == 1
+    # The comment is posted before the job's own budget has its verdict, so it is this
+    # push's row, rather than the final report, that shows the comment moved.
+    row = one_table_row(journey.host.comments[0]["body"], "demo-bundle-bytes")
+    assert row == one_table_row(second.markdown(), "demo-bundle-bytes")
+    assert row != one_table_row(first.markdown(), "demo-bundle-bytes")
+
+
 def test_history_is_unavailable_below_five_saved_commits_then_provisional(journey):
     budget = "demo-bundle-bytes"
     for _ in range(4):

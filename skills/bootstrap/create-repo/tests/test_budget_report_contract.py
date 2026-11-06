@@ -88,6 +88,14 @@ def test_the_job_pins_the_release_the_fixtures_hold(action_step):
     assert released()["name"]
 
 
+def test_the_composer_generates_the_release_that_keeps_one_comment_and_saves_history(
+    repo,
+):
+    """v0.1.2 is the first release that does both under the job's own Actions token."""
+    generated = (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert f"uses: {ACTION}@v0.1.2\n" in generated
+
+
 def test_each_input_the_job_passes_is_one_the_action_declares(action_step):
     declared = released()["inputs"]
     assert set(action_step["with"]) <= set(declared)
