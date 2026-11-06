@@ -83,9 +83,15 @@ def test_pull_requests_run_lint_and_one_test_job_per_platform(ci_workflow):
         assert "needs:" not in job, name
 
 
-def test_ci_runs_on_pull_requests_and_never_on_push_to_main(ci_workflow):
-    assert "\non:\n  pull_request:\n\n" in ci_workflow
-    assert "\n  push:" not in ci_workflow
+def test_ci_runs_on_pull_requests_and_on_push_to_main_only_for_budgets(ci_workflow):
+    assert "\non:\n  pull_request:\n  push:\n    branches: [main]\n\n" in ci_workflow
+    guard = "    if: github.event_name == 'pull_request'\n"
+    assert (
+        ci_workflow.count(guard) == 3
+    )  # lint, the visual-docs arch job, each test job
+    budgets = ci_workflow[ci_workflow.index("\n  budgets:\n") :]
+    assert guard not in budgets
+    assert "    if: always()\n" in budgets
 
 
 def test_the_llmlint_tier_runs_inside_lint(ci_workflow):

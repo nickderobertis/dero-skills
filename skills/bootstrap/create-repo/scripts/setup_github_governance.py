@@ -9,13 +9,15 @@ Usage:
         [--repo-dir DIR] [--repo OWNER/NAME] [--branch NAME] [--approvals N] \
         [--fork-pr-approval POLICY] [--visibility VISIBILITY] [--enforce-admins] \
         [--dry-run] [--verify]
+    uv run --script scripts/setup_github_governance.py --add-required-check CHECK \
+        [--add-required-check CHECK ...] [--repo OWNER/NAME] [--branch NAME] \
+        [--dry-run] [--verify]
 
 The positional ``CHECK`` arguments are the status-check contexts that must be
 green before a PR can merge. With none given, they are the ``required_checks``
 of the repository's ``.github/governance.json`` (under ``--repo-dir``, default
-``.``), which ``compose_repo_plan.py --ci-cd`` writes: ``lint`` and one
-``test-<platform>`` job per supported platform, the CI shape references/ci.md
-states. Given explicitly, list *every* gating check by name; a check that is not
+``.``), which ``compose_repo_plan.py --ci-cd`` writes: ``lint``, one ``test-<platform>`` job
+per supported platform and ``budgets``, the CI shape references/ci.md states. Given explicitly, list *every* gating check by name; a check that is not
 required is only advisory, and a red one can still be merged past. The llmlint
 tier (a mandated blocking PR check) must be among them — a context named
 llmlint, or a ``lint`` context whose job in ``.github/workflows/ci.yml`` runs
@@ -63,6 +65,18 @@ file-level gate while its gating checks are not actually required to merge.
 --verify writes nothing and exits non-zero on any divergence, so it belongs in a
 creation-verification step or a periodic drift check.
 
+``--add-required-check CHECK`` (repeatable, exclusive with the positional ``CHECK``
+arguments and every other profile flag) is the additive mode: it sets no profile
+and reads no governance record. It reads the live classic protection, adds only the
+named contexts that are missing through the required-status-checks subresource, so
+nothing else can be reset, then reads the protection back and fails if a prior
+context, an app binding or any other protection setting moved. A repeated call
+writes nothing. --dry-run prints the one call it would make and --verify reports
+whether each context is already required; both read and neither writes. Classic
+protection is the only model it writes: a branch with no classic required checks,
+or any ruleset applying to it, or a read that fails, is refused by name before any
+write.
+
 Talks to GitHub through the authenticated ``gh`` CLI, so it carries no
 dependencies and inherits your existing credentials — it needs admin rights on
 the target repo. Output is itself agent context, so it is minimal: a single OK
@@ -87,7 +101,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, NewType
 
 # The llmlint job's status-check context. The create-repo CI names the job so
 # its context is a bare ``llmlint``; match case-insensitively (and any suffix a
@@ -710,7 +724,7 @@ def _is_not_found(stderr: str) -> bool:
 
 def _get_json(
     run: Runner, path: str, fix: str, *, allow_missing: bool = False
-) -> dict | None:
+) -> dict | list | None:
     """GET a ``gh api`` path and parse its JSON body.
 
     Raises GhError on any failure, carrying the exact ``gh`` error and the
@@ -729,6 +743,250 @@ def _get_json(
         return json.loads(res.stdout or "{}")
     except json.JSONDecodeError as exc:
         raise GhError(f"`gh api {path}` returned invalid JSON: {exc}", fix) from exc
+
+
+# GitHub's answers below are read in the shapes its OpenAPI description declares;
+# tests/github_rest_contract.py and the additive journeys hold them to it in the gate.
+# A required check's name, and the GitHub App that must report it.
+CheckContext = NewType("CheckContext", str)
+AppId = NewType("AppId", int)
+# Each required context to its app binding; None allows any source.
+Bindings = dict[CheckContext, AppId | None]
+
+
+class ClassicChecks(NamedTuple):
+    """Classic protection as the additive mode compares it around its one write."""
+
+    bindings: Bindings
+    # The whole protection GET but those contexts, which the write must not move.
+    policy: dict
+
+
+def _is_check(check: object) -> bool:
+    """One entry of `checks`: a named context, bound to an app id or to any source."""
+    if not isinstance(check, dict) or not isinstance(check.get("context"), str):
+        return False
+    if "app_id" not in check:
+        return False
+    app = check["app_id"]
+    return app is None or (isinstance(app, int) and not isinstance(app, bool))
+
+
+def _check_bindings(required_status_checks: dict, fix: str) -> Bindings:
+    """Each required context to its app binding, from both shapes GitHub lists.
+
+    Comparison needs the whole set, so an answer missing either list, or holding an
+    entry that cannot be read, is refused rather than filtered down to what can.
+    """
+    contexts = required_status_checks.get("contexts")
+    checks = required_status_checks.get("checks")
+    if (
+        not isinstance(contexts, list)
+        or not all(isinstance(context, str) for context in contexts)
+        or not isinstance(checks, list)
+        or not all(_is_check(check) for check in checks)
+    ):
+        raise GhError(
+            "GitHub answered required_status_checks without a readable `contexts` "
+            f"and `checks` list: {json.dumps(required_status_checks)}",
+            fix,
+        )
+    bindings: Bindings = dict.fromkeys(CheckContext(name) for name in contexts)
+    for check in checks:
+        app = check.get("app_id")
+        bindings[CheckContext(check["context"])] = None if app is None else AppId(app)
+    return bindings
+
+
+def _classic_checks(protection: dict | list | None, fix: str) -> ClassicChecks | None:
+    """The protection GET split for comparison; None when it requires no checks."""
+    if not isinstance(protection, dict):
+        raise GhError(
+            f"GitHub answered branch protection that is no object: {json.dumps(protection)}",
+            fix,
+        )
+    required = protection.get("required_status_checks")
+    if required is None:
+        return None
+    if not isinstance(required, dict):
+        raise GhError(
+            f"GitHub answered required_status_checks that is no object: {json.dumps(required)}",
+            fix,
+        )
+    required_rest = {
+        key: value
+        for key, value in required.items()
+        if key not in ("contexts", "checks")
+    }
+    return ClassicChecks(
+        _check_bindings(required, fix),
+        {**protection, "required_status_checks": required_rest},
+    )
+
+
+def _required_checks_path(repo: str, branch: str) -> str:
+    return f"repos/{repo}/branches/{branch}/protection/required_status_checks/contexts"
+
+
+def _ruleset_names(rules: list) -> list[str]:
+    """Each ruleset applying to a branch, named with the rule types it applies."""
+    types: dict[str, list[str]] = {}
+    for rule in rules:
+        rule = rule if isinstance(rule, dict) else {}
+        name = (
+            f"ruleset {rule.get('ruleset_id', '?')} "
+            f"({rule.get('ruleset_source_type', 'unknown source')} "
+            f"{rule.get('ruleset_source', '?')})"
+        )
+        types.setdefault(name, []).append(str(rule.get("type", "unknown rule")))
+    return [f"{name}: {', '.join(kinds)}" for name, kinds in types.items()]
+
+
+def read_classic_checks(run: Runner, repo: str, branch: str) -> ClassicChecks:
+    """The branch's classic required checks, or a refusal of any other model.
+
+    The rules endpoint answers for every ruleset that applies, inherited ones
+    included, so a model this mode does not write is named before anything is sent.
+    Its first page is enough: one applicable rule refuses.
+    """
+    fix = "check you can read the repo's protection (`gh auth status`, admin rights) and --repo/--branch; nothing was written"
+    rules = _get_json(run, f"repos/{repo}/rules/branches/{branch}", fix)
+    if not isinstance(rules, list):
+        raise GhError(
+            f"`gh api repos/{repo}/rules/branches/{branch}` did not answer a list of rules",
+            fix,
+        )
+    protection = _get_json(
+        run, f"repos/{repo}/branches/{branch}/protection", fix, allow_missing=True
+    )
+    if rules:
+        model = "rulesets-only" if protection is None else "classic plus rulesets"
+        raise GhError(
+            f"{repo}@{branch} is governed by {model} ({'; '.join(_ruleset_names(rules))}), "
+            "which --add-required-check does not write",
+            "add the check through whoever owns that ruleset, or remove the ruleset; "
+            "nothing was written",
+        )
+    if protection is None:
+        raise GhError(
+            f"{repo}@{branch} has no classic branch protection and no ruleset, or this "
+            "token cannot read its protection",
+            "apply the full profile first (this script with positional checks); "
+            "nothing was written",
+        )
+    classic = _classic_checks(protection, fix)
+    if classic is None:
+        raise GhError(
+            f"{repo}@{branch} has classic protection that requires no status checks, "
+            "so there is no set to add to",
+            "turn required status checks on deliberately, since that also decides "
+            "strictness; nothing was written",
+        )
+    return classic
+
+
+def _show_checks(bindings: Bindings) -> str:
+    """A required set as output: each context, with its app binding when it has one."""
+    shown = [
+        name if app is None else f"{name} (app {app})"
+        for name, app in sorted(bindings.items())
+    ]
+    return f"[{', '.join(shown)}]"
+
+
+def readback_problems(
+    before: ClassicChecks, after: ClassicChecks | None, added: Sequence[CheckContext]
+) -> list[str]:
+    """Everything the read-back shows moved, beyond the contexts added."""
+    if after is None:
+        return ["required status checks are no longer enabled"]
+    problems = []
+    for name, app in before.bindings.items():
+        if name not in after.bindings:
+            problems.append(f"dropped {name}")
+        elif after.bindings[name] != app:
+            problems.append(f"{name} is bound to {after.bindings[name]}, was {app}")
+    problems += [f"did not add {name}" for name in added if name not in after.bindings]
+    problems += [
+        f"unexpected new context {name}"
+        for name in after.bindings
+        if name not in before.bindings and name not in added
+    ]
+    for key in sorted(before.policy.keys() | after.policy.keys()):
+        if before.policy.get(key) != after.policy.get(key):
+            problems.append(f"protection setting {key} changed")
+    return problems
+
+
+def add_required_checks(run: Runner, args: argparse.Namespace) -> int:
+    """The additive mode: add only the missing contexts, then prove nothing else moved."""
+    wanted = [
+        CheckContext(name) for name in normalize_contexts(args.add_required_check)
+    ]
+    repo = resolve_repo(run, args.repo)
+    branch = resolve_branch(run, repo, args.branch)
+    target = f"{repo}@{branch}"
+    before = read_classic_checks(run, repo, branch)
+    missing = [name for name in wanted if name not in before.bindings]
+    if args.verify:
+        if missing:
+            print(
+                f"DRIFT branch protection: required checks missing {missing} "
+                f"(has {_show_checks(before.bindings)})",
+                file=sys.stderr,
+            )
+            print(
+                f"FAIL  {target}: {len(missing)} check(s) not required; re-run "
+                "without --verify to add them",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"OK    {target}: {', '.join(wanted)} required; required checks "
+            f"{_show_checks(before.bindings)}"
+        )
+        return 0
+    if not missing:
+        prefix = "DRY-RUN" if args.dry_run else "OK   "
+        print(
+            f"{prefix} {target}: {', '.join(wanted)} already required, nothing to "
+            f"write; required checks {_show_checks(before.bindings)}"
+        )
+        return 0
+    call = GhCall(
+        "POST",
+        _required_checks_path(repo, branch),
+        {"contexts": missing},
+        f"required checks {', '.join(missing)} on {branch}",
+    )
+    if args.dry_run:
+        print(
+            f"DRY-RUN would add {', '.join(missing)} to {target}, whose required "
+            f"checks are {_show_checks(before.bindings)}:\n"
+            f"  {call.method} {call.path}\n    {call.stdin}"
+        )
+        return 0
+    execute(run, [call])
+    fix = (
+        f"compare {target}'s protection with the set before this write, "
+        f"{_show_checks(before.bindings)}, and restore what moved by hand; this "
+        "script made only the one POST"
+    )
+    protection = _get_json(run, f"repos/{repo}/branches/{branch}/protection", fix)
+    after = _classic_checks(protection, fix)
+    problems = readback_problems(before, after, missing)
+    if problems:
+        raise GhError(
+            f"{target} read back wrong after adding {', '.join(missing)}: "
+            f"{'; '.join(problems)}",
+            fix,
+        )
+    print(
+        f"OK    {target}: added {', '.join(missing)}; required checks before "
+        f"{_show_checks(before.bindings)}, after {_show_checks(after.bindings)}; "
+        "every other protection setting unchanged"
+    )
+    return 0
 
 
 def _render_dry_run(
@@ -847,7 +1105,40 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "public repository) instead of "
         "applying it; exits non-zero on any divergence",
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--add-required-check",
+        action="append",
+        default=[],
+        metavar="CHECK",
+        help="additive mode (repeatable): add this context to the live required "
+        "checks, preserving every other context, app binding and setting; replaces "
+        "the positional CHECKs and takes only --repo, --branch, --dry-run and "
+        "--verify. Refuses, before any write, a branch not governed by classic "
+        "protection alone",
+    )
+    args = parser.parse_args(argv)
+    if args.add_required_check:
+        if args.checks:
+            parser.error(
+                "--add-required-check adds to the live set and positional CHECKs "
+                "replace it; pass one or the other"
+            )
+        profile_flags = {
+            "--repo-dir": args.repo_dir != Path("."),
+            "--approvals": args.approvals != 0,
+            "--enforce-admins": args.enforce_admins,
+            "--allow-missing-llmlint": args.allow_missing_llmlint,
+            "--strict": args.strict,
+            "--fork-pr-approval": args.fork_pr_approval != DEFAULT_FORK_PR_APPROVAL,
+            "--visibility": args.visibility is not None,
+        }
+        given = [flag for flag, set_ in profile_flags.items() if set_]
+        if given:
+            parser.error(
+                f"--add-required-check preserves the live settings, so {', '.join(given)} "
+                "would be ignored; drop them, or use the full profile"
+            )
+    return args
 
 
 def main(argv: list[str], run: Runner | None = None) -> int:
@@ -856,7 +1147,11 @@ def main(argv: list[str], run: Runner | None = None) -> int:
     # With a real ``gh``, ensure it is installed before doing anything. A fully
     # offline dry-run (--repo and --branch both given) needs no ``gh`` at all.
     offline_dry_run = bool(
-        args.dry_run and args.repo and args.branch and not args.verify
+        args.dry_run
+        and args.repo
+        and args.branch
+        and not args.verify
+        and not args.add_required_check
     )
     if run is None:
         if not offline_dry_run and shutil.which("gh") is None:
@@ -870,6 +1165,8 @@ def main(argv: list[str], run: Runner | None = None) -> int:
         run = _subprocess_run
 
     try:
+        if args.add_required_check:
+            return add_required_checks(run, args)
         recorded = read_governance(args.repo_dir)
         checks = args.checks or (recorded.required_checks if recorded else [])
         if not checks:

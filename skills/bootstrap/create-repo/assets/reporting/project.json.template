@@ -1,0 +1,9 @@
+{
+  "name": "report-job",
+  "tags": ["type:budgets"],
+  "targets": {
+    "budgets": {
+      "command": "bunx onebudgetspec check .github/reporting/budgets.yaml --exclude-label ci-report"
+    }
+  }
+}

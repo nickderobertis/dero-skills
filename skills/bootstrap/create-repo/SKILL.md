@@ -473,8 +473,10 @@ composer's `--intersection` choices automatically.
   `assets/ci/nx-remote-cache.mjs` and `assets/ci/nx-version-free-inputs.mjs`) — the
   CI/CD shape `--ci-cd`
   renders: pull-request CI (`lint`, whose llmlint step requires its harness
-  credential and fails fast without it, plus a test job per platform), the
-  release workflows ending in the release tail, the nine root budgets, and
+  credential and fails fast without it, a test job per platform, and the one
+  `budgets` report job, which alone also runs on push to main), the release
+  workflows ending in the release tail, the nine root budgets and the report
+  job's own, the budget policy in `AGENTS.md` (`assets/budgets/budget-policy.md`), and
   `just gate`'s wall-clock record and warning. Release PRs run every job and
   replay proven test results using version-free inputs. The existing release-plz
   job promotes trusted results into the readable base scope before versioning;
@@ -521,7 +523,9 @@ composer's `--intersection` choices automatically.
   live repo-side state — which the filesystem checker can't see — diverges from
   the desired one, closing the gap where a repo passes every file gate while its
   checks aren't actually required to merge. With no contexts given it reads
-  them from `.github/governance.json` (`lint` and the test jobs, non-strict;
+  them from `.github/governance.json` (`lint`, the test jobs and `budgets`, non-strict;
   `--strict` is an explicit opt-in). It refuses to apply (or verify)
   governance that omits the `llmlint` tier — a context named `llmlint`, or a
   required `lint` whose job runs it — unless `--allow-missing-llmlint` is passed.
+  `--add-required-check CHECK` instead adds one context to a repository already
+  governed, preserving everything else.

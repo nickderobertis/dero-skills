@@ -20,6 +20,7 @@ COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"
 CHECKER = SKILL_DIR / "scripts" / "check_repo_baseline.py"
 GOVERNANCE = SKILL_DIR / "scripts" / "setup_github_governance.py"
 ASSETS = SKILL_DIR / "assets"
+FIXTURES = SKILL_DIR / "tests" / "fixtures"
 NAME = "demo"
 
 # The compositions the shape is proven over: each language's toolchain, cross-platform
@@ -52,6 +53,7 @@ def compose(
     platforms: str = "cross-platform",
     visual_docs_arch: str | None = None,
     files: dict[str, str] | None = None,
+    shape: str | None = None,
 ) -> Path:
     """A conformant repository at ``root`` with the shape written into it."""
     justfile = (ASSETS / "justfile.template").read_text(encoding="utf-8")
@@ -68,6 +70,8 @@ def compose(
     args += ["--language", language, "--name", NAME, "--platforms", platforms]
     if visual_docs_arch:
         args += ["--visual-docs-arch", visual_docs_arch]
+    if shape:
+        args += ["--shape", shape]
     done = run(args)
     assert done.returncode == 0, done.stderr
     lock_packages(repo)

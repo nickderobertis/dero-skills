@@ -3,18 +3,11 @@
 #% # and `#% endif` for the flags the composition sets (rust, typescript, windows, macos,
 #% # visual-docs, visual-docs-arch) and `#% if !FLAG` for those it does not, fills each
 #% # @@KEY@@, and drops every `#%` line.
-# Prove each pull request from a clean checkout, in one job per concern: `lint` once, on
-# Linux, for everything platform-independent, and one test job per platform the repository
-# supports. None needs another, so they all start at once, and each is held to 30 minutes
-# (`timeout-minutes`) — the CI half of the budgets in budgets.yaml (references/ci.md,
-# "CI and CD time budgets"). Branch protection requires exactly `lint` and the test jobs
-# (.github/governance.json); branches need not be up to date with main before they merge,
-# which trades catching a semantic conflict between two independently green pull requests
-# for not re-running every open pull request each time main moves.
+# Prove each pull request from a clean checkout. references/ci.md states the job topology,
+# the time budgets and the merge tradeoff.
 #
-# CI does not run on push to main: the squash commit's tree is the one its pull request's
-# jobs already proved, and nothing downstream re-runs these checks — the release workflow
-# builds, installs and publishes that tree's artifacts without re-testing it.
+# A push to main runs only `budgets`, which records that commit's results as the history pull
+# requests compare with.
 #
 # Every job runs the same `just` recipes a contributor runs locally, over the projects its
 # diff can reach (Nx affected), from a base derived explicitly rather than guessed. The line
@@ -25,11 +18,14 @@ name: ci
 
 on:
   pull_request:
+  push:
+    branches: [main]
 
-# Cancel superseded runs on the same ref: only the newest push of a pull request matters.
+# Cancel superseded runs of a pull request: only its newest push matters. A push to main is
+# never cancelled, since each is a commit of the base history.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: the token is read-only by default and widened per job only where a job
 # genuinely needs more.
@@ -45,6 +41,7 @@ jobs:
   # format/lint/type checks over the affected projects, the supply chain, the judged lint
   # (llmlint) and the visual docs.
   lint:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -174,6 +171,7 @@ jobs:
 #% if visual-docs-arch
   # The visual docs on their second architecture, natively on that architecture's runner.
   visual-docs-@@VISUAL_DOCS_ARCH@@:
+    if: github.event_name == 'pull_request'
     runs-on: @@VISUAL_DOCS_RUNNER@@
     timeout-minutes: 30
     permissions:
@@ -204,6 +202,7 @@ jobs:
 #% for platform in linux windows macos
   # The tests, coverage, budgets and e2e journeys of the affected projects on @@PLATFORM_TITLE@@.
   test-@@PLATFORM@@:
+    if: github.event_name == 'pull_request'
     runs-on: @@PLATFORM_RUNNER@@
     timeout-minutes: 30
     steps:
@@ -262,3 +261,26 @@ jobs:
       - cancel: nx-cache
 
 #% endfor
+  # The full history lets local git prove each saved base commit's ancestry, and the group
+  # serializes comment writers.
+  budgets:
+    needs: [@@CI_PREDECESSORS@@]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+    concurrency:
+      group: budget-report-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: nickderobertis/onebudgetspec-github-action@@@ONEBUDGETSPEC_ACTION_VERSION@@
+        with:
+          token: ${{ github.token }}
+          enforcement-exclude-labels: release-tail,host-variable

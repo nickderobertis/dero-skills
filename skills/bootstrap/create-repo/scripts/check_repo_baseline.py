@@ -130,13 +130,17 @@ Checks:
     `.github/workflows/ci.yml` runs `lint` and one `test-<platform>` job per
     platform the record requires (`test-linux` always), each with
     `timeout-minutes: 30`; no workflow runs any other job on a pull request but
-    a `visual-docs-<arch>`; CI does not run on push to main; the root
+    a `visual-docs-<arch>` and `budgets`; a push to main runs only `budgets`;
+    `budgets` is the released report action's one job, after every other CI job
+    under `if: always()`, unfiltered, with the permissions it reads and posts
+    with and the shape's report-only labels, and `.github/reporting/budgets.yaml`
+    holds its own budget and `AGENTS.md` the budget policy; the root
     `budgets.yaml` registers the nine CI/CD budgets (`<name>-ci-check-time`,
     `-cd-job-time`, `-release-cycle-time`, `-ci-job-count`, `-cd-job-count`,
     `-release-read-requests`, `-pr-read-requests`, `-gate-time`) and, when it
     runs `scripts/actions-budget-figures.sh`, the repository holds that copy;
-    the governance record requires exactly `lint` and the test jobs. Whether it
-    is strict is not checked: up-to-date branches are an opt-in.
+    the governance record requires exactly `lint`, the test jobs and `budgets`.
+    Whether it is strict is not checked: up-to-date branches are an opt-in.
 
 These go past mere presence: a do-nothing CI file, a placeholder `test`
 recipe, or a missing e2e tier are the parts most often skipped when the skill
@@ -3228,12 +3232,28 @@ BUDGET_ID_RE = re.compile(r"^\s*-\s+id:\s*['\"]?([^'\"\s#]+)", re.MULTILINE)
 WORKFLOW_KEY_RE = re.compile(r"^( *)([A-Za-z0-9_-]+|['\"][^'\"]+['\"]):(.*)$")
 
 
+# The budget report job: the one job the shape runs on pull requests and on pushes to
+# main alike. Its action is pinned to a release's exact version, and the report-only
+# labels are the root budgets' that only a release or a developer's machine can measure.
+BUDGETS_JOB = "budgets"
+BUDGETS_ACTION_RE = re.compile(
+    r"uses:\s*nickderobertis/onebudgetspec-github-action@v\d+\.\d+\.\d+\s*$", re.M
+)
+BUDGETS_REPORT_ONLY_LABELS = ("release-tail", "host-variable")
+PULL_REQUEST_ONLY_IF_RE = re.compile(r"github\.event_name\s*==\s*'pull_request'")
+REPORT_BUDGETS_FILE = ".github/reporting/budgets.yaml"
+REPORT_BUDGET_SUFFIX = "budget-report-command-seconds"
+BUDGET_POLICY_HEADING = "## Budget reports"
+
+
 class WorkflowJob(NamedTuple):
-    """A job's id and the text of the keys the shape check reads."""
+    """A job's id, the text of the keys the shape check reads, and its whole body."""
 
     name: str
     timeout: str
     runs_if: str
+    needs: str = ""
+    body: str = ""
 
 
 def _yaml_children(
@@ -3282,6 +3302,8 @@ def workflow_jobs(text: str) -> list[WorkflowJob]:
                 name,
                 keys.get("timeout-minutes", "").strip("'\""),
                 keys.get("if", ""),
+                keys.get("needs", ""),
+                _block_text(lines, index, 2),
             )
         )
     return jobs
@@ -3334,6 +3356,63 @@ def runs_on_push_to_main(triggers: dict[str, str]) -> bool:
     )
 
 
+def budgets_job_problems(
+    jobs: dict[str, WorkflowJob], triggers: dict[str, str]
+) -> list[str]:
+    """How ci.yml's `budgets` job falls short of always reporting a real verdict."""
+    job = jobs.get(BUDGETS_JOB)
+    if job is None:
+        return [f"has no `{BUDGETS_JOB}` job"]
+    problems = []
+    if job.runs_if != "always()":
+        problems.append(
+            f"runs `{BUDGETS_JOB}` under `if: {job.runs_if or 'unset'}`, so a failed or "
+            "skipped predecessor can leave its required check unreported; use `if: always()`"
+        )
+    needed = {name.strip() for name in job.needs.strip("[]").split(",")}
+    not_awaited = sorted(set(jobs) - {BUDGETS_JOB} - needed)
+    if not_awaited:
+        problems.append(
+            f"runs `{BUDGETS_JOB}` without waiting on {', '.join(not_awaited)}"
+        )
+    if not BUDGETS_ACTION_RE.search(job.body):
+        problems.append(
+            f"has `{BUDGETS_JOB}` use no exact release of "
+            "nickderobertis/onebudgetspec-github-action"
+        )
+    if re.search(r"^\s*(?:-\s*)?run:", job.body, re.M):
+        problems.append(
+            f"has `{BUDGETS_JOB}` run commands of its own beyond the action"
+        )
+    for needed_text in ("actions: read", "pull-requests: write", "fetch-depth: 0"):
+        if needed_text not in job.body:
+            problems.append(f"has `{BUDGETS_JOB}` without `{needed_text}`")
+    missing_labels = [
+        label
+        for label in BUDGETS_REPORT_ONLY_LABELS
+        if not re.search(rf"enforcement-exclude-labels:.*\b{label}\b", job.body)
+    ]
+    if missing_labels:
+        problems.append(
+            f"enforces {', '.join(missing_labels)} in `{BUDGETS_JOB}`, which cannot "
+            "measure them, so its required check could never pass; name them in "
+            "`enforcement-exclude-labels`"
+        )
+    pull_request = triggers.get("pull_request")
+    if pull_request is None or re.search(r"paths|branches|types", pull_request):
+        problems.append(
+            f"does not run `{BUDGETS_JOB}` on every pull request, whatever it touches "
+            "and draft or not, so its required check can go unreported; use a bare "
+            "`pull_request:` trigger"
+        )
+    if not runs_on_push_to_main(triggers):
+        problems.append(
+            f"does not run `{BUDGETS_JOB}` on push to main, which is the history pull "
+            "requests compare with"
+        )
+    return problems
+
+
 def check_ci_cd_shape(repo: Path) -> list[Finding]:
     """The CI/CD shape the composer writes: its jobs, timeouts, budgets and governance."""
     governance_path = repo / GOVERNANCE_RECORD
@@ -3354,7 +3433,7 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
                 "ERROR",
                 f"{RELEASE_WORKFLOW} releases through `publish`, but there is no "
                 f"{GOVERNANCE_RECORD} recording the required checks",
-                f"record `lint` and the test jobs as `required_checks`; {compose}",
+                f"record `lint`, the test jobs and `budgets` as `required_checks`; {compose}",
             )
         )
     else:
@@ -3382,15 +3461,19 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
     ci_jobs = {job.name: job for job in workflow_jobs(ci_text or "")}
     test_jobs = sorted(n for n in ci_jobs if CI_TEST_JOB_RE.fullmatch(n))
     if required is not None:
-        extra = [c for c in required if c != "lint" and not CI_TEST_JOB_RE.fullmatch(c)]
+        extra = [
+            c
+            for c in required
+            if c not in ("lint", BUDGETS_JOB) and not CI_TEST_JOB_RE.fullmatch(c)
+        ]
         if extra:
             problems.append(
                 Finding(
                     "ERROR",
-                    f"{GOVERNANCE_RECORD} requires {', '.join(extra)}, beyond `lint` "
-                    "and the test jobs",
-                    "require exactly `lint` and each `test-<platform>` job: every "
-                    "other check runs as a step of one of them",
+                    f"{GOVERNANCE_RECORD} requires {', '.join(extra)}, beyond `lint`, "
+                    "the test jobs and `budgets`",
+                    "require exactly `lint`, each `test-<platform>` job and `budgets`: "
+                    "every other check runs as a step of one of them",
                 )
             )
         expected = ["lint", "test-linux"] + [
@@ -3407,7 +3490,9 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
                 )
             )
         unrequired = [
-            n for n in ["lint", *test_jobs] if n in ci_jobs and n not in required
+            n
+            for n in ["lint", *test_jobs, BUDGETS_JOB]
+            if n in ci_jobs and n not in required
         ]
         if unrequired:
             problems.append(
@@ -3442,7 +3527,7 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
             others = [
                 job.name
                 for job in jobs
-                if job.name != "lint"
+                if job.name not in ("lint", BUDGETS_JOB)
                 and not CI_TEST_JOB_RE.fullmatch(job.name)
                 and not CI_VISUAL_DOCS_JOB_RE.fullmatch(job.name)
             ]
@@ -3451,21 +3536,62 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
                     Finding(
                         "ERROR",
                         f"{rel} runs job(s) {', '.join(others)} on pull requests, "
-                        "beyond `lint`, the test jobs and `visual-docs-<arch>`",
+                        "beyond `lint`, the test jobs, `visual-docs-<arch>` and `budgets`",
                         "fold the check into a step of `lint` (platform-independent) "
                         "or of the test jobs: each extra job spends one of the "
                         "account's 20 concurrent job slots on every push",
                     )
                 )
         if rel == CI_SHAPE_WORKFLOW and runs_on_push_to_main(triggers):
-            problems.append(
-                Finding(
-                    "ERROR",
-                    f"{rel} runs CI on push to main",
-                    "trigger it on `pull_request` only: the merged tree is the one its "
-                    "pull request's jobs proved, so a push run repeats them",
+            repeated = [
+                job.name
+                for job in jobs
+                if job.name != BUDGETS_JOB
+                and not PULL_REQUEST_ONLY_IF_RE.search(job.runs_if)
+            ]
+            if repeated:
+                problems.append(
+                    Finding(
+                        "ERROR",
+                        f"{rel} runs {', '.join(repeated)} on push to main",
+                        "guard each with `if: github.event_name == 'pull_request'`: "
+                        "the merged tree is the one its pull request's jobs proved, so "
+                        "a push run repeats them, and only `budgets` belongs there",
+                    )
                 )
+    if ci_text is not None:
+        problems += [
+            Finding(
+                "ERROR",
+                f"{CI_SHAPE_WORKFLOW} {problem}",
+                f"give it the job assets/ci.yml.template declares; {compose}",
             )
+            for problem in budgets_job_problems(ci_jobs, workflow_triggers(ci_text))
+        ]
+    report_budgets = repo / REPORT_BUDGETS_FILE
+    report_ids = (
+        BUDGET_ID_RE.findall(report_budgets.read_text(encoding="utf-8"))
+        if report_budgets.is_file()
+        else []
+    )
+    if not any(budget.endswith(f"-{REPORT_BUDGET_SUFFIX}") for budget in report_ids):
+        problems.append(
+            Finding(
+                "ERROR",
+                f"{REPORT_BUDGETS_FILE} lacks the budget <name>-{REPORT_BUDGET_SUFFIX}",
+                f"register the budgets job's own budget; {compose}",
+            )
+        )
+    agents = repo / "AGENTS.md"
+    agents_text = agents.read_text(encoding="utf-8") if agents.is_file() else ""
+    if BUDGET_POLICY_HEADING not in agents_text.splitlines():
+        problems.append(
+            Finding(
+                "ERROR",
+                f"AGENTS.md has no `{BUDGET_POLICY_HEADING}` section",
+                f"add the skill's assets/budgets/budget-policy.md; {compose}",
+            )
+        )
 
     budgets = repo / BUDGETS_FILE
     text = budgets.read_text(encoding="utf-8") if budgets.is_file() else ""
@@ -3500,8 +3626,8 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
     return problems or [
         Finding(
             "OK",
-            "CI/CD shape: lint and test jobs held to 30 minutes, the nine budgets, "
-            "governance requiring exactly those checks",
+            "CI/CD shape: lint, test and budgets jobs held to 30 minutes, the nine "
+            "budgets and the report job's own, governance requiring exactly those checks",
         )
     ]
 

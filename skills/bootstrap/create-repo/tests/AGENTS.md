@@ -26,6 +26,11 @@ for the tiers it can reach:
   recordings in `external/fixtures/actions-figures/` (its README says how to add
   one). Its read counts are held to what the replay served, so a figure that asks
   GitHub once more fails even when onevcs's `cost` reports it.
+  `external/test_budget_report_job_external.py` runs the generated `budgets` job's
+  pinned release for real, through the harness that release ships, with only GitHub's
+  services doubled. It also holds `fixtures/onebudgetspec-github-action/<tag>/`, which
+  the offline fast tier reads, to that release. `test_github_rest_contract_external.py`
+  does the same for `e2e/fixtures/github-rest/`, whose source moves with no commit here.
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from

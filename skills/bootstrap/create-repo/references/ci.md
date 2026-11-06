@@ -80,7 +80,8 @@ minutes**. Jobs are counted too, per pull-request push and per release, because 
 account's **20 concurrent jobs** are shared by every repository: a job a pull
 request did not need is a slot another repository waited for.
 
-**CI** (`.github/workflows/ci.yml`, `pull_request` only):
+**CI** (`.github/workflows/ci.yml`, on `pull_request`, and on push to main for
+`budgets` alone):
 
 - `lint` — once, on Linux, everything platform-independent: the PR-title check,
   the suppressions comment (notignored), format/lint/type checks over the
@@ -93,9 +94,15 @@ request did not need is a slot another repository waited for.
   `test-linux`.
 - `visual-docs-<arch>` — only for a repository that captures its visual docs on a
   second architecture, natively on that architecture's runner.
-- Every job `timeout-minutes: 30`, none with a `needs` edge, so all start at once.
-- **No run on push to main.** The merged tree is the one its pull request's jobs
-  proved; nothing re-runs them afterwards.
+- `budgets` — the released report action, once its predecessors have ended however
+  they ended: `needs` every other job, `if: always()`, no path or draft filter. It
+  builds and tests nothing.
+- Every job `timeout-minutes: 30`. Only `budgets` has a `needs` edge, so the rest all
+  start at once.
+- **A push to main runs only `budgets`,** which saves that commit's results as the
+  history pull requests compare with. The other jobs are guarded to `pull_request`:
+  the merged tree is the one its pull request's jobs proved, and nothing re-runs them
+  afterwards.
 - **Release PRs run every job.** Cached test inputs exclude changelogs and
   replace raw manifest/lockfile inputs with the per-ecosystem digest from
   `scripts/nx-version-free-inputs.mjs`. Only workspace package versions are
@@ -155,7 +162,7 @@ the project name):
 | `<name>-ci-check-time` | 1800 s | `release-tail` |
 | `<name>-cd-job-time` | 1800 s | `release-tail` |
 | `<name>-release-cycle-time` | 5400 s | `release-tail` |
-| `<name>-ci-job-count` | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` |
+| `<name>-ci-job-count` | the CI jobs the shape runs: 5 cross-platform, 6 with a second visual-docs architecture, 3 Linux-only | `release-tail` |
 | `<name>-cd-job-count` | 6 cross-platform, 4 Linux-only | `release-tail` |
 | `<name>-release-read-requests` | 6 requests | `release-tail` |
 | `<name>-pr-read-requests` | 2 requests | `release-tail` |
@@ -163,10 +170,15 @@ the project name):
 | `<name>-gate-time` | 1800 s | `host-variable` |
 
 The eight GitHub figures run the repository's verbatim copy of the figures script
-(`tools/onebudgetspec.md`, "GitHub Actions budget figures").
+(`tools/onebudgetspec.md`, "GitHub Actions budget figures"). The CD figures pass
+`--exclude-workflow ci`: `budgets`' push run at the release commit delivers nothing.
+
+Beside these, `.github/reporting/budgets.yaml` holds the `budgets` job's own budget,
+`<name>-budget-report-command-seconds` at a provisional 120 s, labelled `ci-report`.
 
 **Where each line is enforced.** At pull-request time, by each job's
-`timeout-minutes: 30`. After a release, by the release tail: `publish` installs
+`timeout-minutes: 30`, and by `budgets` for every budget its job can measure. After a
+release, by the release tail: `publish` installs
 `onevcs-cli` at the version the skill pins and ends with `onebudgetspec check
 budgets.yaml --label release-tail`, whose result nothing reads — an over figure
 turns that step red with every breakdown in its log, and never blocks, demotes or
@@ -174,7 +186,7 @@ reverts a release. Locally, as a warning: `just gate` records its wall clock to
 `.gate-time.json` and checks `<name>-gate-time` (`--label host-variable`),
 warning on an over reading (exit 1) and failing on an invalid budgets file or a
 failed measurement (2 or 3). The strict budget check `just check` runs excludes
-both labels. No pre-push hook runs the gate: CI owns it ("Push hooks" below).
+both labels, and `budgets` reports them without enforcing them. No pre-push hook runs the gate: CI owns it ("Push hooks" below).
 
 **Meet the line by cutting work, never by sharding.** Affected-only selection,
 caches keyed on their inputs, no check run twice, no needless serialization
@@ -183,16 +195,16 @@ does not have. An alternative that reduces coverage — skipping a platform,
 dropping a suite from a job — is the owner's decision, never a fix applied to meet
 a budget.
 
-**Required checks** are exactly `lint` and the test jobs, which the composer
+**Required checks** are exactly `lint`, the test jobs and `budgets`, which the composer
 records in `.github/governance.json` and `setup_github_governance.py` applies by
 default. Branches need not be up to date before they merge (non-strict): that
 trades catching a semantic conflict between two independently green pull requests
-for not re-running every open pull request each time main moves, and with no CI
+for not re-running every open pull request each time main moves, and with no test
 run on push to main nothing catches such a conflict until the next pull request
 touching that code. Up-to-date branches stay an explicit opt-in (`--strict`).
 
 **Staged gates under this shape.** Every pull request runs the affected tier. The
-broader `just check all` sweep is not a CI job here — there is no push run and the
+broader `just check all` sweep is not a CI job here — a push runs only `budgets` and the
 release pull request's tree is a tested main — so it runs where a change reaches
 everything (`just upgrade`) and by hand.
 
@@ -461,7 +473,7 @@ exact commands below are the ones this skill's own repo uses.
   deletion, and conversation resolution.
 - **Required checks are the PR-context jobs only.** In the composed CI/CD shape
   those are exactly `lint` (which carries the PR-title check and the llmlint
-  judge as steps) and the test jobs, recorded in `.github/governance.json`. A
+  judge as steps), the test jobs and `budgets`, recorded in `.github/governance.json`. A
   repository on the older shape requires its affected-tier gate (`check`), the
   PR-title lint (`commitlint`) and the llmlint judge (`llmlint`). The **broader-tier sweep runs after the PR
   is gone** (at merge-to-main, or at release-prep), so it has no pull request to
@@ -544,7 +556,7 @@ The skill bundles this as a runnable, idempotent script — it applies the merge
 model, branch protection, *and* — on a public repository — the fork-PR approval
 policy, reading the visibility from GitHub and reporting the policy as `not
 applicable (private)` or `(internal)` elsewhere. In a composed repository it reads
-the required checks — `lint` and the test jobs, non-strict — from
+the required checks — `lint`, the test jobs and `budgets`, non-strict — from
 `.github/governance.json`, so it needs no contexts; elsewhere pass them. Preview
 with `--dry-run` first:
 
@@ -573,6 +585,25 @@ context — or a required `lint` whose job in `ci.yml` runs `just lint-llm-diff`
 as the composed shape's does — unless you pass `--allow-missing-llmlint` (only
 for a repo with no llmlint tier).
 
+**Adding one check to a repository already governed.** The commands above apply the
+whole profile, and their protection PUT replaces what is there. To require one more
+context while keeping everything else — other contexts, their app bindings,
+approvals, strictness, admins, restrictions and the merge and fork settings — use
+the additive mode instead:
+
+```bash
+uv run --script scripts/setup_github_governance.py --add-required-check budgets \
+  --repo OWNER/NAME --branch main [--dry-run | --verify]
+```
+
+It sends one POST to the required-status-checks subresource, naming only the missing
+contexts, so a repeated call writes nothing, and it reads the protection back and
+fails if anything but the addition moved. It writes classic protection only, which
+is what every repository it has been applied to uses: a branch governed by a
+ruleset, classic or not, is refused by name before any write, as is a failed read.
+Never run it before the job reporting that context has landed on the base branch,
+because every open pull request would then wait on a check nothing reports.
+
 These are repo-side settings, so the filesystem baseline checker cannot verify
 them — record the intended model in `AGENTS.md` ("Commits, releases, and
 merging") so the decision is auditable and the next maintainer can re-apply it.
@@ -581,12 +612,15 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
 
 - [ ] **The CI/CD shape.** `compose_repo_plan.py --ci-cd` wrote it, and
   `check_repo_baseline.py` passes it: `lint` plus one `test-<platform>` job (and
-  any `visual-docs-<arch>`), each `timeout-minutes: 30` with no `needs`; no other
-  pull-request job; no CI on push to main; `release-plz`, a `build-<platform>`
+  any `visual-docs-<arch>`), each `timeout-minutes: 30` with no `needs`; `budgets`
+  after them under `if: always()`, the released action's one job, unfiltered; no
+  other pull-request job; only `budgets` on push to main; `release-plz`, a `build-<platform>`
   job per supported platform (Linux arm64 with Linux) and `publish` ending in the
   release tail; the nine budgets in the root `budgets.yaml` with the figures
-  script copied unedited; `.github/governance.json` requiring exactly `lint` and
-  the test jobs, non-strict unless the owner opted in.
+  script copied unedited; the report job's own budget in
+  `.github/reporting/budgets.yaml`; the budget policy in `AGENTS.md`;
+  `.github/governance.json` requiring exactly `lint`, the test jobs and `budgets`,
+  non-strict unless the owner opted in.
 
 - [ ] **Two tiers, named and wired.** Pull requests run the **affected tier** —
   the gate recipe delegating to `nx affected` keyed off an explicitly derived

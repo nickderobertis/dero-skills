@@ -10,6 +10,10 @@ bootstrap` through `uv tool`, because gate targets shell out to them directly:
 - **`shellcheck`** (from `shellcheck-py`) — the `lint` target of the two shell
   projects, `authoring-scripts` and `consumer-bootstrap`.
 
+The gate also needs the **`gh`** CLI on `PATH`, without credentials: the additive
+required-check journeys drive the real binary against a local server, and fail
+with that instruction when it is absent. Hosted runners already have it.
+
 ## Pins
 
 `.tool-versions` is the source of truth for `just`/`uv`/`node`/`bun`. Provision
