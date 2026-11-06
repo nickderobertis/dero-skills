@@ -745,7 +745,8 @@ def _get_json(
         raise GhError(f"`gh api {path}` returned invalid JSON: {exc}", fix) from exc
 
 
-# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] `gh` is this script's GitHub boundary and no gate can reach GitHub offline; the two answers are read only for this mode's comparison, and one that drifts from the shape below is refused rather than read, so drift fails closed.
+# GitHub's answers below are read in the shapes its OpenAPI description declares;
+# tests/github_rest_contract.py and the additive journeys hold them to it in the gate.
 # A required check's name, and the GitHub App that must report it.
 CheckContext = NewType("CheckContext", str)
 AppId = NewType("AppId", int)
@@ -765,7 +766,9 @@ def _is_check(check: object) -> bool:
     """One entry of `checks`: a named context, bound to an app id or to any source."""
     if not isinstance(check, dict) or not isinstance(check.get("context"), str):
         return False
-    app = check.get("app_id")
+    if "app_id" not in check:
+        return False
+    app = check["app_id"]
     return app is None or (isinstance(app, int) and not isinstance(app, bool))
 
 
@@ -880,9 +883,6 @@ def read_classic_checks(run: Runner, repo: str, branch: str) -> ClassicChecks:
             "strictness; nothing was written",
         )
     return classic
-
-
-# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
 
 
 def _show_checks(bindings: Bindings) -> str:

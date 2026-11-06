@@ -1,12 +1,14 @@
 """The generated budgets job and its own budget, held to the released action's contract.
 
-`fixtures/onebudgetspec-github-action/<tag>/` holds the pinned release's `action.yml` and
-`telemetry --help`, byte for byte below one suppression line stating why they may be copied;
-`external/test_budget_report_job_external.py` holds them to the release itself. Moving the composer's pin without refreshing them fails here, offline.
+`fixtures/onebudgetspec-github-action/<tag>/` holds the pinned release's `action.yml`, its
+`SHA256SUMS` and `telemetry --help`, byte for byte. The gate holds `action.yml` to the digest the
+release lists, and the help to the digest of what the listed archive printed;
+`external/test_budget_report_job_external.py` holds all of them to the release itself. Moving the composer's pin without refreshing them fails here, offline.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 
@@ -57,6 +59,28 @@ def action_step(job) -> dict:
     steps = [s for s in job["steps"] if s.get("uses", "").startswith(f"{ACTION}@")]
     assert len(steps) == 1
     return steps[0]
+
+
+def release_sums() -> dict[str, str]:
+    path = FIXTURES / "onebudgetspec-github-action" / pinned_tag() / "SHA256SUMS"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return {name: digest for digest, name in (line.split() for line in lines)}
+
+
+def test_the_vendored_action_is_the_bytes_the_release_lists():
+    path = FIXTURES / "onebudgetspec-github-action" / pinned_tag() / "action.yml"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == release_sums()["action.yml"]
+
+
+def test_the_vendored_help_is_what_a_listed_archive_printed():
+    directory = FIXTURES / "onebudgetspec-github-action" / pinned_tag()
+    source = json.loads((directory / "telemetry-help.source.json").read_text())
+    assert release_sums()[source["archive"]] == source["archive_sha256"]
+    assert source["archive"].startswith(
+        f"onebudgetspec-github-action-{pinned_tag().removeprefix('v')}-"
+    )
+    shown = (directory / "telemetry-help.txt").read_bytes()
+    assert hashlib.sha256(shown).hexdigest() == source["help_sha256"]
 
 
 def test_the_job_pins_the_release_the_fixtures_hold(action_step):

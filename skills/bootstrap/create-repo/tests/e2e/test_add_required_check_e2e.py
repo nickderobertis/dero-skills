@@ -1,136 +1,182 @@
-"""The additive required-check mode, driven through the real CLI.
+"""The additive required-check mode, driven through the real CLI and the real ``gh``.
 
-``uv run --script`` runs the real script; the one thing doubled is GitHub, by a
-stateful ``gh`` on PATH that keeps the protection and rulesets in a JSON file and
-applies each write the way the required-status-checks subresource does: a POST
-appends its contexts and leaves everything else alone. Assertions read that state
-and the recorded calls, so they see what reached the host rather than what the
-script says it did.
+``uv run --script`` runs the real script, which runs the real ``gh``. ``gh`` reaches a real
+local HTTP server through ``HTTP_PROXY``, using its own development host, ``github.localhost``.
+That server keeps the protection and rulesets and applies each write the way the
+required-status-checks subresource does. It answers only the operations GitHub's description
+declares, and each body it takes or gives is checked against that description, except those
+a test names as malformed. Assertions read its state and recorded calls, so they see what
+reached the host rather than what the script says it did.
 """
 
 from __future__ import annotations
 
 import copy
+import hashlib
+import http.server
 import json
 import os
-import stat
+import shutil
 import subprocess
+import threading
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
+from github_rest_contract import (
+    DELETION_RULE,
+    OPERATIONS,
+    PROTECTION,
+    REPO,
+    RULE,
+    RULES,
+    SNAPSHOT,
+    SOURCE_COMMIT,
+    SUBRESOURCE,
+    existing_protection,
+    load_snapshot,
+    operation_for,
+    problems,
+    rendered,
+)
+
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "setup_github_governance.py"
-REPO = "acme/w"
-PROTECTION = f"repos/{REPO}/branches/main/protection"
-RULES = f"repos/{REPO}/rules/branches/main"
-SUBRESOURCE = f"{PROTECTION}/required_status_checks/contexts"
-
-# llmlint: ignore-block[e2e_not_mocked] GitHub is the one thing doubled, at the gh executable: the real script runs as a subprocess, and a journey cannot change branch protection on a real repository, least of all the failed and adverse answers these cover.
-# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] This double stands at the gh executable boundary the mode is tested through, and the shapes it answers were read from GitHub's real protection and rules endpoints; GitHub publishes no schema this offline tier could reconcile with.
-FAKE_GH = r"""
-import json, os, sys
-
-directory = os.environ["FAKE_GH_DIR"]
-state_file = os.path.join(directory, "state.json")
-state = json.load(open(state_file))
-args = sys.argv[1:]
-body = sys.stdin.read() if "--input" in args else None
-method = args[args.index("--method") + 1] if "--method" in args else "GET"
-path = next(a for a in args[1:] if a.startswith("repos/"))
-with open(os.path.join(directory, "calls.jsonl"), "a") as log:
-    log.write(json.dumps({"method": method, "path": path, "body": body}) + "\n")
-if path in state.get("fail", {}):
-    sys.exit(state["fail"][path])
-if path.endswith("/rules/branches/main"):
-    print(json.dumps(state["rules"]))
-elif path.endswith("/required_status_checks/contexts") and method == "POST":
-    checks = state["protection"]["required_status_checks"]
-    for name in json.loads(body)["contexts"]:
-        checks["contexts"].append(name)
-        checks["checks"].append({"context": name, "app_id": 15368})
-    if state.get("after_write"):
-        state["protection"] = state["after_write"]
-    state.setdefault("fail", {}).update(state.get("fail_after_write", {}))
-    json.dump(state, open(state_file, "w"))
-    print(json.dumps(checks["contexts"]))
-elif path.endswith("/protection") and method == "GET":
-    if state["protection"] is None:
-        sys.exit("gh: Branch not protected (HTTP 404)")
-    print(json.dumps(state["protection"]))
-else:
-    sys.exit(f"fake gh: nothing answers {method} {path}")
-"""
-# llmlint: ignore-end[e2e_not_mocked]
-
-
-def existing_protection() -> dict:
-    """Live protection with nondefault settings a full-profile PUT would reset."""
-    return {
-        "url": f"https://api.github.com/{PROTECTION}",
-        "required_status_checks": {
-            "url": f"https://api.github.com/{PROTECTION}/required_status_checks",
-            "strict": True,
-            "contexts": ["lint", "cross (windows-latest)", "legacy"],
-            "contexts_url": f"https://api.github.com/{SUBRESOURCE}",
-            "checks": [
-                {"context": "lint", "app_id": 15368},
-                {"context": "cross (windows-latest)", "app_id": 999},
-                {"context": "legacy", "app_id": None},
-            ],
-        },
-        "required_pull_request_reviews": {
-            "dismiss_stale_reviews": True,
-            "require_code_owner_reviews": True,
-            "required_approving_review_count": 2,
-        },
-        "enforce_admins": {"enabled": True},
-        "required_linear_history": {"enabled": False},
-        "required_conversation_resolution": {"enabled": False},
-        "allow_force_pushes": {"enabled": True},
-        "allow_deletions": {"enabled": False},
-        "restrictions": {"users": [{"login": "release-bot"}], "teams": [], "apps": []},
-    }
-
-
-RULE = {
-    "type": "required_status_checks",
-    "ruleset_source_type": "Organization",
-    "ruleset_source": "acme",
-    "ruleset_id": 77,
-    "parameters": {"required_status_checks": [{"context": "org-check"}]},
+# Moving this means the snapshot was re-derived; the external tier re-derives it from GitHub.
+SNAPSHOT_SHA256 = "ab421c6abe8b87ee4a21b77dec40acf804c5eff3eacc66ea45fae09f690b1b40"
+CONTRACT = load_snapshot()
+SCRUBBED = {
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "NO_PROXY",
+    "no_proxy",
+    "FORCE_COLOR",
+    "GH_REPO",
 }
-# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
+
+
+def request_body(handler: http.server.BaseHTTPRequestHandler) -> str | None:
+    """The body as sent: `gh api --input` streams it, so it arrives chunked."""
+    if handler.headers.get("Transfer-Encoding", "").lower() != "chunked":
+        length = int(handler.headers.get("Content-Length", 0))
+        return handler.rfile.read(length).decode() if length else None
+    chunks = []
+    while size := int(handler.rfile.readline().strip(), 16):
+        chunks.append(handler.rfile.read(size))
+        handler.rfile.readline()
+    handler.rfile.readline()
+    return b"".join(chunks).decode()
 
 
 class Host:
-    def __init__(self, root: Path, **state) -> None:
-        self.root = root
-        bin_dir = root / "bin"
-        bin_dir.mkdir()
-        gh = bin_dir / "gh"
-        gh.write_text(f"#!/usr/bin/env -S uv run --script\n{FAKE_GH}")
-        gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+    """One local GitHub double, closed and audited by `opened_hosts`."""
+
+    opened: list[Host] = []
+
+    def __init__(self, root: Path, *, malformed: bool = False, **state) -> None:
+        gh = shutil.which("gh")
+        assert gh, "these journeys drive the real GitHub CLI; install gh, then re-run"
+        self.state = {
+            "protection": existing_protection(),
+            "rules": [],
+            "fail": {},
+            **state,
+        }
+        self.before = copy.deepcopy(self.state["protection"])
+        self.calls: list[dict] = []
+        # Where a body left GitHub's description; `malformed` says a test meant it to.
+        self.problems: list[str] = []
+        self.malformed = malformed
+        self.lock = threading.Lock()
+        owner = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def answer(self) -> None:
+                owner.handle(self)
+
+            do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = answer
+
+            def log_message(self, format, *args) -> None:
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        url = f"http://127.0.0.1:{self.server.server_address[1]}"
         self.env = {
-            **os.environ,
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-            "FAKE_GH_DIR": str(root),
+            **{k: v for k, v in os.environ.items() if k not in SCRUBBED},
+            "GH_HOST": "github.localhost",
+            "GH_TOKEN": "journey-token",
+            "GH_CONFIG_DIR": str(root / "gh-config"),
+            "GH_PROMPT_DISABLED": "1",
+            "HTTP_PROXY": url,
+            "http_proxy": url,
             # Nx forces colour on, and argparse would then split its help with escapes.
             "NO_COLOR": "1",
         }
-        (root / "state.json").write_text(
-            json.dumps({"protection": existing_protection(), "rules": [], **state})
-        )
-        self.before = copy.deepcopy(self.state["protection"])
+        Host.opened.append(self)
 
-    @property
-    def state(self) -> dict:
-        return json.loads((self.root / "state.json").read_text())
+    def close(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
 
-    @property
-    def calls(self) -> list[dict]:
-        log = self.root / "calls.jsonl"
-        lines = log.read_text().splitlines() if log.exists() else []
-        return [json.loads(line) for line in lines]
+    def handle(self, handler: http.server.BaseHTTPRequestHandler) -> None:
+        body = request_body(handler)
+        path = handler.path.split("://", 1)[-1].split("/", 1)[1].split("?", 1)[0]
+        method = handler.command
+        with self.lock:
+            self.calls.append({"method": method, "path": path, "body": body})
+            if not handler.headers.get("User-Agent", "").startswith("GitHub CLI"):
+                self.problems.append(f"{method} {path} did not come through gh")
+            if handler.headers.get("Authorization", "") in ("", "Bearer "):
+                self.problems.append(f"{method} {path} carried no credential")
+            status, answer = self.respond(method, path, body)
+        payload = json.dumps(answer).encode()
+        handler.send_response(status)
+        handler.send_header("Content-Type", "application/json")
+        handler.send_header("Content-Length", str(len(payload)))
+        handler.end_headers()
+        handler.wfile.write(payload)
+
+    def respond(self, method: str, path: str, body: str | None) -> tuple[int, object]:
+        operation = operation_for(CONTRACT, method, path)
+        if operation is None:
+            self.problems.append(f"{method} {path} is no declared operation")
+            return 404, {"message": "Not Found"}
+        if path in self.state["fail"]:
+            status, message = self.state["fail"][path]
+            return status, {"message": message}
+        if method == "POST":
+            sent = json.loads(body or "null")
+            self.audit(sent, operation["requestBody"], f"{method} {path} request")
+            answer = self.add_contexts(sent["contexts"])
+        elif path == RULES:
+            answer = self.state["rules"]
+        elif self.state["protection"] is None:
+            return 404, {"message": "Branch not protected"}
+        else:
+            answer = self.state["protection"]
+        self.audit(answer, operation["responses"]["200"], f"{method} {path} answer")
+        return 200, answer
+
+    def add_contexts(self, contexts: list[str]) -> list[str]:
+        checks = self.state["protection"]["required_status_checks"]
+        for name in contexts:
+            checks["contexts"].append(name)
+            checks["checks"].append({"context": name, "app_id": 15368})
+        answer = list(checks["contexts"])
+        if "after_write" in self.state:
+            self.state["protection"] = self.state["after_write"]
+        self.state["fail"] = {
+            **self.state["fail"],
+            **self.state.get("fail_after_write", {}),
+        }
+        return answer
+
+    def audit(self, value: object, schema: dict, what: str) -> None:
+        found = problems(value, schema, CONTRACT["schemas"])
+        self.problems += [f"{what}: {problem}" for problem in found]
 
     @property
     def writes(self) -> list[dict]:
@@ -151,9 +197,54 @@ class Host:
         )
 
 
+@pytest.fixture(autouse=True)
+def opened_hosts() -> Iterator[None]:
+    """Close each double, and hold every body it saw to GitHub's description."""
+    Host.opened = []
+    yield
+    for host in Host.opened:
+        host.close()
+    for host in Host.opened:
+        if host.malformed:
+            assert host.problems, "a body meant as malformed conforms: drop the case"
+        else:
+            assert host.problems == []
+
+
 @pytest.fixture
 def host(tmp_path: Path) -> Host:
     return Host(tmp_path)
+
+
+def test_the_snapshot_is_the_derived_contract_for_each_call_the_mode_makes():
+    assert hashlib.sha256(SNAPSHOT.read_bytes()).hexdigest() == SNAPSHOT_SHA256
+    assert SNAPSHOT.read_text(encoding="utf-8") == rendered(CONTRACT)
+    assert CONTRACT["source"]["commit"] == SOURCE_COMMIT
+    declared = {
+        (method, path)
+        for path, methods in CONTRACT["paths"].items()
+        for method in methods
+    }
+    assert declared == set(OPERATIONS)
+
+
+def test_the_mode_requires_exactly_what_githubs_description_requires():
+    status_checks = CONTRACT["schemas"]["protected-branch-required-status-check"]
+    assert set(status_checks["required"]) == {"contexts", "checks"}
+    check = status_checks["properties"]["checks"]["items"]
+    assert set(check["required"]) == {"context", "app_id"}
+    assert check["properties"]["app_id"]["nullable"] is True
+
+
+def test_the_description_check_itself_sees_a_body_leave_the_schema():
+    schema = {"$ref": "#/components/schemas/protected-branch-required-status-check"}
+    schemas = CONTRACT["schemas"]
+    good = existing_protection()["required_status_checks"]
+    assert problems(good, schema, schemas) == []
+    assert "$.contexts is missing" in problems({"checks": []}, schema, schemas)
+    assert problems({"contexts": [1], "checks": []}, schema, schemas) == [
+        "$.contexts[0] is not string"
+    ]
 
 
 def test_a_missing_check_is_added_and_everything_else_is_preserved(host: Host):
@@ -227,7 +318,7 @@ def test_verify_passes_on_a_required_check_and_names_the_set(host: Host):
 
 @pytest.mark.parametrize("flag", [[], ["--dry-run"], ["--verify"]])
 def test_a_failed_read_is_refused_before_any_write(tmp_path: Path, flag):
-    host = Host(tmp_path, fail={PROTECTION: "gh: Server Error (HTTP 500)"})
+    host = Host(tmp_path, fail={PROTECTION: (500, "Server Error")})
     done = host.add("budgets", extra=flag)
     assert done.returncode == 1
     assert "HTTP 500" in done.stderr
@@ -236,7 +327,7 @@ def test_a_failed_read_is_refused_before_any_write(tmp_path: Path, flag):
 
 
 def test_unreadable_rulesets_are_refused_before_any_write(tmp_path: Path):
-    host = Host(tmp_path, fail={RULES: "gh: Must have admin rights (HTTP 403)"})
+    host = Host(tmp_path, fail={RULES: (403, "Must have admin rights")})
     done = host.add("budgets")
     assert done.returncode == 1
     assert "HTTP 403" in done.stderr
@@ -245,7 +336,7 @@ def test_unreadable_rulesets_are_refused_before_any_write(tmp_path: Path):
 
 @pytest.mark.parametrize("flag", [[], ["--dry-run"], ["--verify"]])
 def test_a_rulesets_only_branch_is_refused_by_name(tmp_path: Path, flag):
-    host = Host(tmp_path, protection=None, rules=[RULE, {**RULE, "type": "deletion"}])
+    host = Host(tmp_path, protection=None, rules=[RULE, DELETION_RULE])
     done = host.add("budgets", extra=flag)
     assert done.returncode == 1
     assert "rulesets-only" in done.stderr
@@ -288,6 +379,10 @@ MALFORMED_CHECKS = {
     "a context that is no name": {"contexts": ["lint", 7], "checks": []},
     "a check that is no object": {"contexts": ["lint"], "checks": ["lint"]},
     "a check without a context": {"contexts": ["lint"], "checks": [{"app_id": 1}]},
+    "a check without an app id": {
+        "contexts": ["lint"],
+        "checks": [{"context": "lint"}],
+    },
     "an app id that is no id": {
         "contexts": ["lint"],
         "checks": [{"context": "lint", "app_id": "15368"}],
@@ -306,7 +401,7 @@ def test_required_checks_it_cannot_read_are_refused_before_any_write(
 ):
     protection = existing_protection()
     protection["required_status_checks"] = MALFORMED_CHECKS[malformed]
-    host = Host(tmp_path, protection=protection)
+    host = Host(tmp_path, malformed=True, protection=protection)
     done = host.add("budgets", extra=[flag] if flag else [])
     assert done.returncode == 1
     assert "required_status_checks" in done.stderr
@@ -318,7 +413,7 @@ def test_required_checks_it_cannot_read_are_refused_before_any_write(
 def test_a_protection_answer_that_is_no_object_is_refused_before_any_write(
     tmp_path: Path,
 ):
-    host = Host(tmp_path, protection=["lint"])
+    host = Host(tmp_path, malformed=True, protection=["lint"])
     done = host.add("budgets")
     assert done.returncode == 1
     assert "no object" in done.stderr
@@ -329,7 +424,7 @@ def test_a_read_back_it_cannot_read_fails_and_says_what_to_compare(tmp_path: Pat
     def unreadable(protection: dict) -> None:
         del protection["required_status_checks"]["checks"]
 
-    host = Host(tmp_path, after_write=_after_budgets_added(unreadable))
+    host = Host(tmp_path, malformed=True, after_write=_after_budgets_added(unreadable))
     done = host.add("budgets")
     assert done.returncode == 1
     assert "required_status_checks" in done.stderr
@@ -369,7 +464,7 @@ def _add_stranger(protection: dict) -> None:
 
 
 def _reset_admins(protection: dict) -> None:
-    protection["enforce_admins"] = {"enabled": False}
+    protection["enforce_admins"]["enabled"] = False
 
 
 def _loosen_strict(protection: dict) -> None:
@@ -403,7 +498,7 @@ def test_anything_the_read_back_shows_moved_fails_the_operation(
 
 
 def test_a_failed_read_back_fails_and_says_what_to_compare(tmp_path: Path):
-    host = Host(tmp_path, fail_after_write={PROTECTION: "gh: Server Error (HTTP 502)"})
+    host = Host(tmp_path, fail_after_write={PROTECTION: (502, "Server Error")})
     done = host.add("budgets")
     assert done.returncode == 1
     assert "HTTP 502" in done.stderr
@@ -413,7 +508,7 @@ def test_a_failed_read_back_fails_and_says_what_to_compare(tmp_path: Path):
 
 
 def test_a_rules_answer_that_is_no_list_is_refused_before_any_write(tmp_path: Path):
-    host = Host(tmp_path, rules={"message": "unexpected"})
+    host = Host(tmp_path, malformed=True, rules={"message": "unexpected"})
     done = host.add("budgets")
     assert done.returncode == 1
     assert "did not answer a list of rules" in done.stderr
@@ -421,7 +516,7 @@ def test_a_rules_answer_that_is_no_list_is_refused_before_any_write(tmp_path: Pa
 
 
 def test_a_refused_write_fails_with_the_hosts_error(tmp_path: Path):
-    host = Host(tmp_path, fail={SUBRESOURCE: "gh: Resource not accessible (HTTP 403)"})
+    host = Host(tmp_path, fail={SUBRESOURCE: (403, "Resource not accessible")})
     done = host.add("budgets")
     assert done.returncode == 1
     assert "HTTP 403" in done.stderr
