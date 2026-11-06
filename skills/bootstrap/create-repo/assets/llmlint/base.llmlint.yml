@@ -8,7 +8,7 @@
 # Version classification and consumer pinning: see references/llmlint.md
 # ("Fragment versioning").
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.13.0
+version: 1.14.0
 
 rules:
   - name: comments_earn_their_place
@@ -27,6 +27,20 @@ rules:
       source. A docstring or comment that documents a public contract, an example, or a
       genuinely non-obvious rule is NOT a violation even if longer.
     relevance: the target files contain code comments
+    require_line_attribution: true
+
+  - name: real_gh_in_tests_starts_no_session_bus
+    # Why: holding no token for a call's host, `gh` asks the keyring, and on Linux that
+    # autolaunches a `dbus-daemon` which outlives the test. See references/ci.md.
+    description: |
+      true when every test in the target files that hands the real `gh` CLI a fake or
+      local host, or no token for the host it targets, does so in an environment
+      carrying `DBUS_SESSION_BUS_ADDRESS=disabled:`, set in that environment or inherited
+      from the test process's shared setup (a conftest, a test-runner setup file), and
+      true when the `gh` a test runs is a stand-in. false when such a test hands the real
+      `gh` an environment without that variable. A call that names no fake host and holds
+      a token for its target is NOT a violation.
+    relevance: the target files define a test that runs the real `gh` CLI
     require_line_attribution: true
 
   - name: e2e_not_mocked

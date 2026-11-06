@@ -242,13 +242,13 @@ def released(tmp_path_factory) -> Released:
 
 
 @pytest.fixture(scope="session")
-def runner_path(tmp_path_factory) -> str:
+def runner_path(tmp_path_factory, gh_session_bus_trap) -> str:
     """What a hosted runner has for a budget command: no uv, cargo, bun or onevcs."""
     directory = tmp_path_factory.mktemp("runner-bin")
     node = shutil.which("node")
     assert node is not None, "node not on PATH"
     (directory / "node").symlink_to(node)
-    return f"{directory}{os.pathsep}/usr/bin{os.pathsep}/bin"
+    return os.pathsep.join([str(directory), gh_session_bus_trap, "/usr/bin", "/bin"])
 
 
 class Journey:
@@ -304,6 +304,8 @@ class Journey:
             environment={
                 "JOURNEY_COUNTS": str(self.counts),
                 "PATH": self.runner_path,
+                # The harness's environment inherits nothing, and a fork's run holds no token.
+                "DBUS_SESSION_BUS_ADDRESS": "disabled:",
                 # What a runner sets for every step, which the figures script reads.
                 "GITHUB_REPOSITORY": self.harness.REPOSITORY,
                 "GITHUB_RUN_ID": str(self.next_run),

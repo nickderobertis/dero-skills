@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TypedDict
 
 import pytest
+from ci_cd_shape import compose
 
 SKILL_DIR = Path(__file__).resolve().parents[2]
 SCRIPT = SKILL_DIR / "scripts" / "compose_repo_plan.py"
@@ -789,3 +790,34 @@ def test_narrowed_rules_keep_both_sides_of_their_line(
             f"{rule} lost {clause!r} — narrowed until it no longer catches what "
             "it was written for, which is worse than the contradiction"
         )
+
+
+# --- e2e: the gh session-bus convention a composed repository inherits --------
+
+
+def test_a_composed_repository_receives_the_gh_session_bus_convention(tmp_path):
+    # The composer refuses a repository with no AGENTS.md and tells the agent to copy
+    # the template there, so that copy is where a repository's AGENTS.md starts.
+    template = (SKILL_DIR / "assets" / "AGENTS.md.template").read_text(encoding="utf-8")
+    repo = compose(tmp_path / "root", files={"AGENTS.md": template})
+    config = repo / "llmlint.yml"
+    plan = run("--shape", "cli", "--language", "rust", "--llmlint-config", str(config))
+    assert plan.returncode == 0, plan.stderr
+
+    agents = (repo / "AGENTS.md").read_text(encoding="utf-8")
+    section = agents[agents.index("## Tests are context engineering") :]
+    assert "`DBUS_SESSION_BUS_ADDRESS=disabled:`" in section
+    assert "references/ci.md#tests-that-drive-the-real-gh" in section
+    assert "## Tests that drive the real `gh`" in plan.stdout
+
+    pinned = re.search(
+        r"/assets/llmlint/base\.llmlint\.yml@(\d+)\b",
+        config.read_text(encoding="utf-8"),
+    )
+    assert pinned, config.read_text(encoding="utf-8")
+    fragment = (SKILL_DIR / "assets" / "llmlint" / "base.llmlint.yml").read_text(
+        encoding="utf-8"
+    )
+    version = re.search(r"^version: (\d+)\.\d+\.\d+$", fragment, re.MULTILINE)
+    assert version and version[1] == pinned[1]
+    assert "  - name: real_gh_in_tests_starts_no_session_bus\n" in fragment

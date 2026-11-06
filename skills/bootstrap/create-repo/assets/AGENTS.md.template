@@ -163,6 +163,10 @@ work. Realism and coverage are a rule, not a preference (see Invariants).
   Mock only a genuinely external third party you can't run, and say which.
 - **A green mocked suite is worse than none** — false confidence the next agent
   builds on, breaking in production where no human watches.
+- **A test driving the real `gh` at a fake host, or with no token for its target,
+  sets `DBUS_SESSION_BUS_ADDRESS=disabled:`.** Otherwise `gh` asks the keyring, and on
+  Linux that leaves a session bus daemon behind ([the triggers, the remedy and the trap](https://github.com/nickderobertis/dero-skills/blob/main/skills/bootstrap/create-repo/references/ci.md#tests-that-drive-the-real-gh)).
+  Tests only: a developer whose login lives in a keyring needs the bus for a real `gh` call.
 - **Done means complete, not minimal:** for journeys owing e2e under
   the criterion linked in Invariants, cover happy path *and*
   failure/recovery — not one smoke test.
