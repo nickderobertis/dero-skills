@@ -49,6 +49,7 @@ elif path.endswith("/required_status_checks/contexts") and method == "POST":
         checks["checks"].append({"context": name, "app_id": 15368})
     if state.get("after_write"):
         state["protection"] = state["after_write"]
+    state.setdefault("fail", {}).update(state.get("fail_after_write", {}))
     json.dump(state, open(state_file, "w"))
     print(json.dumps(checks["contexts"]))
 elif path.endswith("/protection") and method == "GET":
@@ -338,6 +339,16 @@ def test_anything_the_read_back_shows_moved_fails_the_operation(
     assert done.returncode == 1
     assert finding in done.stderr
     assert "legacy" in done.stderr.split("fix:")[1], "the operator gets the prior set"
+
+
+def test_a_failed_read_back_fails_and_says_what_to_compare(tmp_path: Path):
+    host = Host(tmp_path, fail_after_write={PROTECTION: "gh: Server Error (HTTP 502)"})
+    done = host.add("budgets")
+    assert done.returncode == 1
+    assert "HTTP 502" in done.stderr
+    assert "made only the one POST" in done.stderr
+    assert "legacy" in done.stderr.split("fix:")[1]
+    assert len(host.writes) == 1
 
 
 def test_a_rules_answer_that_is_no_list_is_refused_before_any_write(tmp_path: Path):

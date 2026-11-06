@@ -147,12 +147,43 @@ class Composition(NamedTuple):
     shape: str
     language: str
     platforms: str
+    # The product that shape holds, which the composer reads for what it publishes.
+    files: dict[str, str]
 
 
 COMPOSITIONS = {
-    "rust-cli": Composition("cli", "rust", "cross-platform"),
-    "web": Composition("web-app", "typescript", "linux"),
-    "skills": Composition("skills-repo", "typescript", "linux"),
+    "rust-cli": Composition(
+        "cli",
+        "rust",
+        "cross-platform",
+        {
+            "Cargo.toml": '[workspace]\nmembers = ["crates/demo-cli"]\nresolver = "3"\n',
+            "crates/demo-cli/Cargo.toml": (
+                '[package]\nname = "demo-cli"\nversion = "0.1.0"\nedition = "2024"\n'
+            ),
+            "crates/demo-cli/src/main.rs": 'fn main() {\n    println!("demo");\n}\n',
+            ".cargo/config.toml": (
+                '[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = 1\n'
+            ),
+        },
+    ),
+    "web": Composition(
+        "web-app",
+        "typescript",
+        "linux",
+        {"apps/web/app/page.tsx": "export default () => <main>demo</main>;\n"},
+    ),
+    "skills": Composition(
+        "skills-repo",
+        "typescript",
+        "linux",
+        {
+            "skills/demo/SKILL.md": (
+                "---\nname: demo\ndescription: Use when a journey needs a skill.\n"
+                "compatibility: none\n---\n"
+            ),
+        },
+    ),
 }
 
 
@@ -241,7 +272,8 @@ class Journey:
             self.repository.path,
             language=self.composition.language,
             platforms=self.composition.platforms,
-            files=CATALOG_FILES,
+            files={**CATALOG_FILES, **self.composition.files},
+            shape=self.composition.shape,
         )
         self.workflow = yaml.safe_load(
             (self.path / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -529,7 +561,7 @@ def test_the_composition_passes_the_baseline_and_composes_again_unchanged(
     again = subprocess.run(
         [
             "uv", "run", "--script", str(COMPOSER), "--ci-cd", str(journey.path),
-            "--language", chosen.language, "--name", NAME,
+            "--shape", chosen.shape, "--language", chosen.language, "--name", NAME,
             "--platforms", chosen.platforms,
         ],
         capture_output=True,

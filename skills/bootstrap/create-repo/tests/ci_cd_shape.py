@@ -53,6 +53,7 @@ def compose(
     platforms: str = "cross-platform",
     visual_docs_arch: str | None = None,
     files: dict[str, str] | None = None,
+    shape: str | None = None,
 ) -> Path:
     """A conformant repository at ``root`` with the shape written into it."""
     justfile = (ASSETS / "justfile.template").read_text(encoding="utf-8")
@@ -69,6 +70,8 @@ def compose(
     args += ["--language", language, "--name", NAME, "--platforms", platforms]
     if visual_docs_arch:
         args += ["--visual-docs-arch", visual_docs_arch]
+    if shape:
+        args += ["--shape", shape]
     done = run(args)
     assert done.returncode == 0, done.stderr
     lock_packages(repo)

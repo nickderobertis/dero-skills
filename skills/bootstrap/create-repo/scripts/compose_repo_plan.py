@@ -1003,7 +1003,9 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
         True,
         False,
     ),
-    CiCdFile(REPORT_JOB_PROJECT, "assets/reporting/project.json", False, False),
+    CiCdFile(
+        REPORT_JOB_PROJECT, "assets/reporting/project.json.template", False, False
+    ),
     CiCdFile(
         ".github/reporting/.gitignore", "assets/reporting/gitignore", False, False
     ),
