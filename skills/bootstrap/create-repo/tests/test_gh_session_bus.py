@@ -58,7 +58,7 @@ def recorded(tmp_path, recording_dbus_launch) -> Recorded:
 
 
 def test_the_conftest_environment_keeps_gh_from_asking_for_a_bus(recorded):
-    assert recorded.env[VARIABLE] == "disabled:"
+    assert recorded.env.get(VARIABLE) == "disabled:"
     assert recorded.times_asked(recorded.env) == 0
 
 
