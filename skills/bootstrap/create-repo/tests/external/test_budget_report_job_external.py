@@ -668,3 +668,8 @@ def test_the_vendored_contract_is_the_release_itself(released, tmp_path):
     assert listed in released.assets["SHA256SUMS"].decode().splitlines()
     shown_digest = hashlib.sha256(shown.stdout.encode()).hexdigest()
     assert shown_digest == source["help_sha256"]
+
+    metric = json.loads((vendored / "report-metric.source.json").read_text())
+    writer = (released.tree / metric["source"]).read_bytes()
+    assert hashlib.sha256(writer).hexdigest() == metric["source_sha256"]
+    assert f'name: "{metric["metric"]}"'.encode() in writer

@@ -1,7 +1,7 @@
 """The generated budgets job and its own budget, held to the released action's contract.
 
 `fixtures/onebudgetspec-github-action/<tag>/` holds the pinned release's `action.yml`, its
-`SHA256SUMS` and `telemetry --help`, byte for byte. The gate holds `action.yml` to the digest the
+`SHA256SUMS` and `telemetry --help`, byte for byte, and the metric its source writes. The gate holds `action.yml` to the digest the
 release lists, and the help to the digest of what the listed archive printed;
 `external/test_budget_report_job_external.py` holds all of them to the release itself. Moving the composer's pin without refreshing them fails here, offline.
 """
@@ -128,6 +128,19 @@ def test_the_own_budget_command_matches_the_released_reader(repo):
     for flag in (arg for arg in command[2:] if arg.startswith("--")):
         assert f"{flag} <" in shown, flag
     assert "[default: ci-report]" in shown
+    arguments = dict(zip(command[2::2], command[3::2], strict=True))
+    source = json.loads(
+        (
+            FIXTURES
+            / "onebudgetspec-github-action"
+            / pinned_tag()
+            / "report-metric.source.json"
+        ).read_text()
+    )
+    assert arguments["--metric"] == source["metric"]
+    # The action writes the telemetry to whatever path this command names.
+    assert not arguments["--input"].startswith("/")
+    assert ".." not in arguments["--input"].split("/")
     assert entry["measure"] == "reported"
     assert entry["direction"] == "max"
     assert entry["unit"] == "seconds"

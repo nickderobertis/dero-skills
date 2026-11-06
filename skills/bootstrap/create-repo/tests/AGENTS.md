@@ -30,7 +30,9 @@ for the tiers it can reach:
   pinned release for real, through the harness that release ships, with only GitHub's
   services doubled. It also holds `fixtures/onebudgetspec-github-action/<tag>/`, which
   the fast tier's contract test reads, to that release's bytes; the gate holds them to
-  the digests that directory's `SHA256SUMS` and `telemetry-help.source.json` state.
+  the digests that directory's `SHA256SUMS` and `telemetry-help.source.json` state, and
+  the own budget's metric to the name `report-metric.source.json` records from the
+  release's source.
   `test_github_rest_contract_external.py` derives
   `e2e/fixtures/github-rest/protection-operations.json` again from GitHub's OpenAPI
   description and checks the additive journeys' answers against its current one.

@@ -1,0 +1,5 @@
+{
+  "metric": "report-command-seconds",
+  "source": "crates/onebudgetspec-github-action/src/finish.rs",
+  "source_sha256": "189995ac038dd4604335f754c81faac074a116c531d6c46cb4f3d009a74f870e"
+}
