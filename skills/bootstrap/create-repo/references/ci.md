@@ -388,6 +388,37 @@ repos do:
   a `*_BIN` env var) so the test is forced through the artifact users get — not
   the one sitting in `target/`.
 
+## Tests that drive the real `gh`
+
+A test that points the real GitHub CLI at a local double can leave a daemon behind.
+Holding no token for the host a call targets, `gh` asks the system keyring, and on
+Linux the keyring client autolaunches a session bus through `dbus-launch`. The
+`dbus-daemon` outlives the test and keeps an inotify instance; enough of them exhaust
+the host's limit, after which every new file watcher on it fails. Either trigger does
+it, in any language's test suite:
+
+- **A fake host.** A full URL (`gh api http://127.0.0.1:PORT/...`) or a `GH_HOST` naming
+  a double. `GH_TOKEN` answers only for GitHub's own hosts, so holding one does not help.
+- **No token for the target.** Neither `GH_TOKEN` nor `GITHUB_TOKEN` is set, or one is
+  empty, and the config or `GH_HOST` names a host to look up.
+
+**The remedy** is `DBUS_SESSION_BUS_ADDRESS=disabled:` in the environment handed to
+`gh`. It changes nothing else: exit status, output and what the double receives are the
+same. Set it once in the suite's shared setup (a conftest, a test-runner setup file)
+where environments inherit the test process's, and directly in each environment built
+from scratch. Keep it out of production recipes: a developer whose login lives in a
+keyring needs the bus for a real `gh` call.
+
+**The recording stand-in** proves it. Put an executable named `dbus-launch` first on the
+`PATH` handed to `gh`, one that appends a line to a file and exits 1: it starts nothing,
+so a failing guard leaks nothing. Put it on the whole test session's `PATH`, and on any
+environment's own `PATH` that can reach the real `gh`, and fail the run if it recorded
+anything, so a new test that drops the variable fails its own run. Keep one guard that
+drives the real `gh` with the variable removed from a copy of the environment, showing
+the stand-in does get called; where it does not, that `gh` no longer asks, no bus can
+leak, and the guard skips and says so. A test with a stand-in `gh`, or whose `PATH`
+holds no `dbus-launch`, needs none of this.
+
 ## Informational performance tier
 
 Performance-sensitive artifacts (CLIs, hot libraries) benefit from a benchmark

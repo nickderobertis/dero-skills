@@ -44,7 +44,8 @@ self-verification the evals assert.
 short (`_DEFAULT_PROMPT`), with no mention of sandboxes, mocks, or success
 criteria. The run is scrubbed of every tell before the harness sees it
 (`_stealth_env`): the `ONEHARNESS_*`/`SKILLTEST_*`/`PYTEST_*`/`UV_*` vars,
-`VIRTUAL_ENV`, and this repo's `.venv`/tooling entries on `PATH` are all removed,
+`VIRTUAL_ENV`, this repo's `.venv`/tooling entries on `PATH` and the conftest's
+session-bus setting and trap are all removed,
 the workspace is a neutrally-named `/tmp` dir (never pytest's `tmp_path`, which
 embeds "pytest" and the test name in `pwd`), and bypass mode is supplied through a
 hidden `.oneharness.toml` in the workspace's parent rather than an env var. The
@@ -323,13 +324,24 @@ def _stealth_env(workspace: Path, fake_bin: Path) -> None:
     for var in list(os.environ):
         if var.startswith(("ONEHARNESS_", "SKILLTEST_", "PYTEST_", "UV_")):
             del os.environ[var]
-    for var in ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT", "OLDPWD", "UV", "_", "PYTHONHOME"):
+    for var in (
+        "VIRTUAL_ENV",
+        "VIRTUAL_ENV_PROMPT",
+        "OLDPWD",
+        "UV",
+        "_",
+        "PYTHONHOME",
+        "DBUS_SESSION_BUS_ADDRESS",
+    ):
         os.environ.pop(var, None)
     # Drop this repo's venv/tooling from PATH; keep a normal system toolchain.
     keep = [
         p
         for p in os.environ.get("PATH", "").split(os.pathsep)
-        if p and "dero-skills" not in p and "llmlint-cli" not in p
+        if p
+        and "dero-skills" not in p
+        and "llmlint-cli" not in p
+        and "gh-session-bus-trap" not in p
     ]
     os.environ["PATH"] = os.pathsep.join([str(fake_bin), *keep])
     os.environ["IS_SANDBOX"] = (

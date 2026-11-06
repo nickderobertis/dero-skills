@@ -221,6 +221,8 @@ def run_tail(released, tmp_path: Path, thresholds: dict[str, float]):
                 "ONEVCS_HOME": str(tmp_path / "home" / "onevcs"),
                 "ONEVCS_GH": str(replay.program),
                 "GH_TOKEN": "replay-token",
+                # The cache figure runs the real gh at `cache_api`, which that token is not for.
+                "DBUS_SESSION_BUS_ADDRESS": "disabled:",
                 "GITHUB_REPOSITORY": REPOSITORY,
                 "GITHUB_EVENT_PATH": str(event),
                 "GITHUB_RUN_ID": str(RELEASE_RUN),

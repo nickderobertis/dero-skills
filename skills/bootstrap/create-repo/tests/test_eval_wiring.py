@@ -59,6 +59,19 @@ def test_the_eval_points_at_the_skill_root(eval_module) -> None:
     )
 
 
+def test_the_stealth_env_takes_the_session_bus_setting_and_trap_back_off(
+    eval_module, gh_session_bus_trap, monkeypatch, tmp_path
+) -> None:
+    # The model must not see the conftest's guard: its `gh` is a stand-in anyway.
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    assert gh_session_bus_trap in os.environ["PATH"].split(os.pathsep)
+    fake_bin = tmp_path / "bin"
+    eval_module._stealth_env(tmp_path, fake_bin)
+    assert "DBUS_SESSION_BUS_ADDRESS" not in os.environ
+    assert gh_session_bus_trap not in os.environ["PATH"].split(os.pathsep)
+    assert os.environ["PATH"].split(os.pathsep)[0] == str(fake_bin)
+
+
 def test_the_eval_can_find_the_checker_it_asserts_with(eval_module) -> None:
     # The load-bearing assertion of the whole eval is that this script passes
     # against the produced repo. A path that does not exist would fail the run
