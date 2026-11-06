@@ -346,10 +346,18 @@ def test_composing_again_changes_nothing_and_a_differing_file_is_refused(tmp_pat
     before = {p: p.read_bytes() for p in repo.rglob("*") if p.is_file()}
     again = run(
         [
-            "uv", "run", "--script", str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
-            "--ci-cd", str(repo), "--language", "rust", "--name", NAME,
+            "uv",
+            "run",
+            "--script",
+            str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
+            "--ci-cd",
+            str(repo),
+            "--language",
+            "rust",
+            "--name",
+            NAME,
         ]
-    )  # fmt: skip
+    )
     assert again.returncode == 0, again.stderr
     assert {p: p.read_bytes() for p in repo.rglob("*") if p.is_file()} == before
 
@@ -357,11 +365,20 @@ def test_composing_again_changes_nothing_and_a_differing_file_is_refused(tmp_pat
     ci.write_text("name: ci\n", encoding="utf-8")
     refused = run(
         [
-            "uv", "run", "--script", str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
-            "--ci-cd", str(repo), "--language", "rust", "--name", NAME,
-            "--platforms", "linux",
+            "uv",
+            "run",
+            "--script",
+            str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
+            "--ci-cd",
+            str(repo),
+            "--language",
+            "rust",
+            "--name",
+            NAME,
+            "--platforms",
+            "linux",
         ]
-    )  # fmt: skip
+    )
     assert refused.returncode == 2
     assert "ci.yml already exists and differs" in refused.stderr
     assert ci.read_text(encoding="utf-8") == "name: ci\n"
@@ -370,10 +387,18 @@ def test_composing_again_changes_nothing_and_a_differing_file_is_refused(tmp_pat
 def recompose(repo: Path):
     return run(
         [
-            "uv", "run", "--script", str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
-            "--ci-cd", str(repo), "--language", "rust", "--name", NAME,
+            "uv",
+            "run",
+            "--script",
+            str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
+            "--ci-cd",
+            str(repo),
+            "--language",
+            "rust",
+            "--name",
+            NAME,
         ]
-    )  # fmt: skip
+    )
 
 
 def test_the_policy_section_is_refused_when_it_differs_and_nothing_is_written(tmp_path):
@@ -405,10 +430,18 @@ def test_a_repository_with_no_agents_file_is_refused(tmp_path):
 def test_a_language_without_a_known_toolchain_is_refused(tmp_path):
     refused = run(
         [
-            "uv", "run", "--script", str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
-            "--ci-cd", str(tmp_path), "--language", "python", "--name", NAME,
+            "uv",
+            "run",
+            "--script",
+            str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
+            "--ci-cd",
+            str(tmp_path),
+            "--language",
+            "python",
+            "--name",
+            NAME,
         ]
-    )  # fmt: skip
+    )
     assert refused.returncode == 2
     assert "--ci-cd needs exactly one of --language rust / --language typescript" in (
         refused.stderr
@@ -423,11 +456,18 @@ def test_the_governance_dry_run_requires_lint_the_test_jobs_and_budgets(
     repo = compose(tmp_path / "repo", platforms=platforms)
     done = run(
         [
-            "uv", "run", "--script", str(GOVERNANCE),
-            "--repo", "acme/demo", "--branch", "main", "--dry-run",
+            "uv",
+            "run",
+            "--script",
+            str(GOVERNANCE),
+            "--repo",
+            "acme/demo",
+            "--branch",
+            "main",
+            "--dry-run",
         ],
         cwd=repo,
-    )  # fmt: skip
+    )
     assert done.returncode == 0, done.stderr
     want = CI_JOBS[platforms]
     assert f"  required checks: {', '.join(want)} (non-strict)" in done.stdout
@@ -441,11 +481,19 @@ def test_the_governance_dry_run_requires_lint_the_test_jobs_and_budgets(
 
     opted = run(
         [
-            "uv", "run", "--script", str(GOVERNANCE), "--repo", "acme/demo",
-            "--branch", "main", "--dry-run", "--strict",
+            "uv",
+            "run",
+            "--script",
+            str(GOVERNANCE),
+            "--repo",
+            "acme/demo",
+            "--branch",
+            "main",
+            "--dry-run",
+            "--strict",
         ],
         cwd=repo,
-    )  # fmt: skip
+    )
     assert f"  required checks: {', '.join(want)} (strict)" in opted.stdout
 
 
@@ -458,11 +506,18 @@ def test_governance_refuses_a_lint_job_that_runs_no_llmlint(tmp_path):
     )
     done = run(
         [
-            "uv", "run", "--script", str(GOVERNANCE),
-            "--repo", "acme/demo", "--branch", "main", "--dry-run",
+            "uv",
+            "run",
+            "--script",
+            str(GOVERNANCE),
+            "--repo",
+            "acme/demo",
+            "--branch",
+            "main",
+            "--dry-run",
         ],
         cwd=repo,
-    )  # fmt: skip
+    )
     assert done.returncode == 1
     assert "no llmlint check among the required status checks" in done.stderr
 
@@ -521,7 +576,9 @@ BREAKS = {
         "job `test-linux` is not held to 30 minutes (timeout-minutes: 45)",
     ),
     "a budget dropped": (
-        lambda repo: edit(repo, "budgets.yaml", f"  - id: {NAME}-pr-read-requests", "  - id: gone"),
+        lambda repo: edit(
+            repo, "budgets.yaml", f"  - id: {NAME}-pr-read-requests", "  - id: gone"
+        ),
         "lacks the budget(s) <name>-pr-read-requests",
     ),
     "the figures script dropped while the budgets run it": (
@@ -541,7 +598,12 @@ BREAKS = {
         "notignored.yml runs job(s) suppressions on pull requests",
     ),
     "a CI job left running on a push to main": (
-        lambda repo: edit(repo, CI, "  lint:\n    if: github.event_name == 'pull_request'\n", "  lint:\n"),
+        lambda repo: edit(
+            repo,
+            CI,
+            "  lint:\n    if: github.event_name == 'pull_request'\n",
+            "  lint:\n",
+        ),
         "ci.yml runs lint on push to main",
     ),
     "no budgets job": (
@@ -553,19 +615,39 @@ BREAKS = {
         "runs `budgets` under `if: unset`",
     ),
     "budgets excluding drafts": (
-        lambda repo: edit(repo, CI, "\n    if: always()\n", "\n    if: ${{ !github.event.pull_request.draft }}\n"),
+        lambda repo: edit(
+            repo,
+            CI,
+            "\n    if: always()\n",
+            "\n    if: ${{ !github.event.pull_request.draft }}\n",
+        ),
         "so a failed or skipped predecessor can leave its required check unreported",
     ),
     "budgets not waiting on a test job": (
-        lambda repo: edit(repo, CI, "    needs: [lint, test-linux, test-windows, test-macos]\n", "    needs: [lint, test-linux, test-macos]\n"),
+        lambda repo: edit(
+            repo,
+            CI,
+            "    needs: [lint, test-linux, test-windows, test-macos]\n",
+            "    needs: [lint, test-linux, test-macos]\n",
+        ),
         "runs `budgets` without waiting on test-windows",
     ),
     "budgets on a floating action reference": (
-        lambda repo: edit(repo, CI, "onebudgetspec-github-action@v0.1.1", "onebudgetspec-github-action@v0"),
+        lambda repo: edit(
+            repo,
+            CI,
+            "onebudgetspec-github-action@v0.1.1",
+            "onebudgetspec-github-action@v0",
+        ),
         "has `budgets` use no exact release",
     ),
     "budgets running a build of its own": (
-        lambda repo: edit(repo, CI, "          fetch-depth: 0\n          persist-credentials: false\n      - uses: nickderobertis/onebudgetspec", "          fetch-depth: 0\n          persist-credentials: false\n      - run: just build\n      - uses: nickderobertis/onebudgetspec"),
+        lambda repo: edit(
+            repo,
+            CI,
+            "          fetch-depth: 0\n          persist-credentials: false\n      - uses: nickderobertis/onebudgetspec",
+            "          fetch-depth: 0\n          persist-credentials: false\n      - run: just build\n      - uses: nickderobertis/onebudgetspec",
+        ),
         "has `budgets` run commands of its own",
     ),
     "budgets unable to read artifacts": (
@@ -577,7 +659,12 @@ BREAKS = {
         "enforces release-tail in `budgets`",
     ),
     "a path filter on pull requests": (
-        lambda repo: edit(repo, CI, "\non:\n  pull_request:\n", "\non:\n  pull_request:\n    paths: [src/**]\n"),
+        lambda repo: edit(
+            repo,
+            CI,
+            "\non:\n  pull_request:\n",
+            "\non:\n  pull_request:\n    paths: [src/**]\n",
+        ),
         "does not run `budgets` on every pull request",
     ),
     "no base push": (
@@ -597,15 +684,31 @@ BREAKS = {
         "AGENTS.md has no `## Budget reports` section",
     ),
     "budgets left unrequired": (
-        lambda repo: rewrite_governance(repo, lambda g: {**g, "required_checks": [c for c in g["required_checks"] if c != "budgets"]}),
+        lambda repo: rewrite_governance(
+            repo,
+            lambda g: {
+                **g,
+                "required_checks": [c for c in g["required_checks"] if c != "budgets"],
+            },
+        ),
         "governance.json does not require budgets",
     ),
     "an extra required context": (
-        lambda repo: edit(repo, ".github/governance.json", '"lint",', '"lint",\n    "llmlint",'),
+        lambda repo: edit(
+            repo, ".github/governance.json", '"lint",', '"lint",\n    "llmlint",'
+        ),
         "governance.json requires llmlint, beyond `lint`, the test jobs and `budgets`",
     ),
     "a test job left unrequired": (
-        lambda repo: rewrite_governance(repo, lambda g: {**g, "required_checks": [c for c in g["required_checks"] if c != "test-windows"]}),
+        lambda repo: rewrite_governance(
+            repo,
+            lambda g: {
+                **g,
+                "required_checks": [
+                    c for c in g["required_checks"] if c != "test-windows"
+                ],
+            },
+        ),
         "governance.json does not require test-windows",
     ),
     "the governance record dropped while the release publishes": (
@@ -613,14 +716,18 @@ BREAKS = {
         "release.yml releases through `publish`, but there is no .github/governance.json recording the required checks",
     ),
     "a governance record with no required_checks list": (
-        lambda repo: rewrite_governance(repo, lambda g: {"strict": g["strict"], "required_checks": "lint"}),
+        lambda repo: rewrite_governance(
+            repo, lambda g: {"strict": g["strict"], "required_checks": "lint"}
+        ),
         "governance.json has no `required_checks` list",
     ),
     "a governance record that is not JSON": (
-        lambda repo: (repo / GOVERNANCE_RECORD).write_text("{not json", encoding="utf-8"),
+        lambda repo: (repo / GOVERNANCE_RECORD).write_text(
+            "{not json", encoding="utf-8"
+        ),
         "governance.json has no `required_checks` list",
     ),
-}  # fmt: skip
+}
 
 
 @pytest.mark.parametrize("name", sorted(BREAKS))

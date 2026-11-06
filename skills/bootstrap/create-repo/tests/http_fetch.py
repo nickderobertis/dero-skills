@@ -12,10 +12,17 @@ class FetchError(RuntimeError):
 
 async def fetch(url: str) -> bytes:
     process = await asyncio.create_subprocess_exec(
-        "curl", "--fail", "--silent", "--show-error", "--location", "--max-time", "300", url,
+        "curl",
+        "--fail",
+        "--silent",
+        "--show-error",
+        "--location",
+        "--max-time",
+        "300",
+        url,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-    )  # fmt: skip
+    )
     body, error = await process.communicate()
     if process.returncode != 0:
         raise FetchError(f"{url}: {error.decode().strip()}")

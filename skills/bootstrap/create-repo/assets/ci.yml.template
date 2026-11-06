@@ -3,20 +3,11 @@
 #% # and `#% endif` for the flags the composition sets (rust, typescript, windows, macos,
 #% # visual-docs, visual-docs-arch) and `#% if !FLAG` for those it does not, fills each
 #% # @@KEY@@, and drops every `#%` line.
-# Prove each pull request from a clean checkout, in one job per concern: `lint` once, on
-# Linux, for everything platform-independent, and one test job per platform the repository
-# supports. None of those needs another, so they all start at once, and every job is held to
-# 30 minutes (`timeout-minutes`) — the CI half of the budgets in budgets.yaml (references/ci.md,
-# "CI and CD time budgets"). `budgets` reports once they end, however they ended. Branch
-# protection requires exactly `lint`, the test jobs and `budgets` (.github/governance.json);
-# branches need not be up to date with main before they merge, which trades catching a semantic
-# conflict between two independently green pull requests for not re-running every open pull
-# request each time main moves.
+# Prove each pull request from a clean checkout. references/ci.md states the job topology,
+# the time budgets and the merge tradeoff.
 #
 # A push to main runs only `budgets`, which records that commit's results as the history pull
-# requests compare with. Nothing else runs there: the squash commit's tree is the one its pull
-# request's jobs already proved, and nothing downstream re-runs these checks — the release
-# workflow builds, installs and publishes that tree's artifacts without re-testing it.
+# requests compare with.
 #
 # Every job runs the same `just` recipes a contributor runs locally, over the projects its
 # diff can reach (Nx affected), from a base derived explicitly rather than guessed. The line

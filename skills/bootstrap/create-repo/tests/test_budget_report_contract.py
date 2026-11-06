@@ -149,9 +149,19 @@ def test_the_governance_record_requires_budgets(repo):
         "budgets",
     ]
     done = run(
-        ["uv", "run", "--script", str(GOVERNANCE), "--repo", "a/b", "--branch", "main", "--dry-run"],
+        [
+            "uv",
+            "run",
+            "--script",
+            str(GOVERNANCE),
+            "--repo",
+            "a/b",
+            "--branch",
+            "main",
+            "--dry-run",
+        ],
         cwd=repo,
-    )  # fmt: skip
+    )
     assert "budgets" in done.stdout.splitlines()[1], done.stdout
 
 

@@ -601,13 +601,24 @@ def test_the_composition_passes_the_baseline_and_composes_again_unchanged(
     chosen = journey.composition
     again = subprocess.run(
         [
-            "uv", "run", "--script", str(COMPOSER), "--ci-cd", str(journey.path),
-            "--shape", chosen.shape, "--language", chosen.language, "--name", NAME,
-            "--platforms", chosen.platforms,
+            "uv",
+            "run",
+            "--script",
+            str(COMPOSER),
+            "--ci-cd",
+            str(journey.path),
+            "--shape",
+            chosen.shape,
+            "--language",
+            chosen.language,
+            "--name",
+            NAME,
+            "--platforms",
+            chosen.platforms,
         ],
         capture_output=True,
         text=True,
-    )  # fmt: skip
+    )
     assert again.returncode == 0, again.stderr
     after = {p: p.read_bytes() for p in before}
     assert after == before
@@ -617,12 +628,18 @@ def test_the_plan_for_each_shape_composes_the_budget_reference(tmp_path):
     for chosen in COMPOSITIONS.values():
         done = subprocess.run(
             [
-                "uv", "run", "--script", str(COMPOSER),
-                "--shape", chosen.shape, "--language", chosen.language,
+                "uv",
+                "run",
+                "--script",
+                str(COMPOSER),
+                "--shape",
+                chosen.shape,
+                "--language",
+                chosen.language,
             ],
             capture_output=True,
             text=True,
-        )  # fmt: skip
+        )
         assert done.returncode == 0, done.stderr
         assert "onebudgetspec-github-action" in done.stdout
 

@@ -27,8 +27,11 @@ SOURCE_URL = f"{RAW}/{SOURCE_COMMIT}/{DESCRIPTION}"
 OPERATIONS = (
     ("get", "/repos/{owner}/{repo}/rules/branches/{branch}"),
     ("get", "/repos/{owner}/{repo}/branches/{branch}/protection"),
-    ("post", "/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts"),
-)  # fmt: skip
+    (
+        "post",
+        "/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
+    ),
+)
 _PROSE = {"description", "summary", "title", "example", "examples", "externalDocs"}
 _REF = "#/components/schemas/"
 TYPES = {
