@@ -29,13 +29,8 @@ for the tiers it can reach:
   `external/test_budget_report_job_external.py` runs the generated `budgets` job's
   pinned release for real, through the harness that release ships, with only GitHub's
   services doubled. It also holds `fixtures/onebudgetspec-github-action/<tag>/`, which
-  the fast tier's contract test reads, to that release's bytes; the gate holds them to
-  the digests that directory's `SHA256SUMS` and `telemetry-help.source.json` state, and
-  the own budget's metric to the name `report-metric.source.json` records from the
-  release's source.
-  `test_github_rest_contract_external.py` derives
-  `e2e/fixtures/github-rest/protection-operations.json` again from GitHub's OpenAPI
-  description and checks the additive journeys' answers against its current one.
+  the offline fast tier reads, to that release. `test_github_rest_contract_external.py`
+  does the same for `e2e/fixtures/github-rest/`, whose source moves with no commit here.
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
