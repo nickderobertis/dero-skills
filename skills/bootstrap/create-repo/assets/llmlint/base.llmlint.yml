@@ -39,7 +39,9 @@ rules:
       from the test process's shared setup (a conftest, a test-runner setup file). false
       when such a test hands the real `gh` an environment without that variable. Relevance
       admits a whole file, so a test in it whose `gh` is a stand-in is true on its own, as
-      is a call that names no fake host and holds a token for its target.
+      is a call that names no fake host and holds a token for its target, and a guard
+      that deliberately removes the variable with a recording `dbus-launch` stand-in first
+      on that `PATH`, to show `gh` still asks: it starts no bus.
     relevance: the target files define a test that runs the real `gh` CLI
     require_line_attribution: true
 
