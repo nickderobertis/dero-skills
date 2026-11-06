@@ -1,4 +1,4 @@
-"""Fetch public URLs for the external tier, concurrently, through a typed async client."""
+"""A small typed async client for the external tier's public downloads, over curl."""
 
 from __future__ import annotations
 

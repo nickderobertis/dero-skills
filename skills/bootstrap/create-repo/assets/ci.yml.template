@@ -270,13 +270,8 @@ jobs:
       - cancel: nx-cache
 
 #% endfor
-  # The one budgets job: on every pull request, draft or not and whatever it touches, and on
-  # every push to main, once its predecessors have ended however they ended. It checks every
-  # budget whose existing command can run here through ordinary `onebudgetspec check`, and
-  # gives each other budget a row saying why not; it builds and tests nothing. It fails only on
-  # an enforced budget's ordinary verdict: release-tail and host-variable budgets, which belong
-  # to a release and a developer's machine, are report-only here. The full history lets local
-  # git prove each saved base commit's ancestry, and the group serializes comment writers.
+  # The full history lets local git prove each saved base commit's ancestry, and the group
+  # serializes comment writers.
   budgets:
     needs: [@@CI_PREDECESSORS@@]
     if: always()

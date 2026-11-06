@@ -43,29 +43,31 @@ TYPES = {
 
 def _pruned(schema):
     """A schema without its prose; `properties` keys are names, whatever they spell."""
-    if isinstance(schema, list):
-        return [_pruned(item) for item in schema]
-    if not isinstance(schema, dict):
-        return schema
-    return {
-        key: {name: _pruned(value) for name, value in part.items()}
-        if key == "properties"
-        else _pruned(part)
-        for key, part in schema.items()
-        if key not in _PROSE
-    }
+    match schema:
+        case list():
+            return [_pruned(item) for item in schema]
+        case dict():
+            return {
+                key: {name: _pruned(value) for name, value in part.items()}
+                if key == "properties"
+                else _pruned(part)
+                for key, part in schema.items()
+                if key not in _PROSE
+            }
+        case _:
+            return schema
 
 
 def _references(node) -> set[str]:
-    if isinstance(node, list):
-        return {name for item in node for name in _references(item)}
-    if not isinstance(node, dict):
-        return set()
-    found = {name for part in node.values() for name in _references(part)}
-    reference = node.get("$ref")
-    if isinstance(reference, str) and reference.startswith(_REF):
-        found.add(reference.removeprefix(_REF))
-    return found
+    match node:
+        case list():
+            return {name for item in node for name in _references(item)}
+        case {"$ref": str(reference)} if reference.startswith(_REF):
+            return {reference.removeprefix(_REF)}
+        case dict():
+            return {name for part in node.values() for name in _references(part)}
+        case _:
+            return set()
 
 
 def _json_schema(part: dict) -> dict:

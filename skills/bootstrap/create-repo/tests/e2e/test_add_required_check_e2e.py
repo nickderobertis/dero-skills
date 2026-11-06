@@ -20,7 +20,9 @@ import shutil
 import subprocess
 import threading
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 
@@ -55,6 +57,29 @@ SCRUBBED = {
 }
 
 
+class Refusal(NamedTuple):
+    status: int
+    message: str
+
+
+class Call(NamedTuple):
+    method: str
+    path: str
+    body: str | None
+
+
+@dataclass
+class HostState:
+    """What the double holds and how it answers; None protection is an unprotected branch."""
+
+    protection: dict | list | None = field(default_factory=existing_protection)
+    rules: list | dict = field(default_factory=list)
+    fail: dict[str, Refusal] = field(default_factory=dict)
+    # What a write leaves behind, for a host that moved more than it was asked to.
+    after_write: dict | None = None
+    fail_after_write: dict[str, Refusal] = field(default_factory=dict)
+
+
 def request_body(handler: http.server.BaseHTTPRequestHandler) -> str | None:
     """The body as sent: `gh api --input` streams it, so it arrives chunked."""
     if handler.headers.get("Transfer-Encoding", "").lower() != "chunked":
@@ -73,17 +98,14 @@ class Host:
 
     opened: list[Host] = []
 
-    def __init__(self, root: Path, *, malformed: bool = False, **state) -> None:
+    def __init__(
+        self, root: Path, state: HostState | None = None, *, malformed: bool = False
+    ) -> None:
         gh = shutil.which("gh")
         assert gh, "these journeys drive the real GitHub CLI; install gh, then re-run"
-        self.state = {
-            "protection": existing_protection(),
-            "rules": [],
-            "fail": {},
-            **state,
-        }
-        self.before = copy.deepcopy(self.state["protection"])
-        self.calls: list[dict] = []
+        self.state = state or HostState()
+        self.before = copy.deepcopy(self.state.protection)
+        self.calls: list[Call] = []
         # Where a body left GitHub's description; `malformed` says a test meant it to.
         self.problems: list[str] = []
         self.malformed = malformed
@@ -126,7 +148,7 @@ class Host:
         path = handler.path.split("://", 1)[-1].split("/", 1)[1].split("?", 1)[0]
         method = handler.command
         with self.lock:
-            self.calls.append({"method": method, "path": path, "body": body})
+            self.calls.append(Call(method, path, body))
             if not handler.headers.get("User-Agent", "").startswith("GitHub CLI"):
                 self.problems.append(f"{method} {path} did not come through gh")
             if handler.headers.get("Authorization", "") in ("", "Bearer "):
@@ -144,34 +166,31 @@ class Host:
         if operation is None:
             self.problems.append(f"{method} {path} is no declared operation")
             return 404, {"message": "Not Found"}
-        if path in self.state["fail"]:
-            status, message = self.state["fail"][path]
-            return status, {"message": message}
+        if path in self.state.fail:
+            refusal = self.state.fail[path]
+            return refusal.status, {"message": refusal.message}
         if method == "POST":
             sent = json.loads(body or "null")
             self.audit(sent, operation["requestBody"], f"{method} {path} request")
             answer = self.add_contexts(sent["contexts"])
         elif path == RULES:
-            answer = self.state["rules"]
-        elif self.state["protection"] is None:
+            answer = self.state.rules
+        elif self.state.protection is None:
             return 404, {"message": "Branch not protected"}
         else:
-            answer = self.state["protection"]
+            answer = self.state.protection
         self.audit(answer, operation["responses"]["200"], f"{method} {path} answer")
         return 200, answer
 
     def add_contexts(self, contexts: list[str]) -> list[str]:
-        checks = self.state["protection"]["required_status_checks"]
+        checks = self.state.protection["required_status_checks"]
         for name in contexts:
             checks["contexts"].append(name)
             checks["checks"].append({"context": name, "app_id": 15368})
         answer = list(checks["contexts"])
-        if "after_write" in self.state:
-            self.state["protection"] = self.state["after_write"]
-        self.state["fail"] = {
-            **self.state["fail"],
-            **self.state.get("fail_after_write", {}),
-        }
+        if self.state.after_write is not None:
+            self.state.protection = self.state.after_write
+        self.state.fail = {**self.state.fail, **self.state.fail_after_write}
         return answer
 
     def audit(self, value: object, schema: dict, what: str) -> None:
@@ -180,7 +199,7 @@ class Host:
 
     @property
     def writes(self) -> list[dict]:
-        return [call for call in self.calls if call["method"] != "GET"]
+        return [call for call in self.calls if call.method != "GET"]
 
     def run(self, *flags: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -251,10 +270,10 @@ def test_a_missing_check_is_added_and_everything_else_is_preserved(host: Host):
     done = host.add("budgets")
     assert done.returncode == 0, done.stderr
 
-    assert [(c["method"], c["path"]) for c in host.writes] == [("POST", SUBRESOURCE)]
-    assert json.loads(host.writes[0]["body"]) == {"contexts": ["budgets"]}
+    assert [(c.method, c.path) for c in host.writes] == [("POST", SUBRESOURCE)]
+    assert json.loads(host.writes[0].body) == {"contexts": ["budgets"]}
 
-    after = host.state["protection"]
+    after = host.state.protection
     checks = after["required_status_checks"]
     assert checks["contexts"] == ["lint", "cross (windows-latest)", "legacy", "budgets"]
     assert checks["checks"][:3] == [
@@ -272,7 +291,7 @@ def test_a_missing_check_is_added_and_everything_else_is_preserved(host: Host):
 
 def test_a_repeated_call_writes_nothing(host: Host):
     assert host.add("budgets").returncode == 0
-    state = host.state
+    state = copy.deepcopy(host.state)
     again = host.add("budgets")
     assert again.returncode == 0, again.stderr
     assert "already required" in again.stdout
@@ -283,7 +302,7 @@ def test_a_repeated_call_writes_nothing(host: Host):
 def test_only_the_missing_ones_of_several_are_sent(host: Host):
     done = host.add("lint", "budgets", "budgets", "other")
     assert done.returncode == 0, done.stderr
-    assert json.loads(host.writes[0]["body"]) == {"contexts": ["budgets", "other"]}
+    assert json.loads(host.writes[0].body) == {"contexts": ["budgets", "other"]}
 
 
 def test_dry_run_reads_and_prints_the_one_call_without_writing(host: Host):
@@ -292,7 +311,7 @@ def test_dry_run_reads_and_prints_the_one_call_without_writing(host: Host):
     assert f"POST {SUBRESOURCE}" in done.stdout
     assert '{"contexts": ["budgets"]}' in done.stdout
     assert host.writes == []
-    assert host.state["protection"] == host.before
+    assert host.state.protection == host.before
 
 
 def test_dry_run_of_a_check_already_required_plans_nothing(host: Host):
@@ -318,7 +337,7 @@ def test_verify_passes_on_a_required_check_and_names_the_set(host: Host):
 
 @pytest.mark.parametrize("flag", [[], ["--dry-run"], ["--verify"]])
 def test_a_failed_read_is_refused_before_any_write(tmp_path: Path, flag):
-    host = Host(tmp_path, fail={PROTECTION: (500, "Server Error")})
+    host = Host(tmp_path, HostState(fail={PROTECTION: Refusal(500, "Server Error")}))
     done = host.add("budgets", extra=flag)
     assert done.returncode == 1
     assert "HTTP 500" in done.stderr
@@ -327,7 +346,9 @@ def test_a_failed_read_is_refused_before_any_write(tmp_path: Path, flag):
 
 
 def test_unreadable_rulesets_are_refused_before_any_write(tmp_path: Path):
-    host = Host(tmp_path, fail={RULES: (403, "Must have admin rights")})
+    host = Host(
+        tmp_path, HostState(fail={RULES: Refusal(403, "Must have admin rights")})
+    )
     done = host.add("budgets")
     assert done.returncode == 1
     assert "HTTP 403" in done.stderr
@@ -336,7 +357,7 @@ def test_unreadable_rulesets_are_refused_before_any_write(tmp_path: Path):
 
 @pytest.mark.parametrize("flag", [[], ["--dry-run"], ["--verify"]])
 def test_a_rulesets_only_branch_is_refused_by_name(tmp_path: Path, flag):
-    host = Host(tmp_path, protection=None, rules=[RULE, DELETION_RULE])
+    host = Host(tmp_path, HostState(protection=None, rules=[RULE, DELETION_RULE]))
     done = host.add("budgets", extra=flag)
     assert done.returncode == 1
     assert "rulesets-only" in done.stderr
@@ -347,7 +368,7 @@ def test_a_rulesets_only_branch_is_refused_by_name(tmp_path: Path, flag):
 
 
 def test_classic_with_an_inherited_ruleset_is_refused_as_ambiguous(tmp_path: Path):
-    host = Host(tmp_path, rules=[RULE])
+    host = Host(tmp_path, HostState(rules=[RULE]))
     done = host.add("budgets")
     assert done.returncode == 1
     assert "classic plus rulesets" in done.stderr
@@ -355,7 +376,7 @@ def test_classic_with_an_inherited_ruleset_is_refused_as_ambiguous(tmp_path: Pat
 
 
 def test_an_unprotected_branch_is_refused(tmp_path: Path):
-    host = Host(tmp_path, protection=None)
+    host = Host(tmp_path, HostState(protection=None))
     done = host.add("budgets")
     assert done.returncode == 1
     assert "no classic branch protection" in done.stderr
@@ -365,7 +386,7 @@ def test_an_unprotected_branch_is_refused(tmp_path: Path):
 def test_protection_with_no_required_checks_is_refused(tmp_path: Path):
     protection = existing_protection()
     del protection["required_status_checks"]
-    host = Host(tmp_path, protection=protection)
+    host = Host(tmp_path, HostState(protection=protection))
     done = host.add("budgets")
     assert done.returncode == 1
     assert "requires no status checks" in done.stderr
@@ -401,7 +422,7 @@ def test_required_checks_it_cannot_read_are_refused_before_any_write(
 ):
     protection = existing_protection()
     protection["required_status_checks"] = MALFORMED_CHECKS[malformed]
-    host = Host(tmp_path, malformed=True, protection=protection)
+    host = Host(tmp_path, HostState(protection=protection), malformed=True)
     done = host.add("budgets", extra=[flag] if flag else [])
     assert done.returncode == 1
     assert "required_status_checks" in done.stderr
@@ -413,7 +434,7 @@ def test_required_checks_it_cannot_read_are_refused_before_any_write(
 def test_a_protection_answer_that_is_no_object_is_refused_before_any_write(
     tmp_path: Path,
 ):
-    host = Host(tmp_path, malformed=True, protection=["lint"])
+    host = Host(tmp_path, HostState(protection=["lint"]), malformed=True)
     done = host.add("budgets")
     assert done.returncode == 1
     assert "no object" in done.stderr
@@ -424,7 +445,11 @@ def test_a_read_back_it_cannot_read_fails_and_says_what_to_compare(tmp_path: Pat
     def unreadable(protection: dict) -> None:
         del protection["required_status_checks"]["checks"]
 
-    host = Host(tmp_path, malformed=True, after_write=_after_budgets_added(unreadable))
+    host = Host(
+        tmp_path,
+        HostState(after_write=_after_budgets_added(unreadable)),
+        malformed=True,
+    )
     done = host.add("budgets")
     assert done.returncode == 1
     assert "required_status_checks" in done.stderr
@@ -490,7 +515,7 @@ def _disable_checks(protection: dict) -> None:
 def test_anything_the_read_back_shows_moved_fails_the_operation(
     tmp_path: Path, change, finding
 ):
-    host = Host(tmp_path, after_write=_after_budgets_added(change))
+    host = Host(tmp_path, HostState(after_write=_after_budgets_added(change)))
     done = host.add("budgets")
     assert done.returncode == 1
     assert finding in done.stderr
@@ -498,7 +523,9 @@ def test_anything_the_read_back_shows_moved_fails_the_operation(
 
 
 def test_a_failed_read_back_fails_and_says_what_to_compare(tmp_path: Path):
-    host = Host(tmp_path, fail_after_write={PROTECTION: (502, "Server Error")})
+    host = Host(
+        tmp_path, HostState(fail_after_write={PROTECTION: Refusal(502, "Server Error")})
+    )
     done = host.add("budgets")
     assert done.returncode == 1
     assert "HTTP 502" in done.stderr
@@ -508,7 +535,7 @@ def test_a_failed_read_back_fails_and_says_what_to_compare(tmp_path: Path):
 
 
 def test_a_rules_answer_that_is_no_list_is_refused_before_any_write(tmp_path: Path):
-    host = Host(tmp_path, malformed=True, rules={"message": "unexpected"})
+    host = Host(tmp_path, HostState(rules={"message": "unexpected"}), malformed=True)
     done = host.add("budgets")
     assert done.returncode == 1
     assert "did not answer a list of rules" in done.stderr
@@ -516,7 +543,9 @@ def test_a_rules_answer_that_is_no_list_is_refused_before_any_write(tmp_path: Pa
 
 
 def test_a_refused_write_fails_with_the_hosts_error(tmp_path: Path):
-    host = Host(tmp_path, fail={SUBRESOURCE: (403, "Resource not accessible")})
+    host = Host(
+        tmp_path, HostState(fail={SUBRESOURCE: Refusal(403, "Resource not accessible")})
+    )
     done = host.add("budgets")
     assert done.returncode == 1
     assert "HTTP 403" in done.stderr
