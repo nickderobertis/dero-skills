@@ -109,6 +109,12 @@ def test_the_own_budget_command_matches_the_released_reader(repo):
     assert entry["unit"] == "seconds"
 
 
+def test_the_reference_states_the_limit_the_budget_is_generated_with(repo):
+    budget = yaml.safe_load((repo / ".github/reporting/budgets.yaml").read_text())
+    limit = budget["budgets"][0]["threshold"]
+    assert f"provisional {limit} s" in CI_REFERENCE.read_text(encoding="utf-8")
+
+
 def test_the_governance_record_requires_budgets(repo):
     record = json.loads((repo / ".github/governance.json").read_text())
     assert record["required_checks"] == [

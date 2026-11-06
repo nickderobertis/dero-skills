@@ -56,7 +56,10 @@ RUNNABLE = {
     "demo-coverage-percent": "percent",
     "demo-host-reads": "requests",
     "demo-walltime": "seconds",
+    "demo-laptop-figure": "count",
 }
+# Over its line, and report-only because it carries one of the job's excluded labels.
+REPORT_ONLY_OVER = "demo-laptop-figure"
 UNAVAILABLE = {
     "demo-needs-cargo": "needs cargo",
     "demo-needs-telemetry": "dist/telemetry/journey.json",
@@ -93,6 +96,14 @@ budgets:
     unit: seconds
     direction: max
     threshold: 60
+  - id: demo-laptop-figure
+    description: A figure only a developer's machine gives meaning to.
+    labels: [host-variable]
+    measure: reported
+    command: [bash, -c, '{COUNT}; echo "{{\\"value\\": 50}}" > "$ONEBUDGETSPEC_RESULT"']
+    unit: count
+    direction: max
+    threshold: 10
   - id: demo-needs-cargo
     description: A figure only the Rust toolchain can produce.
     labels: [ci-report]
@@ -145,6 +156,7 @@ COMPOSITIONS = {
 }
 
 
+# llmlint: ignore[async_typed_clients_at_boundaries] A test fetching a release's bytes once at session setup: nothing runs concurrently with it and no typed client is on the dev path.
 def download(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=120) as response:
         return response.read()
@@ -345,7 +357,8 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     budget_run = job.saved("budget-run.json")
     verdicts = {r["id"]: r for r in budget_run["results"]["results"]}
     for budget, unit in RUNNABLE.items():
-        assert verdicts[budget]["verdict"] == "within", budget
+        wanted = "over" if budget == REPORT_ONLY_OVER else "within"
+        assert verdicts[budget]["verdict"] == wanted, budget
         assert verdicts[budget]["unit"] == unit
     assert verdicts["demo-coverage-percent"]["actual"] == 91
 
@@ -369,7 +382,7 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
         journey.host.artifact_files(job.run_id)["budget-run.json"].decode()
     )
     own = {r["id"]: r for r in saved["results"]["results"]}[REPORT_BUDGET]
-    assert own["verdict"] == "within"
+    assert own["verdict"] in ("within", "over"), "a real verdict, saved"
     assert own["unit"] == "seconds"
     assert journey.host.artifact_files(job.run_id, "budget-results-main") is not None
 
@@ -412,11 +425,20 @@ def test_history_is_unavailable_below_five_saved_commits_then_provisional(journe
     assert "provisional" in enough.markdown()
 
 
-def test_an_enforced_budget_over_its_line_fails_and_report_only_ones_do_not(journey):
-    job = journey.pull_request(bundle_size=5000)
-    assert job.exit_code == 1, job.stdout
-    rows = job.rows()
-    assert rows["demo-bundle-bytes"]["verdict"] == "over"
+def test_an_enforced_budget_over_its_line_fails_and_a_report_only_one_does_not(journey):
+    report_only = journey.pull_request()
+    assert report_only.exit_code == 0, report_only.stdout
+    assert report_only.rows()[REPORT_ONLY_OVER]["verdict"] == "over"
+    row = next(
+        line
+        for line in report_only.markdown().splitlines()
+        if f"/ {REPORT_ONLY_OVER} " in line
+    )
+    assert "report-only" in row
+
+    enforced = journey.pull_request(bundle_size=5000)
+    assert enforced.exit_code == 1, enforced.stdout
+    assert enforced.rows()["demo-bundle-bytes"]["verdict"] == "over"
     assert journey.executed() == sorted(RUNNABLE)
     assert len(journey.host.comments) == 1
 

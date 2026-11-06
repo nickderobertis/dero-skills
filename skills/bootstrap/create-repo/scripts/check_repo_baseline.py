@@ -3370,9 +3370,11 @@ def budgets_job_problems(
             "skipped predecessor can leave its required check unreported; use `if: always()`"
         )
     needed = {name.strip() for name in job.needs.strip("[]").split(",")}
-    waits = sorted(set(jobs) - {BUDGETS_JOB} - needed)
-    if waits:
-        problems.append(f"runs `{BUDGETS_JOB}` without waiting on {', '.join(waits)}")
+    not_awaited = sorted(set(jobs) - {BUDGETS_JOB} - needed)
+    if not_awaited:
+        problems.append(
+            f"runs `{BUDGETS_JOB}` without waiting on {', '.join(not_awaited)}"
+        )
     if not BUDGETS_ACTION_RE.search(job.body):
         problems.append(
             f"has `{BUDGETS_JOB}` use no exact release of "

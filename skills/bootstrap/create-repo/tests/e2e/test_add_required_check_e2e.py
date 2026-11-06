@@ -47,12 +47,8 @@ elif path.endswith("/required_status_checks/contexts") and method == "POST":
     for name in json.loads(body)["contexts"]:
         checks["contexts"].append(name)
         checks["checks"].append({"context": name, "app_id": 15368})
-    if state.get("drop_on_write"):
-        lost = state["drop_on_write"]
-        checks["contexts"].remove(lost)
-        checks["checks"] = [c for c in checks["checks"] if c["context"] != lost]
-    if state.get("reset_on_write"):
-        state["protection"].update(state["reset_on_write"])
+    if state.get("after_write"):
+        state["protection"] = state["after_write"]
     json.dump(state, open(state_file, "w"))
     print(json.dumps(checks["contexts"]))
 elif path.endswith("/protection") and method == "GET":
@@ -93,6 +89,13 @@ def existing_protection() -> dict:
     }
 
 
+RULE = {
+    "type": "required_status_checks",
+    "ruleset_source_type": "Organization",
+    "ruleset_source": "acme",
+    "ruleset_id": 77,
+    "parameters": {"required_status_checks": [{"context": "org-check"}]},
+}
 # llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
 
 
@@ -102,7 +105,7 @@ class Host:
         bin_dir = root / "bin"
         bin_dir.mkdir()
         gh = bin_dir / "gh"
-        gh.write_text(f"#!/usr/bin/env python3\n{FAKE_GH}")
+        gh.write_text(f"#!/usr/bin/env -S uv run --script\n{FAKE_GH}")
         gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
         self.env = {
             **os.environ,
@@ -235,15 +238,6 @@ def test_unreadable_rulesets_are_refused_before_any_write(tmp_path: Path):
     assert host.writes == []
 
 
-RULE = {
-    "type": "required_status_checks",
-    "ruleset_source_type": "Organization",
-    "ruleset_source": "acme",
-    "ruleset_id": 77,
-    "parameters": {"required_status_checks": [{"context": "org-check"}]},
-}
-
-
 @pytest.mark.parametrize("flag", [[], ["--dry-run"], ["--verify"]])
 def test_a_rulesets_only_branch_is_refused_by_name(tmp_path: Path, flag):
     host = Host(tmp_path, protection=None, rules=[RULE, {**RULE, "type": "deletion"}])
@@ -282,19 +276,76 @@ def test_protection_with_no_required_checks_is_refused(tmp_path: Path):
     assert host.writes == []
 
 
-def test_a_context_the_host_dropped_fails_the_operation(tmp_path: Path):
-    host = Host(tmp_path, drop_on_write="legacy")
-    done = host.add("budgets")
-    assert done.returncode == 1
-    assert "dropped legacy" in done.stderr
-    assert "legacy" in done.stderr.split("fix:")[1]
+def _after_budgets_added(change) -> dict:
+    """The protection a write would leave, then `change`d the way a host might."""
+    protection = existing_protection()
+    required = protection["required_status_checks"]
+    required["contexts"].append("budgets")
+    required["checks"].append({"context": "budgets", "app_id": 15368})
+    change(protection)
+    return protection
 
 
-def test_a_setting_the_write_moved_fails_the_operation(tmp_path: Path):
-    host = Host(tmp_path, reset_on_write={"enforce_admins": {"enabled": False}})
+def _drop_legacy(protection: dict) -> None:
+    required = protection["required_status_checks"]
+    required["contexts"].remove("legacy")
+    required["checks"] = [c for c in required["checks"] if c["context"] != "legacy"]
+
+
+def _rebind_lint(protection: dict) -> None:
+    protection["required_status_checks"]["checks"][0]["app_id"] = None
+
+
+def _remove_budgets(protection: dict) -> None:
+    required = protection["required_status_checks"]
+    required["contexts"].remove("budgets")
+    required["checks"].pop()
+
+
+def _add_stranger(protection: dict) -> None:
+    protection["required_status_checks"]["contexts"].append("stranger")
+
+
+def _reset_admins(protection: dict) -> None:
+    protection["enforce_admins"] = {"enabled": False}
+
+
+def _loosen_strict(protection: dict) -> None:
+    protection["required_status_checks"]["strict"] = False
+
+
+def _disable_checks(protection: dict) -> None:
+    del protection["required_status_checks"]
+
+
+@pytest.mark.parametrize(
+    ("change", "finding"),
+    [
+        (_drop_legacy, "dropped legacy"),
+        (_rebind_lint, "lint is bound to None, was 15368"),
+        (_remove_budgets, "did not add budgets"),
+        (_add_stranger, "unexpected new context stranger"),
+        (_reset_admins, "protection setting enforce_admins changed"),
+        (_loosen_strict, "protection setting required_status_checks changed"),
+        (_disable_checks, "required status checks are no longer enabled"),
+    ],
+)
+def test_anything_the_read_back_shows_moved_fails_the_operation(
+    tmp_path: Path, change, finding
+):
+    host = Host(tmp_path, after_write=_after_budgets_added(change))
     done = host.add("budgets")
     assert done.returncode == 1
-    assert "protection setting enforce_admins changed" in done.stderr
+    assert finding in done.stderr
+    assert "legacy" in done.stderr.split("fix:")[1], "the operator gets the prior set"
+
+
+def test_a_rules_answer_that_is_no_list_is_refused_before_any_write(tmp_path: Path):
+    host = Host(tmp_path, rules={"message": "unexpected"})
+    done = host.add("budgets")
+    assert done.returncode == 1
+    assert "did not answer a list of rules" in done.stderr
+    assert host.writes == []
 
 
 def test_a_refused_write_fails_with_the_hosts_error(tmp_path: Path):

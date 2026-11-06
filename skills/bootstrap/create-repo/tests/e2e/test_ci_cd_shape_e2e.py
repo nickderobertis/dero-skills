@@ -367,6 +367,41 @@ def test_composing_again_changes_nothing_and_a_differing_file_is_refused(tmp_pat
     assert ci.read_text(encoding="utf-8") == "name: ci\n"
 
 
+def recompose(repo: Path):
+    return run(
+        [
+            "uv", "run", "--script", str(ASSETS.parent / "scripts" / "compose_repo_plan.py"),
+            "--ci-cd", str(repo), "--language", "rust", "--name", NAME,
+        ]
+    )  # fmt: skip
+
+
+def test_the_policy_section_is_refused_when_it_differs_and_nothing_is_written(tmp_path):
+    repo = compose(tmp_path / "repo")
+    agents = repo / "AGENTS.md"
+    agents.write_text(
+        agents.read_text(encoding="utf-8").replace(
+            "4. Stay inside existing budgets.", "4. Raise the limit."
+        ),
+        encoding="utf-8",
+    )
+    edited = agents.read_bytes()
+    (repo / ".github" / "workflows" / "ci.yml").unlink()
+    done = recompose(repo)
+    assert done.returncode == 2
+    assert "section that differs from assets/budgets/budget-policy.md" in done.stderr
+    assert agents.read_bytes() == edited
+    assert not (repo / ".github" / "workflows" / "ci.yml").exists()
+
+
+def test_a_repository_with_no_agents_file_is_refused(tmp_path):
+    repo = compose(tmp_path / "repo")
+    (repo / "AGENTS.md").unlink()
+    done = recompose(repo)
+    assert done.returncode == 2
+    assert "copy the skill's assets/AGENTS.md.template there first" in done.stderr
+
+
 def test_a_language_without_a_known_toolchain_is_refused(tmp_path):
     refused = run(
         [
