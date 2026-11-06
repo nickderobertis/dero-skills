@@ -32,6 +32,12 @@ OPERATIONS = (
         "/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
     ),
 )
+# JSON has no comment syntax, so the snapshot carries its suppression as a key.
+_SUPPRESSION = (
+    "llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] Derived from the pinned "
+    "commit of GitHub's description. The gate is offline by design, so it holds the script and "
+    "its server to this file, and the external tier derives this file again from that commit."
+)
 _PROSE = {"description", "summary", "title", "example", "examples", "externalDocs"}
 _REF = "#/components/schemas/"
 TYPES = {
@@ -108,11 +114,14 @@ def extract(description: dict) -> dict:
 
 def rendered(contract: dict) -> str:
     """The snapshot's exact text, so re-deriving it compares byte for byte."""
-    return json.dumps(contract, indent=1, sort_keys=True) + "\n"
+    annotated = {"_llmlint": _SUPPRESSION, **contract}
+    return json.dumps(annotated, indent=1, sort_keys=True) + "\n"
 
 
 def load_snapshot() -> dict:
-    return json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+    del snapshot["_llmlint"]
+    return snapshot
 
 
 def _matches_type(value: object, kind: str) -> bool:
