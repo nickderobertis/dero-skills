@@ -636,7 +636,7 @@ BREAKS = {
         lambda repo: edit(
             repo,
             CI,
-            "onebudgetspec-github-action@v0.1.1",
+            "onebudgetspec-github-action@v0.1.2",
             "onebudgetspec-github-action@v0",
         ),
         "has `budgets` use no exact release",

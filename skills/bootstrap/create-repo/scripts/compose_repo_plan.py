@@ -861,7 +861,7 @@ TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 ONEVCS_CLI_VERSION = "0.57.6"
 # The onebudgetspec-github-action release ci.yml's `budgets` job uses. The action publishes
 # its crate last, so a crate at this version means the release's whole payload is usable.
-ONEBUDGETSPEC_ACTION_VERSION = "v0.1.1"
+ONEBUDGETSPEC_ACTION_VERSION = "v0.1.2"
 # The screencomp release whose composite actions the visual-docs steps use.
 SCREENCOMP_VERSION = "v0.4.8"
 # The languages whose toolchain the templates know how to install.
