@@ -72,21 +72,21 @@ CATALOG = f"""\
 schema_version: 1
 budgets:
   - id: demo-bundle-bytes
-    description: The bundle a reader downloads.
+    description: The size of the demo bundle. It protects the download a reader waits on.
     measure: reported
     command: [bash, -c, '{COUNT}; echo "{{\\"value\\": $(cat bundle-size)}}" > "$ONEBUDGETSPEC_RESULT"']
     unit: bytes
     direction: max
     threshold: 1000
   - id: demo-coverage-percent
-    description: The lines the tests reach.
+    description: The share of lines the tests reach. It protects against untested code landing.
     measure: reported
     command: [node, measure-coverage.mjs]
     unit: percent
     direction: min
     threshold: 80
   - id: demo-host-reads
-    description: The GitHub reads one run spends.
+    description: The GitHub reads one run spends. It protects the rate limit other jobs share.
     labels: [ci-report]
     measure: reported
     command: [bash, -c, '{COUNT}; gh api repos/owner/repo/commits/main > /dev/null; echo "{{\\"value\\": 1}}" > "$ONEBUDGETSPEC_RESULT"']
@@ -94,14 +94,14 @@ budgets:
     direction: max
     threshold: 5
   - id: demo-walltime
-    description: How long the smallest command takes.
+    description: How long the smallest command takes. It protects a developer's fastest feedback.
     measure: elapsed
     command: [bash, -c, '{COUNT}']
     unit: seconds
     direction: max
     threshold: 60
   - id: demo-laptop-figure
-    description: A figure only a developer's machine gives meaning to.
+    description: Startup work on a developer's machine. It protects local turnaround.
     labels: [host-variable]
     measure: reported
     command: [bash, -c, '{COUNT}; echo "{{\\"value\\": 50}}" > "$ONEBUDGETSPEC_RESULT"']
@@ -109,7 +109,7 @@ budgets:
     direction: max
     threshold: 10
   - id: demo-needs-cargo
-    description: A figure only the Rust toolchain can produce.
+    description: Allocations in the Rust measuring tool. It protects that tool's memory use.
     labels: [ci-report]
     measure: reported
     command: [cargo, run, --quiet, -p, measure]
@@ -117,7 +117,7 @@ budgets:
     direction: max
     threshold: 10
   - id: demo-needs-telemetry
-    description: A figure a predecessor's tests would have saved.
+    description: Slow steps in the user journey. It protects the journey's responsiveness.
     measure: reported
     command: [node, measure-coverage.mjs, dist/telemetry/journey.json]
     unit: count

@@ -96,8 +96,7 @@ request did not need is a slot another repository waited for.
   second architecture, natively on that architecture's runner.
 - `budgets` — the released report action, once its predecessors have ended however
   they ended: `needs` every other job, `if: always()`, no path or draft filter. It
-  builds and tests nothing. "The budget report job" in
-  [onebudgetspec.md](tools/onebudgetspec.md#the-budget-report-job) states what it does.
+  builds and tests nothing.
 - Every job `timeout-minutes: 30`. Only `budgets` has a `needs` edge, so the rest all
   start at once.
 - **A push to main runs only `budgets`,** which saves that commit's results as the

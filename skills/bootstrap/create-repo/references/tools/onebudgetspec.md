@@ -359,9 +359,8 @@ release's whole payload is usable.
   and a pull request compares with it. Every budget compares the same way, with no baseline
   per kind of budget, and the action's README states how many samples a comparison needs.
 
-**The policy** generated repositories carry is
-[`assets/budgets/budget-policy.md`](../../assets/budgets/budget-policy.md), which `--ci-cd`
-adds to `AGENTS.md`. That file is its one statement; read it there rather than a copy here.
+**The policy** generated repositories carry has one statement,
+`assets/budgets/budget-policy.md`, which `--ci-cd` adds to `AGENTS.md`.
 Approved thresholds alone decide failures, and the stored measurements are informational, so
 an improvement is never flagged and a stored figure never becomes a line to hold.
 
