@@ -101,7 +101,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, NewType
 
 # The llmlint job's status-check context. The create-repo CI names the job so
 # its context is a bare ``llmlint``; match case-insensitively (and any suffix a
@@ -745,44 +745,78 @@ def _get_json(
         raise GhError(f"`gh api {path}` returned invalid JSON: {exc}", fix) from exc
 
 
+# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] `gh` is this script's GitHub boundary and no gate can reach GitHub offline; the two answers are read only for this mode's comparison, and one that drifts from the shape below is refused rather than read, so drift fails closed.
+# A required check's name, and the GitHub App that must report it.
+CheckContext = NewType("CheckContext", str)
+AppId = NewType("AppId", int)
+# Each required context to its app binding; None allows any source.
+Bindings = dict[CheckContext, AppId | None]
+
+
 class ClassicChecks(NamedTuple):
     """Classic protection as the additive mode compares it around its one write."""
 
-    # Each required context to its app binding; None allows any source.
-    bindings: dict[str, int | None]
+    bindings: Bindings
     # The whole protection GET but those contexts, which the write must not move.
     policy: dict
 
 
-def _check_bindings(required_status_checks: dict) -> dict[str, int | None]:
-    """Each required context to its app binding, from both shapes GitHub lists."""
-    bindings: dict[str, int | None] = dict.fromkeys(
-        _protection_contexts(required_status_checks)
-    )
-    raw_checks = required_status_checks.get("checks")
-    if isinstance(raw_checks, list):
-        for check in raw_checks:
-            if (
-                isinstance(check, dict)
-                and isinstance(check.get("context"), str)
-                and isinstance(check.get("app_id"), int)
-            ):
-                bindings[check["context"]] = check["app_id"]
+def _is_check(check: object) -> bool:
+    """One entry of `checks`: a named context, bound to an app id or to any source."""
+    if not isinstance(check, dict) or not isinstance(check.get("context"), str):
+        return False
+    app = check.get("app_id")
+    return app is None or (isinstance(app, int) and not isinstance(app, bool))
+
+
+def _check_bindings(required_status_checks: dict, fix: str) -> Bindings:
+    """Each required context to its app binding, from both shapes GitHub lists.
+
+    Comparison needs the whole set, so an answer missing either list, or holding an
+    entry that cannot be read, is refused rather than filtered down to what can.
+    """
+    contexts = required_status_checks.get("contexts")
+    checks = required_status_checks.get("checks")
+    if (
+        not isinstance(contexts, list)
+        or not all(isinstance(context, str) for context in contexts)
+        or not isinstance(checks, list)
+        or not all(_is_check(check) for check in checks)
+    ):
+        raise GhError(
+            "GitHub answered required_status_checks without a readable `contexts` "
+            f"and `checks` list: {json.dumps(required_status_checks)}",
+            fix,
+        )
+    bindings: Bindings = dict.fromkeys(CheckContext(name) for name in contexts)
+    for check in checks:
+        app = check.get("app_id")
+        bindings[CheckContext(check["context"])] = None if app is None else AppId(app)
     return bindings
 
 
-def _classic_checks(protection: dict) -> ClassicChecks | None:
+def _classic_checks(protection: dict | list | None, fix: str) -> ClassicChecks | None:
     """The protection GET split for comparison; None when it requires no checks."""
+    if not isinstance(protection, dict):
+        raise GhError(
+            f"GitHub answered branch protection that is no object: {json.dumps(protection)}",
+            fix,
+        )
     required = protection.get("required_status_checks")
-    if not isinstance(required, dict):
+    if required is None:
         return None
+    if not isinstance(required, dict):
+        raise GhError(
+            f"GitHub answered required_status_checks that is no object: {json.dumps(required)}",
+            fix,
+        )
     required_rest = {
         key: value
         for key, value in required.items()
         if key not in ("contexts", "checks")
     }
     return ClassicChecks(
-        _check_bindings(required),
+        _check_bindings(required, fix),
         {**protection, "required_status_checks": required_rest},
     )
 
@@ -837,7 +871,7 @@ def read_classic_checks(run: Runner, repo: str, branch: str) -> ClassicChecks:
             "apply the full profile first (this script with positional checks); "
             "nothing was written",
         )
-    classic = _classic_checks(protection) if isinstance(protection, dict) else None
+    classic = _classic_checks(protection, fix)
     if classic is None:
         raise GhError(
             f"{repo}@{branch} has classic protection that requires no status checks, "
@@ -848,7 +882,10 @@ def read_classic_checks(run: Runner, repo: str, branch: str) -> ClassicChecks:
     return classic
 
 
-def _show_checks(bindings: dict[str, int | None]) -> str:
+# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
+
+
+def _show_checks(bindings: Bindings) -> str:
     """A required set as output: each context, with its app binding when it has one."""
     shown = [
         name if app is None else f"{name} (app {app})"
@@ -858,7 +895,7 @@ def _show_checks(bindings: dict[str, int | None]) -> str:
 
 
 def readback_problems(
-    before: ClassicChecks, after: ClassicChecks | None, added: Sequence[str]
+    before: ClassicChecks, after: ClassicChecks | None, added: Sequence[CheckContext]
 ) -> list[str]:
     """Everything the read-back shows moved, beyond the contexts added."""
     if after is None:
@@ -883,7 +920,9 @@ def readback_problems(
 
 def add_required_checks(run: Runner, args: argparse.Namespace) -> int:
     """The additive mode: add only the missing contexts, then prove nothing else moved."""
-    wanted = normalize_contexts(args.add_required_check)
+    wanted = [
+        CheckContext(name) for name in normalize_contexts(args.add_required_check)
+    ]
     repo = resolve_repo(run, args.repo)
     branch = resolve_branch(run, repo, args.branch)
     target = f"{repo}@{branch}"
@@ -934,7 +973,7 @@ def add_required_checks(run: Runner, args: argparse.Namespace) -> int:
         "script made only the one POST"
     )
     protection = _get_json(run, f"repos/{repo}/branches/{branch}/protection", fix)
-    after = _classic_checks(protection) if isinstance(protection, dict) else None
+    after = _classic_checks(protection, fix)
     problems = readback_problems(before, after, missing)
     if problems:
         raise GhError(

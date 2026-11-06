@@ -25,6 +25,7 @@ PROTECTION = f"repos/{REPO}/branches/main/protection"
 RULES = f"repos/{REPO}/rules/branches/main"
 SUBRESOURCE = f"{PROTECTION}/required_status_checks/contexts"
 
+# llmlint: ignore-block[e2e_not_mocked] GitHub is the one thing doubled, at the gh executable: the real script runs as a subprocess, and a journey cannot change branch protection on a real repository, least of all the failed and adverse answers these cover.
 # llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] This double stands at the gh executable boundary the mode is tested through, and the shapes it answers were read from GitHub's real protection and rules endpoints; GitHub publishes no schema this offline tier could reconcile with.
 FAKE_GH = r"""
 import json, os, sys
@@ -59,6 +60,7 @@ elif path.endswith("/protection") and method == "GET":
 else:
     sys.exit(f"fake gh: nothing answers {method} {path}")
 """
+# llmlint: ignore-end[e2e_not_mocked]
 
 
 def existing_protection() -> dict:
@@ -112,6 +114,8 @@ class Host:
             **os.environ,
             "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
             "FAKE_GH_DIR": str(root),
+            # Nx forces colour on, and argparse would then split its help with escapes.
+            "NO_COLOR": "1",
         }
         (root / "state.json").write_text(
             json.dumps({"protection": existing_protection(), "rules": [], **state})
@@ -275,6 +279,63 @@ def test_protection_with_no_required_checks_is_refused(tmp_path: Path):
     assert done.returncode == 1
     assert "requires no status checks" in done.stderr
     assert host.writes == []
+
+
+MALFORMED_CHECKS = {
+    "no object": ["lint"],
+    "no contexts": {"strict": True, "checks": [{"context": "lint", "app_id": 1}]},
+    "no checks": {"strict": True, "contexts": ["lint"]},
+    "a context that is no name": {"contexts": ["lint", 7], "checks": []},
+    "a check that is no object": {"contexts": ["lint"], "checks": ["lint"]},
+    "a check without a context": {"contexts": ["lint"], "checks": [{"app_id": 1}]},
+    "an app id that is no id": {
+        "contexts": ["lint"],
+        "checks": [{"context": "lint", "app_id": "15368"}],
+    },
+    "an app id that is a flag": {
+        "contexts": ["lint"],
+        "checks": [{"context": "lint", "app_id": True}],
+    },
+}
+
+
+@pytest.mark.parametrize("flag", [None, "--dry-run", "--verify"])
+@pytest.mark.parametrize("malformed", sorted(MALFORMED_CHECKS))
+def test_required_checks_it_cannot_read_are_refused_before_any_write(
+    tmp_path: Path, malformed, flag
+):
+    protection = existing_protection()
+    protection["required_status_checks"] = MALFORMED_CHECKS[malformed]
+    host = Host(tmp_path, protection=protection)
+    done = host.add("budgets", extra=[flag] if flag else [])
+    assert done.returncode == 1
+    assert "required_status_checks" in done.stderr
+    assert "nothing was written" in done.stderr
+    assert "DRY-RUN" not in done.stdout
+    assert host.writes == []
+
+
+def test_a_protection_answer_that_is_no_object_is_refused_before_any_write(
+    tmp_path: Path,
+):
+    host = Host(tmp_path, protection=["lint"])
+    done = host.add("budgets")
+    assert done.returncode == 1
+    assert "no object" in done.stderr
+    assert host.writes == []
+
+
+def test_a_read_back_it_cannot_read_fails_and_says_what_to_compare(tmp_path: Path):
+    def unreadable(protection: dict) -> None:
+        del protection["required_status_checks"]["checks"]
+
+    host = Host(tmp_path, after_write=_after_budgets_added(unreadable))
+    done = host.add("budgets")
+    assert done.returncode == 1
+    assert "required_status_checks" in done.stderr
+    assert "made only the one POST" in done.stderr
+    assert "legacy" in done.stderr.split("fix:")[1]
+    assert len(host.writes) == 1
 
 
 def _after_budgets_added(change) -> dict:

@@ -1,3 +1,4 @@
+# llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] This copy is of an immutable release, under its tag: the pin cannot move without a matching directory, and the external journeys compare the bytes below this line with the release. The gate has no network to do that itself.
 Report one saved telemetry metric as a budget's measurement
 
 Usage: onebudgetspec-github-action telemetry [OPTIONS] --metric <METRIC> --input <INPUT>

@@ -1,8 +1,8 @@
 """The generated budgets job and its own budget, held to the released action's contract.
 
 `fixtures/onebudgetspec-github-action/<tag>/` holds the pinned release's `action.yml` and
-`telemetry --help`, byte for byte; `external/test_budget_report_job_external.py` holds them to
-the release itself. Moving the composer's pin without refreshing them fails here, offline.
+`telemetry --help`, byte for byte below one suppression line stating why they may be copied;
+`external/test_budget_report_job_external.py` holds them to the release itself. Moving the composer's pin without refreshing them fails here, offline.
 """
 
 from __future__ import annotations

@@ -191,10 +191,20 @@ COMPOSITIONS = {
 }
 
 
-# llmlint: ignore[async_typed_clients_at_boundaries] A test fetching a release's bytes once at session setup: nothing runs concurrently with it and no typed client is on the dev path.
+# llmlint: ignore-block[async_typed_clients_at_boundaries] A test fetching a release's bytes once at session setup: nothing runs concurrently with it and no typed client is on the dev path.
 def download(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=120) as response:
         return response.read()
+
+
+# llmlint: ignore-end[async_typed_clients_at_boundaries]
+
+
+def release_bytes(vendored: Path) -> bytes:
+    """A vendored file without its one suppression line: the release's own bytes."""
+    directive, _, rest = vendored.read_bytes().partition(b"\n")
+    assert directive.startswith(b"# llmlint:"), vendored
+    return rest
 
 
 def action_tag() -> str:
@@ -644,7 +654,7 @@ def test_the_plan_for_each_shape_composes_the_budget_reference(tmp_path):
 def test_the_vendored_contract_is_the_release_itself(released, tmp_path):
     """The fast tier's fixtures are this release's bytes and this release's --help."""
     vendored = FIXTURES / "onebudgetspec-github-action" / released.tag
-    assert (vendored / "action.yml").read_bytes() == released.assets["action.yml"]
+    assert release_bytes(vendored / "action.yml") == released.assets["action.yml"]
     assert (released.tree / "action.yml").read_bytes() == released.assets["action.yml"]
 
     archive_name = next(n for n in released.assets if n.endswith(".tar.gz"))
@@ -658,4 +668,4 @@ def test_the_vendored_contract_is_the_release_itself(released, tmp_path):
     shown = subprocess.run(
         [str(driver), "telemetry", "--help"], capture_output=True, text=True, check=True
     )
-    assert shown.stdout == (vendored / "telemetry-help.txt").read_text(encoding="utf-8")
+    assert shown.stdout.encode() == release_bytes(vendored / "telemetry-help.txt")

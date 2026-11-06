@@ -29,7 +29,8 @@ for the tiers it can reach:
   `external/test_budget_report_job_external.py` runs the generated `budgets` job's
   pinned release for real, through the harness that release ships, with only GitHub's
   services doubled. It also holds `fixtures/onebudgetspec-github-action/<tag>/`, which
-  the fast tier's contract test reads, to that release's bytes.
+  the fast tier's contract test reads, to that release's bytes below each file's one
+  suppression line.
 - **The skill eval** (`skilltest/test_create_repo_skilltest.py`) — the
   `bootstrap-create-repo-skilltest` project, documented below. It declares a
   `skilltest` target rather than a `test` one, which is what keeps the gate from
