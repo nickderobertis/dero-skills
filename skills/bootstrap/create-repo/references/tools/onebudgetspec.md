@@ -340,13 +340,14 @@ release's whole payload is usable.
   absent. Then its row says why. A missing `ci-report` label is never a reason, and nothing
   is rerun to fill a row. So name a budget's saved telemetry in its `command`: an absent
   file then reads as unavailable rather than as a failed measurement.
-- **What fails it.** An enforced budget over its threshold, a measurement error or an
-  invalid budgets file. A missing baseline, a refused credential or a failed comment or
+- **What fails it.** An enforced budget over its threshold or with a measurement error, or
+  an invalid budgets file. A missing baseline, a refused credential or a failed comment or
   upload is a stated reason and changes nothing. Forks get the summary and the artifact,
   with no comment and no credential.
 - **What is report-only.** `enforcement-exclude-labels` names `release-tail` and
   `host-variable`, whose commands need a release or a developer's machine. They still run
-  once and keep their verdict and flags.
+  once and keep their verdict and flags; one whose command fails, as those commands do in
+  this job, has no verdict and reads as unavailable, with the failure's message as its reason.
 - **Its own budget.** `.github/reporting/budgets.yaml` holds
   `<name>-budget-report-command-seconds`, read from the job's own telemetry by the released
   `onebudgetspec-github-action telemetry`. The interval runs from cold install through the

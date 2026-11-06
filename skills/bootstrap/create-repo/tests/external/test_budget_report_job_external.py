@@ -33,16 +33,6 @@ from ci_cd_shape import CHECKER, COMPOSER, FIXTURES, NAME, compose
 
 ACTION_REPOSITORY = "nickderobertis/onebudgetspec-github-action"
 REPORT_BUDGET = f"{NAME}-budget-report-command-seconds"
-ROOT_RELEASE_TAIL = {
-    "ci-check-time",
-    "cd-job-time",
-    "release-cycle-time",
-    "ci-job-count",
-    "cd-job-count",
-    "release-read-requests",
-    "pr-read-requests",
-    "nx-cache-use",
-}
 RUNNER_TARGETS = {
     ("Linux", "x86_64"): "x86_64-unknown-linux-gnu",
     ("Linux", "aarch64"): "aarch64-unknown-linux-gnu",
@@ -60,6 +50,20 @@ RUNNABLE = {
 }
 # Over its line, and report-only because it carries one of the job's excluded labels.
 REPORT_ONLY_OVER = "demo-laptop-figure"
+# Every budget the composer writes at the root, and why its command cannot measure in the
+# job: the failure's own words, which is what its row has to show a reader.
+FIGURES_NEED_ONEVCS = "onevcs is not on PATH"
+GENERATED_UNMEASURABLE = {
+    f"{NAME}-ci-check-time": FIGURES_NEED_ONEVCS,
+    f"{NAME}-cd-job-time": FIGURES_NEED_ONEVCS,
+    f"{NAME}-release-cycle-time": FIGURES_NEED_ONEVCS,
+    f"{NAME}-ci-job-count": FIGURES_NEED_ONEVCS,
+    f"{NAME}-cd-job-count": FIGURES_NEED_ONEVCS,
+    f"{NAME}-release-read-requests": FIGURES_NEED_ONEVCS,
+    f"{NAME}-pr-read-requests": FIGURES_NEED_ONEVCS,
+    f"{NAME}-nx-cache-use": "no release: pass --release TAG",
+    f"{NAME}-gate-time": "Cannot find package '@onebudgetspec/sdk'",
+}
 UNAVAILABLE = {
     "demo-needs-cargo": "needs cargo",
     "demo-needs-telemetry": "dist/telemetry/journey.json",
@@ -342,6 +346,44 @@ class Journey:
         return sorted(self.counts.read_text().split()) if self.counts.exists() else []
 
 
+def table_rows(markdown: str, budget: str) -> list[str]:
+    return [
+        line
+        for line in markdown.splitlines()
+        if line.startswith("|") and f"/ {budget} " in line
+    ]
+
+
+def one_table_row(markdown: str, budget: str) -> str:
+    rows = table_rows(markdown, budget)
+    assert len(rows) == 1, (budget, rows)
+    return rows[0]
+
+
+def row_verdict(row: str) -> str:
+    """The cell after the budget's name, which holds its verdict or says it has none."""
+    return row.split("|")[2].strip()
+
+
+def assert_unavailable_with_reasons(job) -> None:
+    """Each budget that cannot measure: one unavailable row, its reason, and no `error`."""
+    budget_run = job.saved("budget-run.json")
+    measured = budget_run["results"]["results"]
+    assert not [r["id"] for r in measured if r["verdict"] == "error"]
+    assert not {r["id"] for r in measured} & set(GENERATED_UNMEASURABLE)
+    reasons = {u["id"]: u["reason"] for u in budget_run["unavailable"]}
+    report = {row["id"]: row for row in job.saved("comparison-report.json")["rows"]}
+    markdown = job.markdown()
+    for budget, reason in GENERATED_UNMEASURABLE.items():
+        assert reason in reasons[budget], reasons[budget]
+        assert "verdict" not in report[budget], report[budget]
+        assert reason in report[budget]["unavailable"], report[budget]
+        row = one_table_row(markdown, budget)
+        assert row_verdict(row) == "unavailable", row
+        assert reason in row, row
+        assert "report-only" in row, row
+
+
 @pytest.fixture(params=sorted(COMPOSITIONS))
 def every_composition(request, released, runner_path, tmp_path):
     journey = Journey(released, runner_path, tmp_path, request.param)
@@ -374,15 +416,12 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     job = journey.pull_request()
     assert job.exit_code == 0, job.stdout
 
-    # Every budget of the catalog has a row, and the fixture trees give none.
-    rows = job.rows()
-    assert set(rows) == {
-        *RUNNABLE,
-        *UNAVAILABLE,
-        REPORT_BUDGET,
-        f"{NAME}-gate-time",
-        *(f"{NAME}-{suffix}" for suffix in ROOT_RELEASE_TAIL),
-    }
+    # Every budget of the catalog has exactly one row, and the fixture trees give none.
+    budgets = sorted({*RUNNABLE, *UNAVAILABLE, REPORT_BUDGET, *GENERATED_UNMEASURABLE})
+    report = job.saved("comparison-report.json")
+    assert sorted(row["id"] for row in report["rows"]) == budgets
+    for budget in budgets:
+        one_table_row(job.markdown(), budget)
 
     # The ordinary commands ran once each, labelled or not, and kept their verdicts.
     assert journey.executed() == sorted(RUNNABLE)
@@ -394,8 +433,9 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
         assert verdicts[budget]["unit"] == unit
     assert verdicts["demo-coverage-percent"]["actual"] == 91
 
-    # Only what truly cannot run here says so, and says why.
+    # Only what truly cannot measure here says so, and says why.
     unavailable = {u["id"]: u["reason"] for u in budget_run["unavailable"]}
+    assert set(unavailable) == {*UNAVAILABLE, *GENERATED_UNMEASURABLE}
     for budget, reason in UNAVAILABLE.items():
         assert reason in unavailable[budget], unavailable[budget]
     assert budget_run["enforcement_exclude_labels"] == ["release-tail", "host-variable"]
@@ -491,21 +531,36 @@ def test_only_an_adverse_move_is_flagged_and_a_flag_fails_nothing(journey):
     assert row["flag"] is False, row
 
 
-def test_budgets_for_a_release_or_a_laptop_say_why_and_never_fail_the_job(journey):
+def test_budgets_for_a_release_or_a_laptop_are_unavailable_with_their_reason(
+    every_composition,
+):
     """They keep their ordinary commands, which cannot measure here and cost no read."""
+    journey = every_composition
+    composed = yaml.safe_load((journey.path / "budgets.yaml").read_text())["budgets"]
+    assert {budget["id"] for budget in composed} == set(GENERATED_UNMEASURABLE)
+
     journey.host.clear_requests()
     job = journey.pull_request()
     assert job.exit_code == 0, job.stdout
     assert journey.host.count("/releases|/runs/\\d+/jobs|/compare") == 0
-    results = {r["id"]: r for r in job.saved("budget-run.json")["results"]["results"]}
-    markdown = job.markdown().splitlines()
-    for suffix in [*ROOT_RELEASE_TAIL, "gate-time"]:
-        budget = f"{NAME}-{suffix}"
-        assert results[budget]["verdict"] == "error", budget
-        row = next(line for line in markdown if f"/ {budget} " in line)
-        assert "report-only" in row
-    tail = next(line for line in markdown if f"/ {NAME}-ci-check-time " in line)
-    assert "onevcs is not on PATH" in tail
+    assert_unavailable_with_reasons(job)
+
+    # The report reached its reader with the same rows.
+    body = journey.host.comments[0]["body"]
+    for budget, reason in GENERATED_UNMEASURABLE.items():
+        row = one_table_row(body, budget)
+        assert row_verdict(row) == "unavailable", row
+        assert reason in row, row
+
+    # A push to main says the same, and saves no measurement it did not take.
+    base = journey.base_push()
+    assert base.exit_code == 0, base.stdout
+    assert_unavailable_with_reasons(base)
+    history = json.loads(
+        journey.host.artifact_files(base.run_id)["rolling-history.json"].decode()
+    )
+    measured = {r["id"] for r in history["runs"][0]["results"]["results"]}
+    assert not measured & set(GENERATED_UNMEASURABLE)
 
 
 def test_a_fork_gets_a_summary_and_artifact_without_a_comment_or_credential(journey):
