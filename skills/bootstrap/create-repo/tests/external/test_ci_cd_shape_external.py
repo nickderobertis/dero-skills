@@ -323,7 +323,7 @@ def historical_cache_metadata() -> GithubCache:
 HIGH = dict.fromkeys(TAIL_IDS, 10**9)
 
 
-def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
+def test_the_tail_reports_every_release_tail_budget_reading_each_answer_once(
     released, tmp_path
 ):
     assert step(
@@ -356,7 +356,7 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
     assert (
         "left out as concluded skipped: Visual docs (run 41252214397, push)" in output
     )
-    # Every read made once across the seven figures, as the double recorded it.
+    # Every read made once across the tail's figures, as the double recorded it.
     assert served, output
     assert len(served) == len(set(served)), served
     pr_reads = [

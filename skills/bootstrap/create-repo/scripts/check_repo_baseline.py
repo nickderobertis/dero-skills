@@ -137,7 +137,8 @@ Checks:
     holds its own budget and `AGENTS.md` the budget policy; the root
     `budgets.yaml` registers the ten CI/CD budgets (`<name>-ci-check-time`,
     `-cd-job-time`, `-release-cycle-time`, `-ci-job-count`, `-cd-job-count`,
-    `-release-read-requests`, `-pr-read-requests`, `-gate-time`) and, when it
+    `-release-read-requests`, `-pr-read-requests`, `-nx-cache-use`,
+    `-cache-headroom`, `-gate-time`) and, when it
     runs `scripts/actions-budget-figures.sh`, the repository holds that copy;
     the governance record requires exactly `lint`, the test jobs and `budgets`.
     Whether it is strict is not checked: up-to-date branches are an opt-in.

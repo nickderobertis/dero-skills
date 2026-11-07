@@ -241,7 +241,7 @@ def test_the_release_runs_release_plz_then_a_build_job_per_platform_and_publish(
     ]
 
 
-def test_publish_ends_in_the_release_tail_after_installing_the_pinned_onevcs(composed):
+def test_publish_ends_in_the_release_tail_after_installing_the_pinned_tools(composed):
     repo, *_ = composed
     publish = jobs(workflow(repo, "release.yml"))["publish"]
     steps = publish.split("\n      - ")
@@ -259,7 +259,7 @@ def test_publish_ends_in_the_release_tail_after_installing_the_pinned_onevcs(com
         assert scope in publish
 
 
-def test_the_root_budgets_include_the_shared_cache_use_figure(composed):
+def test_the_root_budgets_are_exactly_the_landed_figures(composed):
     repo, language, platforms, arch = composed
     tool = onebudgetspec()
     valid = run([tool, "validate", "budgets.yaml"], cwd=repo)
