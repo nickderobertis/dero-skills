@@ -365,9 +365,10 @@ release's whole payload is usable.
   upload is a stated reason and changes nothing. Forks get the summary and the artifact,
   with no comment and no credential.
 - **What is report-only.** `enforcement-exclude-labels` names `release-tail` and
-  `host-variable`, whose commands need a release or a developer's machine. They still run
-  once and keep their verdict and flags; one whose command fails, as those commands do in
-  this job, has no verdict and reads as unavailable, with the failure's message as its reason.
+  `host-variable`, whose commands need a release or a developer's machine. Those not omitted
+  still run once and keep their verdict and flags; one whose command fails, as the CI-time
+  figures' do on a fork or a push, has no verdict and reads as unavailable, with the failure's
+  message as its reason.
 - **Its own budget.** `.github/reporting/budgets.yaml` holds
   `<name>-budget-report-command-seconds`, read from the job's own telemetry by the released
   `onebudgetspec-github-action telemetry`. The interval runs from cold install through the
