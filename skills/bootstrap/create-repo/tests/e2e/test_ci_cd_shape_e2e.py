@@ -241,7 +241,7 @@ def test_publish_ends_in_the_release_tail_after_installing_the_pinned_onevcs(com
     publish = jobs(workflow(repo, "release.yml"))["publish"]
     steps = publish.split("\n      - ")
     install, tail = steps[-2], steps[-1]
-    assert "onevcs-cli@0.57.6" in install and "@onebudgetspec/cli@0.1.3" in install
+    assert "onevcs-cli@0.57.6" in install and "@onebudgetspec/cli@0.2.0" in install
     assert tail.rstrip().endswith(
         "run: onebudgetspec check budgets.yaml --label release-tail"
     )
@@ -270,7 +270,12 @@ def test_the_root_budgets_include_the_shared_cache_use_figure(composed):
         assert budget["unit"] == unit, suffix
         # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold is the composed repository's budgets.yaml content the task fixes to what the three repositories' landing commits register, not a performance bar this suite holds itself to: a wrong value here is a wrong file the composer wrote.
         assert budget["threshold"] == counts.get(suffix, threshold), suffix
-        assert budget["labels"] == [label], suffix
+        carries = (
+            [label]
+            if suffix in ("ci-check-time", "ci-job-count")
+            else [label, "not-measured-on-pr"]
+        )
+        assert budget["labels"] == carries, suffix
         assert budget["measure"] == "reported" and budget["direction"] == (
             "min" if suffix == "nx-cache-use" else "max"
         )
@@ -296,7 +301,10 @@ def test_the_gate_records_its_wall_clock_and_checks_it_as_a_warning(composed):
     assert wrapper.startswith("#!/usr/bin/env bash\n")
     assert "check budgets.yaml --label host-variable" in wrapper
     assert f"{NAME}-gate-time is over its budget" in wrapper
-    assert ".gate-time.json" in (repo / ".gitignore").read_text(encoding="utf-8")
+    ignored = (repo / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert ".gate-time.json" in ignored
+    # Saved by every `budgets` target, on a developer's machine as well as in CI.
+    assert "target/budget-results/" in ignored
     # CI owns the gate: nothing installs a pre-push hook.
     assert not (repo / ".husky").exists()
     assert "pre-push:" not in justfile
@@ -544,6 +552,27 @@ def drop_job(repo: Path, name: str) -> None:
 
 
 CI = ".github/workflows/ci.yml"
+# Each budget's command line through its labels, as budgets.yaml.template writes them, so
+# an edit removes the label from that one budget.
+NOT_MEASURED_LABELS = {
+    "cd-job-time": "longest-job, --stage, cd, --exclude-workflow, ci]\n"
+    "    unit: seconds\n    direction: max\n    threshold: 1800\n"
+    "    labels: [release-tail, not-measured-on-pr]",
+    "release-cycle-time": "threshold: 5400\n    labels: [release-tail, not-measured-on-pr]",
+    "cd-job-count": "job-count, --stage, cd, --exclude-workflow, ci]\n"
+    "    unit: jobs\n    direction: max\n    threshold: 6\n"
+    "    labels: [release-tail, not-measured-on-pr]",
+    "release-read-requests": "release-read-requests, --exclude-workflow, ci]\n"
+    "    unit: requests\n    direction: max\n    threshold: 6\n"
+    "    labels: [release-tail, not-measured-on-pr]",
+    "pr-read-requests": "threshold: 2\n    labels: [release-tail, not-measured-on-pr]",
+    "nx-cache-use": "threshold: 100\n    labels: [release-tail, not-measured-on-pr]",
+    "gate-time": "labels: [host-variable, not-measured-on-pr]",
+}
+CI_CHECK_LABELS = (
+    "longest-job, --stage, pr]\n    unit: seconds\n    direction: max\n"
+    "    threshold: 1800\n    labels: [release-tail]"
+)
 EXTRA_JOB = (
     "  coverage:\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n"
     "    steps:\n      - run: just coverage\n"
@@ -632,11 +661,135 @@ BREAKS = {
         ),
         "runs `budgets` without waiting on test-windows",
     ),
+    "test-linux uploading no saved results": (
+        lambda repo: edit(
+            repo,
+            CI,
+            "name: budget-check-results-test-linux",
+            "name: something-else",
+        ),
+        "has `test-linux` upload no `target/budget-results/`",
+    ),
+    "test-linux uploading the saved results from elsewhere": (
+        lambda repo: edit(
+            repo, CI, "path: target/budget-results/", "path: target/elsewhere/"
+        ),
+        "has `test-linux` upload no `target/budget-results/`",
+    ),
+    "test-linux losing the saved results when it fails": (
+        lambda repo: edit(
+            repo,
+            CI,
+            "if: always()\n        with:\n          name: budget-check-results-test-linux",
+            "if: success()\n        with:\n          name: budget-check-results-test-linux",
+        ),
+        "under `if: always()`",
+    ),
+    "budgets without the saved results input": (
+        lambda repo: edit(
+            repo, CI, "          saved-results-artifacts: budget-check-results-*\n", ""
+        ),
+        "without `saved-results-artifacts: budget-check-results-*`",
+    ),
+    "budgets without the omit labels input": (
+        lambda repo: edit(repo, CI, "          omit-labels: not-measured-on-pr\n", ""),
+        "without `omit-labels: not-measured-on-pr`",
+    ),
+    "cd-job-time without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["cd-job-time"],
+            NOT_MEASURED_LABELS["cd-job-time"].replace(", not-measured-on-pr", ""),
+        ),
+        "labels {NAME}-cd-job-time without `not-measured-on-pr`".replace(
+            "{NAME}", NAME
+        ),
+    ),
+    "release-cycle-time without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["release-cycle-time"],
+            NOT_MEASURED_LABELS["release-cycle-time"].replace(
+                ", not-measured-on-pr", ""
+            ),
+        ),
+        "labels {NAME}-release-cycle-time without `not-measured-on-pr`".replace(
+            "{NAME}", NAME
+        ),
+    ),
+    "cd-job-count without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["cd-job-count"],
+            NOT_MEASURED_LABELS["cd-job-count"].replace(", not-measured-on-pr", ""),
+        ),
+        "labels {NAME}-cd-job-count without `not-measured-on-pr`".replace(
+            "{NAME}", NAME
+        ),
+    ),
+    "release-read-requests without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["release-read-requests"],
+            NOT_MEASURED_LABELS["release-read-requests"].replace(
+                ", not-measured-on-pr", ""
+            ),
+        ),
+        "labels {NAME}-release-read-requests without `not-measured-on-pr`".replace(
+            "{NAME}", NAME
+        ),
+    ),
+    "pr-read-requests without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["pr-read-requests"],
+            NOT_MEASURED_LABELS["pr-read-requests"].replace(", not-measured-on-pr", ""),
+        ),
+        "labels {NAME}-pr-read-requests without `not-measured-on-pr`".replace(
+            "{NAME}", NAME
+        ),
+    ),
+    "nx-cache-use without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["nx-cache-use"],
+            NOT_MEASURED_LABELS["nx-cache-use"].replace(", not-measured-on-pr", ""),
+        ),
+        "labels {NAME}-nx-cache-use without `not-measured-on-pr`".replace(
+            "{NAME}", NAME
+        ),
+    ),
+    "gate-time without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            NOT_MEASURED_LABELS["gate-time"],
+            NOT_MEASURED_LABELS["gate-time"].replace(", not-measured-on-pr", ""),
+        ),
+        "labels {NAME}-gate-time without `not-measured-on-pr`".replace("{NAME}", NAME),
+    ),
+    "a measured CI-time budget carrying the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            CI_CHECK_LABELS,
+            CI_CHECK_LABELS.replace(
+                "[release-tail]", "[release-tail, not-measured-on-pr]"
+            ),
+        ),
+        f"labels {NAME}-ci-check-time `not-measured-on-pr`",
+    ),
     "budgets on a floating action reference": (
         lambda repo: edit(
             repo,
             CI,
-            "onebudgetspec-github-action@v0.1.2",
+            "onebudgetspec-github-action@v0.2.0",
             "onebudgetspec-github-action@v0",
         ),
         "has `budgets` use no exact release",

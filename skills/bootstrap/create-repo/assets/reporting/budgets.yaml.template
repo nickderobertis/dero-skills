@@ -7,9 +7,9 @@ schema_version: 1
 budgets:
   - id: @@NAME@@-budget-report-command-seconds
     description: >-
-      The budget report job from its cold install through the checks, the history read, the
-      comment and the main result upload. It protects the turnaround of the required check every
-      pull request waits on.
+      The budget report job from its cold install through the checks, the merged-run and history
+      reads and the main result upload, ending before the comment post. It protects the turnaround
+      of the required check every pull request waits on.
     labels: [ci-report]
     measure: reported
     command: [onebudgetspec-github-action, telemetry, --metric, report-command-seconds, --input, .telemetry/report-job.json]

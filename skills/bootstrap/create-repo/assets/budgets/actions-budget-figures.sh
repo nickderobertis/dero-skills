@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 11
-# sha256: 4e712406a1b09dac07d496be28d6a71141958de3259efb5c85f1dc23744fa5a4
+# version: 12
+# sha256: e67b7cc9e8ab6e56fb372ee9d75d2d56712b9c7d4945bd641426ff176ab50336
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -18,13 +18,21 @@
 #   scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
 #   scripts/actions-budget-figures.sh cache-use                 [--release TAG] [--repo OWNER/NAME]
 #
+# On a pull request's own run (GITHUB_EVENT_NAME is pull_request, and GITHUB_RUN_ID
+# and GITHUB_REPOSITORY are set), `longest-job --stage pr` and `job-count --stage pr`
+# need no release and read that run's jobs, with one
+# `gh api repos/R/actions/runs/ID/jobs` read (paging only past 100 jobs), under the
+# same counting rules. A job still in progress, which is the budgets job itself,
+# counts toward the job count and not toward the longest job. Every other invocation
+# reads onevcs's answers for a release.
+#
 # This script names no workflow of its own: which push workflows deliver nothing is
 # each repository's to say, with --exclude-workflow in its CD budgets' commands. A
 # run that concluded skipped ran nothing, whatever its workflow, so no CD figure
 # counts it or reads its jobs.
 #
-# Needs bash, jq and `onevcs` (or the binary `ONEVCS` names). Exit 0 wrote the
-# figure to ONEBUDGETSPEC_RESULT; 1 is missing data or a failed read, with the
+# Needs bash, jq and `onevcs` (or the binary `ONEVCS` names), or `gh` in place of
+# onevcs on a pull request's own run. Exit 0 wrote the figure to ONEBUDGETSPEC_RESULT; 1 is missing data or a failed read, with the
 # reason on stderr and nothing written; 2 is an invalid invocation.
 set -euo pipefail
 
@@ -110,14 +118,26 @@ if [ "$figure" = release-cycle-time ]; then
     missing "published paths file $published_paths is empty" "list the files each published artifact is built from"
 fi
 
+# A pull request's own run, which longest-job and job-count --stage pr read directly.
+# Only those two figures ever set a stage of pr.
+own_run=""
+if [ "$stage" = pr ] && [ "${GITHUB_EVENT_NAME:-}" = pull_request ] &&
+  [ -n "${GITHUB_RUN_ID:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+  own_run=$GITHUB_RUN_ID
+fi
+
 command -v jq >/dev/null 2>&1 || die "jq is not on PATH: install jq (https://jqlang.org) where this figure is measured"
 # The workflow names --exclude-workflow gave, as a JSON array. An empty array is
 # never expanded: bash before 4.4 calls that an unbound variable under `set -u`.
 excluded='[]'
 [ "${#excludes[@]}" -eq 0 ] || excluded=$(jq -cn '$ARGS.positional' --args "${excludes[@]}")
 onevcs=${ONEVCS:-onevcs}
-command -v "$onevcs" >/dev/null 2>&1 ||
-  die "onevcs is not on PATH (install a release carrying \`onevcs host\`, or name the binary in ONEVCS)"
+if [ -n "$own_run" ]; then
+  command -v gh >/dev/null 2>&1 || die "gh is not on PATH: install GitHub CLI where this figure is measured"
+else
+  command -v "$onevcs" >/dev/null 2>&1 ||
+    die "onevcs is not on PATH (install a release carrying \`onevcs host\`, or name the binary in ONEVCS)"
+fi
 
 [ -n "$now" ] || now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 [[ "$now" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$ ]] ||
@@ -127,15 +147,17 @@ repo=${repo:-${GITHUB_REPOSITORY:-}}
 [ -n "$repo" ] || die "no repository: pass --repo OWNER/NAME (GITHUB_REPOSITORY is unset)"
 [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || usage "--repo must be OWNER/NAME, got: $repo"
 
-if [ -z "$release" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
-  release=$(jq -r '.release.tag_name // empty' "$GITHUB_EVENT_PATH") ||
-    die "the event payload $GITHUB_EVENT_PATH is not JSON"
+if [ -z "$own_run" ]; then
+  if [ -z "$release" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+    release=$(jq -r '.release.tag_name // empty' "$GITHUB_EVENT_PATH") ||
+      die "the event payload $GITHUB_EVENT_PATH is not JSON"
+  fi
+  if [ -z "$release" ] && [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+    release=${GITHUB_REF_NAME:-}
+  fi
+  [ -n "$release" ] ||
+    die "no release to measure: pass --release TAG (no release event payload and no tag ref in the environment)"
 fi
-if [ -z "$release" ] && [ "${GITHUB_REF_TYPE:-}" = tag ]; then
-  release=${GITHUB_REF_NAME:-}
-fi
-[ -n "$release" ] ||
-  die "no release to measure: pass --release TAG (no release event payload and no tag ref in the environment)"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
@@ -147,7 +169,7 @@ trap 'rm -rf "$work"' EXIT
 # Encoding leaves `.` and `..` as they are, so those are refused rather than saved
 # outside the release's own directory.
 cache=""
-if [ -n "${RUNNER_TEMP:-}" ]; then
+if [ -z "$own_run" ] && [ -n "${RUNNER_TEMP:-}" ]; then
   tag_dir=$(jq -rn --arg tag "$release" '$tag | @uri') || die "cannot encode the tag $release"
   [[ "$tag_dir" =~ ^[A-Za-z0-9._~%-]+$ ]] && [ "$tag_dir" != . ] && [ "$tag_dir" != .. ] ||
     die "the tag $release cannot name a saved-answers directory: pass the release's own tag with --release"
@@ -292,6 +314,42 @@ pr_selection() {
                      answers: map({query: "#\(.change.number)", cost})}' "${answers[@]}"
 }
 
+# This pull request's own run, in the selections' shape, from GitHub's job listing.
+# GitHub lists no runner OS, so each job's is read from its runner labels. The whole
+# listing or no figure: one that ends short of its total_count is a failed read.
+own_run_selection() {
+  local page=1 listed=0 total count query pages=()
+  [[ "$own_run" =~ ^[0-9]+$ ]] || die "a run id must be a number, got: $own_run"
+  while :; do
+    query="repos/$repo/actions/runs/$own_run/jobs?per_page=100&filter=latest"
+    [ "$page" -eq 1 ] || query="$query&page=$page"
+    if ! gh api "$query" >"$work/jobs-$page.json" 2>"$work/stderr"; then
+      die "gh api $query failed: $(tr -s '\n' ' ' <"$work/stderr")"
+    fi
+    jq -e '(.jobs | type) == "array" and (.total_count | type) == "number"' "$work/jobs-$page.json" >/dev/null 2>&1 ||
+      die "gh api $query answered no job listing: check the run on GitHub, then re-run this figure"
+    pages+=("$work/jobs-$page.json")
+    total=$(jq .total_count "$work/jobs-$page.json")
+    count=$(jq '.jobs | length' "$work/jobs-$page.json")
+    listed=$((listed + count))
+    [ "$listed" -lt "$total" ] || break
+    [ "$count" -gt 0 ] || die "gh api $query listed $listed of the run's $total jobs: re-run this figure"
+    page=$((page + 1))
+  done
+  # shellcheck disable=SC2016 # a jq program: every $name in it is jq's, never the shell's
+  jq -n --argjson id "$own_run" '
+    def runner_os:
+      first((.labels // [])[] | ascii_downcase
+        | if startswith("ubuntu") or . == "linux" then "Linux"
+          elif startswith("windows") then "Windows"
+          elif startswith("macos") then "macOS"
+          else empty end) // null;
+    [inputs.jobs[] | . + {runner_os: runner_os}] as $jobs
+    | {blocks: [{label: null, runs: [{id: $id, workflow_name: ($jobs[0].workflow_name // null),
+                                      event: "pull_request", jobs: $jobs}]}],
+       answers: []}' "${pages[@]}"
+}
+
 # What is missing from a selection, if anything: a pull request with no run, or a
 # selected run whose job listing came back empty.
 check_selection() {
@@ -309,11 +367,15 @@ check_selection() {
 # shellcheck disable=SC2016 # a jq program: every $name in it is jq's, never the shell's
 figures='
 def ts: sub("\\.[0-9]+Z$"; "Z") | fromdate;
-# A counted job: completed, not skipped, and taken by a runner; or the job running
-# this script, still in progress, timed to --now. Its seconds are never below 0.
+# A counted job: completed, not skipped, and taken by a runner; or, on the own run of
+# a pull request, any job still in progress, which has no time yet; or, otherwise, the
+# job running this script, still in progress, timed to --now. Its seconds are never
+# below 0.
 def counted:
   if .status == "completed" and .conclusion != "skipped" and .runner_name != null then
     . + {secs: ([(.completed_at | ts) - (.started_at | ts), 0] | max), end: (.completed_at | ts)}
+  elif $own_run != "" then
+    if .status == "in_progress" then . + {secs: 0, end: $now, untimed: true} else empty end
   elif $self != "" and $runner != "" and (.run_id | tostring) == $self
        and .status == "in_progress" and .runner_name == $runner then
     . + {secs: ([$now - (.started_at | ts), 0] | max), end: $now}
@@ -329,7 +391,7 @@ def left_out: indent as $i | [(.excluded // [])[] | "\($i)left out by --exclude-
 def blocks: [.blocks[] | . + {all: [.runs[].jobs[]], jobs: ([.runs[].jobs[] | counted] | sort_by(-.secs))}];
 
 def longest_job:
-  blocks as $b
+  [blocks[] | .jobs |= map(select(.untimed | not))] as $b
   | ([$b[].jobs[].secs] | max) as $value
   | if $value == null then {missing: "no counted job: every job the selection lists was skipped, or never taken by a runner"}
     else {value: $value, detail: ([$b[] | indent as $i | head + (if .jobs == [] then ["\($i)no counted job"]
@@ -365,15 +427,19 @@ def pr_read_requests:
    detail: ([.blocks[] | ["\(.label): \(.cost.rest_requests) requests"] + requests] | add | join("\n"))};
 '
 
-case "$figure" in
-  release-read-requests) cd_selection >"$work/selection" ;;
-  pr-read-requests | release-cycle-time) pr_selection >"$work/selection" ;;
-  *) "${stage}_selection" >"$work/selection" ;;
-esac
+if [ -n "$own_run" ]; then
+  own_run_selection >"$work/selection"
+else
+  case "$figure" in
+    release-read-requests) cd_selection >"$work/selection" ;;
+    pr-read-requests | release-cycle-time) pr_selection >"$work/selection" ;;
+    *) "${stage}_selection" >"$work/selection" ;;
+  esac
+fi
 check_selection "$work/selection"
 
 now_epoch=$(jq -n --arg t "$now" '$t | sub("\\.[0-9]+Z$"; "Z") | fromdate')
-jq --arg self "${GITHUB_RUN_ID:-}" --arg runner "${RUNNER_NAME:-}" --argjson now "$now_epoch" \
+jq --arg self "${GITHUB_RUN_ID:-}" --arg runner "${RUNNER_NAME:-}" --arg own_run "$own_run" --argjson now "$now_epoch" \
   "$figures ${figure//-/_}" "$work/selection" >"$work/figure"
 gap=$(jq -r '.missing // empty' "$work/figure")
 [ -z "$gap" ] || missing "$gap" \

@@ -125,7 +125,7 @@ FRAGMENT_VERSION_RE = re.compile(r"\d+(?:\.\d+){0,2}")
 # targets run, at the version references/tools/onebudgetspec.md documents (its
 # README link names the same tag; tests hold the two, and this repo's own
 # `onebudgetspec-cli` dev pin, in lockstep).
-ONEBUDGETSPEC_VERSION = "0.1.3"
+ONEBUDGETSPEC_VERSION = "0.2.0"
 ONEBUDGETSPEC_NPM_PACKAGE = "@onebudgetspec/cli"
 # The Nx target defaults of the two budget targets, copied from the release
 # README's Nx example (tests/test_onebudgetspec_release.py holds it to the README
@@ -861,7 +861,7 @@ TOOL_WIRING: dict[str, ToolWiring] = {"onebudgetspec": wire_onebudgetspec}
 ONEVCS_CLI_VERSION = "0.57.6"
 # The onebudgetspec-github-action release ci.yml's `budgets` job uses. The action publishes
 # its crate last, so a crate at this version means the release's whole payload is usable.
-ONEBUDGETSPEC_ACTION_VERSION = "v0.1.2"
+ONEBUDGETSPEC_ACTION_VERSION = "v0.2.0"
 # The screencomp release whose composite actions the visual-docs steps use.
 SCREENCOMP_VERSION = "v0.4.8"
 # The languages whose toolchain the templates know how to install.
@@ -985,6 +985,8 @@ class CiCdFile(NamedTuple):
 
 
 REPORT_JOB_PROJECT = ".github/reporting/project.json"
+# Where each `budgets` target saves its results for ci.yml's upload.
+BUDGET_RESULTS_DIR = "target/budget-results/"
 CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
     CiCdFile(
@@ -1159,7 +1161,10 @@ def _expand_template(
                 for item in names:
                     if item in items:
                         out += _expand_template(
-                            lines[index + 1 : end], flags, values | items[item], loops
+                            lines[index + 1 : end],
+                            flags | {f"{loop}:{item}"},
+                            values | items[item],
+                            loops,
                         )
                 index = end + 1
             case ["#", *_]:  # A comment about the template itself; nothing renders.
@@ -1583,15 +1588,20 @@ def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
     if agents_with_policy is not None:
         (repo / AGENTS_FILE).write_text(agents_with_policy, encoding="utf-8")
         changes.append(f"{AGENTS_FILE} states the budget policy")
-    if GATE_RECORD not in ignored.splitlines():
+    ignored_lines = ignored.splitlines()
+    wanted = [GATE_RECORD] if GATE_RECORD not in ignored_lines else []
+    if not {BUDGET_RESULTS_DIR, "target", "target/", "/target", "/target/"} & set(
+        ignored_lines
+    ):
+        wanted.append(BUDGET_RESULTS_DIR)
+    if wanted:
         gitignore.write_text(
             ignored
             + ("" if not ignored or ignored.endswith("\n") else "\n")
-            + GATE_RECORD
-            + "\n",
+            + "".join(f"{line}\n" for line in wanted),
             encoding="utf-8",
         )
-        changes.append(f".gitignore ignores {GATE_RECORD}")
+        changes.append(f".gitignore ignores {' and '.join(wanted)}")
     return changes
 
 

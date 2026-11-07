@@ -91,7 +91,8 @@ request did not need is a slot another repository waited for.
 - `test-linux`, `test-windows`, `test-macos` — one per platform the repository
   supports, each running `just ci-test` (tests, builds, e2e and per-project
   budgets over the affected projects); a Linux-only repository runs `lint` and
-  `test-linux`.
+  `test-linux`. `test-linux` alone uploads what the `budgets` targets saved
+  (`target/budget-results/`) as `budget-check-results-test-linux`, under `if: always()`.
 - `visual-docs-<arch>` — only for a repository that captures its visual docs on a
   second architecture, natively on that architecture's runner.
 - `budgets` — the released report action, once its predecessors have ended however
@@ -160,14 +161,14 @@ the project name):
 | budget | threshold | label |
 | --- | --- | --- |
 | `<name>-ci-check-time` | 1800 s | `release-tail` |
-| `<name>-cd-job-time` | 1800 s | `release-tail` |
-| `<name>-release-cycle-time` | 5400 s | `release-tail` |
+| `<name>-cd-job-time` | 1800 s | `release-tail`, `not-measured-on-pr` |
+| `<name>-release-cycle-time` | 5400 s | `release-tail`, `not-measured-on-pr` |
 | `<name>-ci-job-count` | the CI jobs the shape runs: 5 cross-platform, 6 with a second visual-docs architecture, 3 Linux-only | `release-tail` |
-| `<name>-cd-job-count` | 6 cross-platform, 4 Linux-only | `release-tail` |
-| `<name>-release-read-requests` | 6 requests | `release-tail` |
-| `<name>-pr-read-requests` | 2 requests | `release-tail` |
-| `<name>-nx-cache-use` | 100% remote replay of eligible executions | `release-tail` |
-| `<name>-gate-time` | 1800 s | `host-variable` |
+| `<name>-cd-job-count` | 6 cross-platform, 4 Linux-only | `release-tail`, `not-measured-on-pr` |
+| `<name>-release-read-requests` | 6 requests | `release-tail`, `not-measured-on-pr` |
+| `<name>-pr-read-requests` | 2 requests | `release-tail`, `not-measured-on-pr` |
+| `<name>-nx-cache-use` | 100% remote replay of eligible executions | `release-tail`, `not-measured-on-pr` |
+| `<name>-gate-time` | 1800 s | `host-variable`, `not-measured-on-pr` |
 
 The eight GitHub figures run the repository's verbatim copy of the figures script
 (`tools/onebudgetspec.md`, "GitHub Actions budget figures"). The CD figures pass
@@ -186,7 +187,17 @@ reverts a release. Locally, as a warning: `just gate` records its wall clock to
 `.gate-time.json` and checks `<name>-gate-time` (`--label host-variable`),
 warning on an over reading (exit 1) and failing on an invalid budgets file or a
 failed measurement (2 or 3). The strict budget check `just check` runs excludes
-both labels, and `budgets` reports them without enforcing them. No pre-push hook runs the gate: CI owns it ("Push hooks" below).
+both labels, and `budgets` does not enforce them. No pre-push hook runs the gate: CI owns it ("Push hooks" below).
+
+**What a pull request's report shows.** Each `budgets` target saves its results to
+`target/budget-results/<project>.json`, an Nx output a cache hit restores; `test-linux`
+uploads them, and `budgets` reads them through `saved-results-artifacts:
+budget-check-results-*`, so those rows show the figure without running again.
+`<name>-ci-check-time` and `<name>-ci-job-count` show this run's own jobs.
+`not-measured-on-pr` (`omit-labels`) means a pull request cannot measure this budget or
+move its figure: it has no row, one line counts it, and its check elsewhere is unchanged.
+A push to main takes the merged pull request's figures for its history, so a pull
+request's value and its baseline are one measurement.
 
 **Meet the line by cutting work, never by sharding.** Affected-only selection,
 caches keyed on their inputs, no check run twice, no needless serialization
@@ -651,7 +662,9 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   script copied unedited; the report job's own budget in
   `.github/reporting/budgets.yaml`; the budget policy in `AGENTS.md`;
   `.github/governance.json` requiring exactly `lint`, the test jobs and `budgets`,
-  non-strict unless the owner opted in.
+  non-strict unless the owner opted in; `test-linux`'s saved-results upload, `budgets`'
+  `saved-results-artifacts` and `omit-labels`, and `not-measured-on-pr` on the seven
+  budgets a pull request cannot measure.
 
 - [ ] **Two tiers, named and wired.** Pull requests run the **affected tier** —
   the gate recipe delegating to `nx affected` keyed off an explicitly derived

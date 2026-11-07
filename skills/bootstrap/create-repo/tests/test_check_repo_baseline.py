@@ -131,11 +131,11 @@ LLMLINT_CONFIG = (
 # The budgets setup's pin: package.json pins the release exactly and what
 # `bun install` records for it (trimmed to its entry).
 BUDGETS_PACKAGE_JSON = (
-    '{"private": true, "devDependencies": {"@onebudgetspec/cli": "0.1.3"}}\n'
+    '{"private": true, "devDependencies": {"@onebudgetspec/cli": "0.2.0"}}\n'
 )
 BUN_LOCK = (
     '{\n  "lockfileVersion": 1,\n  "packages": {\n'
-    '    "@onebudgetspec/cli": ["@onebudgetspec/cli@0.1.3", "", {}, "sha512-x"],\n'
+    '    "@onebudgetspec/cli": ["@onebudgetspec/cli@0.2.0", "", {}, "sha512-x"],\n'
     "  }\n}\n"
 )
 

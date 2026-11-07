@@ -8,7 +8,9 @@
 # replay telemetry), as the last step of release.yml's `publish` job, whose result nothing
 # reads. The ninth, `host-variable`, is the local gate's wall clock, which
 # `just gate` checks as a warning. The strict check `just check` runs excludes both labels, and
-# ci.yml's `budgets` job reports them without enforcing them. Its push run at the release commit
+# ci.yml's `budgets` job does not enforce them. It reports the two CI-time figures from its own
+# run and omits the rest, labelled `not-measured-on-pr`: a pull request cannot measure those or
+# move their figures, and their check elsewhere is unchanged. Its push run at the release commit
 # delivers nothing, so the CD figures leave out the `ci` workflow.
 # references/ci.md ("CI and CD time budgets") states why each line is where it is.
 schema_version: 1
@@ -33,7 +35,7 @@ budgets:
     unit: seconds
     direction: max
     threshold: 1800
-    labels: [release-tail]
+    labels: [release-tail, not-measured-on-pr]
     description: >-
       The longest counted job of one release's CD runs — release-plz's run at the release
       commit and the Release run, publish included up to the tail's moment. It protects
@@ -46,7 +48,7 @@ budgets:
     unit: seconds
     direction: max
     threshold: 5400
-    labels: [release-tail]
+    labels: [release-tail, not-measured-on-pr]
     description: >-
       Per pull request whose merge changes a published artifact path, its last commit's
       checks plus its merge to the end of publish; the maximum over those requests protects how soon a
@@ -70,7 +72,7 @@ budgets:
     unit: jobs
     direction: max
     threshold: @@CD_JOB_COUNT@@
-    labels: [release-tail]
+    labels: [release-tail, not-measured-on-pr]
     description: >-
       The counted jobs of one release's CD runs, publish included as the job running the
       tail. It protects this repository's CD share of the account-wide 20-job concurrency
@@ -82,7 +84,7 @@ budgets:
     unit: requests
     direction: max
     threshold: 6
-    labels: [release-tail]
+    labels: [release-tail, not-measured-on-pr]
     description: >-
       The REST requests the release's own reads cost — the releases listing, the
       comparison, the closed-pull-request page, the runs at the release commit and the
@@ -96,7 +98,7 @@ budgets:
     unit: requests
     direction: max
     threshold: 2
-    labels: [release-tail]
+    labels: [release-tail, not-measured-on-pr]
     description: >-
       The most REST requests any one pull request of the release needed — its runs at head
       and the jobs of each CI run there — from onevcs's answers. It protects the reads
@@ -108,7 +110,7 @@ budgets:
     unit: seconds
     direction: max
     threshold: 1800
-    labels: [host-variable]
+    labels: [host-variable, not-measured-on-pr]
     description: >-
       The wall clock of one `just gate` run on a development machine, from the start and
       end the recipe records on that run. It holds the local gate to the line each CI job
@@ -121,7 +123,7 @@ budgets:
     unit: percent
     direction: min
     threshold: 100
-    labels: [release-tail]
+    labels: [release-tail, not-measured-on-pr]
     description: >-
       Remote replay of previously attempted reusable task results, by exact task, OS
       and hash, on the release pull request and same-PR retries or later pushes.

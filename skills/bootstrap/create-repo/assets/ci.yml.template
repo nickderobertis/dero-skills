@@ -1,8 +1,8 @@
 #% # The pull-request CI every repository create-repo composes starts from. Render it with
 #% # `compose_repo_plan.py --ci-cd REPO_DIR`, which keeps the blocks between `#% if FLAG`
 #% # and `#% endif` for the flags the composition sets (rust, typescript, windows, macos,
-#% # visual-docs, visual-docs-arch) and `#% if !FLAG` for those it does not, fills each
-#% # @@KEY@@, and drops every `#%` line.
+#% # visual-docs, visual-docs-arch) and `#% if !FLAG` for those it does not (inside a
+#% # `#% for`, `LOOP:ITEM` names its iteration), fills each @@KEY@@, and drops every `#%` line.
 # Prove each pull request from a clean checkout. references/ci.md states the job topology,
 # the time budgets and the merge tradeoff.
 #
@@ -247,6 +247,18 @@ jobs:
       - name: Test the affected projects
         shell: bash
         run: just ci-test
+#% if platform:linux
+      # What each `budgets` target saved, which the `budgets` job's rows read. Uploaded even
+      # after a failure, so the rest of the report keeps its figures, and absent when this
+      # change reached no budget.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: budget-check-results-test-linux
+          path: target/budget-results/
+          if-no-files-found: ignore
+          retention-days: 7
+#% endif
 
       - name: Report cache entries and task executions
         if: always()
@@ -284,3 +296,5 @@ jobs:
         with:
           token: ${{ github.token }}
           enforcement-exclude-labels: release-tail,host-variable
+          saved-results-artifacts: budget-check-results-*
+          omit-labels: not-measured-on-pr

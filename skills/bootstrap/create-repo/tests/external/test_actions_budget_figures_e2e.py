@@ -336,6 +336,58 @@ def test_the_job_running_the_script_is_counted_to_now_and_no_other_running_job(
     assert jobs_request(IN_PROGRESS_RUN) in repo.replay.served()
 
 
+# Version 12's pull-request read changes no other invocation, the release tail included.
+
+VERSION_11 = Path(__file__).parents[1] / "fixtures/actions-budget-figures/v11.sh"
+RUNNER_ENV = {
+    "GITHUB_REPOSITORY": ONEPIPELINE,
+    "GITHUB_RUN_ID": IN_PROGRESS_RUN,
+    "RUNNER_NAME": IN_PROGRESS_RUNNER,
+}
+
+
+@pytest.mark.parametrize(
+    ("args", "event"),
+    [
+        (["longest-job", "--stage", "cd"], "release"),
+        (["job-count", "--stage", "cd"], "release"),
+        (["longest-job", "--stage", "pr"], "release"),
+        (["job-count", "--stage", "pr"], "release"),
+        (["longest-job", "--stage", "pr"], "push"),
+        (["job-count", "--stage", "pr"], "push"),
+        (["release-read-requests"], "release"),
+        (["pr-read-requests"], "release"),
+        (["release-cycle-time", "--published-paths", "published-paths"], "release"),
+        (["longest-job", "--stage", "cd"], "pull_request"),
+        (["job-count", "--stage", "cd"], "pull_request"),
+        (["pr-read-requests"], "pull_request"),
+    ],
+    ids=lambda value: " ".join(value) if isinstance(value, list) else value,
+)
+def test_every_other_invocation_answers_what_version_11_answered_from_its_recordings(
+    onepipeline, args, event
+):
+    """The same recordings, environment and clock through each version of the script."""
+    copy = onepipeline.root / "scripts" / "actions-budget-figures.sh"
+    twelve = copy.read_bytes()
+    env = RUNNER_ENV | {"GITHUB_EVENT_NAME": event}
+    clocked = args[0] in ("longest-job", "job-count", "release-cycle-time")
+    invocation = [*args, *RELEASE, *(["--now", RELEASE_END] if clocked else [])]
+
+    now = run_direct(onepipeline, *invocation, **env)
+    assert now[0].returncode == 0, now[0].stderr
+    answered = json.loads(now[1])
+    assert answered["value"] > 0
+
+    shutil.copy(VERSION_11, copy)
+    assert b"# version: 11\n" in copy.read_bytes()
+    before = run_direct(onepipeline, *invocation, **env)
+    copy.write_bytes(twelve)
+    assert before[0].returncode == 0, before[0].stderr
+    assert answered == json.loads(before[1])
+    assert now[0].stderr == before[0].stderr
+
+
 # onetaskgraph v0.12.13: the warmer is a push workflow at the release commit that
 # delivers nothing, so the CD figures leave it out once --exclude-workflow names it.
 

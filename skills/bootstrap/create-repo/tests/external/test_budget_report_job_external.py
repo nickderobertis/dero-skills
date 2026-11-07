@@ -18,6 +18,7 @@ import io
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import tarfile
@@ -50,24 +51,37 @@ RUNNABLE = {
 }
 # Over its line, and report-only because it carries one of the job's excluded labels.
 REPORT_ONLY_OVER = "demo-laptop-figure"
-# Every budget the composer writes at the root, and why its command cannot measure in the
-# job: the failure's own words, which is what its row has to show a reader.
+# The root budgets a pull request cannot measure, which leave its table for one line.
+GENERATED_OMITTED = {
+    f"{NAME}-{suffix}"
+    for suffix in (
+        "cd-job-time",
+        "release-cycle-time",
+        "cd-job-count",
+        "release-read-requests",
+        "pr-read-requests",
+        "nx-cache-use",
+        "gate-time",
+    )
+}
+OMITTED_LINE = (
+    f"{len(GENERATED_OMITTED)} budgets are left out because a pull request cannot "
+    "measure them (label not-measured-on-pr)."
+)
+CI_CHECK_TIME = f"{NAME}-ci-check-time"
+CI_JOB_COUNT = f"{NAME}-ci-job-count"
+GENERATED_MEASURED = {CI_CHECK_TIME, CI_JOB_COUNT}
+# Off a pull request's own run those two read a release, and this job has no onevcs.
 FIGURES_NEED_ONEVCS = "onevcs is not on PATH"
-GENERATED_UNMEASURABLE = {
-    f"{NAME}-ci-check-time": FIGURES_NEED_ONEVCS,
-    f"{NAME}-cd-job-time": FIGURES_NEED_ONEVCS,
-    f"{NAME}-release-cycle-time": FIGURES_NEED_ONEVCS,
-    f"{NAME}-ci-job-count": FIGURES_NEED_ONEVCS,
-    f"{NAME}-cd-job-count": FIGURES_NEED_ONEVCS,
-    f"{NAME}-release-read-requests": FIGURES_NEED_ONEVCS,
-    f"{NAME}-pr-read-requests": FIGURES_NEED_ONEVCS,
-    f"{NAME}-nx-cache-use": "no release: pass --release TAG",
-    f"{NAME}-gate-time": "Cannot find package '@onebudgetspec/sdk'",
-}
-UNAVAILABLE = {
-    "demo-needs-cargo": "needs cargo",
-    "demo-needs-telemetry": "dist/telemetry/journey.json",
-}
+# Why a budget whose argv cannot run here has no row figure, once saved results are read.
+NO_SAVED_RESULT = "no saved result was found on this run"
+UNAVAILABLE = ("demo-needs-cargo", "demo-needs-telemetry")
+# Measured in test-linux only: its telemetry never reaches the budgets job's checkout.
+SAVED_BUDGET = "demo-saved-figure"
+SAVED_FIGURE = 37
+# This run's jobs as a recorded listing shapes them: the longest counted job, and the
+# job running the report, which has no time yet.
+LONGEST_JOB_SECONDS = 600
 CATALOG = f"""\
 schema_version: 1
 budgets:
@@ -124,6 +138,33 @@ budgets:
     direction: max
     threshold: 10
 """
+SAVED_CATALOG = f"""\
+schema_version: 1
+budgets:
+  - id: {SAVED_BUDGET}
+    description: Requests the demo test records. It protects the upstream the test reaches.
+    measure: reported
+    command: [node, measure.mjs, dist/telemetry/saved.json]
+    unit: requests
+    direction: max
+    threshold: 100
+"""
+SAVED_MEASURE = """\
+import { readFileSync, writeFileSync } from 'node:fs';
+writeFileSync(process.env.ONEBUDGETSPEC_RESULT, readFileSync(process.argv[2]));
+"""
+SAVED_PROJECT = json.dumps(
+    {
+        "name": "saved",
+        "targets": {
+            "budgets": {
+                "command": "onebudgetspec check packages/saved/budgets.yaml "
+                "--save-results target/budget-results/saved.json",
+                "outputs": ["{workspaceRoot}/target/budget-results/saved.json"],
+            }
+        },
+    }
+)
 MEASURE = """\
 import { appendFileSync, writeFileSync } from 'node:fs';
 appendFileSync(process.env.JOURNEY_COUNTS, `${process.env.ONEBUDGETSPEC_BUDGET_ID}\\n`);
@@ -144,6 +185,9 @@ CATALOG_FILES = {
     "packages/demo/measure-coverage.mjs": MEASURE,
     "packages/demo/bundle-size": "500\n",
     "packages/demo/project.json": PROJECT,
+    "packages/saved/budgets.yaml": SAVED_CATALOG,
+    "packages/saved/measure.mjs": SAVED_MEASURE,
+    "packages/saved/project.json": SAVED_PROJECT,
 }
 
 
@@ -283,6 +327,78 @@ class Journey:
             (self.path / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         )
         self.base_sha = self.repository.commit("composed")
+        self._serve_this_runs_jobs()
+
+    def _serve_this_runs_jobs(self) -> None:
+        """GitHub's job listing, which the harness the action ships has no need of."""
+        answer_otherwise = self.host.read
+
+        def read(handler, path: str):
+            listed = re.fullmatch(
+                r"/repos/owner/repo/actions/runs/(\d+)/jobs", path.split("?")[0]
+            )
+            if listed is None:
+                return answer_otherwise(handler, path)
+            jobs = self.run_jobs(int(listed[1]))
+            body = json.dumps({"total_count": len(jobs), "jobs": jobs}).encode()
+            return self.host.reply(handler, 200, body)
+
+        self.host.read = read
+
+    def run_jobs(self, run_id: int) -> list[dict]:
+        """This run's jobs: each the workflow names, and the budgets job still running."""
+
+        def job(name: str, seconds: int | None) -> dict:
+            return {
+                "id": len(name),
+                "run_id": run_id,
+                "workflow_name": self.workflow["name"],
+                "name": name,
+                "status": "completed" if seconds is not None else "in_progress",
+                "conclusion": "success" if seconds is not None else None,
+                "started_at": "2026-11-07T07:00:00Z",
+                "completed_at": (
+                    f"2026-11-07T07:{seconds // 60:02}:{seconds % 60:02}Z"
+                    if seconds is not None
+                    else None
+                ),
+                "labels": ["ubuntu-latest"],
+                "runner_name": f"GitHub Actions {len(name)}",
+            }
+
+        seconds = {"test-linux": LONGEST_JOB_SECONDS, "budgets": None}
+        return [job(name, seconds.get(name, 120)) for name in self.workflow["jobs"]]
+
+    def test_linux(self, run_id: int) -> None:
+        """The job before `budgets`: each generated target, then its real upload's inputs."""
+        self.repository.write(
+            "packages/saved/dist/telemetry/saved.json",
+            json.dumps({"value": SAVED_FIGURE}),
+        )
+        for project in (".github/reporting", "packages/saved"):
+            target = json.loads((self.path / project / "project.json").read_text())
+            done = subprocess.run(
+                target["targets"]["budgets"]["command"].removeprefix("bunx "),
+                shell=True,
+                cwd=self.path,
+                capture_output=True,
+                text=True,
+            )
+            assert done.returncode == 0, done.stdout + done.stderr
+        [upload] = [
+            step
+            for step in self.workflow["jobs"]["test-linux"]["steps"]
+            if step.get("uses", "").startswith("actions/upload-artifact@")
+            and step["with"]["name"].startswith("budget-check-results-")
+        ]
+        assert upload["if"] == "always()"
+        saved = self.path / upload["with"]["path"]
+        members = {file.name: file.read_text() for file in saved.iterdir()}
+        assert set(members) == {"report-job.json", "saved.json"}
+        self.host.attach(run_id, upload["with"]["name"], self.harness.zipped(members))
+        # Another job's checkout: neither the results nor their telemetry reach `budgets`.
+        shutil.rmtree(saved)
+        shutil.rmtree(self.path / "packages/saved/dist")
 
     def close(self) -> None:
         for job in self.jobs:
@@ -315,6 +431,7 @@ class Journey:
                 # The harness's environment inherits nothing, and a fork's run holds no token.
                 "DBUS_SESSION_BUS_ADDRESS": "disabled:",
                 # What a runner sets for every step, which the figures script reads.
+                "GITHUB_EVENT_NAME": event_name,
                 "GITHUB_REPOSITORY": self.harness.REPOSITORY,
                 "GITHUB_RUN_ID": str(self.next_run),
                 "RUNNER_NAME": "hosted-runner",
@@ -330,12 +447,16 @@ class Journey:
         self.base_sha = sha
         return self.run("push", sha)
 
-    def pull_request(self, bundle_size: int | None = None, **event):
+    def pull_request(
+        self, bundle_size: int | None = None, test_linux: bool = False, **event
+    ):
         self.repository.git("checkout", "--quiet", "-B", "change", self.base_sha)
         if bundle_size is not None:
             self.repository.write("packages/demo/bundle-size", f"{bundle_size}\n")
         head = self.repository.commit("change")
         self.host.head = head
+        if test_linux:
+            self.test_linux(self.next_run + 1)
         return self.run(
             "pull_request",
             head,
@@ -367,23 +488,16 @@ def row_verdict(row: str) -> str:
     return row.split("|")[2].strip()
 
 
-def assert_unavailable_with_reasons(job) -> None:
-    """Each budget that cannot measure: one unavailable row, its reason, and no `error`."""
-    budget_run = job.saved("budget-run.json")
-    measured = budget_run["results"]["results"]
-    assert not [r["id"] for r in measured if r["verdict"] == "error"]
-    assert not {r["id"] for r in measured} & set(GENERATED_UNMEASURABLE)
-    reasons = {u["id"]: u["reason"] for u in budget_run["unavailable"]}
-    report = {row["id"]: row for row in job.saved("comparison-report.json")["rows"]}
+def assert_omitted_and_counted(job) -> None:
+    """The budgets a pull request cannot measure: no row, one line, and no measurement."""
     markdown = job.markdown()
-    for budget, reason in GENERATED_UNMEASURABLE.items():
-        assert reason in reasons[budget], reasons[budget]
-        assert "verdict" not in report[budget], report[budget]
-        assert reason in report[budget]["unavailable"], report[budget]
-        row = one_table_row(markdown, budget)
-        assert row_verdict(row) == "unavailable", row
-        assert reason in row, row
-        assert "report-only" in row, row
+    report = {row["id"] for row in job.saved("comparison-report.json")["rows"]}
+    measured = {r["id"] for r in job.saved("budget-run.json")["results"]["results"]}
+    for budget in GENERATED_OMITTED:
+        assert budget not in report and budget not in measured, budget
+        assert table_rows(markdown, budget) == [], budget
+    [line] = [line for line in markdown.splitlines() if "left out" in line]
+    assert OMITTED_LINE in line
 
 
 @pytest.fixture(params=sorted(COMPOSITIONS))
@@ -418,7 +532,9 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     job = journey.pull_request()
     assert job.exit_code == 0, job.stdout
 
-    budgets = sorted({*RUNNABLE, *UNAVAILABLE, REPORT_BUDGET, *GENERATED_UNMEASURABLE})
+    budgets = sorted(
+        {*RUNNABLE, *UNAVAILABLE, SAVED_BUDGET, REPORT_BUDGET, *GENERATED_MEASURED}
+    )
     report = job.saved("comparison-report.json")
     assert sorted(row["id"] for row in report["rows"]) == budgets
     for budget in budgets:
@@ -434,15 +550,15 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     assert verdicts["demo-coverage-percent"]["actual"] == 91
 
     unavailable = {u["id"]: u["reason"] for u in budget_run["unavailable"]}
-    assert set(unavailable) == {*UNAVAILABLE, *GENERATED_UNMEASURABLE}
-    for budget, reason in UNAVAILABLE.items():
-        assert reason in unavailable[budget], unavailable[budget]
+    assert set(unavailable) == {*UNAVAILABLE, SAVED_BUDGET}
+    for budget in unavailable:
+        assert unavailable[budget] == NO_SAVED_RESULT, budget
     assert budget_run["enforcement_exclude_labels"] == ["release-tail", "host-variable"]
 
     assert len(journey.host.comments) == 1
     body = journey.host.comments[0]["body"]
     assert "report-only" in body
-    for budget, _ in UNAVAILABLE.items():
+    for budget in UNAVAILABLE:
         assert budget in body
 
     # The job's own budget ran after the main upload and was saved with its verdict.
@@ -471,12 +587,13 @@ def test_a_base_push_saves_the_same_results_and_posts_nothing(journey):
     assert set(base_files) == {*pull_files, "rolling-history.json"}
     history = json.loads(base_files["rolling-history.json"].decode())
     assert [run["head_sha"] for run in history["runs"]] == [base.sha]
+    # This push maps to no pull request, so it has no figure for the two CI-time budgets.
     assert {r["id"] for r in history["runs"][0]["results"]["results"]} == {
         r["id"]
         for r in json.loads(pull_files["budget-run.json"].decode())["results"][
             "results"
         ]
-    }
+    } - GENERATED_MEASURED
 
 
 def test_under_the_actions_token_a_pull_request_keeps_one_comment_and_main_its_history(
@@ -574,34 +691,97 @@ def test_only_an_adverse_move_is_flagged_and_a_flag_fails_nothing(journey):
     assert row["flag"] is False, row
 
 
-def test_budgets_for_a_release_or_a_laptop_are_unavailable_with_their_reason(
-    every_composition,
-):
-    """They keep their ordinary commands, which cannot measure here and cost no read."""
+def test_a_new_repositorys_first_report_starts_with_numbers(every_composition):
+    """What a saved target measured, this run's own jobs, and one line for the rest."""
     journey = every_composition
     composed = yaml.safe_load((journey.path / "budgets.yaml").read_text())["budgets"]
-    assert {budget["id"] for budget in composed} == set(GENERATED_UNMEASURABLE)
+    assert {budget["id"] for budget in composed} == {
+        *GENERATED_OMITTED,
+        *GENERATED_MEASURED,
+    }
 
     journey.host.clear_requests()
+    job = journey.pull_request(test_linux=True)
+    assert job.exit_code == 0, job.stdout
+    assert job.outcomes["saved-results"] == "success", job.stdout
+
+    rows = job.rows()
+    assert rows[SAVED_BUDGET]["current"] == SAVED_FIGURE
+    assert rows[SAVED_BUDGET]["verdict"] == "within"
+    assert f"| {SAVED_FIGURE}" in one_table_row(job.markdown(), SAVED_BUDGET)
+    assert SAVED_BUDGET not in journey.executed()
+
+    assert rows[CI_CHECK_TIME]["current"] == LONGEST_JOB_SECONDS
+    assert rows[CI_JOB_COUNT]["current"] == len(journey.workflow["jobs"])
+    for budget in GENERATED_MEASURED:
+        assert rows[budget]["verdict"] == "within", rows[budget]
+        assert "report-only" in one_table_row(job.markdown(), budget)
+    read = f"/runs/{job.run_id}/jobs"
+    assert journey.host.count(read) == journey.host.count(r"/runs/\d+/jobs") > 0
+    assert journey.host.count("/releases/tags|/compare") == 0
+
+    assert_omitted_and_counted(job)
+    assert_omitted_and_counted_in_comment(journey)
+
+
+def assert_omitted_and_counted_in_comment(journey) -> None:
+    body = journey.host.comments[0]["body"]
+    assert OMITTED_LINE in body
+    for budget in GENERATED_OMITTED:
+        assert table_rows(body, budget) == [], budget
+    one_table_row(body, CI_CHECK_TIME)
+
+
+def test_a_failed_test_job_leaves_its_budget_unavailable_and_fails_nothing(journey):
+    """No artifact: the row says so, and the job's red check is the failure's own."""
     job = journey.pull_request()
     assert job.exit_code == 0, job.stdout
-    assert journey.host.count("/releases|/runs/\\d+/jobs|/compare") == 0
-    assert_unavailable_with_reasons(job)
+    row = job.rows()[SAVED_BUDGET]
+    assert "verdict" not in row, row
+    assert row["unavailable"] == NO_SAVED_RESULT
+    assert row_verdict(one_table_row(job.markdown(), SAVED_BUDGET)) == "unavailable"
 
-    body = journey.host.comments[0]["body"]
-    for budget, reason in GENERATED_UNMEASURABLE.items():
-        row = one_table_row(body, budget)
-        assert row_verdict(row) == "unavailable", row
-        assert reason in row, row
 
-    base = journey.base_push()
+def test_a_base_push_takes_the_merged_pull_requests_figures(journey):
+    """A pull request's value and its baseline are one measurement."""
+    merged = journey.pull_request(test_linux=True)
+    assert merged.exit_code == 0, merged.stdout
+    journey.host.add_run(
+        merged.run_id, merged.sha, event="pull_request", branch="change"
+    )
+    journey.repository.git("checkout", "--quiet", "main")
+    merge = journey.repository.commit("squash")
+    journey.host.merge_pull_request(merge, merged.sha)
+    journey.base_sha = merge
+    journey.host.clear_requests()
+
+    base = journey.run("push", merge)
     assert base.exit_code == 0, base.stdout
-    assert_unavailable_with_reasons(base)
+    assert journey.executed() == [], "a figure the merged run holds runs no command"
+    assert journey.host.count(r"/runs/\d+/jobs") == 0
     history = json.loads(
         journey.host.artifact_files(base.run_id)["rolling-history.json"].decode()
     )
-    measured = {r["id"] for r in history["runs"][0]["results"]["results"]}
-    assert not measured & set(GENERATED_UNMEASURABLE)
+    taken = {r["id"]: r["actual"] for r in history["runs"][0]["results"]["results"]}
+    assert taken[SAVED_BUDGET] == SAVED_FIGURE
+    assert taken[CI_CHECK_TIME] == LONGEST_JOB_SECONDS
+    assert taken[CI_JOB_COUNT] == len(journey.workflow["jobs"])
+    assert not set(taken) & GENERATED_OMITTED
+
+
+def test_a_base_push_with_no_pull_request_keeps_its_rows_unavailable_and_reads_no_run(
+    journey,
+):
+    """The figures read a release off a pull request, which this job cannot do."""
+    journey.host.clear_requests()
+    base = journey.base_push()
+    assert base.exit_code == 0, base.stdout
+    assert journey.host.count(r"/runs/\d+/jobs|/releases/tags|/compare") == 0
+    for budget in GENERATED_MEASURED:
+        row = one_table_row(base.markdown(), budget)
+        assert row_verdict(row) == "unavailable", row
+        assert FIGURES_NEED_ONEVCS in row, row
+    assert_omitted_and_counted(base)
 
 
 def test_a_fork_gets_a_summary_and_artifact_without_a_comment_or_credential(journey):
@@ -611,6 +791,9 @@ def test_a_fork_gets_a_summary_and_artifact_without_a_comment_or_credential(jour
     assert job.exit_code == 0, job.stdout
     assert journey.host.comments == []
     assert journey.host.count("commits/main") == 0, "a budget command reached the host"
+    assert journey.host.count(r"/runs/\d+/jobs") == 0, "the figures hold no credential"
+    for budget in GENERATED_MEASURED:
+        assert row_verdict(one_table_row(job.markdown(), budget)) == "unavailable"
     assert "someone/fork" in job.summary
     assert journey.host.artifact_files(job.run_id) is not None
     assert base.exit_code == 0
