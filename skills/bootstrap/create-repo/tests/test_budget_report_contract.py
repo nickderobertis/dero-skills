@@ -123,10 +123,14 @@ def test_only_labels_the_root_budgets_carry_are_report_only_or_omitted(
     assert set(labels) | set(omitted) == carried
 
 
-def test_the_two_ci_time_budgets_alone_stay_in_the_pull_request_report(repo):
+def test_what_a_pull_request_can_read_alone_stays_in_its_report(repo):
     budgets = yaml.safe_load((repo / "budgets.yaml").read_text())["budgets"]
     shown = [b["id"] for b in budgets if "not-measured-on-pr" not in b["labels"]]
-    assert shown == [f"{NAME}-ci-check-time", f"{NAME}-ci-job-count"]
+    assert sorted(shown) == [
+        f"{NAME}-cache-headroom",
+        f"{NAME}-ci-check-time",
+        f"{NAME}-ci-job-count",
+    ]
 
 
 def test_test_linux_alone_uploads_what_the_job_reads(repo, action_step):

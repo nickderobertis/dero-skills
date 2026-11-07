@@ -469,13 +469,16 @@ composer's `--intersection` choices automatically.
   [`assets/release.yml.template`](./assets/release.yml.template),
   [`assets/budgets.yaml.template`](./assets/budgets.yaml.template) and
   [`assets/budgets/gate-time.sh.template`](./assets/budgets/gate-time.sh.template)
-  (with `assets/budgets/gate-time-budget.mjs` and the versioned shared scripts
-  `assets/ci/nx-remote-cache.mjs` and `assets/ci/nx-version-free-inputs.mjs`) — the
+  (with `assets/budgets/gate-time-budget.mjs`, the versioned shared scripts
+  `assets/ci/nx-remote-cache.mjs` and `assets/ci/nx-version-free-inputs.mjs`, and the tool
+  pins `assets/ci-tool-versions.template`; for Rust also
+  [`assets/rust-cache-warm.yml.template`](./assets/rust-cache-warm.yml.template),
+  `assets/ci/actions-cache-prune.mjs` and `assets/rust-toolchain.toml.template`) — the
   CI/CD shape `--ci-cd`
   renders: pull-request CI (`lint`, whose llmlint step requires its harness
   credential and fails fast without it, a test job per platform, and the one
   `budgets` report job, which alone also runs on push to main), the release
-  workflows ending in the release tail, the nine root budgets and the report
+  workflows ending in the release tail, the ten root budgets and the report
   job's own, the budget policy in `AGENTS.md` (`assets/budgets/budget-policy.md`), and
   `just gate`'s wall-clock record and warning. Release PRs run every job and
   replay proven test results using version-free inputs. The existing release-plz
@@ -511,7 +514,7 @@ composer's `--intersection` choices automatically.
 - [`scripts/check_repo_baseline.py`](./scripts/check_repo_baseline.py) — the
   deterministic, stdlib-only audit. It checks the agent layer, recorded
   composition, command surface, e2e/coverage signals, CI, the PR template, the
-  suppressions review comment, the CI/CD shape and its nine budgets, and the
+  suppressions review comment, the CI/CD shape and its ten budgets, and the
   llmlint tier — going past presence (placeholder recipes, a `check` that skips
   `test`, a do-nothing CI file all fail). `--help` lists the checks; `--buildout`
   additionally *runs* the one-time llmlint buildout tier for the recorded stack

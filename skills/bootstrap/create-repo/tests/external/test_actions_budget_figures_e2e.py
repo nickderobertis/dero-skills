@@ -369,7 +369,7 @@ def test_every_other_invocation_answers_what_version_11_answered_from_its_record
 ):
     """The same recordings, environment and clock through each version of the script."""
     copy = onepipeline.root / "scripts" / "actions-budget-figures.sh"
-    twelve = copy.read_bytes()
+    current = copy.read_bytes()
     env = RUNNER_ENV | {"GITHUB_EVENT_NAME": event}
     clocked = args[0] in ("longest-job", "job-count", "release-cycle-time")
     invocation = [*args, *RELEASE, *(["--now", RELEASE_END] if clocked else [])]
@@ -382,7 +382,7 @@ def test_every_other_invocation_answers_what_version_11_answered_from_its_record
     shutil.copy(VERSION_11, copy)
     assert b"# version: 11\n" in copy.read_bytes()
     before = run_direct(onepipeline, *invocation, **env)
-    copy.write_bytes(twelve)
+    copy.write_bytes(current)
     assert before[0].returncode == 0, before[0].stderr
     assert answered == json.loads(before[1])
     assert now[0].stderr == before[0].stderr

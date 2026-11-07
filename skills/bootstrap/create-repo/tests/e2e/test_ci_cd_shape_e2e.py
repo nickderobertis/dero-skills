@@ -21,8 +21,8 @@ repository after adoption. The original three carry the same unit, label and
 threshold for every existing budget but
 `-ci-check-time`, where onepipeline's is 10800 and the other two's 1800, the
 30-minute line the skill ships. Their CD commands also pass `--exclude-workflow`
-naming each repository's own main-push cache warmer; the composed shape has no
-such workflow, so its commands carry no exclusion and are otherwise identical.
+naming each repository's own main-push cache warmer, and a Rust composition's name
+its composed warm workflow the same way; a TypeScript composition has none.
 """
 
 from __future__ import annotations
@@ -49,6 +49,8 @@ from ci_cd_shape import (
 )
 
 FIGURES = ["bash", "scripts/actions-budget-figures.sh"]
+CD_EXCLUDED = ["--exclude-workflow", "ci"]
+WARM_EXCLUDED = ["--exclude-workflow", "rust cache warm"]
 # Each budget as the landing commits register it: command, unit, threshold, label.
 LANDED = {
     "ci-check-time": (
@@ -58,7 +60,7 @@ LANDED = {
         "release-tail",
     ),
     "cd-job-time": (
-        [*FIGURES, "longest-job", "--stage", "cd", "--exclude-workflow", "ci"],
+        [*FIGURES, "longest-job", "--stage", "cd", *CD_EXCLUDED],
         "seconds",
         1800,
         "release-tail",
@@ -75,6 +77,7 @@ LANDED = {
         "release-tail",
     ),
     "nx-cache-use": ([*FIGURES, "cache-use"], "percent", 100, "release-tail"),
+    "cache-headroom": ([*FIGURES, "cache-headroom"], "gigabytes", 3.05, "release-tail"),
     "ci-job-count": (
         [*FIGURES, "job-count", "--stage", "pr"],
         "jobs",
@@ -82,13 +85,13 @@ LANDED = {
         "release-tail",
     ),
     "cd-job-count": (
-        [*FIGURES, "job-count", "--stage", "cd", "--exclude-workflow", "ci"],
+        [*FIGURES, "job-count", "--stage", "cd", *CD_EXCLUDED],
         "jobs",
         None,
         "release-tail",
     ),
     "release-read-requests": (
-        [*FIGURES, "release-read-requests", "--exclude-workflow", "ci"],
+        [*FIGURES, "release-read-requests", *CD_EXCLUDED],
         "requests",
         6,
         "release-tail",
@@ -107,6 +110,7 @@ CI_JOBS = {
     "cross-platform": ["lint", "test-linux", "test-windows", "test-macos", "budgets"],
     "linux": ["lint", "test-linux", "budgets"],
 }
+PLATFORM_LEGS = {"cross-platform": ["linux", "windows", "macos"], "linux": ["linux"]}
 CD_JOBS = {
     "cross-platform": [
         "release-plz",
@@ -234,15 +238,19 @@ def test_the_release_runs_release_plz_then_a_build_job_per_platform_and_publish(
         "ci.yml",
         "release-plz.yml",
         "release.yml",
+        *(["rust-cache-warm.yml"] if language == "rust" else []),
     ]
 
 
-def test_publish_ends_in_the_release_tail_after_installing_the_pinned_onevcs(composed):
+def test_publish_ends_in_the_release_tail_after_installing_the_pinned_tools(composed):
     repo, *_ = composed
     publish = jobs(workflow(repo, "release.yml"))["publish"]
     steps = publish.split("\n      - ")
     install, tail = steps[-2], steps[-1]
-    assert "onevcs-cli@0.57.6" in install and "@onebudgetspec/cli@0.2.0" in install
+    assert '"onevcs-cli@$ONEVCS_CLI_VERSION"' in install
+    assert '"@onebudgetspec/cli@$ONEBUDGETSPEC_VERSION"' in install
+    pins = (repo / ".github" / "ci-tool-versions").read_text(encoding="utf-8")
+    assert "onevcs-cli=0.57.6\n" in pins and "onebudgetspec-cli=0.2.0\n" in pins
     assert tail.rstrip().endswith(
         "run: onebudgetspec check budgets.yaml --label release-tail"
     )
@@ -252,12 +260,12 @@ def test_publish_ends_in_the_release_tail_after_installing_the_pinned_onevcs(com
         assert scope in publish
 
 
-def test_the_root_budgets_include_the_shared_cache_use_figure(composed):
-    repo, _language, platforms, arch = composed
+def test_the_root_budgets_are_exactly_the_landed_figures(composed):
+    repo, language, platforms, arch = composed
     tool = onebudgetspec()
     valid = run([tool, "validate", "budgets.yaml"], cwd=repo)
     assert valid.returncode == 0, valid.stderr
-    assert "valid: 9 budget(s)" in valid.stdout
+    assert "valid: 10 budget(s)" in valid.stdout
     listed = run([tool, "list", "--json", "budgets.yaml"], cwd=repo)
     budgets = {b["id"]: b for b in json.loads(listed.stdout)["budgets"]}
     assert sorted(budgets) == sorted(f"{NAME}-{suffix}" for suffix in LANDED)
@@ -267,18 +275,26 @@ def test_the_root_budgets_include_the_shared_cache_use_figure(composed):
     }
     for suffix, (command, unit, threshold, label) in LANDED.items():
         budget = budgets[f"{NAME}-{suffix}"]
+        if language == "rust" and command[-2:] == CD_EXCLUDED:
+            command = [*command[:-2], *WARM_EXCLUDED, *CD_EXCLUDED]
+        if language == "rust" and suffix == "cache-headroom":
+            legs = PLATFORM_LEGS[platforms]
+            command = [
+                *command,
+                *(arg for leg in legs for arg in ("--family", f"v0-rust-test-{leg}-")),
+            ]
         assert budget["command"] == command, suffix
         assert budget["unit"] == unit, suffix
         # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold is the composed repository's budgets.yaml content the task fixes to what the three repositories' landing commits register, not a performance bar this suite holds itself to: a wrong value here is a wrong file the composer wrote.
         assert budget["threshold"] == counts.get(suffix, threshold), suffix
         carries = (
             [label]
-            if suffix in ("ci-check-time", "ci-job-count")
+            if suffix in ("ci-check-time", "ci-job-count", "cache-headroom")
             else [label, "not-measured-on-pr"]
         )
         assert budget["labels"] == carries, suffix
         assert budget["measure"] == "reported" and budget["direction"] == (
-            "min" if suffix == "nx-cache-use" else "max"
+            "min" if suffix in {"nx-cache-use", "cache-headroom"} else "max"
         )
 
 
@@ -556,14 +572,14 @@ CI = ".github/workflows/ci.yml"
 # Each budget's command line through its labels, as budgets.yaml.template writes them, so
 # an edit removes the label from that one budget.
 NOT_MEASURED_LABELS = {
-    "cd-job-time": "longest-job, --stage, cd, --exclude-workflow, ci]\n"
+    "cd-job-time": "--exclude-workflow, ci]\n"
     "    unit: seconds\n    direction: max\n    threshold: 1800\n"
     "    labels: [release-tail, not-measured-on-pr]",
     "release-cycle-time": "threshold: 5400\n    labels: [release-tail, not-measured-on-pr]",
-    "cd-job-count": "job-count, --stage, cd, --exclude-workflow, ci]\n"
+    "cd-job-count": "--exclude-workflow, ci]\n"
     "    unit: jobs\n    direction: max\n    threshold: 6\n"
     "    labels: [release-tail, not-measured-on-pr]",
-    "release-read-requests": "release-read-requests, --exclude-workflow, ci]\n"
+    "release-read-requests": "--exclude-workflow, ci]\n"
     "    unit: requests\n    direction: max\n    threshold: 6\n"
     "    labels: [release-tail, not-measured-on-pr]",
     "pr-read-requests": "threshold: 2\n    labels: [release-tail, not-measured-on-pr]",

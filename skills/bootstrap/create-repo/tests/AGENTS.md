@@ -10,7 +10,13 @@ for the tiers it can reach:
   Both are un-mocked and part of the gate — they run under `just check` (and
   `just test`), embodying the "Tests are context engineering" mandate: real
   subprocesses over real temp files, never a mocked stand-in.
-  Both stay offline. `test_onebudgetspec_release.py` holds what the skill
+  Both stay offline, which is why `e2e/test_actions_cache_e2e.py` replays a recorded
+  listing and the real-Nx cache journeys sit in `external/test_nx_cache_e2e.py`, where
+  fetching Nx and the pinned sidecar is allowed. `e2e/test_warm_cache_shape_e2e.py` takes
+  each property of the composed cache shape away in turn: add a mutation with a property.
+  Its warm journey runs a composed workspace's real `just ci-warm` and `just ci-test`, so that
+  tier needs cargo on PATH and fails without it.
+  `test_onebudgetspec_release.py` holds what the skill
   restates of onebudgetspec, Nx and `bun.lock` to the installed releases' own
   README, schema and lockfile, so that drift gate runs here too.
 - **The external journeys** (`external/`) — the `bootstrap-create-repo-external`

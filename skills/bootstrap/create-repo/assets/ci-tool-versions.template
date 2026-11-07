@@ -1,0 +1,21 @@
+#% # The exact tool versions the generated workflows install, rendered by
+#% # `compose_repo_plan.py --ci-cd REPO_DIR` (see ci.yml.template for the `#%` syntax).
+# Every tool a generated workflow installs, at its exact version. Each job reads this file
+# into its step outputs and installs from them, and it is an input of every cached target,
+# so a cached result names the tools that proved it: a bump re-runs what they ran.
+# Each version exists on every runner the workflows install it on; rust-toolchain.toml holds
+# the compiler. Comments start a line, and every other line is NAME=VERSION.
+just=1.59.0
+bun=1.4.4
+claude-code=2.1.319
+llmlint-cli=0.4.12
+onevcs-cli=@@ONEVCS_CLI_VERSION@@
+onebudgetspec-cli=@@ONEBUDGETSPEC_VERSION@@
+#% if rust
+cargo-deny=0.20.2
+cargo-hack=0.6.46
+release-plz=0.4.3
+#% endif
+#% if visual-docs
+screencomp=@@SCREENCOMP_VERSION@@
+#% endif

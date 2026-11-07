@@ -58,8 +58,11 @@ ensure_toolchain() {
   fi
   # llmlint-cli pulls oneharness-cli as a dependency into the same tool venv, where
   # llmlint discovers the `oneharness` binary beside its own — no separate install.
-  log "installing llmlint-cli >= $LLMLINT_MIN via uv tool"
-  uv tool install --upgrade "llmlint-cli>=$LLMLINT_MIN" >&2 \
+  # CI names the exact release .github/ci-tool-versions pins; a session takes the newest.
+  local spec="llmlint-cli>=$LLMLINT_MIN"
+  [ -z "${LLMLINT_CLI_VERSION:-}" ] || spec="llmlint-cli==$LLMLINT_CLI_VERSION"
+  log "installing $spec via uv tool"
+  uv tool install --upgrade "$spec" >&2 \
     || log "llmlint-cli install failed (continuing)"
 }
 

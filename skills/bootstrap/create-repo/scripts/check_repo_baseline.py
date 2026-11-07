@@ -135,9 +135,10 @@ Checks:
     under `if: always()`, unfiltered, with the permissions it reads and posts
     with and the shape's report-only labels, and `.github/reporting/budgets.yaml`
     holds its own budget and `AGENTS.md` the budget policy; the root
-    `budgets.yaml` registers the nine CI/CD budgets (`<name>-ci-check-time`,
+    `budgets.yaml` registers the ten CI/CD budgets (`<name>-ci-check-time`,
     `-cd-job-time`, `-release-cycle-time`, `-ci-job-count`, `-cd-job-count`,
-    `-release-read-requests`, `-pr-read-requests`, `-gate-time`) and, when it
+    `-release-read-requests`, `-pr-read-requests`, `-nx-cache-use`,
+    `-cache-headroom`, `-gate-time`) and, when it
     runs `scripts/actions-budget-figures.sh`, the repository holds that copy;
     the governance record requires exactly `lint`, the test jobs and `budgets`.
     Whether it is strict is not checked: up-to-date branches are an opt-in.
@@ -3216,12 +3217,13 @@ CI_JOB_TIMEOUT_MINUTES = 30
 # platform, and a `visual-docs-<arch>` per second visual-docs architecture.
 CI_TEST_JOB_RE = re.compile(r"test-[a-z0-9-]+")
 CI_VISUAL_DOCS_JOB_RE = re.compile(r"visual-docs-[a-z0-9-]+")
-# The nine root budgets, by id suffix after the project-name prefix.
+# The ten root budgets, by id suffix after the project-name prefix.
 SHAPE_BUDGET_SUFFIXES = (
     "ci-check-time",
     "cd-job-time",
     "release-cycle-time",
     "nx-cache-use",
+    "cache-headroom",
     "ci-job-count",
     "cd-job-count",
     "release-read-requests",
@@ -3741,7 +3743,7 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
                 "ERROR",
                 f"the root {BUDGETS_FILE} lacks the budget(s) "
                 + ", ".join(f"<name>-{s}" for s in lacking),
-                f"register the nine CI/CD budgets of assets/budgets.yaml.template; {compose}",
+                f"register the ten CI/CD budgets of assets/budgets.yaml.template; {compose}",
             )
         )
     problems += [
@@ -3768,7 +3770,7 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
     return problems or [
         Finding(
             "OK",
-            "CI/CD shape: lint, test and budgets jobs held to 30 minutes, the nine "
+            "CI/CD shape: lint, test and budgets jobs held to 30 minutes, the ten "
             "budgets and the report job's own, governance requiring exactly those checks",
         )
     ]
@@ -3796,7 +3798,7 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
     findings += check_actions_budget_figures(repo)
-    for script in ("nx-remote-cache", "nx-version-free-inputs"):
+    for script in ("nx-remote-cache", "nx-version-free-inputs", "actions-cache-prune"):
         findings += check_actions_budget_figures(
             repo,
             FIGURES_VERSIONS.parent.parent / "ci" / f"{script}.versions",

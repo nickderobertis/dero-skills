@@ -9,8 +9,11 @@ handed to the real composer, ``compose_repo_plan.py --ci-cd``, as a subprocess.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from test_check_repo_baseline import make_repo
@@ -111,3 +114,203 @@ def jobs(workflow: str) -> dict[str, str]:
 
 def workflow(repo: Path, name: str) -> str:
     return (repo / ".github" / "workflows" / name).read_text(encoding="utf-8")
+
+
+# The warm journey: a composed Rust workspace's real `just ci-warm`, then its real `just ci-test`.
+# What setup-rust-toolchain exports into both jobs, which reach cargo's fingerprints.
+RUST_ENV = {
+    "RUSTFLAGS": "-D warnings",
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "NX_DAEMON": "false",
+}
+OLD_PLACEHOLDER = (
+    'ci-warm:\n    @echo "TODO: compile what ci-test compiles without running it '
+    '(e.g. cargo test --workspace --all-features --no-run)" && exit 1\n'
+)
+
+
+def workspace_files(
+    test_compile: str | None, test_command: str = "cargo test -p demo-lib"
+) -> dict[str, str]:
+    """A real Cargo workspace whose one project owns its test, build and test-compile."""
+    targets = {
+        "test": {"command": test_command},
+        # Release, so it shares no unit with the test build and losing it to a replay shows.
+        "build": {"command": "cargo build -p demo-lib --release", "cache": True},
+    }
+    if test_compile is not None:
+        targets["test-compile"] = {"command": test_compile}
+    return {
+        "Cargo.toml": '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n',
+        "crates/dep/Cargo.toml": (
+            '[package]\nname = "demo-dep"\nversion = "0.1.0"\nedition = "2021"\n'
+            "[features]\nextra = []\n"
+        ),
+        "crates/dep/src/lib.rs": "pub fn value() -> u8 { 1 }\n",
+        "crates/lib/Cargo.toml": (
+            '[package]\nname = "demo-lib"\nversion = "0.1.0"\nedition = "2021"\n'
+            '[features]\nextra = ["demo-dep/extra"]\n'
+            '[dependencies]\ndemo-dep = { path = "../dep" }\n'
+        ),
+        "crates/lib/src/lib.rs": (
+            "pub fn value() -> u8 { demo_dep::value() }\n"
+            "#[cfg(test)]\nmod tests {\n    #[test]\n    fn value() {\n"
+            "        assert_eq!(super::value(), 1);\n    }\n}\n"
+        ),
+        "crates/lib/project.json": json.dumps(
+            {"name": "demo-lib", "root": "crates/lib", "targets": targets}
+        ),
+    }
+
+
+GOOD_COMPILE = "cargo test -p demo-lib --no-run"
+
+
+class WarmJourney:
+    """A composed Rust repository, committed, with cargo's and Nx's real commands to run."""
+
+    def __init__(
+        self,
+        root: Path,
+        node_modules: Path | None = None,
+        test_compile: str | None = GOOD_COMPILE,
+        telemetry_plugin: bool = True,
+        test_command: str = "cargo test -p demo-lib",
+        host_env: Mapping[str, str] | None = None,
+    ) -> None:
+        for tool in ("cargo", "just", "bun"):
+            assert shutil.which(tool), f"{tool} not on PATH: this runs the real build"
+        self.repo = compose(
+            root, "rust", "linux", files=workspace_files(test_compile, test_command)
+        )
+        if node_modules is None:
+            # The composed pins, as `just bootstrap` installs them, with a real bun.lock.
+            manifest_path = self.repo / "package.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["version"] = "1.0.0"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            (self.repo / "bun.lock").unlink()
+            installed = run(["bun", "install"], cwd=self.repo, timeout=600)
+            assert installed.returncode == 0, installed.stderr
+        else:
+            os.symlink(node_modules, self.repo / "node_modules")
+        if not telemetry_plugin:
+            nx_path = self.repo / "nx.json"
+            nx = json.loads(nx_path.read_text(encoding="utf-8"))
+            nx["plugins"].remove("./scripts/nx-remote-cache.mjs")
+            nx_path.write_text(json.dumps(nx), encoding="utf-8")
+        gitignore = self.repo / ".gitignore"
+        gitignore.write_text(gitignore.read_text() + "\nnode_modules\n.nx/\ntarget/\n")
+        self.env = {
+            **os.environ,
+            **(host_env or {}),
+            **RUST_ENV,
+            **self._toolchain(root),
+        }
+        # This repository's own CI exports both for its own commits, which this repository's
+        # temporary git history does not hold; `test_job` passes the base a pull request tests.
+        self.env.pop("NX_BASE", None)
+        self.env.pop("NX_HEAD", None)
+        self._git("init", "-q")
+        self.commit("chore: base")
+        self.base = self._git("rev-parse", "HEAD")
+        source = self.repo / "crates/lib/src/lib.rs"
+        source.write_text(
+            "// the change this pull request makes\n" + source.read_text()
+        )
+        self.commit("fix: a change")
+
+    @staticmethod
+    def _toolchain(root: Path) -> dict[str, str]:
+        # The host's own compiler, outside the composed pin, so nothing here downloads one.
+        rustup = shutil.which("rustup")
+        if rustup is None:
+            return {}
+        shown = run([rustup, "show", "active-toolchain"], cwd=root.parent)
+        return {"RUSTUP_TOOLCHAIN": shown.stdout.split()[0]} if shown.stdout else {}
+
+    def _git(self, *args: str) -> str:
+        done = subprocess.run(
+            ["git", "-c", "user.name=journey", "-c", "user.email=j@example.com", *args],
+            cwd=self.repo,
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
+
+    def commit(self, message: str) -> None:
+        self._git("add", "-A")
+        self._git("commit", "-qm", message)
+
+    def just(self, recipe: str, **env: str):
+        return subprocess.run(
+            ["just", recipe],
+            cwd=self.repo,
+            env={**self.env, **env},
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+
+    def warm(self):
+        return self.just("ci-warm")
+
+    def test_job(self):
+        # Another runner: it gets the warm leg's target directory, and none of its Nx cache.
+        shutil.rmtree(self.repo / ".nx", ignore_errors=True)
+        return self.just("ci-test", NX_BASE=self.base)
+
+    def built(self) -> dict[str, int]:
+        """Every compiled unit under target/, to when it was written."""
+        deps = self.repo / "target"
+        return {
+            str(path.relative_to(deps)): path.stat().st_mtime_ns
+            for path in deps.glob("*/deps/*")
+        }
+
+
+def compiled(done) -> list[str]:
+    return re.findall(r"Compiling (\S+)", done.stdout + done.stderr)
+
+
+def warm_compiles_again_problems(journey: WarmJourney) -> list[str]:
+    """A second warm run over an empty target directory builds all the first did: a replayed
+    task compiles nothing, and rust-cache would then save nothing a pull request could reuse."""
+    first = journey.warm()
+    if first.returncode != 0:
+        return [f"ci-warm failed: {first.stdout}{first.stderr}"]
+    built = set(journey.built())
+    if not built:
+        return ["the first ci-warm compiled nothing"]
+    shutil.rmtree(journey.repo / "target")
+    again = journey.warm()
+    if again.returncode != 0:
+        return [f"ci-warm failed: {again.stdout}{again.stderr}"]
+    lost = sorted(built - set(journey.built()))
+    return [f"ci-warm replayed from an Nx cache, leaving out {lost}"] if lost else []
+
+
+def warm_build_problems(journey: WarmJourney) -> list[str]:
+    """What a test job finds after a warm leg: empty is a leg that saved what it needs."""
+    warmed = journey.warm()
+    if warmed.returncode != 0:
+        return [f"ci-warm failed: {warmed.stdout}{warmed.stderr}"]
+    built = journey.built()
+    if not built:
+        return ["ci-warm compiled nothing"]
+    tested = journey.test_job()
+    if tested.returncode != 0:
+        return [f"ci-test failed: {tested.stdout}{tested.stderr}"]
+    problems = []
+    if "test result: ok" not in tested.stdout + tested.stderr:
+        problems.append("ci-test ran no test")
+    if names := compiled(tested):
+        problems.append(f"ci-test compiled again after ci-warm: {names}")
+    changed = sorted(
+        name for name, at in journey.built().items() if built.get(name) != at
+    )
+    if changed:
+        problems.append(f"ci-test wrote build outputs ci-warm did not: {changed}")
+    return problems

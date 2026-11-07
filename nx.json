@@ -54,7 +54,8 @@
       "{workspaceRoot}/skills/bootstrap/create-repo/assets/**/*",
       "{workspaceRoot}/skills/bootstrap/create-repo/scripts/**/*",
       "{workspaceRoot}/skills/bootstrap/create-repo/references/**/*",
-      "{workspaceRoot}/skills/bootstrap/create-repo/tests/*.py"
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/*.py",
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/external/fixtures/cache-listings/**/*"
     ],
     "nxRelease": [
       "{workspaceRoot}/package.json",

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
-# version: 12
-# sha256: ae38c086ce3568dbc8084eda9300aaf692751912baf2d84ce6a93e9228a1db04
+# version: 13
+# sha256: d530d435aead03a443b1ea528db96eef9b97cc343d7eb3fade0b09099bd112ef
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -17,6 +17,7 @@
 #   scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME] [--exclude-workflow NAME]...
 #   scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
 #   scripts/actions-budget-figures.sh cache-use                 [--release TAG] [--repo OWNER/NAME]
+#   scripts/actions-budget-figures.sh cache-headroom [--family PREFIX]... [--repo OWNER/NAME]
 #
 # On a pull request's own run (GITHUB_EVENT_NAME is pull_request, and GITHUB_RUN_ID
 # and GITHUB_REPOSITORY are set), `longest-job --stage pr` and `job-count --stage pr`
@@ -63,11 +64,11 @@ if [ -z "${ONEBUDGETSPEC_RESULT:-}" ]; then
 fi
 
 figure="${1:-}"
-if [ "$figure" = cache-use ]; then
+if [ "$figure" = cache-use ] || [ "$figure" = cache-headroom ]; then
   shift
   command -v node >/dev/null 2>&1 || missing "node is not on PATH" "install Node.js 24 and rerun this budget"
   # llmlint: ignore[typescript_and_npm_launched_via_bun] This portable consumer helper uses Node built-ins and the shared contract requires node; consuming repositories need no bun package for it.
-  exec node "$(dirname "$0")/nx-remote-cache.mjs" cache-use "$@"
+  exec node "$(dirname "$0")/nx-remote-cache.mjs" "$figure" "$@"
 fi
 case "$figure" in
   longest-job | job-count) takes="stage release repo now exclude-workflow" ;;
