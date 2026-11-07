@@ -71,6 +71,10 @@ OMITTED_LINE = (
 CI_CHECK_TIME = f"{NAME}-ci-check-time"
 CI_JOB_COUNT = f"{NAME}-ci-job-count"
 GENERATED_MEASURED = {CI_CHECK_TIME, CI_JOB_COUNT}
+# The job's token reaches this one, unlike onevcs's figures: it has no figure here only
+# because this host double serves no cache route, and on GitHub the report shows its reading.
+CACHE_HEADROOM = f"{NAME}-cache-headroom"
+NO_CACHE_ROUTE = "actions/cache/storage-limit answered HTTP 401"
 # Off a pull request's own run those two read a release, and this job has no onevcs.
 FIGURES_NEED_ONEVCS = "onevcs is not on PATH"
 # Why a budget whose argv cannot run here has no row figure, once saved results are read.
@@ -533,7 +537,14 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     assert job.exit_code == 0, job.stdout
 
     budgets = sorted(
-        {*RUNNABLE, *UNAVAILABLE, SAVED_BUDGET, REPORT_BUDGET, *GENERATED_MEASURED}
+        {
+            *RUNNABLE,
+            *UNAVAILABLE,
+            SAVED_BUDGET,
+            REPORT_BUDGET,
+            *GENERATED_MEASURED,
+            CACHE_HEADROOM,
+        }
     )
     report = job.saved("comparison-report.json")
     assert sorted(row["id"] for row in report["rows"]) == budgets
@@ -550,6 +561,7 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     assert verdicts["demo-coverage-percent"]["actual"] == 91
 
     unavailable = {u["id"]: u["reason"] for u in budget_run["unavailable"]}
+    assert NO_CACHE_ROUTE in unavailable.pop(CACHE_HEADROOM)
     assert set(unavailable) == {*UNAVAILABLE, SAVED_BUDGET}
     for budget in unavailable:
         assert unavailable[budget] == NO_SAVED_RESULT, budget
@@ -698,6 +710,7 @@ def test_a_new_repositorys_first_report_starts_with_numbers(every_composition):
     assert {budget["id"] for budget in composed} == {
         *GENERATED_OMITTED,
         *GENERATED_MEASURED,
+        CACHE_HEADROOM,
     }
 
     journey.host.clear_requests()
