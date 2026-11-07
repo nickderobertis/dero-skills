@@ -695,7 +695,7 @@ merging") so the decision is auditable and the next maintainer can re-apply it.
   after them under `if: always()`, the released action's one job, unfiltered; no
   other pull-request job; only `budgets` on push to main; `release-plz`, a `build-<platform>`
   job per supported platform (Linux arm64 with Linux) and `publish` ending in the
-  release tail; the nine budgets in the root `budgets.yaml` with the figures
+  release tail; the ten budgets in the root `budgets.yaml` with the figures
   script copied unedited; the report job's own budget in
   `.github/reporting/budgets.yaml`; the budget policy in `AGENTS.md`;
   `.github/governance.json` requiring exactly `lint`, the test jobs and `budgets`,
