@@ -20,6 +20,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from github_rest_contract import (
+    JOB_FIELDS,
+    JOB_LISTING,
+    job_listing_drift,
+    load_snapshot,
+    problems,
+)
 from test_check_repo_baseline import SCRIPT as CHECKER
 from test_check_repo_baseline import crb, make_repo
 
@@ -770,6 +777,23 @@ cat "{self.answers}/$(wc -l < "{self.calls}")"
 
 def recorded_run_jobs() -> dict:
     return json.loads(IN_PROGRESS_RECORDING.read_text(encoding="utf-8"))["body"]
+
+
+def test_the_job_listing_the_script_reads_is_the_one_github_describes():
+    contract = load_snapshot()
+    assert job_listing_drift(contract) == []
+    listing = contract["paths"][JOB_LISTING]["get"]["responses"]["200"]
+    # Only the job fields the script reads: a recorded step's status is outside the
+    # description's enum, and it reads no step.
+    recorded = recorded_run_jobs()
+    recorded["jobs"] = [
+        {key: value for key, value in job.items() if key != "steps"}
+        for job in recorded["jobs"]
+    ]
+    assert problems(recorded, listing, contract["schemas"]) == []
+    script = SOURCE.read_text(encoding="utf-8")
+    for field in JOB_FIELDS:
+        assert f".{field}" in script, field
 
 
 def own_figure(

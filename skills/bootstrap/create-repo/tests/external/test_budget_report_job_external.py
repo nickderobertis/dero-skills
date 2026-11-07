@@ -732,8 +732,10 @@ def assert_omitted_and_counted_in_comment(journey) -> None:
     one_table_row(body, CI_CHECK_TIME)
 
 
-def test_a_failed_test_job_leaves_its_budget_unavailable_and_fails_nothing(journey):
-    """No artifact: the row says so, and the job's red check is the failure's own."""
+def test_a_missing_saved_results_artifact_leaves_its_budget_unavailable_and_fails_nothing(
+    journey,
+):
+    """No artifact: the row says so, and a test job that died is its own red check."""
     job = journey.pull_request()
     assert job.exit_code == 0, job.stdout
     row = job.rows()[SAVED_BUDGET]

@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 12
-# sha256: 39a734e8b54b0a729e3733c82308bd00e38c332200ce00a06de6c08dbb791bbe
+# sha256: ae38c086ce3568dbc8084eda9300aaf692751912baf2d84ce6a93e9228a1db04
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -328,8 +328,8 @@ own_run_selection() {
       die "gh api $query failed: $(tr -s '\n' ' ' <"$work/stderr"): check that GH_TOKEN can read this repository's Actions (actions: read), then re-run this figure"
     fi
     # A whole count, and every field a job's counting reads, or the figure would be wrong.
-    # GitHub's REST description is their source; create-repo's
-    # tests/external/test_github_rest_contract_external.py holds these to it.
+    # GitHub's REST description is their source; create-repo's tests hold these to a
+    # snapshot of it, and the external tier holds the snapshot to GitHub.
     # shellcheck disable=SC2016 # a jq program: every $name in it is jq's, never the shell's
     jq -e 'def stamp: type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$");
            def optional($kind): . == null or type == $kind;
