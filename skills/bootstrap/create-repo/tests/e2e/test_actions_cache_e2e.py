@@ -2,23 +2,28 @@
 
 Each case runs the real script, the way a composed repository's workflow does, against a local
 HTTP server standing in for GitHub at its REST boundary and replaying a recorded listing
-(`external/fixtures/cache-listings/`). Keys are matched by prefix and pages cut by `per_page`,
-as GitHub does, so a script that reads one page less sees what it would on GitHub.
+(`external/fixtures/cache-listings/`). Keys are matched by prefix, pages cut by `per_page` and
+entries tied on the sort key reordered between pages, as GitHub does, so a script that reads
+one page less, or pages by a key entries share, sees what it would on GitHub.
 """
 
 # llmlint: ignore[e2e_not_mocked] Only GitHub's REST service is doubled, over a recorded real listing; the scripts under test run unchanged as subprocesses.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import re
 import subprocess
 import threading
+from collections import Counter
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import chain, repeat
 from pathlib import Path
+from typing import NamedTuple, TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -34,20 +39,57 @@ MAIN = "refs/heads/main"
 GIB = 1_073_741_824
 LINUX = "v0-rust-test-linux-"
 
+CacheId = int
+"""The `id` GitHub gives a cache entry, which `DELETE actions/caches/{id}` names it by."""
+
+
+class CacheEntry(TypedDict):
+    """One entry of GitHub's cache listing, as the double serves it."""
+
+    id: CacheId
+    key: str
+    ref: str
+    size_in_bytes: int
+    created_at: str
+    last_accessed_at: str
+    version: str
+
+
+class Answer(NamedTuple):
+    """One listing answer: the key filter it was asked, its total, the entries it held."""
+
+    key: str
+    total: int
+    ids: tuple[CacheId, ...]
+
+
+def key_filter(prefix: str) -> re.Pattern[str]:
+    """GitHub's key filter, read live: a case-sensitive prefix where `_` and `%` are wildcards."""
+    return re.compile(
+        "".join(
+            "." if c == "_" else ".*" if c == "%" else re.escape(c) for c in prefix
+        ),
+        re.DOTALL,
+    )
+
 
 class Github(ThreadingHTTPServer):
     """GitHub's cache endpoints over an entry list: only what these scripts call."""
 
-    def __init__(self, entries: list[dict], limit: int = 10) -> None:
+    def __init__(self, entries: list[CacheEntry], limit: int = 10) -> None:
         super().__init__(("127.0.0.1", 0), _Handler)
         self.entries = entries
         self.limit = limit
         self.reads: list[str] = []
-        self.deleted: list[int] = []
-        self.fail_delete: dict[int, int] = {}
+        self.served: Counter[CacheId] = Counter()
+        self.answers: list[Answer] = []
+        self.requests_answered = 0
+        self.never_listed: set[CacheId] = set()
+        self.deleted: list[CacheId] = []
+        self.fail_delete: dict[CacheId, int] = {}
         self.fail_page: dict[int, int] = {}
         self.limit_status = 200
-        self.remaining = iter(range(4000, 0, -7))
+        self.remaining = chain(range(4000, 0, -7), repeat(0))
         self.total_count_extra = 0
 
     @property
@@ -86,18 +128,31 @@ class _Handler(BaseHTTPRequestHandler):
         if page in server.fail_page:
             return self._reply(server.fail_page[page], {"message": "refused"})
         prefix = query.get("key", [""])[0]
-        matching = [e for e in server.entries if str(e["key"]).startswith(prefix)]
+        pattern = key_filter(prefix)
+        matching = [e for e in server.entries if pattern.match(str(e["key"]))]
         sort = query["sort"][0]
+        # GitHub promises no order among ties, and onepipeline-ui's run 42365784060 read one
+        # entry twice and missed another across same-size pages. So ties differ per request.
+        server.requests_answered += 1
+        nonce = server.requests_answered
         matching.sort(
-            key=lambda e: e[sort],
+            key=lambda e: (
+                e[sort],
+                hashlib.sha256(f"{nonce}:{e['id']}".encode()).hexdigest(),
+            ),
             reverse=query["direction"][0] == "desc",
         )
         size = int(query["per_page"][0])
+        total = len(matching) + server.total_count_extra
+        matching = [e for e in matching if e["id"] not in server.never_listed]
+        listed = matching[(page - 1) * size : page * size]
+        server.served.update(e["id"] for e in listed)
+        server.answers.append(Answer(prefix, total, tuple(e["id"] for e in listed)))
         self._reply(
             200,
             {
-                "total_count": len(matching) + server.total_count_extra,
-                "actions_caches": matching[(page - 1) * size : page * size],
+                "total_count": total,
+                "actions_caches": listed,
             },
         )
 
@@ -105,7 +160,7 @@ class _Handler(BaseHTTPRequestHandler):
         server = self.server
         match = re.fullmatch(rf"/repos/{REPO}/actions/caches/(\d+)", self.path)
         assert match, self.path
-        entry_id = int(match.group(1))
+        entry_id: CacheId = int(match.group(1))
         if entry_id in server.fail_delete:
             return self._reply(server.fail_delete[entry_id], {"message": "refused"})
         server.deleted.append(entry_id)
@@ -117,7 +172,7 @@ class _Handler(BaseHTTPRequestHandler):
 def serve() -> Iterator:
     running: list[tuple[Github, threading.Thread]] = []
 
-    def start(entries: list[dict], limit: int = 10) -> Github:
+    def start(entries: list[CacheEntry], limit: int = 10) -> Github:
         server = Github(copy.deepcopy(entries), limit)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -132,12 +187,12 @@ def serve() -> Iterator:
 
 
 def entry(
-    entry_id: int,
+    entry_id: CacheId,
     key: str,
     ref: str = MAIN,
     size: int = 1000,
     age_minutes: int = 0,
-) -> dict:
+) -> CacheEntry:
     when = datetime(2026, 11, 6, tzinfo=timezone.utc) - timedelta(minutes=age_minutes)
     stamp = when.isoformat().replace("+00:00", "Z")
     return {
@@ -202,7 +257,7 @@ def headroom(server: Github, tmp_path: Path, *families: str):
     return done, json.loads(result.read_text()) if result.exists() else None
 
 
-def recorded_family(prefix: str) -> list[dict]:
+def recorded_family(prefix: str) -> list[CacheEntry]:
     return [e for e in RECORDED["actions_caches"] if e["key"].startswith(prefix)]
 
 
@@ -412,7 +467,7 @@ def family_of(key: str) -> str:
     return re.sub(r"(-[0-9a-f]{6,})+$", "", key)
 
 
-def expected_figure(entries: list[dict], limit: int, *families: str) -> float:
+def expected_figure(entries: list[CacheEntry], limit: int, *families: str) -> float:
     counted = 0
     for e in entries:
         named = next((f for f in families if e["key"].startswith(f)), None)
@@ -445,27 +500,26 @@ def test_the_recorded_listing_measures_every_entry_on_every_page(serve, tmp_path
             non_results[family] = non_results.get(family, 0) + e["size_in_bytes"]
     for family, bytes_ in non_results.items():
         assert f"non-result {family}: {bytes_} bytes" in detail
-    assert "allowance: 10737418240 bytes" in detail
+    assert "allowance: 10737418240 bytes (max_cache_size_gb 10)" in detail
     assert "oldest result age: " in detail
     # The contract's order, and every page of it. 398 entries are four pages.
     listing = [urlparse(r) for r in server.reads if "actions/caches" in r]
     assert len(listing) == 4
     query = parse_qs(listing[0].query)
-    assert (query["sort"], query["direction"]) == (["size_in_bytes"], ["desc"])
+    assert (query["sort"], query["direction"]) == (["created_at"], ["desc"])
     assert not any("cache/usage" in r for r in server.reads)
     # The storage limit and the four pages, and the lowest counter any of the five carried.
     assert "requests: 5;" in detail
     assert "lowest X-RateLimit-Remaining: 3972" in detail
 
 
-def test_a_small_non_result_on_the_last_page_and_results_above_it_all_count(
-    serve, tmp_path
-):
-    # Results fill the earlier pages; a smaller cache of another kind sorts to the last.
+def test_a_non_result_on_the_last_page_and_results_above_it_all_count(serve, tmp_path):
+    # Results fill the earlier pages; an older cache of another kind sorts to the last.
     results = [
-        entry(i, f"nx-cache-{i}", size=1_000_000 + i, ref=MAIN) for i in range(1, 251)
+        entry(i, f"nx-cache-{i}", size=1_000_000 + i, ref=MAIN, age_minutes=i)
+        for i in range(1, 251)
     ]
-    tiny = entry(999, "setup-uv-2-x86-pruned-0123abcd", size=777)
+    tiny = entry(999, "setup-uv-2-x86-pruned-0123abcd", size=777, age_minutes=999)
     server = serve([*results, tiny])
     done, result = headroom(server, tmp_path)
     assert done.returncode == 0, done.stderr
@@ -489,6 +543,8 @@ def test_a_different_allowance_scales_in_gib(serve, tmp_path):
     done, result = headroom(serve([], limit=25), tmp_path)
     assert done.returncode == 0, done.stderr
     assert result["value"] == round(25 * GIB / 1_000_000_000, 3)
+    assert f"allowance: {25 * GIB} bytes (max_cache_size_gb 25)" in result["detail"]
+    assert "stated" not in result["detail"]
 
 
 def test_bytes_over_the_line_read_negative_rather_than_error(serve, tmp_path):
@@ -558,14 +614,197 @@ def test_a_malformed_entry_writes_no_figure(serve, tmp_path, malformed):
     assert "malformed entry" in done.stderr
 
 
-@pytest.mark.parametrize("status", [403, 429])
-def test_a_refused_storage_limit_writes_no_figure(serve, tmp_path, status):
+def test_a_storage_limit_answered_403_uses_the_stated_allowance_and_says_so(
+    serve, tmp_path
+):
+    entries = RECORDED["actions_caches"]
+    # The double's own limit differs, so only the stated allowance can give this figure.
+    server = serve(entries, limit=25)
+    server.limit_status = 403
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    detail = result["detail"]
+    assert (
+        "allowance: 10737418240 bytes (GitHub's stated 10 GiB allowance; "
+        "actions/cache/storage-limit answered HTTP 403), 10.73741824 GB" in detail
+    )
+    assert "max_cache_size_gb" not in detail
+    # The refused read and the four pages.
+    assert "requests: 5;" in detail
+
+
+def test_a_storage_limit_403_followed_by_a_refused_listing_writes_no_figure(
+    serve, tmp_path
+):
+    # A rate-limited token is answered 403 on both, and the listing still has to be read.
+    server = serve(RECORDED["actions_caches"])
+    server.limit_status = 403
+    server.fail_page[1] = 403
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "actions/caches?sort=created_at" in done.stderr
+
+
+@pytest.mark.parametrize("status", [401, 404, 429, 500])
+def test_a_storage_limit_failing_any_other_way_writes_no_figure(
+    serve, tmp_path, status
+):
     server = serve(RECORDED["actions_caches"])
     server.limit_status = status
     done, result = headroom(server, tmp_path)
     assert done.returncode == 1
     assert result is None
-    assert f"HTTP {status}" in done.stderr
+    assert f"actions/cache/storage-limit answered HTTP {status}" in done.stderr
+
+
+def test_a_storage_limit_with_no_figure_writes_no_figure(serve, tmp_path):
+    server = serve([], limit=0)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "storage limit carries no max_cache_size_gb" in done.stderr
+
+
+# 280 is the size of the listing the headroom refused at 279 of 280; 200 ends on a full page.
+@pytest.mark.parametrize("count", [280, 200])
+def test_entries_of_one_size_across_pages_are_each_read_exactly_once(
+    serve, tmp_path, count
+):
+    entries = [
+        entry(i, f"nx-cache-{i:04x}", size=583, age_minutes=i)
+        for i in range(1, count + 1)
+    ]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert server.served == Counter(e["id"] for e in entries)
+    assert result["value"] == expected_figure(entries, 10)
+    assert f"results: {count} entries, {count * 583} bytes" in result["detail"]
+
+
+def tied(entry_id: CacheId, key: str, ref: str = MAIN) -> CacheEntry:
+    """An entry sharing its size and creation timestamp with every other `tied` entry."""
+    return entry(entry_id, key, ref=ref, size=583)
+
+
+def whole_answers(server: Github) -> list[Answer]:
+    """The answers holding all they matched, in one response no page order can disturb."""
+    return [a for a in server.answers if a.total == len(a.ids)]
+
+
+@pytest.mark.parametrize("count", [280, 200])
+def test_entries_sharing_size_and_creation_time_across_pages_all_count_once(
+    serve, tmp_path, count
+):
+    entries = [tied(i, f"nx-cache-{i:04x}") for i in range(1, count + 1)]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert f"results: {count} entries, {count * 583} bytes" in result["detail"]
+    # Each entry came in exactly one whole answer, and each repeat is a discarded partial one.
+    held = Counter(i for a in whole_answers(server) for i in a.ids)
+    assert held == Counter(e["id"] for e in entries)
+
+
+@pytest.mark.parametrize("key", ["zz-hidden", "%-hidden", "é-hidden"])
+def test_a_key_no_answer_happens_to_show_is_found_by_naming_its_first_character(
+    serve, tmp_path, key
+):
+    # Older than every tie, so no answer over the whole listing reaches it.
+    hidden = entry(999, key, size=583, age_minutes=60)
+    entries = [tied(i, f"nx-cache-{i:04x}") for i in range(1, 281)] + [hidden]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert f"non-result {key}: 583 bytes" in result["detail"]
+
+
+def test_a_wildcard_in_a_key_loses_nothing_and_counts_nothing_twice(serve, tmp_path):
+    # `_` matches any one character on GitHub, so `nx_a` also answers for `nxba`.
+    # `%` matches any run, so `nx%` answers for all of them and narrows nothing by itself.
+    entries = [
+        tied(i, f"{stem}-{i:04x}")
+        for stem, ids in (
+            ("nx_a", range(1, 121)),
+            ("nxba", range(121, 241)),
+            ("nx%c", range(241, 361)),
+        )
+        for i in ids
+    ]
+    done, result = headroom(serve(entries), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    for e in entries:
+        assert f"non-result {e['key']}: 583 bytes\n" in result["detail"]
+
+
+def test_a_key_that_is_a_prefix_of_many_others_still_counts(serve, tmp_path):
+    entries = [tied(1, "nx-cache-")] + [
+        tied(i, f"nx-cache-{i:04x}") for i in range(2, 282)
+    ]
+    done, result = headroom(serve(entries), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert "results: 281 entries" in result["detail"]
+
+
+def test_one_key_on_many_refs_counts_every_copy_the_rereads_show(serve, tmp_path):
+    # No prefix divides these. Rereading shows them because this double's order moves.
+    entries = [
+        tied(i, "nx-cache-shared", ref=f"refs/pull/{i}/merge") for i in range(1, 121)
+    ]
+    done, result = headroom(serve(entries), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert "results: 120 entries" in result["detail"]
+
+
+def test_one_key_on_many_refs_with_a_copy_never_shown_writes_no_figure(serve, tmp_path):
+    # GitHub promises no moving order, so this is the case the API cannot resolve: refused.
+    entries = [
+        tied(i, "nx-cache-shared", ref=f"refs/pull/{i}/merge") for i in range(1, 121)
+    ]
+    server = serve(entries)
+    server.never_listed.add(7)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "listing is incomplete: 119 of 120 entries read" in done.stderr
+
+
+def test_a_listing_needing_more_reads_than_the_guard_allows_writes_no_figure(
+    serve, tmp_path
+):
+    # Each long key stem costs one read per character to narrow, and GitHub allows 512.
+    entries = [
+        tied(i, f"nx-cache-{stem * 400}-{i:04x}")
+        for stem, ids in (
+            ("a", range(1, 102)),
+            ("b", range(102, 203)),
+            ("c", range(203, 304)),
+        )
+        for i in ids
+    ]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "listing is incomplete: over 900 reads" in done.stderr
+    # The four plain pages that came up short, then the prefix read's whole allowance.
+    assert len(server.answers) == 4 + 900
+
+
+def test_a_prefix_answer_short_of_its_own_total_writes_no_figure(serve, tmp_path):
+    server = serve([tied(i, f"nx-cache-{i:04x}") for i in range(1, 281)])
+    server.total_count_extra = 1
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "listing is incomplete" in done.stderr
 
 
 def test_a_listing_shorter_than_its_total_writes_no_figure(serve, tmp_path):

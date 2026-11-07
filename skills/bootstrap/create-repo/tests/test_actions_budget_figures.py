@@ -682,7 +682,11 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
 
 @pytest.mark.parametrize(
     ("name", "version"),
-    [("nx-remote-cache", 8), ("nx-version-free-inputs", 3), ("actions-cache-prune", 1)],
+    [
+        ("nx-remote-cache", 10),
+        ("nx-version-free-inputs", 3),
+        ("actions-cache-prune", 1),
+    ],
 )
 def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version):
     source = SKILL_DIR / "assets" / "ci" / f"{name}.mjs"
@@ -707,6 +711,17 @@ def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version)
     )
     assert [finding.level for finding in findings] == ["ERROR"]
     assert "edited in place" in findings[0].message
+
+
+def test_the_reference_names_the_remote_cache_scripts_current_version():
+    header = crb.parse_figures_header(
+        (SKILL_DIR / "assets/ci/nx-remote-cache.mjs").read_bytes()
+    )
+    reference = (SKILL_DIR / "references/tools/onebudgetspec.md").read_text(
+        encoding="utf-8"
+    )
+    section = reference.split("## Shared Nx cache", 1)[1]
+    assert f"`nx-remote-cache.mjs` is at version {header.version}." in section
 
 
 @pytest.mark.parametrize("version", [10, 11, 12])
@@ -1108,7 +1123,7 @@ def test_cache_use_missing_node_reports_action_without_writing(tmp_path):
     assert not result.exists()
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7, 8])
 def test_remote_cache_previous_copy_is_outdated(tmp_path, version):
     repo = baseline_repo(tmp_path)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
@@ -1117,6 +1132,6 @@ def test_remote_cache_previous_copy_is_outdated(tmp_path, version):
     done = checked(repo)
     assert done.returncode == 0, done.stdout + done.stderr
     assert (
-        f"scripts/nx-remote-cache.mjs is outdated: it is at version {version}, the source at version 8"
+        f"scripts/nx-remote-cache.mjs is outdated: it is at version {version}, the source at version 10"
         in done.stdout
     )
