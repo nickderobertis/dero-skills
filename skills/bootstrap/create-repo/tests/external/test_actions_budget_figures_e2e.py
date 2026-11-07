@@ -336,7 +336,7 @@ def test_the_job_running_the_script_is_counted_to_now_and_no_other_running_job(
     assert jobs_request(IN_PROGRESS_RUN) in repo.replay.served()
 
 
-# Version 12's pull-request read changes no other invocation, the release tail included.
+# The pull-request read changes no other invocation, the release tail included.
 
 VERSION_11 = Path(__file__).parents[1] / "fixtures/actions-budget-figures/v11.sh"
 RUNNER_ENV = {
