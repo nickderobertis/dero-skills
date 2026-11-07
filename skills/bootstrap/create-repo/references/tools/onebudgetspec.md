@@ -608,6 +608,13 @@ shared entries. Cache outages warn and fall back to local execution; missing
 telemetry remains unavailable evidence rather than a successful measurement.
 Reports preserve both accepted uploads and remote replay bodies for promotion.
 
+A Rust composition's warm workflow is the only saver of Rust build caches, and each of its
+legs deletes its family's superseded copies through `actions-cache-prune.mjs`, holding
+`actions: write` while it builds merged source; [ci.md](../ci.md) states the accepted risk
+and the narrowing beside it. GitHub removes the least recently read entries once a save finds
+the listing over 10 GiB, so room for a run's saves is what keeps results, and cleanup does
+not rescue them: that room is what `<name>-cache-headroom` holds.
+
 Promotion runs before release-plz because the upstream cache only publishes a
 shared store from a default-branch push: a PR's own cache scope cannot serve
 another PR. The merge job promotes the latest trusted PR run into the base

@@ -332,6 +332,16 @@ def test_a_second_visual_docs_architecture_keeps_the_shape(tmp_path):
     assert "screencomp=" in (repo / PINS).read_text(encoding="utf-8")
 
 
+def test_a_floating_rust_channel_is_refused_and_an_exact_one_is_kept(tmp_path):
+    floating = '[toolchain]\nchannel = "stable"\n'
+    with pytest.raises(AssertionError, match="names no exact channel"):
+        compose(tmp_path / "floating", "rust", files={"rust-toolchain.toml": floating})
+    exact = '[toolchain]\nchannel = "1.90.0"\n'
+    repo = compose(tmp_path / "exact", "rust", files={"rust-toolchain.toml": exact})
+    assert (repo / "rust-toolchain.toml").read_text() == exact
+    assert shape_problems(repo, "rust", PLATFORMS["cross-platform"]) == []
+
+
 def test_the_prune_script_is_a_verbatim_copy_of_the_skills(rust_repo):
     skill = Path(__file__).resolve().parents[2]
     assert (rust_repo / "scripts/actions-cache-prune.mjs").read_bytes() == (
