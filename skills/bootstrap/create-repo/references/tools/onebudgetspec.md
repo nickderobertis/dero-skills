@@ -513,8 +513,11 @@ scripts/actions-budget-figures.sh cache-headroom [--family PREFIX]... [--repo OW
   `nx-remote-cache.mjs` and needs node, not onevcs, reading `GH_TOKEN` or
   `GITHUB_TOKEN`, `GITHUB_API_URL` and `GITHUB_REPOSITORY`. It reads
   `actions/cache/storage-limit`, then every page of `actions/caches` sorted by
-  `created_at`, because a small cache can sit below any number of results and entries of
-  one size reorder between pages; an incomplete listing writes no figure. It never reads `actions/cache/usage`, measured lagging the listing
+  `created_at`, because a small cache can sit below any number of results. GitHub sorts by
+  no unique field and reorders ties between pages, so when those pages fall short of the
+  total it reads the listing again narrowed by `key` prefix, until each answer holds its
+  whole total in one response, counting entries by id. A listing still short of its total,
+  such as over 100 entries of one key that the reads never all show, writes no figure. It never reads `actions/cache/usage`, measured lagging the listing
   by up to 715 MB. The figure is the allowance less the bytes of every entry, results
   included because they take real capacity, in gigabytes of 1,000,000,000 bytes. The
   allowance is `max_cache_size_gb` × 1,073,741,824 bytes, since GitHub's line is 10 GiB
@@ -636,7 +639,7 @@ warm workflow runs, [actions-cache-prune.mjs](../../assets/ci/actions-cache-prun
 The source owns the command interface, telemetry schemas, validation and readers;
 consult it for fields and statuses rather than maintaining a second contract here.
 The adjacent versions files and baseline checker detect edited or stale copies;
-`nx-remote-cache.mjs` is at version 9.
+`nx-remote-cache.mjs` is at version 10.
 The composer reads the sidecar pin and promotion branch pattern from its exports.
 
 Each existing CI job decides trust, starts the pinned sidecar at the workspace

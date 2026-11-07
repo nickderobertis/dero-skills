@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import NamedTuple
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -38,6 +39,22 @@ GIB = 1_073_741_824
 LINUX = "v0-rust-test-linux-"
 
 
+class Answer(NamedTuple):
+    """One listing answer: the key filter it was asked, its total, the entries it held."""
+
+    key: str
+    total: int
+    ids: tuple[int, ...]
+
+
+def key_matches(key: str, prefix: str) -> bool:
+    """GitHub's key filter, read live: a case-sensitive prefix where `_` and `%` are wildcards."""
+    pattern = "".join(
+        "." if c == "_" else ".*" if c == "%" else re.escape(c) for c in prefix
+    )
+    return re.match(pattern, key, re.DOTALL) is not None
+
+
 class Github(ThreadingHTTPServer):
     """GitHub's cache endpoints over an entry list: only what these scripts call."""
 
@@ -47,6 +64,9 @@ class Github(ThreadingHTTPServer):
         self.limit = limit
         self.reads: list[str] = []
         self.served: Counter[int] = Counter()
+        self.answers: list[Answer] = []
+        self.requests_answered = 0
+        self.never_listed: set[int] = set()
         self.deleted: list[int] = []
         self.fail_delete: dict[int, int] = {}
         self.fail_page: dict[int, int] = {}
@@ -90,24 +110,29 @@ class _Handler(BaseHTTPRequestHandler):
         if page in server.fail_page:
             return self._reply(server.fail_page[page], {"message": "refused"})
         prefix = query.get("key", [""])[0]
-        matching = [e for e in server.entries if str(e["key"]).startswith(prefix)]
+        matching = [e for e in server.entries if key_matches(str(e["key"]), prefix)]
         sort = query["sort"][0]
         # GitHub promises no order among ties, and onepipeline-ui's run 42365784060 read one
-        # entry twice and missed another across same-size pages. So ties differ per page.
+        # entry twice and missed another across same-size pages. So ties differ per request.
+        server.requests_answered += 1
+        nonce = server.requests_answered
         matching.sort(
             key=lambda e: (
                 e[sort],
-                hashlib.sha256(f"{page}:{e['id']}".encode()).hexdigest(),
+                hashlib.sha256(f"{nonce}:{e['id']}".encode()).hexdigest(),
             ),
             reverse=query["direction"][0] == "desc",
         )
         size = int(query["per_page"][0])
+        total = len(matching) + server.total_count_extra
+        matching = [e for e in matching if e["id"] not in server.never_listed]
         listed = matching[(page - 1) * size : page * size]
         server.served.update(e["id"] for e in listed)
+        server.answers.append(Answer(prefix, total, tuple(e["id"] for e in listed)))
         self._reply(
             200,
             {
-                "total_count": len(matching) + server.total_count_extra,
+                "total_count": total,
                 "actions_caches": listed,
             },
         )
@@ -640,12 +665,101 @@ def test_entries_of_one_size_across_pages_are_each_read_exactly_once(
     assert f"results: {count} entries, {count * 583} bytes" in result["detail"]
 
 
-def test_entries_tied_on_the_listing_order_are_still_refused_as_incomplete(
-    serve, tmp_path
+def tied(entry_id: int, key: str, ref: str = MAIN) -> dict:
+    """An entry sharing its size and creation timestamp with every other `tied` entry."""
+    return entry(entry_id, key, ref=ref, size=583)
+
+
+def whole_answers(server: Github) -> list[Answer]:
+    """The answers holding all they matched, in one response no page order can disturb."""
+    return [a for a in server.answers if a.total == len(a.ids)]
+
+
+@pytest.mark.parametrize("count", [280, 200])
+def test_entries_sharing_size_and_creation_time_across_pages_all_count_once(
+    serve, tmp_path, count
 ):
-    # GitHub offers no sort on a unique key, and created_at's microseconds only make a tie
-    # unlikely. Should one reorder across a page, the count catches it: no figure is written.
-    server = serve([entry(i, f"nx-cache-{i:04x}", size=583) for i in range(1, 281)])
+    entries = [tied(i, f"nx-cache-{i:04x}") for i in range(1, count + 1)]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert f"results: {count} entries, {count * 583} bytes" in result["detail"]
+    # Each entry came in exactly one whole answer, and each repeat is a discarded partial one.
+    held = Counter(i for a in whole_answers(server) for i in a.ids)
+    assert held == Counter(e["id"] for e in entries)
+
+
+@pytest.mark.parametrize("key", ["zz-hidden", "%-hidden", "é-hidden"])
+def test_a_key_no_answer_happens_to_show_is_found_by_naming_its_first_character(
+    serve, tmp_path, key
+):
+    # Older than every tie, so no answer over the whole listing reaches it.
+    hidden = entry(999, key, size=583, age_minutes=60)
+    entries = [tied(i, f"nx-cache-{i:04x}") for i in range(1, 281)] + [hidden]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert f"non-result {key}: 583 bytes" in result["detail"]
+
+
+def test_a_wildcard_in_a_key_loses_nothing_and_counts_nothing_twice(serve, tmp_path):
+    # `_` matches any one character on GitHub, so `nx_a` also answers for `nxba`.
+    # `%` matches any run, so `nx%` answers for all of them and narrows nothing by itself.
+    entries = [
+        tied(i, f"{stem}-{i:04x}")
+        for stem, ids in (
+            ("nx_a", range(1, 121)),
+            ("nxba", range(121, 241)),
+            ("nx%c", range(241, 361)),
+        )
+        for i in ids
+    ]
+    done, result = headroom(serve(entries), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    for e in entries:
+        assert f"non-result {e['key']}: 583 bytes\n" in result["detail"]
+
+
+def test_a_key_that_is_a_prefix_of_many_others_still_counts(serve, tmp_path):
+    entries = [tied(1, "nx-cache-")] + [
+        tied(i, f"nx-cache-{i:04x}") for i in range(2, 282)
+    ]
+    done, result = headroom(serve(entries), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert "results: 281 entries" in result["detail"]
+
+
+def test_one_key_on_many_refs_counts_every_copy_the_rereads_show(serve, tmp_path):
+    # No prefix divides these. Rereading shows them because this double's order moves.
+    entries = [
+        tied(i, "nx-cache-shared", ref=f"refs/pull/{i}/merge") for i in range(1, 121)
+    ]
+    done, result = headroom(serve(entries), tmp_path)
+    assert done.returncode == 0, done.stderr
+    assert result["value"] == expected_figure(entries, 10)
+    assert "results: 120 entries" in result["detail"]
+
+
+def test_one_key_on_many_refs_with_a_copy_never_shown_writes_no_figure(serve, tmp_path):
+    # GitHub promises no moving order, so this is the case the API cannot resolve: refused.
+    entries = [
+        tied(i, "nx-cache-shared", ref=f"refs/pull/{i}/merge") for i in range(1, 121)
+    ]
+    server = serve(entries)
+    server.never_listed.add(7)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "listing is incomplete: 119 of 120 entries read" in done.stderr
+
+
+def test_a_prefix_answer_short_of_its_own_total_writes_no_figure(serve, tmp_path):
+    server = serve([tied(i, f"nx-cache-{i:04x}") for i in range(1, 281)])
+    server.total_count_extra = 1
     done, result = headroom(server, tmp_path)
     assert done.returncode == 1
     assert result is None

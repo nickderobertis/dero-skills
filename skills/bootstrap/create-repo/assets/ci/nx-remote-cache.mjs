@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
-// version: 9
-// sha256: b78ec6317b68852e884a761004d6dd23d399811bf8172c79f917ec49fbe5f275
+// version: 10
+// sha256: f8ee98c7b95c9e2afe7cab4539183dabce85d92c67506215b052782d849923e8
 import {
   appendFileSync,
   readFileSync,
@@ -1890,39 +1890,121 @@ async function storageAllowance({ read }) {
   };
 }
 
+const LISTING_PAGE = 100;
+const LISTING_READS = 900;
+// The characters to probe a prefix with: printable ASCII less `%`, which also matches nothing
+// and so never narrows. `_` matches any one character, reaching a `%` or non-ASCII key.
+const KEY_CHARACTERS = Array.from({ length: 95 }, (_, at) =>
+  String.fromCharCode(32 + at),
+).filter((character) => character !== '%');
+
+async function readListing(get, { key, sort = 'created_at', direction = 'desc', page = 1 }) {
+  const query = new URLSearchParams({
+    sort,
+    direction,
+    per_page: String(LISTING_PAGE),
+    page: String(page),
+  });
+  if (key) query.set('key', key);
+  const doc = await get(`actions/caches?${query}`);
+  check(
+    Array.isArray(doc.actions_caches) && Number.isSafeInteger(doc.total_count),
+    `listing page ${page} is malformed`,
+  );
+  for (const entry of doc.actions_caches)
+    check(
+      Number.isSafeInteger(entry.id) &&
+        typeof entry.key === 'string' &&
+        Number.isSafeInteger(entry.size_in_bytes) &&
+        Number.isFinite(Date.parse(entry.created_at)),
+      `listing page ${page} holds a malformed entry`,
+    );
+  return doc;
+}
+
+// The whole listing with no page offset, for when pages reordered ties. GitHub offers no sort
+// on a unique field, so no paged order is total, but `key` narrows by prefix: narrowed until
+// an answer holds its whole total, that one response cannot repeat or omit an entry. `_` and
+// `%` in a key are wildcards to GitHub, so a prefix can over-match; entries count by id.
+async function listByKeyPrefix(get) {
+  const entries = new Map();
+  const nodes = new Map();
+  let reads = 0;
+  const read = async (options) => {
+    reads++;
+    check(reads <= LISTING_READS, `listing is incomplete: over ${LISTING_READS} reads`);
+    const doc = await readListing(get, options);
+    for (const entry of doc.actions_caches) entries.set(entry.id, entry);
+    return doc;
+  };
+  const nextCharacters = (doc, prefix) => {
+    const at = [...prefix].length;
+    return doc.actions_caches
+      .map((entry) => [...entry.key][at])
+      .filter((character) => character !== undefined)
+      .map((character) => prefix + character);
+  };
+  const descend = async (start) => {
+    const pending = [start];
+    while (pending.length) {
+      const prefix = pending.pop();
+      if (nodes.has(prefix)) continue;
+      const doc = await read({ key: prefix });
+      const total = doc.total_count;
+      nodes.set(prefix, total);
+      if (total > LISTING_PAGE) pending.push(...nextCharacters(doc, prefix));
+      else
+        check(
+          doc.actions_caches.length === total,
+          `listing is incomplete: ${doc.actions_caches.length} of ${total} entries read under key ${prefix || '(all)'}`,
+        );
+    }
+  };
+  // Whether a split prefix still holds entries no narrower prefix or seen entry accounts for.
+  const unaccounted = (prefix) => {
+    if (prefix.includes('%')) return false;
+    const length = [...prefix].length;
+    let held = [...entries.values()].filter((entry) => entry.key === prefix).length;
+    for (const [other, total] of nodes)
+      if (other.startsWith(prefix) && [...other].length === length + 1) held += total;
+    return nodes.get(prefix) > LISTING_PAGE && held < nodes.get(prefix);
+  };
+  await descend('');
+  const complete = () => entries.size >= nodes.get('');
+  // A later key an answer never showed: name each character. The Map's iteration takes in
+  // the prefixes this adds.
+  for (const prefix of nodes.keys()) {
+    if (complete()) break;
+    if (!unaccounted(prefix)) continue;
+    for (const character of KEY_CHARACTERS) await descend(prefix + character);
+  }
+  // What is left is one key held by many refs, which no prefix divides: it can only be seen.
+  for (const prefix of [...nodes.keys()]) {
+    for (const sort of ['created_at', 'last_accessed_at', 'size_in_bytes'])
+      for (const direction of ['desc', 'asc'])
+        for (let page = 1; page <= Math.ceil(nodes.get(prefix) / LISTING_PAGE); page++) {
+          if (complete() || !unaccounted(prefix)) break;
+          await read({ key: prefix, sort, direction, page });
+        }
+  }
+  check(
+    complete(),
+    `listing is incomplete: ${entries.size} of ${nodes.get('')} entries read`,
+  );
+  return [...entries.values()];
+}
+
 // Every entry of the listing, or a thrown reason: a page not read is entries of any kind
 // not counted, and a figure over the rest would be wrong. Pages run by created_at, which
-// never changes and carries microseconds. Sizes tie, and GitHub reorders ties between
-// pages, repeating one entry and omitting another; last_accessed_at moves as runs read.
+// never changes and carries microseconds, so they usually complete in the fewest reads.
+// Sizes tie, and GitHub reorders ties between pages; last_accessed_at moves as runs read.
 async function listAllCaches(get) {
   const entries = new Map();
-  let total = 0;
   for (let page = 1; page <= 1000; page++) {
-    const doc = await get(
-      `actions/caches?sort=created_at&direction=desc&per_page=100&page=${page}`,
-    );
-    check(
-      Array.isArray(doc.actions_caches) && Number.isSafeInteger(doc.total_count),
-      `listing page ${page} is malformed`,
-    );
-    for (const entry of doc.actions_caches) {
-      check(
-        Number.isSafeInteger(entry.id) &&
-          typeof entry.key === 'string' &&
-          Number.isSafeInteger(entry.size_in_bytes) &&
-          Number.isFinite(Date.parse(entry.created_at)),
-        `listing page ${page} holds a malformed entry`,
-      );
-      entries.set(entry.id, entry);
-    }
-    total = doc.total_count;
-    if (doc.actions_caches.length < 100) {
-      check(
-        entries.size >= total,
-        `listing is incomplete: ${entries.size} of ${total} entries read`,
-      );
-      return [...entries.values()];
-    }
+    const doc = await readListing(get, { page });
+    for (const entry of doc.actions_caches) entries.set(entry.id, entry);
+    if (doc.actions_caches.length < LISTING_PAGE)
+      return entries.size >= doc.total_count ? [...entries.values()] : listByKeyPrefix(get);
   }
   throw new Error('listing exceeds 1000 pages');
 }
