@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Mapping
 from pathlib import Path
 
 from test_check_repo_baseline import make_repo
@@ -176,6 +177,7 @@ class WarmJourney:
         test_compile: str | None = GOOD_COMPILE,
         telemetry_plugin: bool = True,
         test_command: str = "cargo test -p demo-lib",
+        host_env: Mapping[str, str] | None = None,
     ) -> None:
         for tool in ("cargo", "just", "bun"):
             assert shutil.which(tool), f"{tool} not on PATH: this runs the real build"
@@ -200,7 +202,12 @@ class WarmJourney:
             nx_path.write_text(json.dumps(nx), encoding="utf-8")
         gitignore = self.repo / ".gitignore"
         gitignore.write_text(gitignore.read_text() + "\nnode_modules\n.nx/\ntarget/\n")
-        self.env = {**os.environ, **RUST_ENV, **self._toolchain(root)}
+        self.env = {
+            **os.environ,
+            **(host_env or {}),
+            **RUST_ENV,
+            **self._toolchain(root),
+        }
         # This repository's own CI exports both for its own commits, which this repository's
         # temporary git history does not hold; `test_job` passes the base a pull request tests.
         self.env.pop("NX_BASE", None)

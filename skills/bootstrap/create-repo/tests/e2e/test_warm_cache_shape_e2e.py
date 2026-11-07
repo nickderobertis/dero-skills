@@ -738,12 +738,16 @@ def warm_journey(tmp_path) -> Callable[..., WarmJourney]:
     `external/test_nx_cache_e2e.py` runs the same journey on the pinned Nx with it loaded.
     """
 
-    def start(test_compile: str | None = GOOD_COMPILE) -> WarmJourney:
+    def start(
+        test_compile: str | None = GOOD_COMPILE,
+        host_env: dict[str, str] | None = None,
+    ) -> WarmJourney:
         return WarmJourney(
             tmp_path / "repo",
             REPO_ROOT / "node_modules",
             test_compile,
             telemetry_plugin=False,
+            host_env=host_env,
         )
 
     return start
@@ -770,11 +774,11 @@ def test_warm_journey_rejects_the_old_placeholder(warm_journey):
 
 
 def test_warm_journey_holds_under_a_github_actions_pull_request_job(
-    warm_journey, monkeypatch, tmp_path
+    warm_journey, tmp_path
 ):
     # What the runner and nx-set-shas export while this repository's own gate runs the journey:
     # the commits they name exist in this repository's clone and not in the journey's.
-    for name, value in {
+    host_env = {
         "CI": "true",
         "GITHUB_ACTIONS": "true",
         "GITHUB_EVENT_NAME": "pull_request",
@@ -785,9 +789,8 @@ def test_warm_journey_holds_under_a_github_actions_pull_request_job(
         "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
         "NX_BASE": "2" * 40,
         "NX_HEAD": "3" * 40,
-    }.items():
-        monkeypatch.setenv(name, value)
-    assert warm_build_problems(warm_journey()) == []
+    }
+    assert warm_build_problems(warm_journey(host_env=host_env)) == []
 
 
 @pytest.mark.parametrize(
