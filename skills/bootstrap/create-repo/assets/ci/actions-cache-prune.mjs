@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/actions-cache-prune.mjs
 // version: 1
-// sha256: 99778f6aa2211f3d54827b3a173d135d4e505be8731e8499a5a58a7faec4874c
+// sha256: 112878b64182200739b5e0c7e34decc3778f0316f0cb05f9bd40f66445d33031
 //
 // Deletes a warm leg's superseded Actions cache copies, keeping each family's newest
 // entry on main. references/ci.md states why it runs in the leg and what it may delete.
@@ -88,6 +88,14 @@ function client(base) {
     });
 }
 
+// Deletion builds its path from the id, and the summary adds up the sizes.
+const wellFormed = (entry) =>
+  Number.isSafeInteger(entry?.id) &&
+  entry.id > 0 &&
+  typeof entry.key === 'string' &&
+  typeof entry.ref === 'string' &&
+  Number.isSafeInteger(entry.size_in_bytes);
+
 // Every entry of the family, newest first, or a thrown reason when any page failed:
 // what a partial listing would keep cannot be trusted to be the newest copy.
 async function listFamily(request, repo, family) {
@@ -109,7 +117,10 @@ async function listFamily(request, repo, family) {
     if (!Array.isArray(listed))
       throw new Error(`page ${page} carries no actions_caches`);
     const before = entries.size;
-    for (const entry of listed) entries.set(entry.id, entry);
+    for (const entry of listed) {
+      if (!wellFormed(entry)) throw new Error(`page ${page} holds a malformed entry`);
+      entries.set(entry.id, entry);
+    }
     if (listed.length < PER_PAGE) return [...entries.values()];
     if (entries.size === before)
       throw new Error(`page ${page} repeated the entries before it`);

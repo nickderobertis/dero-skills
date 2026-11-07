@@ -86,7 +86,7 @@ class _Handler(BaseHTTPRequestHandler):
         if page in server.fail_page:
             return self._reply(server.fail_page[page], {"message": "refused"})
         prefix = query.get("key", [""])[0]
-        matching = [e for e in server.entries if e["key"].startswith(prefix)]
+        matching = [e for e in server.entries if str(e["key"]).startswith(prefix)]
         sort = query["sort"][0]
         matching.sort(
             key=lambda e: e[sort],
@@ -200,9 +200,6 @@ def headroom(server: Github, tmp_path: Path, *families: str):
         timeout=60,
     )
     return done, json.loads(result.read_text()) if result.exists() else None
-
-
-# --- actions-cache-prune.mjs
 
 
 def recorded_family(prefix: str) -> list[dict]:
@@ -357,6 +354,28 @@ def test_a_failed_read_warns_deletes_nothing_and_goes_on_to_the_next_family(
     assert f"{other}: kept {other}a-main, deleted 1, freed 20 bytes" in done.stdout
 
 
+@pytest.mark.parametrize(
+    "malformed",
+    [{"id": "../../../contents"}, {"id": -1}, {"ref": None}, {"size_in_bytes": "big"}],
+    ids=["path-in-id", "negative-id", "no-ref", "size-not-a-number"],
+)
+def test_a_malformed_entry_warns_deletes_nothing_and_goes_on_to_the_next_family(
+    serve, tmp_path, malformed
+):
+    keeper = entry(1, f"{LINUX}a-main", size=10)
+    old = entry(2, f"{LINUX}a-old", size=20, age_minutes=5)
+    bad = {**entry(3, f"{LINUX}a-bad", size=30, age_minutes=9), **malformed}
+    other = "v0-rust-test-macos-"
+    other_keeper = entry(500, f"{other}a-main", size=10)
+    other_old = entry(501, f"{other}a-old", size=20, age_minutes=5)
+    server = serve([keeper, old, bad, other_keeper, other_old])
+    done = prune(server, tmp_path, LINUX, other)
+    assert done.returncode == 0, done.stderr
+    assert "::warning::" in done.stderr and "malformed entry" in done.stderr
+    assert server.deleted == [501]
+    assert f"{LINUX}: kept unknown, deleted 0, freed 0 bytes" in done.stdout
+
+
 def test_an_unreachable_host_warns_and_exits_zero(tmp_path):
     done = subprocess.run(
         ["node", str(PRUNE), "--family", LINUX],
@@ -387,9 +406,6 @@ def test_a_token_is_never_sent_over_a_host_that_is_not_https_or_loopback(tmp_pat
     )
     assert done.returncode == 2
     assert "HTTPS or loopback" in done.stderr
-
-
-# --- actions-budget-figures.sh cache-headroom
 
 
 def family_of(key: str) -> str:
@@ -525,6 +541,21 @@ def test_a_listing_that_fails_partway_writes_no_figure(serve, tmp_path, status):
     assert done.returncode == 1
     assert result is None
     assert f"HTTP {status}" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [{"id": None}, {"key": 7}, {"created_at": "yesterday"}],
+    ids=["no-id", "key-not-text", "no-date"],
+)
+def test_a_malformed_entry_writes_no_figure(serve, tmp_path, malformed):
+    server = serve(
+        [entry(1, f"{LINUX}a-main", size=10), {**entry(2, "other-a"), **malformed}]
+    )
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "malformed entry" in done.stderr
 
 
 @pytest.mark.parametrize("status", [403, 429])

@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 8
-// sha256: cd56baf38893948f4a9ccfd86716dc649672190bc57165a342426255e302332e
+// sha256: e35435fb6ffde524af3d4244dcd67c115fc9d3f350ab3d535124dbcc07518bd0
 import {
   appendFileSync,
   readFileSync,
@@ -1874,7 +1874,8 @@ async function listAllCaches(get) {
     );
     for (const entry of doc.actions_caches) {
       check(
-        typeof entry.key === 'string' &&
+        Number.isSafeInteger(entry.id) &&
+          typeof entry.key === 'string' &&
           Number.isSafeInteger(entry.size_in_bytes) &&
           Number.isFinite(Date.parse(entry.created_at)),
         `listing page ${page} holds a malformed entry`,
