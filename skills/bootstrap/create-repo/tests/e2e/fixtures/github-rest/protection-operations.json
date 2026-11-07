@@ -1,6 +1,30 @@
 {
  "_llmlint": "llmlint: ignore-file[contracts_have_one_source_or_a_drift_gate] Derived from the pinned commit of GitHub's description. The gate is offline by design, so it holds the script and its server to this file, and the external tier's test_github_rest_contract_external.py derives this file again from that commit.",
  "paths": {
+  "/repos/{owner}/{repo}/actions/runs/{run_id}/jobs": {
+   "get": {
+    "responses": {
+     "200": {
+      "properties": {
+       "jobs": {
+        "items": {
+         "$ref": "#/components/schemas/job"
+        },
+        "type": "array"
+       },
+       "total_count": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "total_count",
+       "jobs"
+      ],
+      "type": "object"
+     }
+    }
+   }
+  },
   "/repos/{owner}/{repo}/branches/{branch}/protection": {
    "get": {
     "responses": {
@@ -550,6 +574,176 @@
     "updated_at",
     "permissions",
     "events"
+   ],
+   "type": "object"
+  },
+  "job": {
+   "properties": {
+    "check_run_url": {
+     "type": "string"
+    },
+    "completed_at": {
+     "format": "date-time",
+     "nullable": true,
+     "type": "string"
+    },
+    "conclusion": {
+     "enum": [
+      "success",
+      "failure",
+      "neutral",
+      "cancelled",
+      "skipped",
+      "timed_out",
+      "action_required"
+     ],
+     "nullable": true,
+     "type": "string"
+    },
+    "created_at": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "head_branch": {
+     "nullable": true,
+     "type": "string"
+    },
+    "head_sha": {
+     "type": "string"
+    },
+    "html_url": {
+     "nullable": true,
+     "type": "string"
+    },
+    "id": {
+     "format": "int64",
+     "type": "integer"
+    },
+    "labels": {
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    },
+    "name": {
+     "type": "string"
+    },
+    "node_id": {
+     "type": "string"
+    },
+    "run_attempt": {
+     "type": "integer"
+    },
+    "run_id": {
+     "format": "int64",
+     "type": "integer"
+    },
+    "run_url": {
+     "type": "string"
+    },
+    "runner_group_id": {
+     "nullable": true,
+     "type": "integer"
+    },
+    "runner_group_name": {
+     "nullable": true,
+     "type": "string"
+    },
+    "runner_id": {
+     "nullable": true,
+     "type": "integer"
+    },
+    "runner_name": {
+     "nullable": true,
+     "type": "string"
+    },
+    "started_at": {
+     "format": "date-time",
+     "type": "string"
+    },
+    "status": {
+     "enum": [
+      "queued",
+      "in_progress",
+      "completed",
+      "waiting",
+      "requested",
+      "pending"
+     ],
+     "type": "string"
+    },
+    "steps": {
+     "items": {
+      "properties": {
+       "completed_at": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string"
+       },
+       "conclusion": {
+        "nullable": true,
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       },
+       "number": {
+        "type": "integer"
+       },
+       "started_at": {
+        "format": "date-time",
+        "nullable": true,
+        "type": "string"
+       },
+       "status": {
+        "enum": [
+         "queued",
+         "in_progress",
+         "completed"
+        ],
+        "type": "string"
+       }
+      },
+      "required": [
+       "name",
+       "status",
+       "conclusion",
+       "number"
+      ],
+      "type": "object"
+     },
+     "type": "array"
+    },
+    "url": {
+     "type": "string"
+    },
+    "workflow_name": {
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "node_id",
+    "run_id",
+    "run_url",
+    "head_sha",
+    "workflow_name",
+    "head_branch",
+    "name",
+    "url",
+    "html_url",
+    "status",
+    "conclusion",
+    "started_at",
+    "completed_at",
+    "check_run_url",
+    "labels",
+    "runner_id",
+    "runner_name",
+    "runner_group_id",
+    "runner_group_name",
+    "created_at"
    ],
    "type": "object"
   },

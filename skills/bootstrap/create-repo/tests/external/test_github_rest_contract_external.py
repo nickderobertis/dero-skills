@@ -13,6 +13,7 @@ from github_rest_contract import (
     SOURCE_URL,
     existing_protection,
     extract,
+    job_listing_drift,
     problems,
     rendered,
 )
@@ -38,3 +39,4 @@ def test_the_snapshot_is_derived_from_the_description_it_names_and_still_holds()
     assert problems(existing_protection(), protection, schemas) == []
     assert problems([RULE, DELETION_RULE], rules, schemas) == []
     assert problems(["lint", "budgets"], contexts, schemas) == []
+    assert job_listing_drift(now) == []

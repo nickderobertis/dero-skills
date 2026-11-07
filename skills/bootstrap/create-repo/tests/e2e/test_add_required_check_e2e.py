@@ -45,7 +45,7 @@ from github_rest_contract import (
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "setup_github_governance.py"
 # Moving this means the snapshot was re-derived; the external tier re-derives it from GitHub.
-SNAPSHOT_SHA256 = "feb5b80cd88f70ad1d31b8fc27b607308d2ccfa5ffd9ebd5b954051df0a68728"
+SNAPSHOT_SHA256 = "bdd778a4cb2f89086e1b0303657995652aa504eda4ffa67bd50866118e4307fd"
 CONTRACT = load_snapshot()
 SCRUBBED = {
     "GH_TOKEN",

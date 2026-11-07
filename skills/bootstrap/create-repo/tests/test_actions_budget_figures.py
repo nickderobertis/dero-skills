@@ -7,7 +7,8 @@ header carries `version` and the `sha256` of its body, and
 `actions-budget-figures.versions` lists every version it has had. These tests hold
 the source to both — a body change that adds no version fails here — and drive
 `check_repo_baseline.py` over a repository's copy the way a consumer runs it. The
-figures themselves are measured in `external/test_actions_budget_figures_e2e.py`.
+release figures are measured in `external/test_actions_budget_figures_e2e.py`; a pull
+request's own run needs only `gh`, doubled here with a recorded run's jobs.
 """
 
 from __future__ import annotations
@@ -19,6 +20,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from github_rest_contract import (
+    JOB_FIELDS,
+    JOB_LISTING,
+    job_listing_drift,
+    load_snapshot,
+    problems,
+)
 from test_check_repo_baseline import SCRIPT as CHECKER
 from test_check_repo_baseline import crb, make_repo
 
@@ -701,8 +709,8 @@ def test_shared_cache_scripts_are_versioned_and_checked(tmp_path, name, version)
     assert "edited in place" in findings[0].message
 
 
-@pytest.mark.parametrize("version", [10, 11])
-def test_an_earlier_copy_is_outdated_against_twelve(tmp_path, version):
+@pytest.mark.parametrize("version", [10, 11, 12])
+def test_an_earlier_released_copy_is_outdated_against_thirteen(tmp_path, version):
     old = (
         Path(__file__).parent / f"fixtures/actions-budget-figures/v{version}.sh"
     ).read_bytes()
@@ -711,8 +719,379 @@ def test_an_earlier_copy_is_outdated_against_twelve(tmp_path, version):
     done = checked(repo)
     assert done.returncode == 0, done.stdout + done.stderr
     assert (
-        f"outdated: it is at version {version}, the source at version 12" in done.stdout
+        f"outdated: it is at version {version}, the source at version 13" in done.stdout
     )
+
+
+IN_PROGRESS_RECORDING = (
+    SKILL_DIR
+    / "tests/external/fixtures/actions-figures/recordings/recorded-for-actions-figures"
+    / "onepipeline-run-39212146687-jobs-in-progress.json"
+)
+OWN_RUN = "39212146687"
+OWN_REPO = "nickderobertis/onepipeline"
+OWN_ENV = {
+    "GITHUB_EVENT_NAME": "pull_request",
+    "GITHUB_RUN_ID": OWN_RUN,
+    "GITHUB_REPOSITORY": OWN_REPO,
+    "RUNNER_NAME": "GitHub Actions 1000251012",
+}
+
+
+LISTED_JOB = {
+    "name": "leg",
+    "workflow_name": "ci",
+    "status": "completed",
+    "conclusion": "success",
+    "runner_name": "r",
+    "labels": ["ubuntu-latest"],
+    "started_at": "2026-10-19T06:00:00Z",
+    "completed_at": "2026-10-19T06:00:10Z",
+}
+
+
+class GhDouble:
+    """`gh` on PATH, answering each `gh api` with the next listing and recording it."""
+
+    def __init__(self, root: Path, *answers: object, status: int = 0, says: str = ""):
+        self.bin = root / "gh-bin"
+        self.bin.mkdir()
+        self.calls = root / "gh-calls"
+        self.answers = root / "gh-answers"
+        self.answers.mkdir()
+        for at, answer in enumerate(answers, 1):
+            (self.answers / str(at)).write_text(json.dumps(answer), encoding="utf-8")
+        gh = self.bin / "gh"
+        gh.write_text(
+            f'''#!/bin/bash
+echo "$*" >> "{self.calls}"
+[ {status} -eq 0 ] || {{ echo "{says}" >&2; exit {status}; }}
+cat "{self.answers}/$(wc -l < "{self.calls}")"
+''',
+            encoding="utf-8",
+        )
+        gh.chmod(0o755)
+
+    def read(self) -> list[str]:
+        return self.calls.read_text().splitlines() if self.calls.exists() else []
+
+
+def recorded_run_jobs() -> dict:
+    return json.loads(IN_PROGRESS_RECORDING.read_text(encoding="utf-8"))["body"]
+
+
+def test_the_job_listing_the_script_reads_is_the_one_github_describes():
+    contract = load_snapshot()
+    assert job_listing_drift(contract) == []
+    listing = contract["paths"][JOB_LISTING]["get"]["responses"]["200"]
+    # Only the job fields the script reads: a recorded step's status is outside the
+    # description's enum, and it reads no step.
+    recorded = recorded_run_jobs()
+    recorded["jobs"] = [
+        {key: value for key, value in job.items() if key != "steps"}
+        for job in recorded["jobs"]
+    ]
+    assert problems(recorded, listing, contract["schemas"]) == []
+    script = SOURCE.read_text(encoding="utf-8")
+    for field in JOB_FIELDS:
+        assert f".{field}" in script, field
+
+
+def own_figure(
+    tmp_path: Path, gh: GhDouble, *args: str, **env: str
+) -> subprocess.CompletedProcess:
+    """The source script, with no onevcs to fall back on and only `gh` to read."""
+    missing_onevcs = tmp_path / "no-onevcs"
+    return subprocess.run(
+        ["bash", str(SOURCE), *args],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": f"{gh.bin}{os.pathsep}{os.environ['PATH']}",
+            "ONEVCS": str(missing_onevcs),
+            "ONEBUDGETSPEC_RESULT": str(tmp_path / "result.json"),
+            "RUNNER_TEMP": str(tmp_path),
+            **OWN_ENV,
+            **env,
+        },
+    )
+
+
+def own_result(tmp_path: Path) -> dict:
+    return json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+
+
+def test_job_count_on_a_pull_request_counts_its_own_run_and_the_running_jobs(tmp_path):
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 0, done.stderr
+    assert gh.read() == [
+        f"api repos/{OWN_REPO}/actions/runs/{OWN_RUN}/jobs?per_page=100&filter=latest"
+    ]
+    result = own_result(tmp_path)
+    # 8 completed that a runner took, and all 3 in progress; 8 skipped jobs leave it out.
+    assert result["value"] == 11
+    assert result["detail"].splitlines() == [
+        "11 jobs",
+        "per workflow:",
+        "  CI: 11",
+        "per runner OS:",
+        "  Linux: 9",
+        "  Windows: 1",
+        "  macOS: 1",
+    ]
+
+
+def test_longest_job_on_a_pull_request_never_times_a_job_still_running(tmp_path):
+    # Mac PR proofs is the job this names, so version 11 would time it to --now.
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(
+        tmp_path,
+        gh,
+        "longest-job",
+        "--stage",
+        "pr",
+        "--now",
+        "2026-10-19T09:49:46Z",
+    )
+    assert done.returncode == 0, done.stderr
+    assert len(gh.read()) == 1
+    result = own_result(tmp_path)
+    assert result["value"] == 263  # gate, 06:49:27 to 06:53:50
+    lines = result["detail"].splitlines()
+    assert lines[0] == "CI / gate: 263s"
+    assert "longest per runner OS:" in lines
+    assert "  Linux: CI / gate: 263s" in lines
+    assert not any("Mac PR proofs" in line or "in_progress" in line for line in lines)
+
+
+def test_a_run_past_100_jobs_pages_only_as_far_as_its_total(tmp_path):
+    first = {"total_count": 103, "jobs": [LISTED_JOB] * 100}
+    second = {"total_count": 103, "jobs": [LISTED_JOB] * 3}
+    gh = GhDouble(tmp_path, first, second)
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 0, done.stderr
+    assert own_result(tmp_path)["value"] == 103
+    base = (
+        f"api repos/{OWN_REPO}/actions/runs/{OWN_RUN}/jobs?per_page=100&filter=latest"
+    )
+    assert gh.read() == [base, f"{base}&page=2"]
+
+
+def test_a_listing_past_its_total_writes_no_figure(tmp_path):
+    gh = GhDouble(tmp_path, {"total_count": 1, "jobs": [LISTED_JOB] * 2})
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "listed 2 jobs of a run of 1" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_total_that_changes_between_pages_writes_no_figure(tmp_path):
+    gh = GhDouble(
+        tmp_path,
+        {"total_count": 103, "jobs": [LISTED_JOB] * 100},
+        {"total_count": 104, "jobs": [LISTED_JOB] * 3},
+    )
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "answered a total of 104 jobs after one of 103" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
+    gh = GhDouble(
+        tmp_path,
+        {"total_count": 103, "jobs": [LISTED_JOB] * 100},
+        {"total_count": 103, "jobs": []},
+    )
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "listed 100 of the run's 103 jobs" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "not json",
+        {"jobs": []},
+        {"total_count": 1.5, "jobs": [{}]},
+        {"total_count": -1, "jobs": []},
+        {"total_count": 1, "jobs": "none"},
+        {"total_count": 1, "jobs": [{"name": "no status", "workflow_name": "ci"}]},
+        {
+            "total_count": 1,
+            "jobs": [{k: v for k, v in LISTED_JOB.items() if k != "conclusion"}],
+        },
+        {
+            "total_count": 1,
+            "jobs": [{k: v for k, v in LISTED_JOB.items() if k != "runner_name"}],
+        },
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, labels=[1])]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, conclusion=1)]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, runner_name=1)]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, completed_at="yesterday")]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, started_at=None)]},
+    ],
+    ids=[
+        "not JSON",
+        "no count",
+        "a part count",
+        "a negative count",
+        "no list",
+        "no status",
+        "no conclusion",
+        "no runner",
+        "labels that are no strings",
+        "a conclusion that is no string",
+        "a runner that is no string",
+        "an end that is no timestamp",
+        "no start",
+    ],
+)
+def test_an_answer_that_is_no_job_listing_writes_no_figure(tmp_path, answer):
+    gh = GhDouble(tmp_path, answer)
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "answered no job listing" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_without_gh_a_pull_requests_own_run_says_how_to_provide_it(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for tool in ("jq", "bash", "date", "mktemp", "rm", "sed", "tr"):
+        (tools / tool).symlink_to(shutil.which(tool))
+    done = subprocess.run(
+        [str(tools / "bash"), str(SOURCE), "job-count", "--stage", "pr"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": str(tools),
+            "ONEBUDGETSPEC_RESULT": str(tmp_path / "result.json"),
+            **OWN_ENV,
+        },
+    )
+    assert done.returncode == 1, done.stderr
+    assert "gh is not on PATH: install GitHub CLI" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_run_id_that_is_no_number_ends_it_before_any_read(tmp_path):
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr", GITHUB_RUN_ID="abc")
+    assert done.returncode == 1, done.stderr
+    assert "GITHUB_RUN_ID must be a number, got: abc" in done.stderr
+    assert gh.read() == []
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_run_listing_no_job_writes_no_figure(tmp_path):
+    gh = GhDouble(tmp_path, {"total_count": 0, "jobs": []})
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert f"missing: run {OWN_RUN}" in done.stderr
+    assert "lists no job" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_pull_requests_own_run_reads_no_release_however_one_is_named(tmp_path):
+    payload = tmp_path / "event.json"
+    payload.write_text(json.dumps({"release": {"tag_name": "v9.9.9"}}))
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(
+        tmp_path,
+        gh,
+        "job-count",
+        "--stage",
+        "pr",
+        "--release",
+        "v1.0.0",
+        GITHUB_EVENT_PATH=str(payload),
+        GITHUB_REF_TYPE="tag",
+        GITHUB_REF_NAME="v2.0.0",
+    )
+    assert done.returncode == 0, done.stderr
+    assert own_result(tmp_path)["value"] == 11
+    assert len(gh.read()) == 1
+
+
+def test_a_refused_read_ends_it_with_gh_s_reason_and_no_figure(tmp_path):
+    gh = GhDouble(tmp_path, status=4, says="HTTP 403: Resource not accessible")
+    done = own_figure(tmp_path, gh, "longest-job", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "HTTP 403: Resource not accessible" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_run_with_only_the_running_job_has_a_count_and_no_longest(tmp_path):
+    running = {
+        "name": "budgets",
+        "workflow_name": "ci",
+        "status": "in_progress",
+        "conclusion": None,
+        "runner_name": "r",
+        "labels": ["ubuntu-latest"],
+        "started_at": "2026-10-19T06:00:00Z",
+        "completed_at": None,
+    }
+    answer = {"total_count": 1, "jobs": [running]}
+    gh = GhDouble(tmp_path, answer, answer)
+    count = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert count.returncode == 0, count.stderr
+    assert own_result(tmp_path)["value"] == 1
+    (tmp_path / "result.json").unlink()
+    longest = own_figure(tmp_path, gh, "longest-job", "--stage", "pr")
+    assert longest.returncode == 1, longest.stderr
+    assert "no counted job" in longest.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"GITHUB_EVENT_NAME": "push"},
+        {"GITHUB_EVENT_NAME": "release"},
+        {"GITHUB_RUN_ID": ""},
+        {"GITHUB_REPOSITORY": ""},
+    ],
+    ids=["a push", "a release", "no run id", "no repository"],
+)
+def test_without_the_whole_pull_request_environment_gh_is_never_read(tmp_path, env):
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(
+        tmp_path,
+        gh,
+        "job-count",
+        "--stage",
+        "pr",
+        "--repo",
+        OWN_REPO,
+        "--release",
+        "v1.0.0",
+        **env,
+    )
+    assert done.returncode == 1
+    assert "onevcs is not on PATH" in done.stderr
+    assert gh.read() == []
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["longest-job", "--stage", "cd", "--release", "v1.0.0"],
+        ["job-count", "--stage", "cd", "--release", "v1.0.0"],
+        ["pr-read-requests", "--release", "v1.0.0"],
+        ["release-read-requests", "--release", "v1.0.0"],
+    ],
+    ids=lambda args: " ".join(args[:3]),
+)
+def test_every_other_figure_on_a_pull_request_still_asks_onevcs(tmp_path, args):
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(tmp_path, gh, *args)
+    assert done.returncode == 1
+    assert "onevcs is not on PATH" in done.stderr
+    assert gh.read() == []
 
 
 def test_cache_use_missing_node_reports_action_without_writing(tmp_path):

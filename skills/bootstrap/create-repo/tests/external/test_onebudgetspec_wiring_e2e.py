@@ -67,7 +67,8 @@ API_PROJECT = {
         },
         "budgets": {
             "command": "onebudgetspec check services/api/budgets.yaml "
-            "--exclude-label host",
+            "--exclude-label host --save-results target/budget-results/api.json",
+            "outputs": ["{workspaceRoot}/target/budget-results/api.json"],
             "dependsOn": ["test"],
         },
         "budgets-host": {
@@ -369,12 +370,21 @@ def test_a_second_run_serves_the_deterministic_budget_from_cache(generated):
     first = repo.run("just", "check", NX_BASE=base)
     assert first.returncode == 0, first.stdout + first.stderr
     assert repo.take_measured() == ALL_BUDGETS
+    saved = repo.root / "target" / "budget-results" / "api.json"
+    measured = saved.read_text(encoding="utf-8")
+    assert {r["id"] for r in json.loads(measured)["results"]} == {
+        "api-requests-per-sync",
+        "api-queries-per-page",
+    }
+    saved.unlink()
 
     second = repo.run("just", "check", NX_BASE=base)
     assert second.returncode == 0, second.stdout + second.stderr
     # The reported budgets came back from Nx's cache without running; the
     # elapsed ones, host-labelled or in the root file, ran again.
     assert repo.take_measured() == {"web-cold-start", "workspace-walk"}
+    # A cache hit restores the saved results, as they were measured, for the upload.
+    assert saved.read_text(encoding="utf-8") == measured
     # Nx says so too, on the line for the cached target (not `budgets-host`).
     plain = ANSI_RE.sub("", second.stdout)
     [cached] = [line for line in plain.splitlines() if "nx run api:budgets " in line]

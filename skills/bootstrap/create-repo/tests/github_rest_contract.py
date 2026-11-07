@@ -1,4 +1,5 @@
-"""GitHub's REST contract for the branch-protection calls the additive mode makes.
+"""GitHub's REST contract for the branch-protection calls the additive mode makes, and the
+job listing the figures script reads on a pull request's own run.
 
 `e2e/fixtures/github-rest/protection-operations.json` is `extract`'s output over GitHub's own
 OpenAPI description at `SOURCE_COMMIT`. The gate holds `setup_github_governance.py`, and the
@@ -24,6 +25,7 @@ DESCRIPTION = "descriptions/api.github.com/api.github.com.json"
 RAW = "https://raw.githubusercontent.com/github/rest-api-description"
 CURRENT_URL = f"{RAW}/main/{DESCRIPTION}"
 SOURCE_URL = f"{RAW}/{SOURCE_COMMIT}/{DESCRIPTION}"
+JOB_LISTING = "/repos/{owner}/{repo}/actions/runs/{run_id}/jobs"
 OPERATIONS = (
     ("get", "/repos/{owner}/{repo}/rules/branches/{branch}"),
     ("get", "/repos/{owner}/{repo}/branches/{branch}/protection"),
@@ -31,7 +33,19 @@ OPERATIONS = (
         "post",
         "/repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
     ),
+    ("get", JOB_LISTING),
 )
+# What the figures script's own-run read requires of each listed job: (type, nullable).
+JOB_FIELDS = {
+    "status": ("string", False),
+    "name": ("string", False),
+    "workflow_name": ("string", True),
+    "conclusion": ("string", True),
+    "runner_name": ("string", True),
+    "labels": ("array", False),
+    "started_at": ("string", False),
+    "completed_at": ("string", True),
+}
 # JSON has no comment syntax, so the snapshot carries its llmlint marker as this key.
 _MARKER = "_llmlint"
 _PROSE = {"description", "summary", "title", "example", "examples", "externalDocs"}
@@ -166,6 +180,34 @@ def problems(value: object, schema: dict, schemas: dict, at: str = "$") -> list[
     if isinstance(value, list) and "items" in schema:
         for index, item in enumerate(value):
             found += problems(item, schema["items"], schemas, f"{at}[{index}]")
+    return found
+
+
+def job_listing_drift(contract: dict) -> list[str]:
+    """Where `contract`'s job listing leaves what the figures script's read requires."""
+    listing = contract["paths"][JOB_LISTING]["get"]["responses"]["200"]
+    found = []
+    if set(listing["required"]) != {"total_count", "jobs"}:
+        found.append(f"the listing requires {listing['required']}")
+    if listing["properties"]["total_count"]["type"] != "integer":
+        found.append("total_count is no integer")
+    job = contract["schemas"][
+        listing["properties"]["jobs"]["items"]["$ref"].removeprefix(_REF)
+    ]
+    for field, (kind, nullable) in JOB_FIELDS.items():
+        declared = job["properties"][field]
+        if (
+            field not in job["required"]
+            or declared["type"] != kind
+            or declared.get("nullable", False) is not nullable
+        ):
+            found.append(
+                f"a job's {field} is not a required {kind}, nullable {nullable}"
+            )
+    if not {"in_progress", "completed"} <= set(job["properties"]["status"]["enum"]):
+        found.append("a job's status lacks in_progress or completed")
+    if "skipped" not in job["properties"]["conclusion"]["enum"]:
+        found.append("a job's conclusion lacks skipped")
     return found
 
 

@@ -2438,7 +2438,7 @@ ONEBUDGETSPEC_CHECK_RE = re.compile(r"\bonebudgetspec\s+check\b([^\n;&|]*)")
 # The `check` options that take a value, so that value is not read as a PATH —
 # `onebudgetspec check --help` is their source, which the test suite reconciles.
 ONEBUDGETSPEC_VALUE_FLAGS = frozenset(
-    {"--id", "--label", "--exclude-label", "--output"}
+    {"--id", "--label", "--exclude-label", "--save-results", "--output"}
 )
 # The `check` options that take none, from the same source.
 ONEBUDGETSPEC_SWITCHES = frozenset({"--recursive", "--json"})
@@ -3242,6 +3242,24 @@ BUDGETS_ACTION_RE = re.compile(
     r"uses:\s*nickderobertis/onebudgetspec-github-action@v\d+\.\d+\.\d+\s*$", re.M
 )
 BUDGETS_REPORT_ONLY_LABELS = ("release-tail", "host-variable")
+# What the job's rows read: the results `test-linux` uploads, and the budgets a pull
+# request cannot measure, which leave its table for one counting line. The two CI-time
+# budgets are the root budgets it can measure, from its own run.
+SAVED_RESULTS_TEST_JOB = "test-linux"
+SAVED_RESULTS_ARTIFACT = "budget-check-results-test-linux"
+SAVED_RESULTS_PATTERN = "budget-check-results-*"
+SAVED_RESULTS_PATH = "target/budget-results/"
+NOT_MEASURED_LABEL = "not-measured-on-pr"
+NOT_MEASURED_BUDGET_SUFFIXES = (
+    "cd-job-time",
+    "release-cycle-time",
+    "cd-job-count",
+    "release-read-requests",
+    "pr-read-requests",
+    "nx-cache-use",
+    "gate-time",
+)
+MEASURED_ON_PR_BUDGET_SUFFIXES = ("ci-check-time", "ci-job-count")
 PULL_REQUEST_ONLY_IF_RE = re.compile(r"github\.event_name\s*==\s*'pull_request'")
 REPORT_BUDGETS_FILE = ".github/reporting/budgets.yaml"
 REPORT_BUDGET_SUFFIX = "budget-report-command-seconds"
@@ -3400,6 +3418,22 @@ def budgets_job_problems(
             "measure them, so its required check could never pass; name them in "
             "`enforcement-exclude-labels`"
         )
+    saved_results = re.compile(
+        rf"^\s*saved-results-artifacts:\s*['\"]?{re.escape(SAVED_RESULTS_PATTERN)}['\"]?\s*$",
+        re.M,
+    )
+    if not saved_results.search(job.body):
+        problems.append(
+            f"has `{BUDGETS_JOB}` without `saved-results-artifacts: "
+            f"{SAVED_RESULTS_PATTERN}`, so no row can show a figure a test job saved"
+        )
+    if not re.search(
+        rf"^\s*omit-labels:.*\b{re.escape(NOT_MEASURED_LABEL)}\b", job.body, re.M
+    ):
+        problems.append(
+            f"has `{BUDGETS_JOB}` without `omit-labels: {NOT_MEASURED_LABEL}`, so a "
+            "budget no pull request can measure keeps an empty row"
+        )
     pull_request = triggers.get("pull_request")
     if pull_request is None or re.search(r"paths|branches|types", pull_request):
         problems.append(
@@ -3411,6 +3445,97 @@ def budgets_job_problems(
         problems.append(
             f"does not run `{BUDGETS_JOB}` on push to main, which is the history pull "
             "requests compare with"
+        )
+    return problems
+
+
+def job_steps(body: str) -> list[str]:
+    """The text of each step of a job's ``steps:``, read without a YAML parser."""
+    lines = body.splitlines()
+    starts = [i for i, line in enumerate(lines) if re.fullmatch(r"\s*steps:\s*", line)]
+    if not starts:
+        return []
+    step_lines = lines[starts[0] + 1 :]
+    first = next((line for line in step_lines if line.strip()), "")
+    indent = len(first) - len(first.lstrip())
+    steps: list[list[str]] = []
+    for line in step_lines:
+        if line[indent:].startswith("- ") and not line[:indent].strip():
+            steps.append([])
+        if steps:
+            steps[-1].append(line)
+    return ["\n".join(step) for step in steps]
+
+
+def saved_results_upload_problem(jobs: dict[str, WorkflowJob]) -> str | None:
+    """Why `test-linux` does not hand its saved results to the `budgets` job."""
+    job = jobs.get(SAVED_RESULTS_TEST_JOB)
+    if job is None:
+        return None  # The governance check already names a missing test-linux.
+    for step in job_steps(job.body):
+        if (
+            re.search(r"\buses:\s*actions/upload-artifact@", step)
+            and re.search(
+                rf"^\s*name:\s*{re.escape(SAVED_RESULTS_ARTIFACT)}\s*$", step, re.M
+            )
+            and re.search(
+                rf"^\s*path:\s*{re.escape(SAVED_RESULTS_PATH)}\s*$", step, re.M
+            )
+            and re.search(r"^\s*(?:-\s*)?if:\s*always\(\)\s*$", step, re.M)
+        ):
+            return None
+    return (
+        f"has `{SAVED_RESULTS_TEST_JOB}` upload no `{SAVED_RESULTS_PATH}` as "
+        f"`{SAVED_RESULTS_ARTIFACT}` under `if: always()`, so `{BUDGETS_JOB}` shows no "
+        "figure its targets saved"
+    )
+
+
+def budget_labels(text: str) -> dict[str, set[str]]:
+    """Each budget of a budgets file to its ``labels``, read without a YAML parser."""
+    uncommented = YAML_COMMENT_RE.sub("", text)
+    found: dict[str, set[str]] = {}
+    matches = list(BUDGET_ID_RE.finditer(uncommented))
+    for match, following in zip(matches, [*matches[1:], None], strict=True):
+        entry = uncommented[match.end() : following.start() if following else None]
+        inline = re.search(r"^\s*labels:\s*\[([^\]]*)\]", entry, re.M)
+        block = re.search(r"^\s*labels:\s*\n((?:\s*-\s+\S+\s*\n)+)", entry, re.M)
+        names = (
+            inline[1].split(",")
+            if inline
+            else re.findall(r"-\s+(\S+)", block[1])
+            if block
+            else []
+        )
+        found[match[1]] = {name.strip(" '\"") for name in names if name.strip()}
+    return found
+
+
+def not_measured_label_problems(text: str) -> list[str]:
+    """Which root budgets carry `not-measured-on-pr` against the shape's list."""
+    labels = budget_labels(text)
+    unlabelled = [
+        budget
+        for budget, carried in labels.items()
+        if NOT_MEASURED_LABEL not in carried
+        and budget.endswith(tuple(f"-{s}" for s in NOT_MEASURED_BUDGET_SUFFIXES))
+    ]
+    labelled = [
+        budget
+        for budget, carried in labels.items()
+        if NOT_MEASURED_LABEL in carried
+        and budget.endswith(tuple(f"-{s}" for s in MEASURED_ON_PR_BUDGET_SUFFIXES))
+    ]
+    problems = []
+    if unlabelled:
+        problems.append(
+            f"labels {', '.join(sorted(unlabelled))} without `{NOT_MEASURED_LABEL}`, "
+            "so the pull-request report keeps a row no pull request can fill"
+        )
+    if labelled:
+        problems.append(
+            f"labels {', '.join(sorted(labelled))} `{NOT_MEASURED_LABEL}`, which takes "
+            "a figure a pull request measures out of its report"
         )
     return problems
 
@@ -3570,6 +3695,15 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
             )
             for problem in budgets_job_problems(ci_jobs, workflow_triggers(ci_text))
         ]
+        upload_problem = saved_results_upload_problem(ci_jobs)
+        if upload_problem:
+            problems.append(
+                Finding(
+                    "ERROR",
+                    f"{CI_SHAPE_WORKFLOW} {upload_problem}",
+                    f"give it the step assets/ci.yml.template declares; {compose}",
+                )
+            )
     report_budgets = repo / REPORT_BUDGETS_FILE
     report_ids = (
         BUDGET_ID_RE.findall(report_budgets.read_text(encoding="utf-8"))
@@ -3612,6 +3746,14 @@ def check_ci_cd_shape(repo: Path) -> list[Finding]:
                 f"register the ten CI/CD budgets of assets/budgets.yaml.template; {compose}",
             )
         )
+    problems += [
+        Finding(
+            "ERROR",
+            f"the root {BUDGETS_FILE} {problem}",
+            f"label them as assets/budgets.yaml.template does; {compose}",
+        )
+        for problem in not_measured_label_problems(text)
+    ]
     if (
         "actions-budget-figures.sh" in YAML_COMMENT_RE.sub("", text)
         and not (repo / FIGURES_COPY).is_file()

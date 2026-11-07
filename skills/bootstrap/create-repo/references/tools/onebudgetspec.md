@@ -11,7 +11,7 @@ applies the setup step below.
 
 The file format, the result protocol and the command line are onebudgetspec's to
 state: read the
-[README at the pinned release](https://github.com/nickderobertis/onebudgetspec/blob/v0.1.3/README.md)
+[README at the pinned release](https://github.com/nickderobertis/onebudgetspec/blob/v0.2.0/README.md)
 rather than a copy of it here. This reference states how a repo built from this
 baseline lays budgets out, so a new consumer writes a `budgets.yaml` and a
 measurement and nothing else.
@@ -234,9 +234,12 @@ that tree.
 Each budget domain is one Nx project, holding its `budgets.yaml`, its measuring
 code and its budget targets. As the release lays it out, that is two targets:
 
-- **`budgets`** — `onebudgetspec check <project>/budgets.yaml --exclude-label host`,
-  the deterministic budgets, cached (see caching below). When a test records the
-  telemetry it analyses, it `dependsOn` that test.
+- **`budgets`** — `onebudgetspec check <project>/budgets.yaml --exclude-label host
+  --save-results target/budget-results/<project>.json`, the deterministic budgets,
+  cached (see caching below). It declares that file in its Nx `outputs`
+  (`{workspaceRoot}/target/budget-results/<project>.json`), so a cache hit restores it
+  for `test-linux` to upload. When a test records the telemetry it analyses, it
+  `dependsOn` that test.
 - **`budgets-host`** — `onebudgetspec check <project>/budgets.yaml --label host`,
   the `elapsed` and host-reading budgets, never cached.
 
@@ -334,26 +337,45 @@ release's whole payload is usable.
 
 - **When it runs.** Every pull request, draft or not and whatever it touches, and every
   push to main, after the other jobs however they ended. It adds no build or test.
-- **What it checks.** The whole catalog gets one row. A budget runs once through ordinary
-  `onebudgetspec check --id`, with its original command, labels and threshold, unless its
-  own argv shows it cannot run: its program is missing, or a relative path it names is
-  absent. Then its row says why. A missing `ci-report` label is never a reason, and nothing
-  is rerun to fill a row. So name a budget's saved telemetry in its `command`: an absent
-  file then reads as unavailable rather than as a failed measurement.
+- **What it checks.** Every budget without an omitted label gets one row. One with a result
+  `test-linux` saved shows that figure with its verdict, and its command does not run here.
+  Any other runs once through ordinary `onebudgetspec check --id`, with its original command,
+  labels and threshold, unless its own argv shows it cannot run: its program is missing, or a
+  relative path it names is absent. Then its row reads `no saved result was found on this
+  run`. A missing `ci-report` label is never a reason, and nothing is rerun to fill a row. So
+  name a budget's saved telemetry in its `command`: an absent file then reads as unavailable
+  rather than as a failed measurement.
+- **The saved-results flow.** Each `budgets` target passes `--save-results
+  target/budget-results/<project>.json` and declares that file in its Nx `outputs`, so a
+  cache hit restores it. `test-linux` uploads `target/budget-results/` as
+  `budget-check-results-test-linux` under `if: always()`, and the job's
+  `saved-results-artifacts: budget-check-results-*` reads every match of this run.
+- **What `not-measured-on-pr` means.** A pull request cannot measure this budget or move its
+  figure, so `omit-labels` leaves it out of the table and one line counts it. Its check
+  elsewhere is unchanged: the release tail and `just gate` still run it, under its other
+  label. `<name>-ci-check-time` and `<name>-ci-job-count` do not carry it: on a pull request
+  they read that run's own jobs. Neither does `<name>-cache-headroom`, which reads the
+  repository's cache listing with the job's token on any event.
+- **A base push takes the merged pull request's figures.** A push to main reads no saved
+  results. Each row it would leave unavailable, and each whose command would run, takes the
+  figure of the pull request that merged it, so a pull request's value and its baseline are
+  one measurement. A commit with no pull request, or an expired artifact, leaves those rows
+  as they would have been, with a diagnostic.
 - **What fails it.** An enforced budget over its threshold or with a measurement error, or
   an invalid budgets file. A missing baseline, a refused credential or a failed comment or
   upload is a stated reason and changes nothing. Forks get the summary and the artifact,
   with no comment and no credential.
 - **What is report-only.** `enforcement-exclude-labels` names `release-tail` and
-  `host-variable`, whose commands need a release or a developer's machine. They still run
-  once and keep their verdict and flags; one whose command fails, as those commands do in
-  this job, has no verdict and reads as unavailable, with the failure's message as its reason.
+  `host-variable`, whose commands need a release or a developer's machine. Those not omitted
+  still run once and keep their verdict and flags; one whose command fails, as the CI-time
+  figures' do on a fork or a push, has no verdict and reads as unavailable, with the failure's
+  message as its reason.
 - **Its own budget.** `.github/reporting/budgets.yaml` holds
   `<name>-budget-report-command-seconds`, read from the job's own telemetry by the released
   `onebudgetspec-github-action telemetry`. The interval runs from cold install through the
-  checks, the history read, the comment and the main result upload; the check of this
-  budget and the saving of its verdict come after it, and queueing and runner setup are
-  outside it. Only that job holds the telemetry, so the `report-job` project's `budgets`
+  checks, the merged-run and history reads and the main result upload, so it ends before the
+  comment post; the check of this budget and the saving of its verdict come after it, and
+  queueing and runner setup are outside it. Only that job holds the telemetry, so the `report-job` project's `budgets`
   target leaves it out with `--exclude-label ci-report`, and it is enforced in the job.
 - **The history.** Each push to main saves the same result artifact and, when it measured at
   least one budget, one rolling file, and a pull request compares with it. A push that measured
@@ -393,11 +415,22 @@ scripts/actions-budget-figures.sh cache-headroom [--family PREFIX]... [--repo OW
   to the file `ONEBUDGETSPEC_RESULT` names and exits 0, printing the detail to
   stderr too. With `ONEBUDGETSPEC_RESULT` unset it exits 2 saying to run it under
   `onebudgetspec check`, writing nothing.
+- **A pull request's own run.** When `GITHUB_EVENT_NAME` is `pull_request` and
+  `GITHUB_RUN_ID` and `GITHUB_REPOSITORY` are set, `longest-job --stage pr` and
+  `job-count --stage pr` read that run's jobs with one `gh api
+  repos/R/actions/runs/ID/jobs` read (paging only past 100 jobs), needing `gh`
+  rather than onevcs and no release, so a `--release` is not read. The counting
+  rules are the same, except that a job still in progress, which is the budgets
+  job itself, counts toward the job count and not toward the longest job. The
+  detail is one unheaded block. A failed read or a listing shorter than its
+  `total_count` ends the figure (exit 1). Every other invocation, the release
+  tail included, is unaffected by the rest of this item and reads as below.
 - **What it needs.** bash, jq, and `onevcs` on `PATH` at a release carrying
   `onevcs host` (`ONEVCS` may name the binary). It reads only those answers and:
   the token variables, passed to onevcs untouched; `GITHUB_REPOSITORY`, the
   default `--repo`; `GITHUB_RUN_ID` and `RUNNER_NAME`, for the job running it;
-  `GITHUB_EVENT_PATH`; `GITHUB_REF_TYPE` and `GITHUB_REF_NAME`.
+  `GITHUB_EVENT_NAME`, for a pull request's own run; `GITHUB_EVENT_PATH`;
+  `GITHUB_REF_TYPE` and `GITHUB_REF_NAME`.
 - **Saved answers.** Each answer is saved whole under
   `$RUNNER_TEMP/actions-budget-figures/<OWNER>__<NAME>/<TAG>/` (the tag
   percent-encoded, so `release/v1` and `release_v1` never share one), one file per
@@ -523,15 +556,15 @@ account's 20 concurrent jobs are shared.
 | id | unit | threshold | label | command |
 | --- | --- | --- | --- | --- |
 | `<name>-ci-check-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage pr` |
-| `<name>-cd-job-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage cd --exclude-workflow ci` |
-| `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time --published-paths .github/release-published-paths` |
-| `<name>-ci-job-count` | jobs | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage pr` |
-| `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage cd --exclude-workflow ci` |
-| `<name>-release-read-requests` | requests | 6 | `release-tail` | `bash scripts/actions-budget-figures.sh release-read-requests --exclude-workflow ci` |
-| `<name>-pr-read-requests` | requests | 2 | `release-tail` | `bash scripts/actions-budget-figures.sh pr-read-requests` |
-| `<name>-nx-cache-use` | percent | 100 (minimum) | `release-tail` | `bash scripts/actions-budget-figures.sh cache-use` |
+| `<name>-cd-job-time` | seconds | 1800 | `release-tail`, `not-measured-on-pr` | `bash scripts/actions-budget-figures.sh longest-job --stage cd --exclude-workflow ci` |
+| `<name>-release-cycle-time` | seconds | 5400 | `release-tail`, `not-measured-on-pr` | `bash scripts/actions-budget-figures.sh release-cycle-time --published-paths .github/release-published-paths` |
+| `<name>-ci-job-count` | jobs | the CI jobs the shape runs: 5 cross-platform, 6 with a second visual-docs architecture, 3 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage pr` |
+| `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail`, `not-measured-on-pr` | `bash scripts/actions-budget-figures.sh job-count --stage cd --exclude-workflow ci` |
+| `<name>-release-read-requests` | requests | 6 | `release-tail`, `not-measured-on-pr` | `bash scripts/actions-budget-figures.sh release-read-requests --exclude-workflow ci` |
+| `<name>-pr-read-requests` | requests | 2 | `release-tail`, `not-measured-on-pr` | `bash scripts/actions-budget-figures.sh pr-read-requests` |
+| `<name>-nx-cache-use` | percent | 100 (minimum) | `release-tail`, `not-measured-on-pr` | `bash scripts/actions-budget-figures.sh cache-use` |
 | `<name>-cache-headroom` | gigabytes | 3.05 (minimum) | `release-tail` | `bash scripts/actions-budget-figures.sh cache-headroom`, with a `--family` per warm leg |
-| `<name>-gate-time` | seconds | 1800 | `host-variable` | `node scripts/gate-time-budget.mjs` |
+| `<name>-gate-time` | seconds | 1800 | `host-variable`, `not-measured-on-pr` | `node scripts/gate-time-budget.mjs` |
 
 A push workflow delivering nothing is passed to the CD budgets' commands with
 `--exclude-workflow`. A Rust composition has one, its warm workflow, so its three CD
@@ -543,7 +576,8 @@ each family's largest growth. A Rust composition's command names the family each
 cleans up, and a TypeScript one names none.
 
 - **Where each is enforced.** `timeout-minutes: 30` holds every CI job at pull-
-  request time. The nine `release-tail` budgets are the last step of
+  request time, and `budgets` reports the two CI-time figures from its own run and the
+  cache headroom, and omits the seven labelled `not-measured-on-pr`. The nine `release-tail` budgets are the last step of
   release.yml's `publish` — `onebudgetspec check budgets.yaml --label
   release-tail`, after it installs `onevcs-cli` at the version the skill pins —
   whose result nothing reads. `<name>-gate-time` is `just gate`'s own wall clock,

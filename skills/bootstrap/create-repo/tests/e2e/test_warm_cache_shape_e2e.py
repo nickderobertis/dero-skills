@@ -315,8 +315,12 @@ def fork_problems(flows: dict[str, dict]) -> list[str]:
                     problems.append(f"ci.yml {job_name}: Nx sidecar writes for a fork")
             elif not action.startswith(WRITES_NO_CACHE):
                 problems.append(f"ci.yml {job_name}: {action} may write a cache")
-            if action.startswith("actions/upload-artifact@") and (
-                "promotable" not in str(step.get("if", ""))
+            # A saved budget result is this run's own report input and enters no cache;
+            # the entries artifact is what promotion turns into reusable cache entries.
+            if (
+                action.startswith("actions/upload-artifact@")
+                and not given.get("name", "").startswith("budget-check-results-")
+                and "promotable" not in str(step.get("if", ""))
             ):
                 problems.append(f"ci.yml {job_name}: an artifact uploads for a fork")
     return problems

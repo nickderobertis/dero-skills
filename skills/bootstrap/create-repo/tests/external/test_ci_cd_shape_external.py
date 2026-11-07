@@ -190,7 +190,7 @@ def released(tmp_path_factory):
     )
     tool_path = [p for p in github_path.read_text(encoding="utf-8").splitlines() if p]
     path = os.pathsep.join([*tool_path, os.environ["PATH"]])
-    for tool, version in (("onevcs", "0.57.6"), ("onebudgetspec", "0.1.3")):
+    for tool, version in (("onevcs", "0.57.6"), ("onebudgetspec", "0.2.0")):
         shown = subprocess.run(
             [tool, "--version"], env={"PATH": path}, capture_output=True, text=True
         )

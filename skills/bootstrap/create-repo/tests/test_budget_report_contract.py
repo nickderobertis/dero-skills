@@ -8,6 +8,7 @@ release lists, and the help to the digest of what the listed archive printed;
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import json
 import re
@@ -88,12 +89,10 @@ def test_the_job_pins_the_release_the_fixtures_hold(action_step):
     assert released()["name"]
 
 
-def test_the_composer_generates_the_release_that_keeps_one_comment_and_saves_history(
-    repo,
-):
-    """v0.1.2 is the first release that does both under the job's own Actions token."""
+def test_the_composer_generates_the_release_that_reads_saved_results(repo):
+    """v0.2.0 is the first release taking `saved-results-artifacts` and `omit-labels`."""
     generated = (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert f"uses: {ACTION}@v0.1.2\n" in generated
+    assert f"uses: {ACTION}@v0.2.0\n" in generated
 
 
 def test_each_input_the_job_passes_is_one_the_action_declares(action_step):
@@ -113,11 +112,60 @@ def test_the_job_passes_every_other_input_at_the_action_default(action_step):
     assert declared["enforcement-exclude-labels"]["default"] == ""
 
 
-def test_only_labels_the_root_budgets_carry_are_report_only(repo, action_step):
+def test_only_labels_the_root_budgets_carry_are_report_only_or_omitted(
+    repo, action_step
+):
     labels = action_step["with"]["enforcement-exclude-labels"].split(",")
+    omitted = action_step["with"]["omit-labels"].split(",")
     budgets = yaml.safe_load((repo / "budgets.yaml").read_text())["budgets"]
     carried = {label for budget in budgets for label in budget["labels"]}
-    assert set(labels) == carried
+    assert omitted == ["not-measured-on-pr"]
+    assert set(labels) | set(omitted) == carried
+
+
+def test_what_a_pull_request_can_read_alone_stays_in_its_report(repo):
+    budgets = yaml.safe_load((repo / "budgets.yaml").read_text())["budgets"]
+    shown = [b["id"] for b in budgets if "not-measured-on-pr" not in b["labels"]]
+    assert sorted(shown) == [
+        f"{NAME}-cache-headroom",
+        f"{NAME}-ci-check-time",
+        f"{NAME}-ci-job-count",
+    ]
+
+
+def test_test_linux_alone_uploads_what_the_job_reads(repo, action_step):
+    workflow = yaml.safe_load((repo / ".github/workflows/ci.yml").read_text())
+    uploads = {
+        name: [
+            step
+            for step in job["steps"]
+            if step.get("with", {}).get("name", "").startswith("budget-check-results-")
+        ]
+        for name, job in workflow["jobs"].items()
+    }
+    assert {name for name, steps in uploads.items() if steps} == {"test-linux"}
+    [upload] = uploads["test-linux"]
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"]["path"] == "target/budget-results/"
+    pattern = action_step["with"]["saved-results-artifacts"]
+    assert pattern == "budget-check-results-*"
+    assert fnmatch.fnmatchcase(upload["with"]["name"], pattern)
+
+
+def test_the_generated_budgets_target_saves_what_a_cache_hit_restores(repo):
+    project = json.loads((repo / ".github/reporting/project.json").read_text())
+    target = project["targets"]["budgets"]
+    saved = f"target/budget-results/{project['name']}.json"
+    assert target["command"].endswith(f"--save-results {saved}")
+    assert target["outputs"] == [f"{{workspaceRoot}}/{saved}"]
+    workflow = yaml.safe_load((repo / ".github/workflows/ci.yml").read_text())
+    [uploaded] = [
+        step["with"]["path"]
+        for step in workflow["jobs"]["test-linux"]["steps"]
+        if step.get("with", {}).get("name") == "budget-check-results-test-linux"
+    ]
+    assert saved.startswith(uploaded)
 
 
 def test_the_own_budget_command_matches_the_released_reader(repo):
