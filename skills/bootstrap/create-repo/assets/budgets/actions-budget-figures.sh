@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 12
-# sha256: e67b7cc9e8ab6e56fb372ee9d75d2d56712b9c7d4945bd641426ff176ab50336
+# sha256: 489b2df43ef25b8fa29280444913d239c01453ae9c7bd037c286fdf73b9d7934
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -319,14 +319,20 @@ pr_selection() {
 # listing or no figure: one that ends short of its total_count is a failed read.
 own_run_selection() {
   local page=1 listed=0 total count query pages=()
-  [[ "$own_run" =~ ^[0-9]+$ ]] || die "a run id must be a number, got: $own_run"
+  [[ "$own_run" =~ ^[0-9]+$ ]] ||
+    die "GITHUB_RUN_ID must be a number, got: $own_run: measure this figure in the run GitHub Actions started, which sets it"
   while :; do
     query="repos/$repo/actions/runs/$own_run/jobs?per_page=100&filter=latest"
     [ "$page" -eq 1 ] || query="$query&page=$page"
     if ! gh api "$query" >"$work/jobs-$page.json" 2>"$work/stderr"; then
-      die "gh api $query failed: $(tr -s '\n' ' ' <"$work/stderr")"
+      die "gh api $query failed: $(tr -s '\n' ' ' <"$work/stderr"): check that GH_TOKEN can read this repository's Actions (actions: read), then re-run this figure"
     fi
-    jq -e '(.jobs | type) == "array" and (.total_count | type) == "number"' "$work/jobs-$page.json" >/dev/null 2>&1 ||
+    # A whole count, and every field a job's counting reads, or the figure would be wrong.
+    jq -e '(.total_count | type) == "number" and .total_count >= 0 and .total_count == (.total_count | floor)
+           and (.jobs | type) == "array"
+           and (.jobs | all(type == "object" and (.status | type) == "string"
+                            and (.name | type) == "string" and (.workflow_name | type) == "string"))' \
+      "$work/jobs-$page.json" >/dev/null 2>&1 ||
       die "gh api $query answered no job listing: check the run on GitHub, then re-run this figure"
     pages+=("$work/jobs-$page.json")
     total=$(jq .total_count "$work/jobs-$page.json")

@@ -715,8 +715,6 @@ def test_an_earlier_released_copy_is_outdated_against_twelve(tmp_path, version):
     )
 
 
-# --- a pull request's own run: GitHub's answers doubled at `gh` -----------------
-
 IN_PROGRESS_RECORDING = (
     SKILL_DIR
     / "tests/external/fixtures/actions-figures/recordings/recorded-for-actions-figures"
@@ -856,12 +854,62 @@ def test_a_run_past_100_jobs_pages_only_as_far_as_its_total(tmp_path):
 def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
     gh = GhDouble(
         tmp_path,
-        {"total_count": 103, "jobs": [{"name": "leg"}] * 100},
+        {
+            "total_count": 103,
+            "jobs": [{"name": "leg", "workflow_name": "ci", "status": "queued"}] * 100,
+        },
         {"total_count": 103, "jobs": []},
     )
     done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
     assert done.returncode == 1, done.stderr
     assert "listed 100 of the run's 103 jobs" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "not json",
+        {"jobs": []},
+        {"total_count": 1.5, "jobs": [{}]},
+        {"total_count": -1, "jobs": []},
+        {"total_count": 1, "jobs": "none"},
+        {"total_count": 1, "jobs": [{"name": "no status", "workflow_name": "ci"}]},
+    ],
+    ids=[
+        "not JSON",
+        "no count",
+        "a part count",
+        "a negative count",
+        "no list",
+        "no status",
+    ],
+)
+def test_an_answer_that_is_no_job_listing_writes_no_figure(tmp_path, answer):
+    gh = GhDouble(tmp_path, answer)
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "answered no job listing" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_without_gh_a_pull_requests_own_run_says_how_to_provide_it(tmp_path):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for tool in ("jq", "bash", "date", "mktemp", "rm", "sed", "tr"):
+        (tools / tool).symlink_to(shutil.which(tool))
+    done = subprocess.run(
+        [str(tools / "bash"), str(SOURCE), "job-count", "--stage", "pr"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": str(tools),
+            "ONEBUDGETSPEC_RESULT": str(tmp_path / "result.json"),
+            **OWN_ENV,
+        },
+    )
+    assert done.returncode == 1, done.stderr
+    assert "gh is not on PATH: install GitHub CLI" in done.stderr
     assert not (tmp_path / "result.json").exists()
 
 

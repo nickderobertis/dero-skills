@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# llmlint: ignore-file[robust_shell] Recorded bytes of released version 11, which test_every_other_invocation_answers_what_version_11_answered_from_its_recordings runs as the comparison: its body cannot change, or it would stop being that version, and the header holding this line is outside the digest.
+# llmlint: ignore-file[tool_output_is_signal] Recorded bytes of released version 11, which test_every_other_invocation_answers_what_version_11_answered_from_its_recordings runs as the comparison: its body cannot change, or it would stop being that version, and the header holding this line is outside the digest.
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 11
