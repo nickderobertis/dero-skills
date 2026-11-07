@@ -876,10 +876,7 @@ def test_a_total_that_changes_between_pages_writes_no_figure(tmp_path):
 def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
     gh = GhDouble(
         tmp_path,
-        {
-            "total_count": 103,
-            "jobs": [{"name": "leg", "workflow_name": "ci", "status": "queued"}] * 100,
-        },
+        {"total_count": 103, "jobs": [LISTED_JOB] * 100},
         {"total_count": 103, "jobs": []},
     )
     done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
@@ -897,6 +894,14 @@ def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
         {"total_count": -1, "jobs": []},
         {"total_count": 1, "jobs": "none"},
         {"total_count": 1, "jobs": [{"name": "no status", "workflow_name": "ci"}]},
+        {
+            "total_count": 1,
+            "jobs": [{k: v for k, v in LISTED_JOB.items() if k != "conclusion"}],
+        },
+        {
+            "total_count": 1,
+            "jobs": [{k: v for k, v in LISTED_JOB.items() if k != "runner_name"}],
+        },
         {"total_count": 1, "jobs": [dict(LISTED_JOB, labels=[1])]},
         {"total_count": 1, "jobs": [dict(LISTED_JOB, conclusion=1)]},
         {"total_count": 1, "jobs": [dict(LISTED_JOB, runner_name=1)]},
@@ -910,6 +915,8 @@ def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
         "a negative count",
         "no list",
         "no status",
+        "no conclusion",
+        "no runner",
         "labels that are no strings",
         "a conclusion that is no string",
         "a runner that is no string",
@@ -943,6 +950,45 @@ def test_without_gh_a_pull_requests_own_run_says_how_to_provide_it(tmp_path):
     assert done.returncode == 1, done.stderr
     assert "gh is not on PATH: install GitHub CLI" in done.stderr
     assert not (tmp_path / "result.json").exists()
+
+
+def test_a_run_id_that_is_no_number_ends_it_before_any_read(tmp_path):
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr", GITHUB_RUN_ID="abc")
+    assert done.returncode == 1, done.stderr
+    assert "GITHUB_RUN_ID must be a number, got: abc" in done.stderr
+    assert gh.read() == []
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_run_listing_no_job_writes_no_figure(tmp_path):
+    gh = GhDouble(tmp_path, {"total_count": 0, "jobs": []})
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert f"missing: run {OWN_RUN}" in done.stderr
+    assert "lists no job" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_pull_requests_own_run_reads_no_release_however_one_is_named(tmp_path):
+    payload = tmp_path / "event.json"
+    payload.write_text(json.dumps({"release": {"tag_name": "v9.9.9"}}))
+    gh = GhDouble(tmp_path, recorded_run_jobs())
+    done = own_figure(
+        tmp_path,
+        gh,
+        "job-count",
+        "--stage",
+        "pr",
+        "--release",
+        "v1.0.0",
+        GITHUB_EVENT_PATH=str(payload),
+        GITHUB_REF_TYPE="tag",
+        GITHUB_REF_NAME="v2.0.0",
+    )
+    assert done.returncode == 0, done.stderr
+    assert own_result(tmp_path)["value"] == 11
+    assert len(gh.read()) == 1
 
 
 def test_a_refused_read_ends_it_with_gh_s_reason_and_no_figure(tmp_path):

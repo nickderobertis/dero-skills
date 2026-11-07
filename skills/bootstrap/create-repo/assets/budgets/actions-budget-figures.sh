@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 12
-# sha256: 5a647f0f4f76223cefde520f7d9e2e79592034aeffe731127bae63fff327066b
+# sha256: 1c7071ae5745351a1d760bfd2d802fc53854f7e14dc6daad9ab2d104ac7ea285
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -335,7 +335,8 @@ own_run_selection() {
            and (.jobs | type) == "array"
            and (.jobs | all(type == "object" and (.status | type) == "string"
                             and (.name | type) == "string" and (.workflow_name | type) == "string"
-                            and (.conclusion | optional("string")) and (.runner_name | optional("string"))
+                            and has("conclusion") and (.conclusion | optional("string"))
+                            and has("runner_name") and (.runner_name | optional("string"))
                             and (.labels | . == null or (type == "array" and all(type == "string")))
                             and (.status != "completed" or .conclusion == "skipped" or .runner_name == null
                                  or ((.started_at | stamp) and (.completed_at | stamp))))) ' \
