@@ -21,8 +21,9 @@ from collections import Counter
 from collections.abc import Iterator
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from itertools import chain, repeat
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -37,6 +38,18 @@ REPO = "example/project"
 MAIN = "refs/heads/main"
 GIB = 1_073_741_824
 LINUX = "v0-rust-test-linux-"
+
+
+class CacheEntry(TypedDict):
+    """One entry of GitHub's cache listing, as the double serves it."""
+
+    id: int
+    key: str
+    ref: str
+    size_in_bytes: int
+    created_at: str
+    last_accessed_at: str
+    version: str
 
 
 class Answer(NamedTuple):
@@ -58,7 +71,7 @@ def key_matches(key: str, prefix: str) -> bool:
 class Github(ThreadingHTTPServer):
     """GitHub's cache endpoints over an entry list: only what these scripts call."""
 
-    def __init__(self, entries: list[dict], limit: int = 10) -> None:
+    def __init__(self, entries: list[CacheEntry], limit: int = 10) -> None:
         super().__init__(("127.0.0.1", 0), _Handler)
         self.entries = entries
         self.limit = limit
@@ -71,7 +84,7 @@ class Github(ThreadingHTTPServer):
         self.fail_delete: dict[int, int] = {}
         self.fail_page: dict[int, int] = {}
         self.limit_status = 200
-        self.remaining = iter(range(4000, 0, -7))
+        self.remaining = chain(range(4000, 0, -7), repeat(0))
         self.total_count_extra = 0
 
     @property
@@ -153,7 +166,7 @@ class _Handler(BaseHTTPRequestHandler):
 def serve() -> Iterator:
     running: list[tuple[Github, threading.Thread]] = []
 
-    def start(entries: list[dict], limit: int = 10) -> Github:
+    def start(entries: list[CacheEntry], limit: int = 10) -> Github:
         server = Github(copy.deepcopy(entries), limit)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -173,7 +186,7 @@ def entry(
     ref: str = MAIN,
     size: int = 1000,
     age_minutes: int = 0,
-) -> dict:
+) -> CacheEntry:
     when = datetime(2026, 11, 6, tzinfo=timezone.utc) - timedelta(minutes=age_minutes)
     stamp = when.isoformat().replace("+00:00", "Z")
     return {
@@ -238,7 +251,7 @@ def headroom(server: Github, tmp_path: Path, *families: str):
     return done, json.loads(result.read_text()) if result.exists() else None
 
 
-def recorded_family(prefix: str) -> list[dict]:
+def recorded_family(prefix: str) -> list[CacheEntry]:
     return [e for e in RECORDED["actions_caches"] if e["key"].startswith(prefix)]
 
 
@@ -448,7 +461,7 @@ def family_of(key: str) -> str:
     return re.sub(r"(-[0-9a-f]{6,})+$", "", key)
 
 
-def expected_figure(entries: list[dict], limit: int, *families: str) -> float:
+def expected_figure(entries: list[CacheEntry], limit: int, *families: str) -> float:
     counted = 0
     for e in entries:
         named = next((f for f in families if e["key"].startswith(f)), None)
@@ -665,7 +678,7 @@ def test_entries_of_one_size_across_pages_are_each_read_exactly_once(
     assert f"results: {count} entries, {count * 583} bytes" in result["detail"]
 
 
-def tied(entry_id: int, key: str, ref: str = MAIN) -> dict:
+def tied(entry_id: int, key: str, ref: str = MAIN) -> CacheEntry:
     """An entry sharing its size and creation timestamp with every other `tied` entry."""
     return entry(entry_id, key, ref=ref, size=583)
 
@@ -755,6 +768,28 @@ def test_one_key_on_many_refs_with_a_copy_never_shown_writes_no_figure(serve, tm
     assert done.returncode == 1
     assert result is None
     assert "listing is incomplete: 119 of 120 entries read" in done.stderr
+
+
+def test_a_listing_needing_more_reads_than_the_guard_allows_writes_no_figure(
+    serve, tmp_path
+):
+    # Each long key stem costs one read per character to narrow, and GitHub allows 512.
+    entries = [
+        tied(i, f"nx-cache-{stem * 400}-{i:04x}")
+        for stem, ids in (
+            ("a", range(1, 102)),
+            ("b", range(102, 203)),
+            ("c", range(203, 304)),
+        )
+        for i in ids
+    ]
+    server = serve(entries)
+    done, result = headroom(server, tmp_path)
+    assert done.returncode == 1
+    assert result is None
+    assert "listing is incomplete: over 900 reads" in done.stderr
+    # The four plain pages that came up short, then the prefix read's whole allowance.
+    assert len(server.answers) == 4 + 900
 
 
 def test_a_prefix_answer_short_of_its_own_total_writes_no_figure(serve, tmp_path):
