@@ -39,11 +39,14 @@ MAIN = "refs/heads/main"
 GIB = 1_073_741_824
 LINUX = "v0-rust-test-linux-"
 
+CacheId = int
+"""The `id` GitHub gives a cache entry, which `DELETE actions/caches/{id}` names it by."""
+
 
 class CacheEntry(TypedDict):
     """One entry of GitHub's cache listing, as the double serves it."""
 
-    id: int
+    id: CacheId
     key: str
     ref: str
     size_in_bytes: int
@@ -57,7 +60,7 @@ class Answer(NamedTuple):
 
     key: str
     total: int
-    ids: tuple[int, ...]
+    ids: tuple[CacheId, ...]
 
 
 def key_matches(key: str, prefix: str) -> bool:
@@ -76,12 +79,12 @@ class Github(ThreadingHTTPServer):
         self.entries = entries
         self.limit = limit
         self.reads: list[str] = []
-        self.served: Counter[int] = Counter()
+        self.served: Counter[CacheId] = Counter()
         self.answers: list[Answer] = []
         self.requests_answered = 0
-        self.never_listed: set[int] = set()
-        self.deleted: list[int] = []
-        self.fail_delete: dict[int, int] = {}
+        self.never_listed: set[CacheId] = set()
+        self.deleted: list[CacheId] = []
+        self.fail_delete: dict[CacheId, int] = {}
         self.fail_page: dict[int, int] = {}
         self.limit_status = 200
         self.remaining = chain(range(4000, 0, -7), repeat(0))
@@ -154,7 +157,7 @@ class _Handler(BaseHTTPRequestHandler):
         server = self.server
         match = re.fullmatch(rf"/repos/{REPO}/actions/caches/(\d+)", self.path)
         assert match, self.path
-        entry_id = int(match.group(1))
+        entry_id: CacheId = int(match.group(1))
         if entry_id in server.fail_delete:
             return self._reply(server.fail_delete[entry_id], {"message": "refused"})
         server.deleted.append(entry_id)
@@ -181,7 +184,7 @@ def serve() -> Iterator:
 
 
 def entry(
-    entry_id: int,
+    entry_id: CacheId,
     key: str,
     ref: str = MAIN,
     size: int = 1000,
@@ -678,7 +681,7 @@ def test_entries_of_one_size_across_pages_are_each_read_exactly_once(
     assert f"results: {count} entries, {count * 583} bytes" in result["detail"]
 
 
-def tied(entry_id: int, key: str, ref: str = MAIN) -> CacheEntry:
+def tied(entry_id: CacheId, key: str, ref: str = MAIN) -> CacheEntry:
     """An entry sharing its size and creation timestamp with every other `tied` entry."""
     return entry(entry_id, key, ref=ref, size=583)
 
