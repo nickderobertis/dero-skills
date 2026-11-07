@@ -63,12 +63,14 @@ class Answer(NamedTuple):
     ids: tuple[CacheId, ...]
 
 
-def key_matches(key: str, prefix: str) -> bool:
+def key_filter(prefix: str) -> re.Pattern[str]:
     """GitHub's key filter, read live: a case-sensitive prefix where `_` and `%` are wildcards."""
-    pattern = "".join(
-        "." if c == "_" else ".*" if c == "%" else re.escape(c) for c in prefix
+    return re.compile(
+        "".join(
+            "." if c == "_" else ".*" if c == "%" else re.escape(c) for c in prefix
+        ),
+        re.DOTALL,
     )
-    return re.match(pattern, key, re.DOTALL) is not None
 
 
 class Github(ThreadingHTTPServer):
@@ -126,7 +128,8 @@ class _Handler(BaseHTTPRequestHandler):
         if page in server.fail_page:
             return self._reply(server.fail_page[page], {"message": "refused"})
         prefix = query.get("key", [""])[0]
-        matching = [e for e in server.entries if key_matches(str(e["key"]), prefix)]
+        pattern = key_filter(prefix)
+        matching = [e for e in server.entries if pattern.match(str(e["key"]))]
         sort = query["sort"][0]
         # GitHub promises no order among ties, and onepipeline-ui's run 42365784060 read one
         # entry twice and missed another across same-size pages. So ties differ per request.
