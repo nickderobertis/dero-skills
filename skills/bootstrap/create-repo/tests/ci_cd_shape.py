@@ -267,20 +267,20 @@ def compiled(done) -> list[str]:
 
 
 def warm_compiles_again_problems(journey: WarmJourney) -> list[str]:
-    """A second warm run over an empty target directory: a replayed task compiles nothing,
-    and rust-cache would then save nothing a pull request could reuse."""
+    """A second warm run over an empty target directory builds all the first did: a replayed
+    task compiles nothing, and rust-cache would then save nothing a pull request could reuse."""
     first = journey.warm()
     if first.returncode != 0:
         return [f"ci-warm failed: {first.stdout}{first.stderr}"]
-    if "demo-lib" not in compiled(first):
+    built = set(journey.built())
+    if not built:
         return ["the first ci-warm compiled nothing"]
     shutil.rmtree(journey.repo / "target")
     again = journey.warm()
     if again.returncode != 0:
         return [f"ci-warm failed: {again.stdout}{again.stderr}"]
-    return (
-        [] if "demo-lib" in compiled(again) else ["ci-warm replayed from an Nx cache"]
-    )
+    lost = sorted(built - set(journey.built()))
+    return [f"ci-warm replayed from an Nx cache, leaving out {lost}"] if lost else []
 
 
 def warm_build_problems(journey: WarmJourney) -> list[str]:
