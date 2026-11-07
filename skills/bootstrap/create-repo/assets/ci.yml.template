@@ -73,7 +73,12 @@ jobs:
       - name: Read the pinned tool versions
         id: pins
         shell: bash
-        run: grep -v '^#' .github/ci-tool-versions | tr -d '\r' >> "$GITHUB_OUTPUT"
+        run: |
+          tr -d '\r' < .github/ci-tool-versions | awk '
+            /^#/ || !NF { next }
+            /^[a-z0-9-]+=[A-Za-z0-9._+-]+$/ { print; next }
+            { print "malformed pin: " $0 > "/dev/stderr"; exit 1 }
+          ' >> "$GITHUB_OUTPUT"
       - uses: extractions/setup-just@v2
         with:
           just-version: ${{ steps.pins.outputs.just }}
@@ -201,7 +206,12 @@ jobs:
       - name: Read the pinned tool versions
         id: pins
         shell: bash
-        run: grep -v '^#' .github/ci-tool-versions | tr -d '\r' >> "$GITHUB_OUTPUT"
+        run: |
+          tr -d '\r' < .github/ci-tool-versions | awk '
+            /^#/ || !NF { next }
+            /^[a-z0-9-]+=[A-Za-z0-9._+-]+$/ { print; next }
+            { print "malformed pin: " $0 > "/dev/stderr"; exit 1 }
+          ' >> "$GITHUB_OUTPUT"
       - uses: extractions/setup-just@v2
         with:
           just-version: ${{ steps.pins.outputs.just }}
@@ -235,7 +245,12 @@ jobs:
       - name: Read the pinned tool versions
         id: pins
         shell: bash
-        run: grep -v '^#' .github/ci-tool-versions | tr -d '\r' >> "$GITHUB_OUTPUT"
+        run: |
+          tr -d '\r' < .github/ci-tool-versions | awk '
+            /^#/ || !NF { next }
+            /^[a-z0-9-]+=[A-Za-z0-9._+-]+$/ { print; next }
+            { print "malformed pin: " $0 > "/dev/stderr"; exit 1 }
+          ' >> "$GITHUB_OUTPUT"
       - uses: extractions/setup-just@v2
         with:
           just-version: ${{ steps.pins.outputs.just }}

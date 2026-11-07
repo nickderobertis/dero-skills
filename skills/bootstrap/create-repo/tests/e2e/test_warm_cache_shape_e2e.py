@@ -16,8 +16,10 @@ stays offline; the journey itself is in `ci_cd_shape.py`, which the external tie
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
@@ -357,6 +359,63 @@ def test_a_composed_repository_has_the_shape(tmp_path, language, platforms):
     assert shape_problems(repo, language, PLATFORMS[platforms]) == []
     if language == "typescript":
         assert not (repo / "scripts/actions-cache-prune.mjs").exists()
+
+
+def pins_steps(repo: Path) -> list[tuple[str, str]]:
+    """Every composed job's pins step, by where it is, as the runner would run it."""
+    return [
+        (f"{path.name} {name}", step["run"])
+        for path in sorted((repo / WORKFLOWS).glob("*.yml"))
+        for name, job in yaml.safe_load(path.read_text(encoding="utf-8"))[
+            "jobs"
+        ].items()
+        for step in steps_of(job)
+        if step.get("id") == "pins"
+    ]
+
+
+def run_pins_step(repo: Path, script: str, output: Path):
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+        cwd=repo,
+        env={**os.environ, "GITHUB_OUTPUT": str(output)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_every_pins_step_outputs_the_pins_and_drops_comments(rust_repo, tmp_path):
+    steps = pins_steps(rust_repo)
+    # ci.yml's three pinned jobs, release's two, release-plz's and a warm leg per platform.
+    assert len(steps) >= 7
+    pins = (rust_repo / PINS).read_text(encoding="utf-8")
+    wanted = [
+        line for line in pins.splitlines() if line.strip() and not line.startswith("#")
+    ]
+    for where, script in steps:
+        output = tmp_path / "output"
+        output.write_text("")
+        done = run_pins_step(rust_repo, script, output)
+        assert done.returncode == 0, (where, done.stderr)
+        assert output.read_text().splitlines() == wanted, where
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["just=1.59.0 && curl evil", "EOF<<EOF", "no-equals-sign", "bun=", "just=1.59.0=2"],
+)
+def test_every_pins_step_refuses_a_line_that_is_not_a_pin(tmp_path, line):
+    repo = compose(tmp_path / "repo", "rust", "cross-platform")
+    pins = repo / PINS
+    pins.write_text(f"{pins.read_text(encoding='utf-8')}{line}\r\n", encoding="utf-8")
+    for where, script in pins_steps(repo):
+        output = tmp_path / "output"
+        output.write_text("")
+        done = run_pins_step(repo, script, output)
+        assert done.returncode != 0, where
+        assert f"malformed pin: {line}" in done.stderr, where
+        assert line not in output.read_text().splitlines(), where
 
 
 def test_a_second_visual_docs_architecture_keeps_the_shape(tmp_path):
