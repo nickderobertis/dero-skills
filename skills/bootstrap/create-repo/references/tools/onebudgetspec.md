@@ -610,8 +610,9 @@ Reports preserve both accepted uploads and remote replay bodies for promotion.
 
 A Rust composition's warm workflow is the only saver of Rust build caches, and each of its
 legs deletes its family's superseded copies through `actions-cache-prune.mjs`, holding
-`actions: write` while it builds merged source; [ci.md](../ci.md) states the accepted risk
-and the narrowing beside it. GitHub removes the least recently read entries once a save finds
+`actions: write` while it builds merged source. That risk is accepted because anything merged
+can already run in every later job, and it is narrowed: only a push to main runs a leg, its
+checkout persists no credentials, and the cleanup step alone is handed the token. GitHub removes the least recently read entries once a save finds
 the listing over 10 GiB, so room for a run's saves is what keeps results, and cleanup does
 not rescue them: that room is what `<name>-cache-headroom` holds.
 

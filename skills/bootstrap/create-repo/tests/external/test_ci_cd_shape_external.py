@@ -597,4 +597,5 @@ def test_each_tool_pin_exists_on_every_runner_that_installs_it(tmp_path):
         f"{pins['screencomp']}",
     ]
     # A failure raises naming the URL: that release is not there for that runner.
+    # llmlint: ignore[async_typed_clients_at_boundaries] `fetch_all` is the sync entry point to the typed async client in tests/http_fetch.py, whose `gather` makes these requests; the rule's client is already what runs.
     assert all(fetch_all([*assets, *packages]))
