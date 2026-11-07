@@ -62,6 +62,9 @@ GENERATED_UNMEASURABLE = {
     f"{NAME}-release-read-requests": FIGURES_NEED_ONEVCS,
     f"{NAME}-pr-read-requests": FIGURES_NEED_ONEVCS,
     f"{NAME}-nx-cache-use": "no release: pass --release TAG",
+    # The job's token reaches this one, unlike onevcs's figures: it fails only because this
+    # host double serves no cache route, and on GitHub the report shows its reading.
+    f"{NAME}-cache-headroom": "actions/cache/storage-limit answered HTTP 401",
     f"{NAME}-gate-time": "Cannot find package '@onebudgetspec/sdk'",
 }
 UNAVAILABLE = {

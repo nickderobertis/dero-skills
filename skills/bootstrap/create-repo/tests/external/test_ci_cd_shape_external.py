@@ -32,6 +32,7 @@ from pathlib import Path
 
 import pytest
 from ci_cd_shape import NAME, compose
+from http_fetch import fetch_all
 from actions_figures_replay import recorded_merges
 from test_nx_cache_e2e import GithubCache
 
@@ -160,6 +161,11 @@ def released(tmp_path_factory):
     (root / "runner-temp").mkdir()
     github_path = root / "github-path"
     github_path.write_text("", encoding="utf-8")
+    pins = dict(
+        line.split("=", 1)
+        for line in (repo / ".github/ci-tool-versions").read_text().splitlines()
+        if line and not line.startswith("#")
+    )
     done = subprocess.run(
         ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", install["run"]],
         cwd=repo,
@@ -167,6 +173,13 @@ def released(tmp_path_factory):
             **os.environ,
             "RUNNER_TEMP": str(root / "runner-temp"),
             "GITHUB_PATH": str(github_path),
+            # What the workflow's expressions evaluate to, from the file its pins step reads.
+            **{
+                name: pins[pin]
+                for name, pin in re.findall(
+                    r"(\w+): \$\{\{ steps\.pins\.outputs\.([\w-]+) \}\}", install["env"]
+                )
+            },
         },
         capture_output=True,
         text=True,
@@ -244,6 +257,18 @@ def run_tail(released, tmp_path: Path, thresholds: dict[str, float]):
 def historical_cache_metadata() -> GithubCache:
     """Serve recorded metadata, with no cache artifacts on this pre-cache release."""
     api = GithubCache()
+    listing = json.loads(
+        (
+            Path(__file__).parent / "fixtures/cache-listings/onetaskgraph.json"
+        ).read_text()
+    )
+    api.metadata[f"/repos/{REPOSITORY}/actions/cache/storage-limit"] = listing[
+        "storage_limit"
+    ]
+    api.metadata[f"/repos/{REPOSITORY}/actions/caches"] = {
+        "total_count": listing["total_count"],
+        "actions_caches": listing["actions_caches"],
+    }
     answers = {}
     ci_runs = []
     for recording in RECORDINGS.glob("*.http"):
@@ -276,6 +301,9 @@ def historical_cache_metadata() -> GithubCache:
     api.metadata[f"/repos/{REPOSITORY}/actions/workflows/ci.yml/runs"] = {
         "workflow_runs": ci_runs
     }
+    api.metadata[f"/repos/{REPOSITORY}/actions/workflows/release-plz.yml/runs"] = {
+        "workflow_runs": []
+    }
     for run in ci_runs:
         api.metadata[
             f"/repos/{REPOSITORY}/actions/runs/{run['id']}/attempts/{run['run_attempt']}"
@@ -295,7 +323,7 @@ def historical_cache_metadata() -> GithubCache:
 HIGH = dict.fromkeys(TAIL_IDS, 10**9)
 
 
-def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
+def test_the_tail_reports_every_release_tail_budget_reading_each_answer_once(
     released, tmp_path
 ):
     assert step(
@@ -304,10 +332,17 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
     )["run"] == ("onebudgetspec check budgets.yaml --label release-tail")
     code, output, results, served = run_tail(released, tmp_path, HIGH)
     assert code == 3, output
-    assert sorted(results) == sorted([*TAIL_IDS, f"{NAME}-nx-cache-use"]), output
+    assert sorted(results) == sorted(
+        [*TAIL_IDS, f"{NAME}-nx-cache-use", f"{NAME}-cache-headroom"]
+    ), output
     assert all(results[budget][-1] == "within" for budget in TAIL_IDS), output
-    assert "missing artifact" in output
+    # This release's CI predates the telemetry, and nothing measurable is still no pass.
+    assert "zero eligible executions" in output, output
     assert results[f"{NAME}-nx-cache-use"][-1] == ""
+    # The recorded listing's Linux family holds three copies, which a working cleanup never
+    # leaves, so the headroom figure reads 0 and names it, needing no onevcs answer to do so.
+    assert results[f"{NAME}-cache-headroom"][-1] == "over"
+    assert "family v0-rust-test-linux- holds 3 entries" in output
     # The host-variable budget is not the tail's.
     assert f"{NAME}-gate-time" not in output
     # Each figure's breakdown, from the script's detail.
@@ -321,7 +356,7 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
     assert (
         "left out as concluded skipped: Visual docs (run 41252214397, push)" in output
     )
-    # Every read made once across the seven figures, as the double recorded it.
+    # Every read made once across the tail's figures, as the double recorded it.
     assert served, output
     assert len(served) == len(set(served)), served
     pr_reads = [
@@ -342,10 +377,10 @@ def test_the_tail_reports_the_seven_budgets_reading_each_answer_once(
     assert sum("/releases?" in r for r in served) == 1
     assert not any("/runs/41252214397/jobs" in r for r in served)  # the skipped run
     # Counts, not durations: each pull request's CI jobs, and the CD jobs at the
-    # release commit — which, since the composed shape's commands exclude only `ci`,
-    # include onetaskgraph's cache warmer.
+    # release commit — which, since a Rust composition's commands exclude
+    # `rust cache warm` too, leave out onetaskgraph's cache warmer by that name.
     assert results[f"{NAME}-ci-job-count"][1] == "4"
-    assert results[f"{NAME}-cd-job-count"][1] == "9"
+    assert results[f"{NAME}-cd-job-count"][1] == "6"
 
 
 def test_a_figure_over_its_threshold_turns_the_tail_non_zero_naming_it(
@@ -354,13 +389,16 @@ def test_a_figure_over_its_threshold_turns_the_tail_non_zero_naming_it(
     reads = f"{NAME}-pr-read-requests"
     code, output, results, _served = run_tail(released, tmp_path, {**HIGH, reads: 1})
     assert code == 3, output  # Missing historical cache telemetry remains an error.
-    assert "missing artifact" in output
+    assert "zero eligible executions" in output, output
     budget, actual, threshold, verdict = results[reads]
     # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] The threshold of 1 is the input this test seeds below the replayed figure to prove the tail exits non-zero naming the budget; it holds the code to no request count.
     assert (verdict, threshold) == ("over", "1"), output
     # llmlint: ignore[tests_hold_no_nonfunctional_thresholds] Confirms the seeded threshold of 1 sits below the replayed figure, the precondition of the over-threshold verdict under test.
     assert float(actual) > 1
-    assert [b for b, *_, v in results.values() if v == "over"] == [reads], output
+    # The tail's own headroom reading, from the recorded listing, stays over either way.
+    assert sorted(b for b, *_, v in results.values() if v == "over") == sorted(
+        [reads, f"{NAME}-cache-headroom"]
+    ), output
 
 
 @pytest.fixture(scope="module")
@@ -507,3 +545,57 @@ def test_an_invalid_budgets_file_fails(gated):
         budgets.write_text(text, encoding="utf-8")
     assert done.returncode == 2, done.stderr
     assert f"checking {NAME}-gate-time failed (onebudgetspec exit 2)" in done.stderr
+
+
+def test_each_tool_pin_exists_on_every_runner_that_installs_it(tmp_path):
+    """Each pinned release, asked of the registry the workflow's install reads from."""
+    repo = compose(tmp_path / "repo", "rust", "cross-platform", "arm64")
+    pins = dict(
+        line.split("=", 1)
+        for line in (repo / ".github/ci-tool-versions").read_text().splitlines()
+        if line and not line.startswith("#")
+    )
+    channel = re.search(
+        r'channel = "([^"]+)"', (repo / "rust-toolchain.toml").read_text()
+    )[1]
+    just = f"https://github.com/casey/just/releases/download/{pins['just']}/just-{pins['just']}"
+    bun = f"https://github.com/oven-sh/bun/releases/download/bun-v{pins['bun']}/bun"
+    deny = (
+        "https://github.com/EmbarkStudios/cargo-deny/releases/download/"
+        f"{pins['cargo-deny']}/cargo-deny-{pins['cargo-deny']}"
+    )
+    hack = (
+        "https://github.com/taiki-e/cargo-hack/releases/download/"
+        f"v{pins['cargo-hack']}/cargo-hack"
+    )
+    plz = (
+        "https://github.com/release-plz/release-plz/releases/download/"
+        f"release-plz-v{pins['release-plz']}/release-plz"
+    )
+    assets = [
+        # The rendered runners: ubuntu-latest, ubuntu-24.04-arm, windows-latest, macos-latest.
+        f"{just}-x86_64-unknown-linux-musl.tar.gz",
+        f"{just}-aarch64-unknown-linux-musl.tar.gz",
+        f"{just}-x86_64-pc-windows-msvc.zip",
+        f"{just}-aarch64-apple-darwin.tar.gz",
+        f"{bun}-linux-x64.zip",
+        f"{bun}-linux-aarch64.zip",
+        f"{bun}-windows-x64.zip",
+        f"{bun}-darwin-aarch64.zip",
+        # The lint and release-plz jobs run on ubuntu-latest alone.
+        f"{deny}-x86_64-unknown-linux-musl.tar.gz",
+        f"{hack}-x86_64-unknown-linux-gnu.tar.gz",
+        f"{plz}-x86_64-unknown-linux-gnu.tar.gz",
+        f"https://static.rust-lang.org/dist/channel-rust-{channel}.toml.sha256",
+    ]
+    packages = [
+        f"https://registry.npmjs.org/@anthropic-ai/claude-code/{pins['claude-code']}",
+        f"https://registry.npmjs.org/onevcs-cli/{pins['onevcs-cli']}",
+        f"https://registry.npmjs.org/@onebudgetspec/cli/{pins['onebudgetspec-cli']}",
+        f"https://pypi.org/pypi/llmlint-cli/{pins['llmlint-cli']}/json",
+        "https://github.com/nickderobertis/screencomp/releases/tag/"
+        f"{pins['screencomp']}",
+    ]
+    # A failure raises naming the URL: that release is not there for that runner.
+    # llmlint: ignore[async_typed_clients_at_boundaries] `fetch_all` is the sync entry point to the typed async client in tests/http_fetch.py, whose `gather` makes these requests; the rule's client is already what runs.
+    assert all(fetch_all([*assets, *packages]))

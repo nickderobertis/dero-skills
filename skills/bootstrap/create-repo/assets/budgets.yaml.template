@@ -2,14 +2,14 @@
 #% # `compose_repo_plan.py --ci-cd REPO_DIR` (see ci.yml.template for the `#%` syntax).
 # The budgets this repository holds itself to, checked by `onebudgetspec check budgets.yaml`.
 #
-# Eight are its CI and CD figures, labelled `release-tail`: measured after a release has
+# Nine are its CI and CD figures, labelled `release-tail`: measured after a release has
 # published, by scripts/actions-budget-figures.sh (a verbatim copy of the create-repo skill's)
 # from read-only GitHub evidence (onevcs for the existing figures, the cache script for
 # replay telemetry), as the last step of release.yml's `publish` job, whose result nothing
-# reads. The ninth, `host-variable`, is the local gate's wall clock, which
+# reads. The tenth, `host-variable`, is the local gate's wall clock, which
 # `just gate` checks as a warning. The strict check `just check` runs excludes both labels, and
 # ci.yml's `budgets` job reports them without enforcing them. Its push run at the release commit
-# delivers nothing, so the CD figures leave out the `ci` workflow.
+# delivers nothing, so the CD figures leave out the `ci` workflow@@CD_EXCLUDED_PROSE@@.
 # references/ci.md ("CI and CD time budgets") states why each line is where it is.
 schema_version: 1
 budgets:
@@ -29,7 +29,7 @@ budgets:
   # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships these constraints plus the requested shared-cache replay figure.
   - id: @@NAME@@-cd-job-time
     measure: reported
-    command: [bash, scripts/actions-budget-figures.sh, longest-job, --stage, cd, --exclude-workflow, ci]
+    command: [bash, scripts/actions-budget-figures.sh, longest-job, --stage, cd, --exclude-workflow, @@CD_EXCLUDED_WORKFLOWS@@]
     unit: seconds
     direction: max
     threshold: 1800
@@ -66,7 +66,7 @@ budgets:
   # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships these constraints plus the requested shared-cache replay figure.
   - id: @@NAME@@-cd-job-count
     measure: reported
-    command: [bash, scripts/actions-budget-figures.sh, job-count, --stage, cd, --exclude-workflow, ci]
+    command: [bash, scripts/actions-budget-figures.sh, job-count, --stage, cd, --exclude-workflow, @@CD_EXCLUDED_WORKFLOWS@@]
     unit: jobs
     direction: max
     threshold: @@CD_JOB_COUNT@@
@@ -78,7 +78,7 @@ budgets:
   # llmlint: ignore[budgets_track_product_owner_outcomes] The brief requires a 30-minute line per CI check and per CD job beside the 90-minute release cycle that contains them, job counts per PR push and per release, and GitHub reads per release and per pull request; the skill ships these constraints plus the requested shared-cache replay figure.
   - id: @@NAME@@-release-read-requests
     measure: reported
-    command: [bash, scripts/actions-budget-figures.sh, release-read-requests, --exclude-workflow, ci]
+    command: [bash, scripts/actions-budget-figures.sh, release-read-requests, --exclude-workflow, @@CD_EXCLUDED_WORKFLOWS@@]
     unit: requests
     direction: max
     threshold: 6
@@ -126,3 +126,18 @@ budgets:
       Remote replay of previously attempted reusable task results, by exact task, OS
       and hash, on the release pull request and same-PR retries or later pushes.
       Detects reusable results that become unavailable before a later run needs them.
+
+  # The threshold is onetaskgraph's measured figure, until this repository's warm runs have
+  # saved: replace it then by one whole warm run's saves plus each family's largest growth.
+  - id: @@NAME@@-cache-headroom
+    measure: reported
+    command: [bash, scripts/actions-budget-figures.sh, cache-headroom@@CACHE_HEADROOM_FAMILIES@@]
+    unit: gigabytes
+    direction: min
+    threshold: 3.05
+    labels: [release-tail]
+    description: >-
+      The room left under GitHub's Actions cache line, in gigabytes, counting each named
+      family's newest copy and every other entry in full. GitHub removes the least recently
+      read entries once a save finds the listing over the line, so it protects the proven
+      test results a release reuses from being removed by this repository's own builds.

@@ -70,17 +70,34 @@ jobs:
       - name: Comment the suppressions this change adds
         if: github.event.pull_request.head.repo.full_name == github.repository
         uses: nickderobertis/notignored@v0
+      - name: Read the pinned tool versions
+        id: pins
+        shell: bash
+        run: |
+          tr -d '\r' < .github/ci-tool-versions | awk '
+            /^#/ || !NF { next }
+            /^[a-z0-9-]+=[A-Za-z0-9._+-]+$/ { print; next }
+            { print "malformed pin: " $0 > "/dev/stderr"; exit 1 }
+          ' >> "$GITHUB_OUTPUT"
       - uses: extractions/setup-just@v2
+        with:
+          just-version: ${{ steps.pins.outputs.just }}
+      # A fork's run writes nothing to any cache: this action saves its own binary otherwise.
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.pins.outputs.bun }}
+          no-cache: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
 #% if rust
-      # Its built-in cache keys `target` and the cargo registry on Cargo.lock, the toolchain
-      # and the OS, so a hit is never stale.
+      # rust-toolchain.toml names the toolchain. Restores what .github/workflows/rust-cache-warm.yml
+      # saved on main and saves nothing: main is the one writer of Rust build caches, and this
+      # job's checks share Linux's dependencies.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          cache-key: lint
+          cache-shared-key: test-linux
+          cache-save-if: false
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-deny,cargo-hack
+          tool: cargo-deny@${{ steps.pins.outputs.cargo-deny }},cargo-hack@${{ steps.pins.outputs.cargo-hack }}
 #% endif
       - name: Decide cache trust and configure the sidecar
         id: nx-cache-trust
@@ -113,12 +130,16 @@ jobs:
       - name: Check the supply chain@@SUPPLY_CHAIN_EXTRA@@
         run: just supply-chain
       - name: Install oneharness and llmlint
+        env:
+          LLMLINT_CLI_VERSION: ${{ steps.pins.outputs.llmlint-cli }}
         run: |
           ./scripts/setup-llmlint.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       # setup-llmlint.sh installs no harness, so without this the lint would skip every file.
       - name: Install the coding harness (claude-code)
-        run: npm i -g @anthropic-ai/claude-code
+        env:
+          CLAUDE_CODE_VERSION: ${{ steps.pins.outputs.claude-code }}
+        run: npm i -g "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
       - name: Validate the llmlint config (no model)
         run: just lint-llm-validate --diff-base origin/main
       - name: Lint the changed files with llmlint
@@ -138,7 +159,7 @@ jobs:
       # shots, publish the gallery preview and comment the before/after.
       - uses: nickderobertis/screencomp@@@SCREENCOMP_VERSION@@
         with:
-          version: @@SCREENCOMP_VERSION@@
+          version: ${{ steps.pins.outputs.screencomp }}
       - name: Capture the visual docs
         run: just screenshots
       - uses: nickderobertis/screencomp/visual-docs@@@SCREENCOMP_VERSION@@
@@ -182,10 +203,21 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Read the pinned tool versions
+        id: pins
+        shell: bash
+        run: |
+          tr -d '\r' < .github/ci-tool-versions | awk '
+            /^#/ || !NF { next }
+            /^[a-z0-9-]+=[A-Za-z0-9._+-]+$/ { print; next }
+            { print "malformed pin: " $0 > "/dev/stderr"; exit 1 }
+          ' >> "$GITHUB_OUTPUT"
       - uses: extractions/setup-just@v2
+        with:
+          just-version: ${{ steps.pins.outputs.just }}
       - uses: nickderobertis/screencomp@@@SCREENCOMP_VERSION@@
         with:
-          version: @@SCREENCOMP_VERSION@@
+          version: ${{ steps.pins.outputs.screencomp }}
       - name: Capture the visual docs
         run: just screenshots
       - uses: nickderobertis/screencomp/visual-docs@@@SCREENCOMP_VERSION@@
@@ -210,12 +242,30 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Read the pinned tool versions
+        id: pins
+        shell: bash
+        run: |
+          tr -d '\r' < .github/ci-tool-versions | awk '
+            /^#/ || !NF { next }
+            /^[a-z0-9-]+=[A-Za-z0-9._+-]+$/ { print; next }
+            { print "malformed pin: " $0 > "/dev/stderr"; exit 1 }
+          ' >> "$GITHUB_OUTPUT"
       - uses: extractions/setup-just@v2
+        with:
+          just-version: ${{ steps.pins.outputs.just }}
+      # A fork's run writes nothing to any cache: this action saves its own binary otherwise.
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.pins.outputs.bun }}
+          no-cache: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
 #% if rust
+      # rust-toolchain.toml names the toolchain. Restores what this platform's leg of
+      # .github/workflows/rust-cache-warm.yml saved on main and saves nothing.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          cache-key: test
+          cache-shared-key: test-@@PLATFORM@@
+          cache-save-if: false
 #% endif
       - name: Decide cache trust and configure the sidecar
         id: nx-cache-trust
