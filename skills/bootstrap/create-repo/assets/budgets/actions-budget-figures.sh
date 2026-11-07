@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 12
-# sha256: 1c7071ae5745351a1d760bfd2d802fc53854f7e14dc6daad9ab2d104ac7ea285
+# sha256: 39a734e8b54b0a729e3733c82308bd00e38c332200ce00a06de6c08dbb791bbe
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -328,16 +328,19 @@ own_run_selection() {
       die "gh api $query failed: $(tr -s '\n' ' ' <"$work/stderr"): check that GH_TOKEN can read this repository's Actions (actions: read), then re-run this figure"
     fi
     # A whole count, and every field a job's counting reads, or the figure would be wrong.
+    # GitHub's REST description is their source; create-repo's
+    # tests/external/test_github_rest_contract_external.py holds these to it.
     # shellcheck disable=SC2016 # a jq program: every $name in it is jq's, never the shell's
     jq -e 'def stamp: type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$");
            def optional($kind): . == null or type == $kind;
            (.total_count | type) == "number" and .total_count >= 0 and .total_count == (.total_count | floor)
            and (.jobs | type) == "array"
            and (.jobs | all(type == "object" and (.status | type) == "string"
-                            and (.name | type) == "string" and (.workflow_name | type) == "string"
+                            and (.name | type) == "string"
+                            and has("workflow_name") and (.workflow_name | optional("string"))
                             and has("conclusion") and (.conclusion | optional("string"))
                             and has("runner_name") and (.runner_name | optional("string"))
-                            and (.labels | . == null or (type == "array" and all(type == "string")))
+                            and (.labels | type == "array" and all(type == "string"))
                             and (.status != "completed" or .conclusion == "skipped" or .runner_name == null
                                  or ((.started_at | stamp) and (.completed_at | stamp))))) ' \
       "$work/jobs-$page.json" >/dev/null 2>&1 ||
@@ -448,7 +451,8 @@ def pr_read_requests:
 '
 
 if [ -n "$own_run" ]; then
-  own_run_selection >"$work/selection"
+  own_run_selection >"$work/selection" ||
+    die "cannot save this run's job listing under $work: check that the runner's temp directory is writable, then re-run this figure"
 else
   case "$figure" in
     release-read-requests) cd_selection >"$work/selection" ;;
