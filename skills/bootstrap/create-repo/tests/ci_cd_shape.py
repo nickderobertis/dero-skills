@@ -129,17 +129,14 @@ OLD_PLACEHOLDER = (
 )
 
 
-def crate_target(args: str) -> str:
-    return f"cargo {args} -p demo-lib"
-
-
 def workspace_files(
     test_compile: str | None, test_command: str = "cargo test -p demo-lib"
 ) -> dict[str, str]:
     """A real Cargo workspace whose one project owns its test, build and test-compile."""
     targets = {
         "test": {"command": test_command},
-        "build": {"command": crate_target("build")},
+        # Release, so it shares no unit with the test build and losing it to a replay shows.
+        "build": {"command": "cargo build -p demo-lib --release", "cache": True},
     }
     if test_compile is not None:
         targets["test-compile"] = {"command": test_compile}
@@ -251,6 +248,8 @@ class WarmJourney:
         return self.just("ci-warm")
 
     def test_job(self):
+        # Another runner: it gets the warm leg's target directory, and none of its Nx cache.
+        shutil.rmtree(self.repo / ".nx", ignore_errors=True)
         return self.just("ci-test", NX_BASE=self.base)
 
     def built(self) -> dict[str, int]:
