@@ -27,7 +27,12 @@ from typing import TypedDict
 from urllib.parse import parse_qs, urlparse
 
 import pytest
-from ci_cd_shape import compose
+from ci_cd_shape import (
+    WarmJourney,
+    compose,
+    warm_build_problems,
+    warm_compiles_again_problems,
+)
 
 SKILL = Path(__file__).resolve().parents[2]
 PIN = subprocess.check_output(
@@ -2758,3 +2763,15 @@ def test_nothing_measurable_still_reports_missing(telemetry_history, tmp_path):
         assert "zero eligible executions" in result["error"]
     finally:
         cache.metadata = original
+
+
+def test_the_warm_journey_holds_on_the_pinned_nx_with_the_composed_plugin(tmp_path):
+    # The pinned Nx, a real bun.lock and the composed nx.json whole, which needs the registry.
+    journey = WarmJourney(tmp_path / "pass")
+    assert warm_build_problems(journey) == []
+    assert warm_compiles_again_problems(WarmJourney(tmp_path / "again")) == []
+    mismatched = WarmJourney(
+        tmp_path / "mismatch",
+        test_compile="cargo test -p demo-lib --no-run --release",
+    )
+    assert any("compiled again" in p for p in warm_build_problems(mismatched))

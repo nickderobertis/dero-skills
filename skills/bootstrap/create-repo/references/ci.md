@@ -142,7 +142,11 @@ request did not need is a slot another repository waited for.
   saver: every job of `ci.yml` and `release.yml` restores with `cache-save-if: false`, and
   `release-plz` runs its toolchain with `cache: false`. It has one leg per platform the
   shape tests, `warm-<platform>`, which runs `just ci-warm` to compile what
-  `test-<platform>` compiles and saves under the `cache-shared-key` that job restores. It
+  `test-<platform>` compiles and saves under the `cache-shared-key` that job restores. The
+  recipe runs the Nx targets `build` and `test-compile`, each Rust project declaring the
+  latter as its `test` command compiling without running
+  ([rust.md](languages/rust.md#target-names)). It never reads an Nx cache and refuses when no
+  project declares the target. It
   adds no pull-request job and tests nothing. The CD figures leave it out by name.
 - **Each warm leg deletes its family's superseded copies.** Its last ordinary step is
   `node scripts/actions-cache-prune.mjs --family <prefix>`

@@ -14,6 +14,8 @@ for the tiers it can reach:
   listing and the real-Nx cache journeys sit in `external/test_nx_cache_e2e.py`, where
   fetching Nx and the pinned sidecar is allowed. `e2e/test_warm_cache_shape_e2e.py` takes
   each property of the composed cache shape away in turn: add a mutation with a property.
+  Its warm journey runs a composed workspace's real `just ci-warm` and `just ci-test`, so that
+  tier needs cargo on PATH and fails without it.
   `test_onebudgetspec_release.py` holds what the skill
   restates of onebudgetspec, Nx and `bun.lock` to the installed releases' own
   README, schema and lockfile, so that drift gate runs here too.

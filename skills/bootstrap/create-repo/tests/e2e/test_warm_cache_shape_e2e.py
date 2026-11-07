@@ -5,6 +5,12 @@ The real composer (`compose_repo_plan.py --ci-cd`, as a subprocess) writes a rep
 Nx would: parsed YAML, the real `onebudgetspec`, the written `nx.json`. Each property is then
 taken away from a fresh composed copy, one at a time, and must be reported, so no property here
 is one the reader cannot see.
+
+The cache's point is a build, so the warm journey runs one: a composed Rust workspace's real
+`just ci-warm`, then its real `just ci-test` through real Nx and cargo, under the settings
+setup-rust-toolchain exports to both jobs. Nothing is compiled twice or the leg saved the wrong
+thing. It needs cargo, just and bun, and takes Nx from this repository's node_modules, so it
+stays offline; the journey itself is in `ci_cd_shape.py`, which the external tier shares.
 """
 
 from __future__ import annotations
@@ -17,7 +23,18 @@ from pathlib import Path
 
 import pytest
 import yaml
-from ci_cd_shape import NAME, compose, run
+from ci_cd_shape import (
+    GOOD_COMPILE,
+    NAME,
+    OLD_PLACEHOLDER,
+    WarmJourney,
+    compiled,
+    compose,
+    run,
+    warm_build_problems,
+    warm_compiles_again_problems,
+    workspace_files,
+)
 
 WORKFLOWS = ".github/workflows"
 PINS = ".github/ci-tool-versions"
@@ -97,6 +114,17 @@ def warm_problems(repo: Path, flows: dict[str, dict], platforms) -> list[str]:
             problems.append(f"test-{platform} restores another key than its leg saves")
         if "cache-save-if" in saved or saved.get("cache") is False:
             problems.append(f"warm-{platform} does not save")
+        # Beyond saving, each input reaches the key or the build, so they must all agree.
+        if {k: v for k, v in restored.items() if k != "cache-save-if"} != saved:
+            problems.append(
+                f"warm-{platform} sets the toolchain up unlike its test job"
+            )
+        for job, label in ((leg, "warm"), (test, "test")):
+            for step in [job, *steps_of(job)]:
+                if any(k.startswith(("RUST", "CARGO")) for k in step.get("env") or {}):
+                    problems.append(
+                        f"{label}-{platform} sets cargo's environment alone"
+                    )
         runs = [str(s.get("run", "")) for s in steps]
         if "just ci-warm" not in runs:
             problems.append(f"warm-{platform} does not build what the test job builds")
@@ -118,6 +146,11 @@ def warm_problems(repo: Path, flows: dict[str, dict], platforms) -> list[str]:
     justfile = (repo / "justfile").read_text(encoding="utf-8")
     if not re.search(r"^ci-warm:", justfile, re.M):
         problems.append("the justfile has no ci-warm recipe")
+    elif "nx run-many --skip-nx-cache -t build test-compile" not in justfile:
+        problems.append("ci-warm can replay a task instead of compiling it")
+    nx = json.loads((repo / "nx.json").read_text())
+    if nx["targetDefaults"].get("test-compile", {}).get("cache") is not False:
+        problems.append("test-compile can be served from an Nx cache")
     return problems
 
 
@@ -415,6 +448,36 @@ MUTATIONS = {
         edit(WARM_PATH, "run: just ci-warm", "run: just lint"),
         "does not build what the test job builds",
     ),
+    "warm-toolchain-differs": (
+        edit(
+            WARM_PATH,
+            "cache-shared-key: test-linux\n",
+            "cache-shared-key: test-linux\n          rustflags: ''\n",
+        ),
+        "sets the toolchain up unlike its test job",
+    ),
+    "warm-env-differs": (
+        edit(
+            WARM_PATH,
+            "run: just ci-warm\n",
+            "run: just ci-warm\n        env:\n          RUSTFLAGS: -Copt-level=3\n",
+        ),
+        "sets cargo's environment alone",
+    ),
+    "warm-recipe-replays": (
+        edit(
+            "justfile", "nx run-many --skip-nx-cache -t build", "nx run-many -t build"
+        ),
+        "can replay a task",
+    ),
+    "test-compile-cached": (
+        edit(
+            "nx.json",
+            '"test-compile": {\n      "cache": false',
+            '"test-compile": {\n      "cache": true',
+        ),
+        "served from an Nx cache",
+    ),
     "warm-recipe-missing": (
         edit("justfile", "\nci-warm:", "\nci-cold:"),
         "no ci-warm recipe",
@@ -603,3 +666,116 @@ def test_taking_any_one_property_away_is_reported(rust_repo, tmp_path, mutation)
     apply(repo)
     problems = shape_problems(repo, "rust", PLATFORMS["cross-platform"])
     assert any(expected in problem for problem in problems), problems
+
+
+REPO_ROOT = Path(__file__).resolve().parents[5]
+
+
+@pytest.fixture
+def warm_journey(tmp_path) -> Callable[..., WarmJourney]:
+    """A composed journey on this repository's Nx, which cannot load the ESM telemetry plugin.
+
+    The plugin records only under GITHUB_ACTIONS, so leaving it out changes no compile.
+    `external/test_nx_cache_e2e.py` runs the same journey on the pinned Nx with it loaded.
+    """
+
+    def start(test_compile: str | None = GOOD_COMPILE) -> WarmJourney:
+        return WarmJourney(
+            tmp_path / "repo",
+            REPO_ROOT / "node_modules",
+            test_compile,
+            telemetry_plugin=False,
+        )
+
+    return start
+
+
+def test_warm_journey_leaves_the_test_job_nothing_to_compile(warm_journey):
+    journey = warm_journey()
+    assert warm_build_problems(journey) == []
+
+
+def replace_recipe(journey: WarmJourney, recipe: str) -> None:
+    justfile = journey.repo / "justfile"
+    text = justfile.read_text(encoding="utf-8")
+    new, count = re.subn(r"^ci-warm:\n(?:    .*\n)+", recipe, text, flags=re.M)
+    assert count == 1
+    justfile.write_text(new, encoding="utf-8")
+
+
+def test_warm_journey_rejects_the_old_placeholder(warm_journey):
+    journey = warm_journey()
+    replace_recipe(journey, OLD_PLACEHOLDER)
+    [problem] = warm_build_problems(journey)
+    assert problem.startswith("ci-warm failed") and "TODO" in problem
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "cargo test -p demo-lib --no-run --release",
+        "cargo test -p demo-lib --no-run --features extra",
+        "cargo check -p demo-lib",
+    ],
+    ids=["other-profile", "other-features", "not-the-test-build"],
+)
+def test_warm_journey_rejects_a_test_compile_that_builds_something_else(
+    warm_journey, mismatch
+):
+    journey = warm_journey(mismatch)
+    problems = warm_build_problems(journey)
+    assert any("compiled again" in p and "demo-lib" in p for p in problems), problems
+
+
+def test_warm_journey_rejects_a_test_job_needing_dependencies_the_leg_did_not_build(
+    tmp_path,
+):
+    # What costs every pull request: rust-cache keeps dependencies and not workspace crates.
+    journey = WarmJourney(
+        tmp_path / "repo",
+        REPO_ROOT / "node_modules",
+        telemetry_plugin=False,
+        test_command="cargo test -p demo-lib --features extra",
+    )
+    problems = warm_build_problems(journey)
+    assert any("compiled again" in p and "demo-dep" in p for p in problems), problems
+
+
+def test_warm_journey_rejects_a_recipe_that_bypasses_the_projects_own_target(
+    warm_journey,
+):
+    journey = warm_journey()
+    replace_recipe(journey, "ci-warm:\n    cargo build --workspace --release\n")
+    problems = warm_build_problems(journey)
+    assert any("compiled again" in problem for problem in problems), problems
+
+
+def test_warm_refuses_a_repository_where_no_project_declares_test_compile(warm_journey):
+    journey = warm_journey(None)
+    done = journey.warm()
+    assert done.returncode != 0
+    assert "test-compile" in done.stderr
+    assert "demo-dep" not in compiled(done)
+
+
+def test_warm_compiles_again_whatever_nx_remembers(warm_journey):
+    # A replayed target would leave the runner's target directory empty, and rust-cache would
+    # then save nothing a pull request could reuse.
+    journey = warm_journey()
+    assert warm_compiles_again_problems(journey) == []
+
+
+def test_the_composer_keeps_test_compile_out_of_every_nx_cache(tmp_path):
+    files = workspace_files(GOOD_COMPILE)
+    project = json.loads(files["crates/lib/project.json"])
+    project["targets"]["test-compile"]["cache"] = True
+    files["crates/lib/project.json"] = json.dumps(project)
+    repo = compose(tmp_path / "repo", "rust", "linux", files=files)
+    written = json.loads((repo / "crates/lib/project.json").read_text())
+    target = written["targets"]["test-compile"]
+    assert target["cache"] is False
+    assert target["command"] == GOOD_COMPILE
+    # The test target beside it keeps its cached inputs.
+    assert written["targets"]["test"]["inputs"][0] == "testInputs"
+    nx = json.loads((repo / "nx.json").read_text())
+    assert nx["targetDefaults"]["test-compile"]["cache"] is False

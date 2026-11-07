@@ -993,6 +993,8 @@ REPORT_JOB_PROJECT = ".github/reporting/project.json"
 TOOL_PINS_FILE = ".github/ci-tool-versions"
 RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
 WARM_WORKFLOW_NAME = "rust cache warm"
+# Each Rust project's `test` command compiling without running, which `just ci-warm` runs.
+WARM_COMPILE_TARGET = "test-compile"
 CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
     CiCdFile(
@@ -1312,6 +1314,13 @@ def published_paths(repo: Path, shape: CiCdShape) -> str:
     )
 
 
+def is_test_target(name: str) -> bool:
+    """A target whose cached result proves tests passed, keyed on the test inputs."""
+    return name != WARM_COMPILE_TARGET and (
+        name.startswith("test") or name in {"coverage", "e2e"}
+    )
+
+
 def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
     """Install test runtime inputs and the append-only Nx telemetry hook."""
     path = repo / "nx.json"
@@ -1427,6 +1436,8 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
         platform = {"runtime": "node -p process.platform"}
         if platform not in inputs:
             inputs.append(platform)
+    if shape.language == "rust":
+        defaults.setdefault(WARM_COMPILE_TARGET, {})["cache"] = False
     # Every cached target's tools come from these two files; a test target already has them.
     for target_name in ("build", "e2e", "budgets", "budgets-host", "lint", "typecheck"):
         target = defaults.setdefault(target_name, {})
@@ -1462,7 +1473,7 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
         definitions = original_named | project.get("namedInputs", {})
         own_inputs = [f"{project_ecosystem}TestInputs"]
         for target_name, candidate in project.get("targets", {}).items():
-            if target_name.startswith("test") or target_name in {"coverage", "e2e"}:
+            if is_test_target(target_name):
                 own_inputs += retained_inputs(
                     candidate.get("inputs", original_test_inputs), definitions
                 )
@@ -1481,9 +1492,10 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
             {json.dumps(item, sort_keys=True): item for item in own_inputs}.values()
         )
         for name, target in project.get("targets", {}).items():
-            if (name.startswith("test") or name in {"coverage", "e2e"}) and target.get(
-                "cache", True
-            ):
+            if name == WARM_COMPILE_TARGET:
+                # A replayed task compiles nothing, and the warm leg then saves nothing.
+                target["cache"] = False
+            elif is_test_target(name) and target.get("cache", True):
                 target["inputs"] = [
                     "testInputs",
                     "^testInputs",

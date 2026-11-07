@@ -74,12 +74,14 @@ ci-test:
     bunx nx affected --base={{base}} -t test build e2e budgets budgets-host
 
 # What each leg of a Rust repository's .github/workflows/rust-cache-warm.yml runs on a push to
-# main: compile everything `ci-test` compiles on that platform, with the same profile, features
-# and instrumentation as the `test` and `build` targets, and run nothing. What it builds is what
-# a pull request restores, so a difference is a dependency every pull request compiles again.
+# main: compile everything `ci-test` compiles on that platform and run nothing, so a pull request
+# restores it. Each Rust project owns how, declaring `test-compile` as its `test` command compiling
+# without running (references/languages/rust.md). A replayed task compiles nothing, so this never
+# reads an Nx cache, and with no project declaring the target it refuses rather than warm nothing.
 # Delete it in a repository with no Rust.
 ci-warm:
-    @echo "TODO: compile what ci-test compiles without running it (e.g. cargo test --workspace --all-features --no-run)" && exit 1
+    @bunx nx show projects --with-target test-compile | grep -q . || { echo "ci-warm: no project declares a test-compile target; add one beside each Rust project's test target (references/languages/rust.md)" >&2; exit 1; }
+    bunx nx run-many --skip-nx-cache -t build test-compile
 
 # One phase of one release job (references/releasing.md): `just release <job> <phase>
 # --tag <tag>`, where <job> is a build job of .github/workflows/release.yml (build-linux,

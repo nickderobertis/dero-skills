@@ -175,7 +175,14 @@ project: `format` -> `cargo fmt -p <crate> --check`, `lint` ->
 `cargo clippy -p <crate> --all-targets -- -D warnings`, `test` -> nextest as
 above, and `build` -> `cargo build -p <crate>`. Rust has no separate `typecheck`
 target — `cargo clippy`/`build` type-check as they go, so declare no empty
-`typecheck` rather than a no-op one. The repo-level `coverage` target is the one
+`typecheck` rather than a no-op one. `test-compile` is the `test` command compiling
+without running (`cargo nextest run -p <crate> --no-run`, or `cargo test -p <crate> --no-run`):
+`just ci-warm` runs it with `build` on a push to main, so the cache a pull request restores holds
+what its `test` target compiles. It has the same profile, features and flags as `test`, a
+difference being a dependency every pull request compiles again, and it is `cache: false`, which
+the composer enforces, because a replayed task compiles nothing. A tier run under coverage
+instrumentation stays outside the warm cache: its target is `cache: false` and declares no
+`test-compile`, because instrumented profiles do not survive a version bump. The repo-level `coverage` target is the one
 aggregate and carries the same name in every language; the supply-chain check
 (`cargo deny` + `cargo machete`) is workspace-wide by nature and stays a
 repo-level target too.
