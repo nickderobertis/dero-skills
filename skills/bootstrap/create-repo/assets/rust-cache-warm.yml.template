@@ -1,0 +1,61 @@
+#% # The one saver of Rust build caches, rendered by `compose_repo_plan.py --ci-cd REPO_DIR`
+#% # for a Rust composition (see ci.yml.template for the `#%` syntax).
+# Build what each test job builds on every push to main, and save it as the Rust cache that job
+# restores. A pull request reads caches saved on its own ref or on main, and ci.yml and
+# release.yml only restore, so this workflow is the only thing that writes a Rust build cache.
+# Nothing is tested here. references/ci.md states the job's accepted risk and how each leg's
+# last step keeps a family to two copies.
+
+name: rust cache warm
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+#% for platform in linux windows macos
+  # Saves the key test-@@PLATFORM@@ restores.
+  warm-@@PLATFORM@@:
+    runs-on: @@PLATFORM_RUNNER@@
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write # deleting this family's superseded copies; only the last step has the token
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Read the pinned tool versions
+        id: pins
+        run: grep -v '^#' .github/ci-tool-versions | tr -d '\r' >> "$GITHUB_OUTPUT"
+      - uses: extractions/setup-just@v2
+        with:
+          just-version: ${{ steps.pins.outputs.just }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ steps.pins.outputs.bun }}
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-shared-key: test-@@PLATFORM@@
+      - name: Bootstrap
+        run: just bootstrap
+      - name: Build what test-@@PLATFORM@@ builds
+        run: just ci-warm
+      # The last ordinary step, so it runs before rust-cache's post step saves and cannot see
+      # that save: the family keeps its previous copy until the next push's cleanup.
+      - name: Delete this family's superseded copies
+        run: node scripts/actions-cache-prune.mjs --family v0-rust-test-@@PLATFORM@@-
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+#% endfor

@@ -386,6 +386,7 @@ scripts/actions-budget-figures.sh release-cycle-time        [--release TAG] [--r
 scripts/actions-budget-figures.sh release-read-requests     [--release TAG] [--repo OWNER/NAME] [--exclude-workflow NAME]...
 scripts/actions-budget-figures.sh pr-read-requests          [--release TAG] [--repo OWNER/NAME]
 scripts/actions-budget-figures.sh cache-use                 [--release TAG] [--repo OWNER/NAME]
+scripts/actions-budget-figures.sh cache-headroom [--family PREFIX]... [--repo OWNER/NAME]
 ```
 
 - **A `measure: reported` budget's `command`.** It writes `{"value", "detail"}`
@@ -475,6 +476,26 @@ scripts/actions-budget-figures.sh cache-use                 [--release TAG] [--r
   counts 0. A non-zero onevcs exit ends it with exit 1 and onevcs's reason.
   `onebudgetspec check` records either as the budget's `error` (exit 3).
 
+- **`cache-headroom` (gigabytes, a minimum).** Like `cache-use` it runs in
+  `nx-remote-cache.mjs` and needs node, not onevcs, reading `GH_TOKEN` or
+  `GITHUB_TOKEN`, `GITHUB_API_URL` and `GITHUB_REPOSITORY`. It reads
+  `actions/cache/storage-limit`, then every page of `actions/caches` sorted by size,
+  because a small cache can sit below any number of results; an incomplete listing
+  writes no figure. It never reads `actions/cache/usage`, measured lagging the listing
+  by up to 715 MB. The figure is the allowance less the bytes of every entry, results
+  included because they take real capacity, in gigabytes of 1,000,000,000 bytes. The
+  allowance is `max_cache_size_gb` × 1,073,741,824 bytes, since GitHub's line is 10 GiB
+  (10.737 of these gigabytes) and not 10 GB. A family `--family` names counts only its
+  newest entry, its older copies' bytes going to the detail; every other entry counts in
+  full. A named family holding more than two entries reads 0, naming it in the detail,
+  because two is the most a working cleanup leaves. Bytes above the line read negative,
+  an over-budget reading and no error: a listing can stand above the line for minutes
+  before anything is removed. The detail gives the allowance, non-result bytes per family
+  (the key without its trailing hashes), result entries and bytes, the oldest result's
+  age, the requests made and the lowest `X-RateLimit-Remaining` any response carried,
+  since these endpoints draw a core counter `gh api rate_limit` does not report. A failed
+  read, a 403 or 429 among them, writes nothing and exits 1.
+
 **The copy rule.** A repository copies the script to
 `scripts/actions-budget-figures.sh` and names that copy as its budgets'
 `command`; nothing fetches it at run time. Its header says it is edited only
@@ -491,9 +512,9 @@ the fix is always to copy the source again.
 ## The CI and CD budgets every repository starts with
 
 `compose_repo_plan.py --ci-cd` writes the root `budgets.yaml` from
-[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the nine
+[`assets/budgets.yaml.template`](../../assets/budgets.yaml.template): the ten
 budgets, the eight established by onepipeline, onetaskgraph and onepipeline-ui
-plus the shared-cache replay figure, each id under the
+plus the shared-cache replay and cache headroom figures, each id under the
 project name the composer fills in. Every CI check and CD job is held to 30
 minutes and a change's last-commit pull-request checks plus merge to release to
 90; job counts are budgeted per pull-request push and per release because the
@@ -502,21 +523,27 @@ account's 20 concurrent jobs are shared.
 | id | unit | threshold | label | command |
 | --- | --- | --- | --- | --- |
 | `<name>-ci-check-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage pr` |
-| `<name>-cd-job-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage cd` |
+| `<name>-cd-job-time` | seconds | 1800 | `release-tail` | `bash scripts/actions-budget-figures.sh longest-job --stage cd --exclude-workflow ci` |
 | `<name>-release-cycle-time` | seconds | 5400 | `release-tail` | `bash scripts/actions-budget-figures.sh release-cycle-time --published-paths .github/release-published-paths` |
 | `<name>-ci-job-count` | jobs | the CI jobs the shape runs: 4 cross-platform, 5 with a second visual-docs architecture, 2 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage pr` |
-| `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage cd` |
-| `<name>-release-read-requests` | requests | 6 | `release-tail` | `bash scripts/actions-budget-figures.sh release-read-requests` |
+| `<name>-cd-job-count` | jobs | 6 cross-platform, 4 Linux-only | `release-tail` | `bash scripts/actions-budget-figures.sh job-count --stage cd --exclude-workflow ci` |
+| `<name>-release-read-requests` | requests | 6 | `release-tail` | `bash scripts/actions-budget-figures.sh release-read-requests --exclude-workflow ci` |
 | `<name>-pr-read-requests` | requests | 2 | `release-tail` | `bash scripts/actions-budget-figures.sh pr-read-requests` |
 | `<name>-nx-cache-use` | percent | 100 (minimum) | `release-tail` | `bash scripts/actions-budget-figures.sh cache-use` |
+| `<name>-cache-headroom` | gigabytes | 3.05 (minimum) | `release-tail` | `bash scripts/actions-budget-figures.sh cache-headroom`, with a `--family` per warm leg |
 | `<name>-gate-time` | seconds | 1800 | `host-variable` | `node scripts/gate-time-budget.mjs` |
 
-A repository that adds a push workflow delivering nothing (a cache warmer) passes
-it to the CD budgets' commands with `--exclude-workflow`, as the three
-repositories do; the composed shape has none, so its commands name none.
+A push workflow delivering nothing is passed to the CD budgets' commands with
+`--exclude-workflow`. A Rust composition has one, its warm workflow, so its three CD
+commands name `"rust cache warm"` as well as `ci`.
+
+`<name>-cache-headroom`'s 3.05 is onetaskgraph's measured figure, which a new repository
+starts from; once its warm runs have saved, replace it by one whole warm run's saves plus
+each family's largest growth. A Rust composition's command names the family each warm leg
+cleans up, and a TypeScript one names none.
 
 - **Where each is enforced.** `timeout-minutes: 30` holds every CI job at pull-
-  request time. The eight `release-tail` budgets are the last step of
+  request time. The nine `release-tail` budgets are the last step of
   release.yml's `publish` — `onebudgetspec check budgets.yaml --label
   release-tail`, after it installs `onevcs-cli` at the version the skill pins —
   whose result nothing reads. `<name>-gate-time` is `just gate`'s own wall clock,
@@ -554,8 +581,8 @@ repositories do; the composed shape has none, so its commands name none.
   its own.
 - [ ] **Cached by kind.** Deterministic `reported` budgets run in the cached
   `budgets` target; `elapsed` and host-reading ones carry the `host` label.
-- [ ] **The nine CI/CD budgets are registered.** The root `budgets.yaml`
-  carries them as the table above states, the `release-tail` eight run by
+- [ ] **The ten CI/CD budgets are registered.** The root `budgets.yaml`
+  carries them as the table above states, the `release-tail` nine run by
   `publish`'s last step and `<name>-gate-time` by `just gate`; the checker
   reports a missing one, or budgets naming the figures script with no copy.
 - [ ] **Actions figures are the skill's copy.** Any `scripts/actions-budget-figures.sh`
@@ -566,8 +593,9 @@ repositories do; the composed shape has none, so its commands name none.
 
 ## Shared Nx cache
 
-Copy the two sources unchanged: [nx-remote-cache.mjs](../../assets/ci/nx-remote-cache.mjs)
-and [nx-version-free-inputs.mjs](../../assets/ci/nx-version-free-inputs.mjs).
+Copy the sources unchanged: [nx-remote-cache.mjs](../../assets/ci/nx-remote-cache.mjs),
+[nx-version-free-inputs.mjs](../../assets/ci/nx-version-free-inputs.mjs) and, where a
+warm workflow runs, [actions-cache-prune.mjs](../../assets/ci/actions-cache-prune.mjs).
 The source owns the command interface, telemetry schemas, validation and readers;
 consult it for fields and statuses rather than maintaining a second contract here.
 The adjacent versions files and baseline checker detect edited or stale copies.
@@ -599,7 +627,29 @@ executions. Missing or expired required evidence cannot produce a passing figure
 The release-tail budget's full-replay threshold is a design target supported by
 the spike's three OS replays, not a measured release baseline. Revisit it after
 real release observations. The conservative workload exceeds the spike's upload
-ceiling; no aggregate quota headroom, rate control or cache deletion is promised.
+ceiling; no rate control is promised, and test results are never deleted:
+`actions-cache-prune.mjs` refuses an `nx-cache-` family, and `<name>-cache-headroom`
+holds the room left for them.
+
+`executions.json` is schema 2, two additive fields over schema 1, which a reader still
+accepts with both unknown. Each task's `remote_read` is `hit`, `miss`, `failed` (an
+answer other than 200 or 404, or no answer) or `not_attempted`. The document's `base_sha`
+is the first parent of the merge commit the run tested, null when that cannot be read.
+
+The figure counts `base_moved` too. A release pull request's execution whose task and OS
+appear in a carried pull request's latest run at a different hash, where that run's
+`base_sha` is not the merge commit's first parent, joins the denominator as a miss: that
+run proved the task against a base its merge did not land on. A changed hash without a
+moved base stays excluded, as new work. Evidence whose base is unknown stays excluded and
+is counted in the detail.
+
+Evidence that ordinary conditions removed is reported rather than refused. An attempt whose
+artifacts a whole-workflow re-run removed, and a pull request whose CI predates adoption
+(its runs created before the commit adding `scripts/nx-remote-cache.mjs`, read from a full
+checkout), are counted as unavailable in the detail, and the figure is taken over what is
+measurable. An artifact that is present but invalid still errors, one job's artifact missing
+beside another's present still errors, and no measurable execution at all still reports
+missing, never a pass.
 
 Version-free ecosystem inputs keep release version and changelog edits from
 invalidating proven tests while retaining dependency and source changes. Targets

@@ -137,6 +137,47 @@ request did not need is a slot another repository waited for.
   run only on pushes to main. No PR or release job is added.
   The shared scripts' versioned contracts, telemetry and release-tail cache-use
   measurement are in [onebudgetspec.md](tools/onebudgetspec.md#shared-nx-cache).
+- **A Rust repository saves build caches only from main.**
+  `.github/workflows/rust-cache-warm.yml` (`rust cache warm`, push to main) is the only
+  saver: every job of `ci.yml` and `release.yml` restores with `cache-save-if: false`, and
+  `release-plz` runs its toolchain with `cache: false`. It has one leg per platform the
+  shape tests, `warm-<platform>`, which runs `just ci-warm` to compile what
+  `test-<platform>` compiles and saves under the `cache-shared-key` that job restores. It
+  adds no pull-request job and tests nothing. The CD figures leave it out by name.
+- **Each warm leg deletes its family's superseded copies.** Its last ordinary step is
+  `node scripts/actions-cache-prune.mjs --family <prefix>`
+  ([`assets/ci/actions-cache-prune.mjs`](../assets/ci/actions-cache-prune.mjs)), which
+  keeps the family's newest copy on `refs/heads/main` and deletes every other copy on any
+  ref. It runs before rust-cache's post step saves, so it cannot see that save, and
+  keeping the newest copy makes that safe: a leg can never lose a family's only copy, and
+  a family holds at most two, the previous and the new, until the next push's cleanup. A
+  family with no copy on main loses nothing, and an `nx-cache-` family is refused.
+- **A warm job holds `actions: write` while building merged source.** That token can
+  delete any of this repository's caches, and the build runs code from main, so a
+  malicious merge could reach it; that risk is accepted, because anything merged can
+  already run in every later job. Beside it the grant is narrowed: only a push to main
+  runs it, the checkout persists no credentials, no pull request triggers it, and the
+  cleanup step is the only one handed the token, so the build's own processes do not
+  see it in their environment.
+- **Room for a run's saves is what keeps results; cleanup does not rescue them.** GitHub
+  removes the least recently read entries once a save finds the listing over 10 GiB. So
+  `<name>-cache-headroom` holds the room one warm run's saves need, and a superseded copy
+  deleted after the line was crossed brings back nothing. For a family that outgrows that room the lever is to delete
+  `target` after a restore that is not an exact key match, so the warm leg builds cold and
+  saves no superseded units. The composed shape does not apply it, because a new
+  repository's copies are small and the budget shows when it is needed.
+- **Tools are exact and among the cached inputs.** Every tool a generated workflow installs
+  reads its version from `.github/ci-tool-versions`, each job's first step after the
+  checkout loading the file into its step outputs, and a Rust composition's compiler from
+  `rust-toolchain.toml`, which must name an exact channel. Both are inputs of every cached
+  target, so a task hash names the tools that proved it and a bump re-runs what they ran.
+  Each version is one that exists on every runner rendered to install it, which
+  `external/test_ci_cd_shape_external.py` asks the registries.
+- **A fork's run writes nothing to any cache.** A pull request whose head repository is not
+  the base gets a read-only sidecar through `CACHE_READ_ONLY`, a `setup-bun` with
+  `no-cache` set, because that action otherwise saves its own binary on the merge ref, and
+  a Rust toolchain that saves nothing for anyone. A step added to a pull-request job that
+  writes a cache needs the same guard.
 
 **CD:** `release-plz` (`.github/workflows/release-plz.yml`, push to main) opens
 the release pull request and arms auto-merge on it, so it merges itself once its
@@ -167,11 +208,14 @@ the project name):
 | `<name>-release-read-requests` | 6 requests | `release-tail` |
 | `<name>-pr-read-requests` | 2 requests | `release-tail` |
 | `<name>-nx-cache-use` | 100% remote replay of eligible executions | `release-tail` |
+| `<name>-cache-headroom` | at least 3.05 GB under GitHub's 10 GiB line | `release-tail` |
 | `<name>-gate-time` | 1800 s | `host-variable` |
 
-The eight GitHub figures run the repository's verbatim copy of the figures script
+The nine GitHub figures run the repository's verbatim copy of the figures script
 (`tools/onebudgetspec.md`, "GitHub Actions budget figures"). The CD figures pass
-`--exclude-workflow ci`: `budgets`' push run at the release commit delivers nothing.
+`--exclude-workflow ci`, because `budgets`' push run at the release commit delivers
+nothing, and in a Rust composition `--exclude-workflow "rust cache warm"` for the same
+reason.
 
 Beside these, `.github/reporting/budgets.yaml` holds the `budgets` job's own budget,
 `<name>-budget-report-command-seconds` at a provisional 120 s, labelled `ci-report`.

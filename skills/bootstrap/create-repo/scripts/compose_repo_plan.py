@@ -911,6 +911,7 @@ class CdBuild(NamedTuple):
             "BUILD_RUNNER": self.runner,
             "BUILD_TARGET": self.target,
             "BUILD_NOTE": self.note,
+            "BUILD_CACHE_PLATFORM": build.removesuffix("-arm64"),
         }
 
 
@@ -982,9 +983,16 @@ class CiCdFile(NamedTuple):
     # False: copied byte for byte rather than rendered as a template.
     rendered: bool
     executable: bool
+    # The composition flag the file belongs to; None is every composition.
+    flag: str | None = None
 
 
 REPORT_JOB_PROJECT = ".github/reporting/project.json"
+# Every tool a generated workflow installs, at its exact version, among the cached targets'
+# inputs: the same task hash then means the same tools ran it.
+TOOL_PINS_FILE = ".github/ci-tool-versions"
+RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
+WARM_WORKFLOW_NAME = "rust cache warm"
 CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
     CiCdFile(
@@ -996,6 +1004,14 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(
         ".github/workflows/release.yml", "assets/release.yml.template", True, False
     ),
+    CiCdFile(
+        ".github/workflows/rust-cache-warm.yml",
+        "assets/rust-cache-warm.yml.template",
+        True,
+        False,
+        "rust",
+    ),
+    CiCdFile(TOOL_PINS_FILE, "assets/ci-tool-versions.template", True, False),
     CiCdFile("budgets.yaml", "assets/budgets.yaml.template", True, False),
     CiCdFile(
         ".github/reporting/budgets.yaml",
@@ -1028,18 +1044,28 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
         False,
     ),
     CiCdFile(
+        "scripts/actions-cache-prune.mjs",
+        "assets/ci/actions-cache-prune.mjs",
+        False,
+        False,
+        "rust",
+    ),
+    CiCdFile(
         "scripts/actions-budget-figures.sh",
         "assets/budgets/actions-budget-figures.sh",
         False,
         True,
     ),
 )
+RUST_TOOLCHAIN_ASSET = "assets/rust-toolchain.toml.template"
+RUST_EXACT_CHANNEL_RE = re.compile(r'^\s*channel\s*=\s*"\d+\.\d+\.\d+"', re.M)
 GOVERNANCE_FILE = ".github/governance.json"
 BUDGET_POLICY_ASSET = "assets/budgets/budget-policy.md"
 AGENTS_FILE = "AGENTS.md"
 GATE_RECORD = ".gate-time.json"
 # The recipes the workflows and the gate call, which assets/justfile.template declares.
 CI_CD_RECIPES = ("gate", "gate-body", "supply-chain", "ci-test", "release")
+RUST_CI_CD_RECIPES = ("ci-warm",)
 ONEBUDGETSPEC_SDK_NPM_PACKAGE = "@onebudgetspec/sdk"
 TEMPLATE_DIRECTIVE = "#%"
 TEMPLATE_VALUE_RE = re.compile(r"@@([A-Z_]+)@@")
@@ -1077,6 +1103,13 @@ class CiCdShape(NamedTuple):
     def cd_jobs(self) -> list[str]:
         return ["release-plz", *(f"build-{b}" for b in self.builds), "publish"]
 
+    @property
+    def warm_families(self) -> list[str]:
+        """The Rust cache families the warm workflow's legs save and clean up."""
+        if self.language != "rust":
+            return []
+        return [f"v0-rust-test-{platform}-" for platform in self.platforms]
+
     def flags(self) -> set[str]:
         flags = {self.language, *self.platforms}
         if self.visual_docs or self.visual_docs_arch:
@@ -1106,6 +1139,19 @@ class CiCdShape(NamedTuple):
             "CD_JOB_COUNT": str(len(self.cd_jobs)),
             "CI_JOBS_PROSE": prose(self.ci_jobs),
             "CD_JOBS_PROSE": prose(self.cd_jobs),
+            "CD_EXCLUDED_WORKFLOWS": (
+                f'"{WARM_WORKFLOW_NAME}", --exclude-workflow, ci'
+                if self.language == "rust"
+                else "ci"
+            ),
+            "CD_EXCLUDED_PROSE": (
+                f" and the `{WARM_WORKFLOW_NAME}` workflow, which publishes nothing"
+                if self.language == "rust"
+                else ""
+            ),
+            "CACHE_HEADROOM_FAMILIES": "".join(
+                f", --family, {family}" for family in self.warm_families
+            ),
         }
 
     def loops(self) -> dict[str, dict[str, dict[str, str]]]:
@@ -1293,6 +1339,7 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
         *(item.replace("{projectRoot}", "{workspaceRoot}") for item in excluded),
         "{workspaceRoot}/.tool-versions",
         "{workspaceRoot}/rust-toolchain.toml",
+        "{workspaceRoot}/" + TOOL_PINS_FILE,
         "{workspaceRoot}/scripts/nx-version-free-inputs.mjs",
         {"runtime": "node -p process.platform"},
         {"externalDependencies": []},
@@ -1380,6 +1427,13 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
         platform = {"runtime": "node -p process.platform"}
         if platform not in inputs:
             inputs.append(platform)
+    # Every cached target's tools come from these two files; a test target already has them.
+    for target_name in ("build", "e2e", "budgets", "budgets-host", "lint", "typecheck"):
+        target = defaults.setdefault(target_name, {})
+        inputs = target.setdefault("inputs", ["default", "^production"])
+        for pinned in (TOOL_PINS_FILE, RUST_TOOLCHAIN_FILE):
+            if f"{{workspaceRoot}}/{pinned}" not in inputs:
+                inputs.append(f"{{workspaceRoot}}/{pinned}")
     for project_path in sorted(repo.rglob("project.json")):
         # The shape's own report-job project stays exactly as the shape writes it: it
         # runs no test, and a rewrite would make composing again refuse the file.
@@ -1468,6 +1522,12 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
                 if platform not in inputs:
                     inputs.append(platform)
                 changed = True
+            if target_name in {"build", "budgets", "budgets-host", "lint", "typecheck"}:
+                inputs = target.setdefault("inputs", ["default", "^production"])
+                for pinned in (TOOL_PINS_FILE, RUST_TOOLCHAIN_FILE):
+                    if f"{{workspaceRoot}}/{pinned}" not in inputs:
+                        inputs.append(f"{{workspaceRoot}}/{pinned}")
+                changed = True
         if changed:
             _write_json(project_path, project)
     _write_json(path, nx)
@@ -1483,6 +1543,8 @@ def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str,
     """Every file the shape writes, by repo-relative path, refusing a differing one."""
     planned: dict[str, bytes] = {}
     for file in CI_CD_FILES:
+        if file.flag is not None and file.flag not in shape.flags():
+            continue
         data = (skill_dir / file.source).read_bytes()
         if file.rendered:
             text = data.decode("utf-8")
@@ -1491,6 +1553,19 @@ def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str,
             data = render_template(text, shape).encode("utf-8")
         planned[file.target] = data
     planned[GOVERNANCE_FILE] = governance_config(shape).encode("utf-8")
+    if shape.language == "rust":
+        toolchain = repo / RUST_TOOLCHAIN_FILE
+        if not toolchain.exists():
+            planned[RUST_TOOLCHAIN_FILE] = (
+                skill_dir / RUST_TOOLCHAIN_ASSET
+            ).read_bytes()
+        elif not RUST_EXACT_CHANNEL_RE.search(toolchain.read_text(encoding="utf-8")):
+            raise WiringError(
+                f"{toolchain} names no exact channel, so a cached test result cannot say "
+                "which compiler proved it\n"
+                '      fix: set `channel = "1.x.y"` in its [toolchain] table, then re-run '
+                "--ci-cd."
+            )
     planned[".github/release-published-paths"] = published_paths(repo, shape).encode(
         "utf-8"
     )
@@ -1543,7 +1618,10 @@ def apply_ci_cd(repo: Path, skill_dir: Path, shape: CiCdShape) -> list[str]:
         )
     missing = [
         name
-        for name in CI_CD_RECIPES
+        for name in (
+            *CI_CD_RECIPES,
+            *(RUST_CI_CD_RECIPES if shape.language == "rust" else ()),
+        )
         if name not in recipe_headers(justfile.read_text(encoding="utf-8"))
     ]
     if missing:

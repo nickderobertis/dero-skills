@@ -1,0 +1,6 @@
+# The Rust toolchain every job and every contributor builds with: an exact release, because
+# a cached test result names the inputs that proved it and this file is among them. The
+# version is one every runner the CI/CD shape renders can install.
+[toolchain]
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]

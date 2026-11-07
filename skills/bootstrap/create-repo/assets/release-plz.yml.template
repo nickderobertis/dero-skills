@@ -84,12 +84,18 @@ jobs:
           retention-days: 7
       - cancel: nx-cache
 #% if rust
+      - name: Read the pinned tool versions
+        id: pins
+        run: grep -v '^#' .github/ci-tool-versions | tr -d '\r' >> "$GITHUB_OUTPUT"
+      # Builds nothing it could reuse, and rust-cache-warm.yml is the one saver of Rust caches.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.guard.outputs.enabled == 'true'
+        with:
+          cache: false
       - uses: taiki-e/install-action@v2
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.guard.outputs.enabled == 'true'
         with:
-          tool: release-plz
+          tool: release-plz@${{ steps.pins.outputs.release-plz }}
       - name: Tag and cut the GitHub Release of a merged release pull request
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.guard.outputs.enabled == 'true'
         env:
