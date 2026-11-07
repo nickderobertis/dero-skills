@@ -512,22 +512,25 @@ scripts/actions-budget-figures.sh cache-headroom [--family PREFIX]... [--repo OW
 - **`cache-headroom` (gigabytes, a minimum).** Like `cache-use` it runs in
   `nx-remote-cache.mjs` and needs node, not onevcs, reading `GH_TOKEN` or
   `GITHUB_TOKEN`, `GITHUB_API_URL` and `GITHUB_REPOSITORY`. It reads
-  `actions/cache/storage-limit`, then every page of `actions/caches` sorted by size,
-  because a small cache can sit below any number of results; an incomplete listing
-  writes no figure. It never reads `actions/cache/usage`, measured lagging the listing
+  `actions/cache/storage-limit`, then every page of `actions/caches` sorted by
+  `created_at`, because a small cache can sit below any number of results and entries of
+  one size reorder between pages; an incomplete listing writes no figure. It never reads `actions/cache/usage`, measured lagging the listing
   by up to 715 MB. The figure is the allowance less the bytes of every entry, results
   included because they take real capacity, in gigabytes of 1,000,000,000 bytes. The
   allowance is `max_cache_size_gb` × 1,073,741,824 bytes, since GitHub's line is 10 GiB
-  (10.737 of these gigabytes) and not 10 GB. A family `--family` names counts only its
+  (10.737 of these gigabytes) and not 10 GB. A job holding `actions: read`, as every
+  pull-request `budgets` job and the release tail does, is answered 403 on the storage
+  limit, so a 403 there uses GitHub's stated 10 GiB (10,737,418,240 bytes). A family `--family` names counts only its
   newest entry, its older copies' bytes going to the detail; every other entry counts in
   full. A named family holding more than two entries reads 0, naming it in the detail,
   because two is the most a working cleanup leaves. Bytes above the line read negative,
   an over-budget reading and no error: a listing can stand above the line for minutes
-  before anything is removed. The detail gives the allowance, non-result bytes per family
+  before anything is removed. The detail gives the allowance and its source, non-result bytes per family
   (the key without its trailing hashes), result entries and bytes, the oldest result's
   age, the requests made and the lowest `X-RateLimit-Remaining` any response carried,
-  since these endpoints draw a core counter `gh api rate_limit` does not report. A failed
-  read, a 403 or 429 among them, writes nothing and exits 1.
+  since these endpoints draw a core counter `gh api rate_limit` does not report. Any other
+  failed read, a listing's 403 or a storage limit's 429 among them, writes nothing and
+  exits 1.
 
 **The copy rule.** A repository copies the script to
 `scripts/actions-budget-figures.sh` and names that copy as its budgets'
@@ -632,7 +635,8 @@ Copy the sources unchanged: [nx-remote-cache.mjs](../../assets/ci/nx-remote-cach
 warm workflow runs, [actions-cache-prune.mjs](../../assets/ci/actions-cache-prune.mjs).
 The source owns the command interface, telemetry schemas, validation and readers;
 consult it for fields and statuses rather than maintaining a second contract here.
-The adjacent versions files and baseline checker detect edited or stale copies.
+The adjacent versions files and baseline checker detect edited or stale copies;
+`nx-remote-cache.mjs` is at version 9.
 The composer reads the sidecar pin and promotion branch pattern from its exports.
 
 Each existing CI job decides trust, starts the pinned sidecar at the workspace

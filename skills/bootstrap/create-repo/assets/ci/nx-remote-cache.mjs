@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
-// version: 8
-// sha256: e35435fb6ffde524af3d4244dcd67c115fc9d3f350ab3d535124dbcc07518bd0
+// version: 9
+// sha256: b78ec6317b68852e884a761004d6dd23d399811bf8172c79f917ec49fbe5f275
 import {
   appendFileSync,
   readFileSync,
@@ -1831,6 +1831,9 @@ async function cacheUse(opts) {
 // GitHub's line is a binary 10 GiB, and the figure's gigabytes are decimal.
 const GIB = 1073741824;
 const GIGABYTE = 1000000000;
+// GitHub's stated allowance, for a token the storage-limit read refuses: `actions: read`
+// reads the listing but not the limit, and that is every pull request's `budgets` job.
+const STATED_ALLOWANCE_GIB = 10;
 const RESULT_KEY = /^nx-cache-/;
 // The key's trailing hex segments are rust-cache's environment and lockfile hashes.
 const familyOf = (key) => key.replace(/(-[0-9a-f]{6,})+$/, '');
@@ -1840,7 +1843,7 @@ function headroomClient(repo) {
   const token = env.GH_TOKEN || env.GITHUB_TOKEN;
   check(token, 'no token: set GH_TOKEN or GITHUB_TOKEN');
   const seen = { requests: 0, lowest: null };
-  async function get(path) {
+  async function read(path) {
     seen.requests++;
     const answer = await fetch(`${github.api.replace(/\/$/, '')}/repos/${repo}/${path}`, {
       headers: {
@@ -1853,20 +1856,50 @@ function headroomClient(repo) {
     const remaining = Number(answer.headers.get('x-ratelimit-remaining') ?? NaN);
     if (Number.isFinite(remaining))
       seen.lowest = seen.lowest === null ? remaining : Math.min(seen.lowest, remaining);
+    return answer;
+  }
+  async function get(path) {
+    const answer = await read(path);
     check(answer.ok, `GET ${path} answered HTTP ${answer.status}`);
     return answer.json();
   }
-  return { get, seen };
+  return { read, get, seen };
 }
 
-// Every entry of the listing, or a thrown reason: entries sort by size, so a page not
-// read is entries of any kind not counted, and a figure over the rest would be wrong.
+// The allowance and where it came from. Only a 403 falls back: a rate-limited 403 also
+// refuses the listing read next, and that still writes no figure.
+async function storageAllowance({ read }) {
+  const path = 'actions/cache/storage-limit';
+  const answer = await read(path);
+  if (answer.status === 403) {
+    await answer.arrayBuffer();
+    return {
+      gib: STATED_ALLOWANCE_GIB,
+      source: `GitHub's stated ${STATED_ALLOWANCE_GIB} GiB allowance; ${path} answered HTTP 403`,
+    };
+  }
+  check(answer.ok, `GET ${path} answered HTTP ${answer.status}`);
+  const limit = await answer.json();
+  check(
+    Number.isFinite(limit.max_cache_size_gb) && limit.max_cache_size_gb > 0,
+    'storage limit carries no max_cache_size_gb',
+  );
+  return {
+    gib: limit.max_cache_size_gb,
+    source: `max_cache_size_gb ${limit.max_cache_size_gb}`,
+  };
+}
+
+// Every entry of the listing, or a thrown reason: a page not read is entries of any kind
+// not counted, and a figure over the rest would be wrong. Pages run by created_at, which
+// never changes and carries microseconds. Sizes tie, and GitHub reorders ties between
+// pages, repeating one entry and omitting another; last_accessed_at moves as runs read.
 async function listAllCaches(get) {
   const entries = new Map();
   let total = 0;
   for (let page = 1; page <= 1000; page++) {
     const doc = await get(
-      `actions/caches?sort=size_in_bytes&direction=desc&per_page=100&page=${page}`,
+      `actions/caches?sort=created_at&direction=desc&per_page=100&page=${page}`,
     );
     check(
       Array.isArray(doc.actions_caches) && Number.isSafeInteger(doc.total_count),
@@ -1907,14 +1940,11 @@ async function cacheHeadroom(args) {
   }
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo ?? ''))
     usage('--repo must be OWNER/NAME, or set GITHUB_REPOSITORY');
-  const { get, seen } = headroomClient(repo);
-  const limit = await get('actions/cache/storage-limit');
-  check(
-    Number.isFinite(limit.max_cache_size_gb) && limit.max_cache_size_gb > 0,
-    'storage limit carries no max_cache_size_gb',
-  );
-  const entries = await listAllCaches(get);
-  const allowance = limit.max_cache_size_gb * GIB;
+  const client = headroomClient(repo);
+  const { seen } = client;
+  const limit = await storageAllowance(client);
+  const entries = await listAllCaches(client.get);
+  const allowance = limit.gib * GIB;
   // An entry a longer prefix also names belongs to that one.
   const named = new Map(families.map((prefix) => [prefix, []]));
   const byLength = [...named.keys()].sort((a, b) => b.length - a.length);
@@ -1951,7 +1981,7 @@ async function cacheHeadroom(args) {
   );
   const measured = Math.round(((allowance - used) / GIGABYTE) * 1000) / 1000;
   const detail = [
-    `allowance: ${allowance} bytes (max_cache_size_gb ${limit.max_cache_size_gb}), ${allowance / GIGABYTE} GB; counted ${used} bytes`,
+    `allowance: ${allowance} bytes (${limit.source}), ${allowance / GIGABYTE} GB; counted ${used} bytes`,
     ...[...nonResults]
       .sort((a, b) => b[1] - a[1])
       .map(([family, bytes]) => `non-result ${family}: ${bytes} bytes`),
