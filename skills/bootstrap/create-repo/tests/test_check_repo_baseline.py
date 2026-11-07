@@ -333,11 +333,13 @@ CONFORMANT_CARGO_CONFIG = """\
 [build]
 target-dir = "target"
 
-# Line tables only for dev and test builds (`test` inherits `dev`): backtraces and
-# coverage keep file:line, and the full debuginfo cargo writes by default
-# (`debug = 2`) stays off the disk. `release` is untouched.
+# No debuginfo for dev and test builds (`test` inherits `dev`): cargo passes no
+# `-C debuginfo` level and strips the standard library's. A panic still names its
+# file:line (that location is compiled in, not read from debuginfo) and
+# `cargo llvm-cov` measures through its own instrumentation, while every test
+# binary drops the 2-3x of its size debuginfo was. `release` is untouched.
 [profile.dev]
-debug = 1
+debug = 0
 """
 
 
@@ -1120,7 +1122,7 @@ def test_rust_repo_carrying_the_cargo_build_config_passes(tmp_path):
     findings = crb.audit(repo)
     assert not crb.has_errors(findings), levels(findings, "ERROR")
     assert [f.level for f in cargo_build_config_findings(findings)] == ["OK"]
-    assert "profile.dev.debug = 1" in cargo_build_config_findings(findings)[0].message
+    assert "profile.dev.debug = 0" in cargo_build_config_findings(findings)[0].message
 
 
 def test_extra_tables_beside_the_two_keys_still_pass(tmp_path):
@@ -1133,7 +1135,7 @@ def test_extra_tables_beside_the_two_keys_still_pass(tmp_path):
         config=(
             '[build]\njobs = 4\ntarget-dir = "target"\n\n'
             "[net]\ngit-fetch-with-cli = true\n\n"
-            "[profile.dev]\nopt-level = 1\ndebug = 1\n\n"
+            "[profile.dev]\nopt-level = 1\ndebug = 0\n\n"
             "[profile.release]\ndebug = 2\n"
         ),
     )
@@ -1149,7 +1151,7 @@ def test_rust_repo_without_the_cargo_config_is_error_naming_the_file(tmp_path):
     ]
     assert len(errors) == 1
     assert errors[0].message.startswith(".cargo/config.toml missing")
-    assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0].message
+    assert 'build.target-dir = "target", profile.dev.debug = 0' in errors[0].message
     assert "create .cargo/config.toml at the repo root" in errors[0].fix
 
 
@@ -1177,17 +1179,16 @@ def test_debug_2_is_error_naming_the_key_and_expected_value(tmp_path):
     ]
     assert len(errors) == 1
     assert errors[0].message == (
-        ".cargo/config.toml: cargo build configuration `profile.dev.debug` is 2, expected 1"
+        ".cargo/config.toml: cargo build configuration `profile.dev.debug` is 2, expected 0"
     )
     assert errors[0].fix.startswith(
-        "set `debug = 1` under [profile.dev] in .cargo/config.toml"
+        "set `debug = 0` under [profile.dev] in .cargo/config.toml"
     )
 
 
-def test_debug_true_is_error_even_though_true_equals_1_in_python(tmp_path):
+def test_debug_true_is_error_naming_full_debuginfo(tmp_path):
     # `debug = true` is cargo's level 2 — full debuginfo, the thing the contract
-    # turns off — and `True == 1` in Python, so the check has to compare the
-    # type, not just the value.
+    # turns off.
     repo = make_repo(tmp_path)
     write_cargo_repo(
         repo, config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = true\n'
@@ -1196,19 +1197,19 @@ def test_debug_true_is_error_even_though_true_equals_1_in_python(tmp_path):
         f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
     ]
     assert len(errors) == 1
-    assert "`profile.dev.debug` is true, expected 1" in errors[0].message
+    assert "`profile.dev.debug` is true, expected 0" in errors[0].message
 
 
-def test_debug_string_1_is_error(tmp_path):
+def test_debug_string_0_is_error(tmp_path):
     repo = make_repo(tmp_path)
     write_cargo_repo(
-        repo, config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = "1"\n'
+        repo, config='[build]\ntarget-dir = "target"\n\n[profile.dev]\ndebug = "0"\n'
     )
     errors = [
         f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
     ]
     assert len(errors) == 1
-    assert '`profile.dev.debug` is "1", expected 1' in errors[0].message
+    assert '`profile.dev.debug` is "0", expected 0' in errors[0].message
 
 
 def test_target_dir_elsewhere_is_error_naming_the_key(tmp_path):
@@ -1217,7 +1218,7 @@ def test_target_dir_elsewhere_is_error_naming_the_key(tmp_path):
     repo = make_repo(tmp_path)
     write_cargo_repo(
         repo,
-        config='[build]\ntarget-dir = "/var/cache/shared-target"\n\n[profile.dev]\ndebug = 1\n',
+        config='[build]\ntarget-dir = "/var/cache/shared-target"\n\n[profile.dev]\ndebug = 0\n',
     )
     errors = [
         f for f in cargo_build_config_findings(crb.audit(repo)) if f.level == "ERROR"
@@ -1245,7 +1246,7 @@ def test_each_missing_key_is_its_own_finding(tmp_path):
         ".cargo/config.toml: cargo build configuration `build.target-dir` is unset, "
         'expected "target"',
         ".cargo/config.toml: cargo build configuration `profile.dev.debug` is unset, "
-        "expected 1",
+        "expected 0",
     ]
 
 
@@ -1260,7 +1261,7 @@ def test_unparseable_cargo_config_is_error(tmp_path):
     ]
     assert len(errors) == 1
     assert errors[0].message.startswith(".cargo/config.toml does not parse as TOML")
-    assert 'build.target-dir = "target", profile.dev.debug = 1' in errors[0].message
+    assert 'build.target-dir = "target", profile.dev.debug = 0' in errors[0].message
 
 
 def test_non_scalar_debug_value_is_quoted_by_repr(tmp_path):
@@ -1276,7 +1277,7 @@ def test_non_scalar_debug_value_is_quoted_by_repr(tmp_path):
     ]
     assert len(errors) == 1
     assert (
-        "`profile.dev.debug` is datetime.date(1979, 5, 27), expected 1"
+        "`profile.dev.debug` is datetime.date(1979, 5, 27), expected 0"
         in errors[0].message
     )
 
