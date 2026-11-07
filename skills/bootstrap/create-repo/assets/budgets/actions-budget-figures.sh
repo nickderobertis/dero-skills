@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 12
-# sha256: 489b2df43ef25b8fa29280444913d239c01453ae9c7bd037c286fdf73b9d7934
+# sha256: 5a647f0f4f76223cefde520f7d9e2e79592034aeffe731127bae63fff327066b
 #
 # The GitHub Actions budget figures, measured from onevcs's read-only host answers
 # and reported to `onebudgetspec check` (a `measure: reported` budget's command).
@@ -318,7 +318,7 @@ pr_selection() {
 # GitHub lists no runner OS, so each job's is read from its runner labels. The whole
 # listing or no figure: one that ends short of its total_count is a failed read.
 own_run_selection() {
-  local page=1 listed=0 total count query pages=()
+  local page=1 listed=0 total="" page_total count query pages=()
   [[ "$own_run" =~ ^[0-9]+$ ]] ||
     die "GITHUB_RUN_ID must be a number, got: $own_run: measure this figure in the run GitHub Actions started, which sets it"
   while :; do
@@ -328,16 +328,28 @@ own_run_selection() {
       die "gh api $query failed: $(tr -s '\n' ' ' <"$work/stderr"): check that GH_TOKEN can read this repository's Actions (actions: read), then re-run this figure"
     fi
     # A whole count, and every field a job's counting reads, or the figure would be wrong.
-    jq -e '(.total_count | type) == "number" and .total_count >= 0 and .total_count == (.total_count | floor)
+    # shellcheck disable=SC2016 # a jq program: every $name in it is jq's, never the shell's
+    jq -e 'def stamp: type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$");
+           def optional($kind): . == null or type == $kind;
+           (.total_count | type) == "number" and .total_count >= 0 and .total_count == (.total_count | floor)
            and (.jobs | type) == "array"
            and (.jobs | all(type == "object" and (.status | type) == "string"
-                            and (.name | type) == "string" and (.workflow_name | type) == "string"))' \
+                            and (.name | type) == "string" and (.workflow_name | type) == "string"
+                            and (.conclusion | optional("string")) and (.runner_name | optional("string"))
+                            and (.labels | . == null or (type == "array" and all(type == "string")))
+                            and (.status != "completed" or .conclusion == "skipped" or .runner_name == null
+                                 or ((.started_at | stamp) and (.completed_at | stamp))))) ' \
       "$work/jobs-$page.json" >/dev/null 2>&1 ||
       die "gh api $query answered no job listing: check the run on GitHub, then re-run this figure"
     pages+=("$work/jobs-$page.json")
-    total=$(jq .total_count "$work/jobs-$page.json")
-    count=$(jq '.jobs | length' "$work/jobs-$page.json")
+    read -r page_total count < <(jq -r '"\(.total_count) \(.jobs | length)"' "$work/jobs-$page.json") ||
+      die "cannot read the saved listing of $query: check that the runner's temp directory is writable, then re-run this figure"
+    [ -n "$total" ] || total=$page_total
+    [ "$page_total" -eq "$total" ] ||
+      die "gh api $query answered a total of $page_total jobs after one of $total: re-run this figure"
     listed=$((listed + count))
+    [ "$listed" -le "$total" ] ||
+      die "gh api $query listed $listed jobs of a run of $total: re-run this figure"
     [ "$listed" -lt "$total" ] || break
     [ "$count" -gt 0 ] || die "gh api $query listed $listed of the run's $total jobs: re-run this figure"
     page=$((page + 1))
@@ -353,7 +365,8 @@ own_run_selection() {
     [inputs.jobs[] | . + {runner_os: runner_os}] as $jobs
     | {blocks: [{label: null, runs: [{id: $id, workflow_name: ($jobs[0].workflow_name // null),
                                       event: "pull_request", jobs: $jobs}]}],
-       answers: []}' "${pages[@]}"
+       answers: []}' "${pages[@]}" ||
+    die "cannot read the saved listing of run $own_run: check that the runner's temp directory is writable, then re-run this figure"
 }
 
 # What is missing from a selection, if anything: a pull request with no run, or a

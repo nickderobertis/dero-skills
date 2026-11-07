@@ -730,6 +730,18 @@ OWN_ENV = {
 }
 
 
+LISTED_JOB = {
+    "name": "leg",
+    "workflow_name": "ci",
+    "status": "completed",
+    "conclusion": "success",
+    "runner_name": "r",
+    "labels": ["ubuntu-latest"],
+    "started_at": "2026-10-19T06:00:00Z",
+    "completed_at": "2026-10-19T06:00:10Z",
+}
+
+
 class GhDouble:
     """`gh` on PATH, answering each `gh api` with the next listing and recording it."""
 
@@ -829,18 +841,8 @@ def test_longest_job_on_a_pull_request_never_times_a_job_still_running(tmp_path)
 
 
 def test_a_run_past_100_jobs_pages_only_as_far_as_its_total(tmp_path):
-    job = {
-        "name": "leg",
-        "workflow_name": "ci",
-        "status": "completed",
-        "conclusion": "success",
-        "runner_name": "r",
-        "labels": ["ubuntu-latest"],
-        "started_at": "2026-10-19T06:00:00Z",
-        "completed_at": "2026-10-19T06:00:10Z",
-    }
-    first = {"total_count": 103, "jobs": [job] * 100}
-    second = {"total_count": 103, "jobs": [job] * 3}
+    first = {"total_count": 103, "jobs": [LISTED_JOB] * 100}
+    second = {"total_count": 103, "jobs": [LISTED_JOB] * 3}
     gh = GhDouble(tmp_path, first, second)
     done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
     assert done.returncode == 0, done.stderr
@@ -849,6 +851,26 @@ def test_a_run_past_100_jobs_pages_only_as_far_as_its_total(tmp_path):
         f"api repos/{OWN_REPO}/actions/runs/{OWN_RUN}/jobs?per_page=100&filter=latest"
     )
     assert gh.read() == [base, f"{base}&page=2"]
+
+
+def test_a_listing_past_its_total_writes_no_figure(tmp_path):
+    gh = GhDouble(tmp_path, {"total_count": 1, "jobs": [LISTED_JOB] * 2})
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "listed 2 jobs of a run of 1" in done.stderr
+    assert not (tmp_path / "result.json").exists()
+
+
+def test_a_total_that_changes_between_pages_writes_no_figure(tmp_path):
+    gh = GhDouble(
+        tmp_path,
+        {"total_count": 103, "jobs": [LISTED_JOB] * 100},
+        {"total_count": 104, "jobs": [LISTED_JOB] * 3},
+    )
+    done = own_figure(tmp_path, gh, "job-count", "--stage", "pr")
+    assert done.returncode == 1, done.stderr
+    assert "answered a total of 104 jobs after one of 103" in done.stderr
+    assert not (tmp_path / "result.json").exists()
 
 
 def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
@@ -875,6 +897,11 @@ def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
         {"total_count": -1, "jobs": []},
         {"total_count": 1, "jobs": "none"},
         {"total_count": 1, "jobs": [{"name": "no status", "workflow_name": "ci"}]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, labels=[1])]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, conclusion=1)]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, runner_name=1)]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, completed_at="yesterday")]},
+        {"total_count": 1, "jobs": [dict(LISTED_JOB, started_at=None)]},
     ],
     ids=[
         "not JSON",
@@ -883,6 +910,11 @@ def test_a_listing_short_of_its_total_writes_no_figure(tmp_path):
         "a negative count",
         "no list",
         "no status",
+        "labels that are no strings",
+        "a conclusion that is no string",
+        "a runner that is no string",
+        "an end that is no timestamp",
+        "no start",
     ],
 )
 def test_an_answer_that_is_no_job_listing_writes_no_figure(tmp_path, answer):

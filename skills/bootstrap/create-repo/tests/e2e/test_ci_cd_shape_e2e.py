@@ -36,6 +36,7 @@ from pathlib import Path
 
 import pytest
 from ci_cd_shape import (
+    COMPOSER,
     ASSETS,
     COMPOSITIONS,
     GOVERNANCE,
@@ -774,6 +775,27 @@ BREAKS = {
         ),
         "labels {NAME}-gate-time without `not-measured-on-pr`".replace("{NAME}", NAME),
     ),
+    "a block list of labels without the not-measured label": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            "threshold: 5400\n    labels: [release-tail, not-measured-on-pr]",
+            "threshold: 5400\n    labels:\n      - release-tail",
+        ),
+        f"labels {NAME}-release-cycle-time without `not-measured-on-pr`",
+    ),
+    "a block list of labels on a measured CI-time budget": (
+        lambda repo: edit(
+            repo,
+            "budgets.yaml",
+            CI_CHECK_LABELS,
+            CI_CHECK_LABELS.replace(
+                "labels: [release-tail]",
+                "labels:\n      - release-tail\n      - not-measured-on-pr",
+            ),
+        ),
+        f"labels {NAME}-ci-check-time `not-measured-on-pr`",
+    ),
     "a measured CI-time budget carrying the not-measured label": (
         lambda repo: edit(
             repo,
@@ -891,6 +913,45 @@ def test_the_baseline_checker_reports_a_composition_out_of_shape(tmp_path, name)
     done = baseline(repo)
     assert done.returncode == 1, done.stdout
     assert finding in done.stderr, done.stderr
+
+
+def test_a_block_list_carrying_the_label_passes_the_baseline(tmp_path):
+    repo = compose(tmp_path / "repo")
+    edit(
+        repo,
+        "budgets.yaml",
+        "threshold: 5400\n    labels: [release-tail, not-measured-on-pr]",
+        "threshold: 5400\n    labels:\n      - release-tail\n      - not-measured-on-pr",
+    )
+    done = baseline(repo)
+    assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize("line", ["target", "target/", "/target", "/target/"])
+def test_a_repository_ignoring_target_is_not_given_a_second_ignore(tmp_path, line):
+    repo = compose(tmp_path / "repo", files={".gitignore": f"{line}\n"})
+    ignored = (repo / ".gitignore").read_text(encoding="utf-8")
+    assert ignored.splitlines()[0] == line
+    assert "target/budget-results/" not in ignored.splitlines()
+    assert ".gate-time.json" in ignored.splitlines()
+    again = run(
+        [
+            "uv",
+            "run",
+            "--script",
+            str(COMPOSER),
+            "--ci-cd",
+            str(repo),
+            "--language",
+            "rust",
+            "--name",
+            NAME,
+            "--platforms",
+            "cross-platform",
+        ]
+    )
+    assert again.returncode == 0, again.stderr
+    assert (repo / ".gitignore").read_text(encoding="utf-8") == ignored
 
 
 def test_non_strict_protection_is_not_reported(tmp_path):
