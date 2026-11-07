@@ -769,6 +769,27 @@ def test_warm_journey_rejects_the_old_placeholder(warm_journey):
     assert problem.startswith("ci-warm failed") and "TODO" in problem
 
 
+def test_warm_journey_holds_under_a_github_actions_pull_request_job(
+    warm_journey, monkeypatch, tmp_path
+):
+    # What the runner and nx-set-shas export while this repository's own gate runs the journey:
+    # the commits they name exist in this repository's clone and not in the journey's.
+    for name, value in {
+        "CI": "true",
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_REF": "refs/pull/1/merge",
+        "GITHUB_SHA": "1" * 40,
+        "GITHUB_BASE_REF": "main",
+        "GITHUB_HEAD_REF": "a-branch",
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+        "NX_BASE": "2" * 40,
+        "NX_HEAD": "3" * 40,
+    }.items():
+        monkeypatch.setenv(name, value)
+    assert warm_build_problems(warm_journey()) == []
+
+
 @pytest.mark.parametrize(
     "mismatch",
     [
