@@ -201,7 +201,10 @@ class WarmJourney:
         gitignore = self.repo / ".gitignore"
         gitignore.write_text(gitignore.read_text() + "\nnode_modules\n.nx/\ntarget/\n")
         self.env = {**os.environ, **RUST_ENV, **self._toolchain(root)}
+        # This repository's own CI exports both for its own commits, which this repository's
+        # temporary git history does not hold; `test_job` passes the base a pull request tests.
         self.env.pop("NX_BASE", None)
+        self.env.pop("NX_HEAD", None)
         self._git("init", "-q")
         self.commit("chore: base")
         self.base = self._git("rev-parse", "HEAD")
