@@ -632,9 +632,12 @@ ceiling; no rate control is promised, and test results are never deleted:
 holds the room left for them.
 
 `executions.json` is schema 2, two additive fields over schema 1, which a reader still
-accepts with both unknown. Each task's `remote_read` is `hit`, `miss`, `failed` (an
-answer other than 200 or 404, or no answer) or `not_attempted`. The document's `base_sha`
-is the first parent of the merge commit the run tested, null when that cannot be read.
+accepts with both unknown. Each task's `remote_read` is what the recording proxy saw:
+`hit` (200), `miss` (404), `failed` (any other status, or no answer, the sidecar gone or
+the connection dropped) or `not_attempted` (no read). The pinned sidecar answers its own
+store faults with a 404, so GitHub answering 500 reads as `miss`, which can only understate
+replays. The document's `base_sha` is the first parent of the merge commit the run tested,
+null when that cannot be read.
 
 The figure counts `base_moved` too. A release pull request's execution whose task and OS
 appear in a carried pull request's latest run at a different hash, where that run's

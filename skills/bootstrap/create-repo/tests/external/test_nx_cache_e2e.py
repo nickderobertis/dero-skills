@@ -368,6 +368,7 @@ class Workspace:
             stdout=log,
             stderr=subprocess.STDOUT,
         )
+        self.sidecar_process = process
         try:
             ready = self.cli("ready", "--timeout-seconds", "10", env=env)
             assert ready.returncode == 0, ready.stderr
@@ -787,6 +788,11 @@ def test_real_nx_hashes_ignore_only_release_edits_per_ecosystem(tmp_path, cache_
     toolchain.write_text("nodejs 26.9.0\n")
     all_changed = hashes("toolchain", 7)
     assert all(all_changed[task] != baseline[task] for task in baseline)
+    toolchain.write_text("nodejs 26.8.2\n")
+    pins = workspace.root / ".github/ci-tool-versions"
+    pins.write_text(pins.read_text().replace("bun=1.4.4", "bun=1.4.5"))
+    pins_changed = hashes("tool-pins", 8)
+    assert all(pins_changed[task] != baseline[task] for task in baseline)
 
 
 @pytest.fixture(scope="module")
@@ -1164,6 +1170,7 @@ def test_cache_use_accepts_historical_push_only_with_run_evidence(
         "wrong-os",
         "missing-timing",
         "wrong-timing",
+        "wrong-remote-read",
         "wrong-receipt-scope",
         "wrong-receipt-hash",
         "duplicate-conflict",
@@ -1214,6 +1221,8 @@ def test_cache_use_refuses_unavailable_or_hostile_evidence(
                     doc["os"] = "win32"
                 case "missing-timing":
                     del doc["tasks"][0]["started_at"]
+                case "wrong-remote-read":
+                    doc["tasks"][0]["remote_read"] = "maybe"
                 case "wrong-timing":
                     doc["tasks"][0]["started_at"] = "2099-01-01T00:00:00Z"
                     doc["tasks"][0]["finished_at"] = "2099-01-01T00:00:01Z"
@@ -1262,6 +1271,7 @@ def test_cache_use_refuses_unavailable_or_hostile_evidence(
             "wrong-os": "OS mismatches",
             "missing-timing": "invalid execution task",
             "wrong-timing": "timing mismatches",
+            "wrong-remote-read": "invalid execution task",
             "wrong-receipt-scope": "untrusted promotion",
             "wrong-receipt-hash": "no source expectation",
             "duplicate-conflict": "conflicting duplicate artifact",
@@ -2191,5 +2201,560 @@ def test_cache_use_partial_report_requires_github_cancellation(
             assert done.returncode != 0
             assert result["actual"] is None
             assert "telemetry is incomplete" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+def test_each_remote_read_outcome_reaches_task_telemetry(
+    tmp_path, cache_tools, github_cache
+):
+    workspace = Workspace(tmp_path / "workspace", cache_tools)
+
+    def read(name, *args, sidecar_gone=False):
+        with workspace.sidecar(github_cache, name, "refs/pull/1/merge") as (env, temp):
+            if sidecar_gone:
+                workspace.sidecar_process.terminate()
+                workspace.sidecar_process.wait(timeout=10)
+            run = command(
+                [
+                    "node",
+                    "node_modules/nx/dist/bin/nx.js",
+                    "run",
+                    "journey:test",
+                    "--output-style=static",
+                    *args,
+                ],
+                workspace.root,
+                env,
+            )
+            assert run.returncode == 0, (run.stdout, run.stderr)
+        doc = json.loads((temp / "report/executions.json").read_text())
+        assert doc["schema"] == 2
+        assert list(doc).count("base_sha") == 1
+        [task] = doc["tasks"]
+        return task
+
+    # An absent result: the store answers, and holds nothing.
+    absent = read("absent")
+    assert (absent["remote_read"], absent["result"]) == ("miss", "executed")
+    assert absent["remote_status"] == 404
+    # The stored result, read back with the local cache gone.
+    shutil.rmtree(workspace.root / ".nx")
+    stored = read("stored")
+    assert (stored["remote_read"], stored["result"]) == ("hit", "remote_hit")
+    assert stored["remote_status"] == 200
+    # A result the local cache serves makes no remote read.
+    local = read("local")
+    assert (local["remote_read"], local["result"]) == ("not_attempted", "local_hit")
+    assert local["remote_status"] is None
+    # Nor does a run told to skip the cache, with the result absent locally too.
+    shutil.rmtree(workspace.root / ".nx")
+    skipped = read("skipped", "--skip-nx-cache")
+    assert (skipped["remote_read"], skipped["result"]) == ("not_attempted", "executed")
+    assert skipped["remote_status"] is None
+    # The read erroring at the proxy's boundary: the sidecar is gone and nothing answers.
+    shutil.rmtree(workspace.root / ".nx")
+    erroring = read("erroring", sidecar_gone=True)
+    assert (erroring["remote_read"], erroring["result"]) == ("failed", "executed")
+    assert erroring["remote_status"] is None
+    # The pinned sidecar's stated limit: it answers a store fault as a 404 of its own, so
+    # GitHub answering 500 reads as a miss, which can only understate replays.
+    shutil.rmtree(workspace.root / ".nx")
+    github_cache.mode = "fault"
+    degraded = read("degraded")
+    assert (degraded["remote_read"], degraded["result"]) == ("miss", "executed")
+    assert degraded["remote_status"] == 404
+
+
+@pytest.fixture(scope="module")
+def moved_base_history(tmp_path_factory, cache_tools):
+    """A carried pull request tested on a real merge ref, then merged on a base that moved."""
+    root = tmp_path_factory.mktemp("moved-base-history")
+    cache = GithubCache()
+    workspace = Workspace(root / "workspace", cache_tools)
+
+    def git(*args):
+        done = command(
+            [
+                "git",
+                "-c",
+                "user.name=journey",
+                "-c",
+                "user.email=journey@example.com",
+                *args,
+            ],
+            workspace.root,
+        )
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
+
+    source = workspace.root / "src/library.js"
+    source.parent.mkdir()
+    source.write_text("export const value = 1;\n")
+    (workspace.root / ".github/release-published-paths").write_text(
+        "src/**\npackage.json\n"
+    )
+    git("add", "-A")
+    git("commit", "-qm", "chore: base")
+    tested_base = git("rev-parse", "HEAD")
+    git("checkout", "-qb", "change-1")
+    source.write_text("export const value = 2;\n")
+    git("add", "-A")
+    git("commit", "-qm", "fix: published library")
+    head = git("rev-parse", "HEAD")
+    # refs/pull/1/merge: the commit a pull_request run checks out, its first parent the base.
+    git("checkout", "-q", "--detach", tested_base)
+    git("merge", "-q", "--no-ff", "-m", "Merge change-1 into main", head)
+    merge_ref = git("rev-parse", "HEAD")
+    assert git("rev-parse", "HEAD^1") == tested_base
+    try:
+        executions = []
+        for attempt in (1, 2):
+            shutil.rmtree(workspace.root / ".nx", ignore_errors=True)
+            with workspace.sidecar(
+                cache,
+                f"carried-{attempt}",
+                "refs/pull/1/merge",
+                GITHUB_SHA=merge_ref,
+                NX_BASE=tested_base,
+                NX_HEAD=head,
+                GITHUB_RUN_ATTEMPT=str(attempt),
+            ) as (env, temp):
+                done = workspace.nx(env)
+                assert done.returncode == 0, (done.stdout, done.stderr)
+            executions.append(json.loads((temp / "report/executions.json").read_text()))
+            pr, _, _ = source_metadata(
+                cache,
+                temp / "report",
+                attempt=attempt,
+                head=head,
+                base=tested_base,
+                merge="0" * 40,
+            )
+        # main moved under the pull request, and its squash landed on the newer base.
+        git("checkout", "-q", "-B", "main", tested_base)
+        (workspace.root / "src/other.js").write_text("export const other = 1;\n")
+        git("add", "-A")
+        git("commit", "-qm", "fix: another change")
+        landed_base = git("rev-parse", "HEAD")
+        source.write_text("export const value = 2;\n")
+        git("add", "-A")
+        git("commit", "-qm", "fix: published library (#1)")
+        merged = git("rev-parse", "HEAD")
+        assert landed_base != tested_base
+        pr["merge_commit_sha"] = merged
+        cache.metadata[f"/repos/example/project/commits/{merged}/pulls"] = [pr]
+        cache.metadata[f"/repos/example/project/commits/{merged}"] = {
+            "sha": merged,
+            "parents": [{"sha": landed_base}],
+        }
+        with workspace.sidecar(
+            cache,
+            "promote",
+            "refs/heads/main",
+            GITHUB_EVENT_NAME="push",
+            GITHUB_SHA=merged,
+        ) as (env, promoted):
+            done = workspace.cli(
+                "promote", "--sha", merged, "--workflow", "ci.yml", env=env
+            )
+            assert done.returncode == 0, done.stderr
+            assert (promoted / "nx-cache-promotion/receipt.json").exists(), done.stdout
+        package = workspace.root / "package.json"
+        data = json.loads(package.read_text())
+        data["version"] = "1.0.1"
+        package.write_text(json.dumps(data))
+        git("add", "-A")
+        git("commit", "-qm", "chore: release")
+        release_sha = git("rev-parse", "HEAD")
+        # The release pull request's tree holds what landed, so it runs at a hash no run proved.
+        shutil.rmtree(workspace.root / ".nx")
+        with workspace.sidecar(
+            cache,
+            "release",
+            "refs/pull/2/merge",
+            NX_BASE=merged,
+            NX_HEAD=release_sha,
+            GITHUB_RUN_ID="2",
+        ) as (env, temp):
+            done = workspace.nx(env)
+            assert done.returncode == 0, (done.stdout, done.stderr)
+        source_metadata(
+            cache,
+            temp / "report",
+            run_id=2,
+            pr_number=2,
+            head=release_sha,
+            base=merged,
+            merge=release_sha,
+        )
+        published = utc_now(1)
+        cache.metadata["/repos/example/project/releases"] = [
+            {"tag_name": "v1.0.1", "draft": False, "published_at": published},
+            {"tag_name": "v1.0.0", "draft": False, "published_at": utc_now(-3600)},
+        ]
+        cache.metadata["/repos/example/project/commits/v1.0.1"] = {"sha": release_sha}
+        cache.metadata["/repos/example/project/compare/v1.0.0...v1.0.1"] = {
+            "commits": [{"sha": merged}, {"sha": release_sha}]
+        }
+        cache.metadata[
+            "/repos/example/project/actions/workflows/release-plz.yml/runs"
+        ] = {
+            "workflow_runs": [
+                {
+                    "id": 100,
+                    "run_attempt": 1,
+                    "head_sha": merged,
+                    "head_branch": "main",
+                    "event": "push",
+                    "head_repository": {"id": 1, "full_name": "example/project"},
+                    "updated_at": published,
+                }
+            ]
+        }
+        cache.metadata["/repos/example/project/actions/runs/100/artifacts"] = {
+            "artifacts": [
+                {
+                    "id": 10000,
+                    "name": "nx-cache-promotion-" + merged,
+                    "expired": False,
+                    "workflow_run": {
+                        "id": 100,
+                        "head_sha": merged,
+                        "head_repository_id": 1,
+                    },
+                }
+            ]
+        }
+        cache.metadata["/repos/example/project/actions/artifacts/10000/zip"] = (
+            archive_report(promoted / "nx-cache-promotion")
+        )
+        yield workspace, cache, root, executions, (tested_base, landed_base, merged)
+    finally:
+        cache.close()
+
+
+def measure_moved(history, tmp_path):
+    workspace, cache, *_ = history
+    return measure_cache_use((workspace, cache, None, None), tmp_path)
+
+
+def rewrite_execution(cache, artifact, change):
+    key = f"/repos/example/project/actions/artifacts/{artifact}/zip"
+    with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as archive:
+        files = {name: archive.read(name) for name in archive.namelist()}
+    doc = json.loads(files["executions.json"])
+    change(doc)
+    files["executions.json"] = json.dumps(doc).encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, body in files.items():
+            archive.writestr(name, body)
+    cache.metadata[key] = output.getvalue()
+
+
+def as_schema_one(doc):
+    doc["schema"] = 1
+    del doc["base_sha"]
+    for task in doc["tasks"]:
+        del task["remote_read"]
+
+
+def test_a_merge_ref_run_records_the_base_it_tested(moved_base_history):
+    *_, executions, (tested_base, _, _) = moved_base_history
+    assert [doc["base_sha"] for doc in executions] == [tested_base, tested_base]
+
+
+def test_a_moved_base_counts_a_release_execution_as_a_base_moved_miss(
+    moved_base_history, tmp_path
+):
+    # The retry replayed; the release pull request re-ran what the run proved on another base.
+    *_, (tested_base, landed_base, _) = moved_base_history
+    done, result = measure_moved(moved_base_history, tmp_path)
+    assert result["actual"] == 50, result
+    assert "aggregate: 1/2 remote hits (50%)" in result["detail"]
+    assert "release PR: 0/1" in result["detail"]
+    assert ": base_moved, #1 tested " in result["detail"]
+    assert f"on base {tested_base}, merged on {landed_base}" in result["detail"]
+    assert done.returncode != 0  # 50 is below the budget's minimum, and no error.
+    assert result["verdict"] != "error"
+
+
+def test_a_changed_hash_on_an_unmoved_base_stays_excluded(moved_base_history, tmp_path):
+    _, cache, _, _, (tested_base, _, merged) = moved_base_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        cache.metadata[f"/repos/example/project/commits/{merged}"]["parents"] = [
+            {"sha": tested_base}
+        ]
+        done, result = measure_moved(moved_base_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "base_moved" not in result["detail"]
+        assert "release PR: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_schema_one_evidence_reads_with_its_base_unknown_and_counted(
+    moved_base_history, tmp_path
+):
+    _, cache, *_ = moved_base_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        # Both of the carried run's attempts, as an earlier script wrote them.
+        rewrite_execution(cache, 101, as_schema_one)
+        rewrite_execution(cache, 102, as_schema_one)
+        done, result = measure_moved(moved_base_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "base_moved" not in result["detail"]
+        assert "carried runs with an unknown base, excluded: 1" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_an_earlier_incomplete_schema_two_document_still_needs_cancellation(
+    moved_base_history, tmp_path
+):
+    # Before base_sha, schema 2 meant incomplete alone, with or without a named invocation.
+    _, cache, *_ = moved_base_history
+    original = copy.deepcopy(cache.metadata)
+
+    def earlier_schema_two(doc):
+        del doc["base_sha"]
+        for task in doc["tasks"]:
+            del task["remote_read"]
+
+    try:
+        rewrite_execution(cache, 102, earlier_schema_two)
+        done, result = measure_moved(moved_base_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert "telemetry is incomplete" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_base_sha_that_is_not_a_commit_is_refused(moved_base_history, tmp_path):
+    _, cache, *_ = moved_base_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        rewrite_execution(cache, 102, lambda doc: doc.update(base_sha="not-a-sha"))
+        done, result = measure_moved(moved_base_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert "invalid base_sha" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_whole_workflow_rerun_is_reported_unavailable_with_a_figure_from_the_rest(
+    telemetry_history, tmp_path
+):
+    # GitHub lists only the last attempt's artifacts once every job has run again.
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    listing = "/repos/example/project/actions/runs/1/artifacts"
+    try:
+        cache.metadata[listing]["artifacts"] = [
+            a for a in cache.metadata[listing]["artifacts"] if a["id"] != 101
+        ]
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert (
+            "unavailable: run 1/1 job test-linux: a whole-workflow re-run removed"
+            in result["detail"]
+        )
+        assert "unavailable artifacts: 1;" in result["detail"]
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_rerun_removing_the_attempt_a_receipt_names_still_measures(
+    telemetry_history, tmp_path
+):
+    # The release pull request's replay is what is left, and the receipt says what was written.
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    listing = "/repos/example/project/actions/runs/1/artifacts"
+    key = "/repos/example/project/actions/artifacts/10000/zip"
+    try:
+        with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as source:
+            receipt = json.loads(source.read("receipt.json"))
+        receipt["source_attempt"] = 1
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as target:
+            target.writestr("receipt.json", json.dumps(receipt))
+        cache.metadata[key] = output.getvalue()
+        cache.metadata[listing]["artifacts"] = [
+            a for a in cache.metadata[listing]["artifacts"] if a["id"] != 101
+        ]
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "unavailable artifacts: 1;" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def carry_pull_request(workspace, cache, number, run_created_at):
+    """A real merge commit changing a published path, carried by the release."""
+
+    def git(*args):
+        done = command(["git", *args], workspace.root)
+        assert done.returncode == 0, done.stderr
+        return done.stdout.strip()
+
+    first = git("rev-list", "--max-parents=0", "HEAD").splitlines()[-1]
+    tree = git("rev-parse", "HEAD~1^{tree}")
+    merge = git(
+        "-c",
+        "user.name=journey",
+        "-c",
+        "user.email=journey@example.com",
+        "commit-tree",
+        tree,
+        "-p",
+        first,
+        "-m",
+        f"fix: an old change (#{number})",
+    )
+    repository = {"id": 1, "full_name": "example/project"}
+    head = "b" * 40
+    pr = {
+        "number": number,
+        "head": {"sha": head, "ref": f"change-{number}", "repo": repository},
+        "base": {"sha": first, "ref": "main", "repo": repository},
+        "user": {"login": "maintainer"},
+        "merged_at": run_created_at or "2000-01-01T00:00:00Z",
+        "merge_commit_sha": merge,
+    }
+    cache.metadata[f"/repos/example/project/commits/{merge}/pulls"] = [pr]
+    compare = cache.metadata["/repos/example/project/compare/v1.0.0...v1.0.1"]
+    compare["commits"].insert(0, {"sha": merge})
+    if run_created_at is None:
+        return pr
+    run = {
+        "id": number,
+        "run_attempt": 1,
+        "head_sha": head,
+        "head_branch": f"change-{number}",
+        "event": "pull_request",
+        "head_repository": repository,
+        "pull_requests": [
+            {
+                "number": number,
+                "head": {"sha": head, "ref": f"change-{number}"},
+                "base": {"sha": first, "ref": "main"},
+            }
+        ],
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": run_created_at,
+        "run_started_at": run_created_at,
+        "updated_at": run_created_at,
+    }
+    listing = cache.metadata["/repos/example/project/actions/workflows/ci.yml/runs"]
+    listing["workflow_runs"].append(run)
+    prefix = f"/repos/example/project/actions/runs/{number}"
+    cache.metadata[f"{prefix}/attempts/1"] = run
+    cache.metadata[f"{prefix}/attempts/1/jobs"] = {
+        "jobs": [
+            {
+                "name": "test-linux",
+                "conclusion": "success",
+                "labels": ["ubuntu-latest"],
+            }
+        ]
+    }
+    cache.metadata[f"{prefix}/artifacts"] = {"artifacts": []}
+    return pr
+
+
+def test_a_pull_request_predating_adoption_is_reported_with_a_figure_from_the_rest(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        carry_pull_request(workspace, cache, 3, "2000-01-01T00:00:00Z")
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+        assert "unavailable: run 3/1 predates" in result["detail"]
+        assert "unavailable artifacts: 1;" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_pull_request_merged_before_adoption_with_no_run_left_is_reported(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        carry_pull_request(workspace, cache, 3, None)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "unavailable: #3 merged before" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_run_after_adoption_with_no_artifact_still_errors(
+    telemetry_history, tmp_path
+):
+    # Telemetry was on and the artifact is gone: that is what the figure must not pass over.
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        # The release commit's time: after adoption, and before the release's publication.
+        release_commit = command(
+            ["git", "log", "-1", "--format=%cI", "HEAD"], workspace.root
+        ).stdout.strip()
+        when = datetime.fromisoformat(release_commit).astimezone(timezone.utc)
+        carry_pull_request(workspace, cache, 3, when.isoformat().replace("+00:00", "Z"))
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert "missing artifact" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_superseded_attempts_invalid_artifact_still_errors(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        cache.metadata["/repos/example/project/actions/artifacts/101/zip"] = (
+            b"not a zip archive, though long enough to read an end record from"
+        )
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert "not a ZIP" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+def test_nothing_measurable_still_reports_missing(telemetry_history, tmp_path):
+    # Every run predates adoption and uploaded nothing: an empty figure is no pass.
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    prefix = "/repos/example/project/actions"
+    try:
+        for run_id, attempts in ((1, (1, 2)), (2, (1, 2))):
+            cache.metadata[f"{prefix}/runs/{run_id}/artifacts"] = {"artifacts": []}
+            for attempt in attempts:
+                run = cache.metadata[f"{prefix}/runs/{run_id}/attempts/{attempt}"]
+                run["created_at"] = "2000-01-01T00:00:00Z"
+        cache.metadata[f"{prefix}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert "zero eligible executions" in result["error"]
     finally:
         cache.metadata = original

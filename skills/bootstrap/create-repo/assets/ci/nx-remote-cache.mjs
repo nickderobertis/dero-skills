@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 8
-// sha256: 7d2949462f328f0a2f7dd00466000a75fd1f4738649f624de6b3d62902a239df
+// sha256: cd56baf38893948f4a9ccfd86716dc649672190bc57165a342426255e302332e
 import {
   appendFileSync,
   readFileSync,
@@ -77,8 +77,9 @@ const hashOK = (value) =>
   typeof value === 'string' && /^[a-f0-9]{1,512}$/.test(value);
 const integer = (value) => Number.isSafeInteger(value) && value > 0;
 const taskKey = (t) => `${t.task}\0${t.os}\0${t.hash}`;
-// A remote read's outcome: 200 served it, 404 is the store's own answer that it holds
-// nothing, and any other status or a lost connection (null) never got an answer.
+// A remote read's outcome at the recording proxy: 200 served it, 404 said it holds nothing,
+// and any other status or no answer (null) is a failed read. The pinned sidecar answers its
+// own store faults with a 404, so those read as a miss, which can only understate replays.
 function remoteRead(gets) {
   if (gets.length === 0) return 'not_attempted';
   if (gets.some((get) => get.http_status === 200)) return 'hit';
@@ -394,6 +395,12 @@ function validateExecutions(doc) {
     Array.isArray(doc.tasks) && Array.isArray(doc.store_attempts),
     'missing tasks or store_attempts',
   );
+  if ('base_sha' in doc)
+    check(
+      doc.base_sha === null ||
+        (typeof doc.base_sha === 'string' && /^[a-f0-9]{40}$/.test(doc.base_sha)),
+      'invalid base_sha',
+    );
   if (doc.schema === 2)
     check(
       Array.isArray(doc.cancelled_invocations ?? []) &&
@@ -817,15 +824,6 @@ function artifactsFor(
       Date.parse(a.created_at) >= Date.parse(run.run_started_at) &&
       Date.parse(a.created_at) <= Date.parse(run.updated_at),
   );
-  // Evidence nothing could have kept: nothing here was uploaded and validated, so
-  // there is nothing to distrust, and an artifact that is present is read below.
-  if (run.predates_adoption && selected.length === 0) {
-    detail.push(
-      `unavailable: run ${run.id}/${run.run_attempt} predates this repository's cache telemetry, adopted ${run.predates_adoption}`,
-    );
-    unavailable.count++;
-    return [];
-  }
   const jobs = gh.pages(
     `repos/${gh.repo}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`,
     'jobs',
@@ -834,6 +832,15 @@ function artifactsFor(
     detail.push(
       `run ${run.id}/${run.run_attempt} started no job (conclusion: ${run.conclusion})`,
     );
+    return [];
+  }
+  // Evidence nothing could have kept: nothing here was uploaded and validated, so
+  // there is nothing to distrust, and an artifact that is present is read below.
+  if (run.predates_adoption && selected.length === 0) {
+    detail.push(
+      `unavailable: run ${run.id}/${run.run_attempt} predates this repository's cache telemetry, adopted ${run.predates_adoption}`,
+    );
+    unavailable.count++;
     return [];
   }
   const expected = jobs.filter(
