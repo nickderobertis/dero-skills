@@ -473,23 +473,95 @@ class Journey:
         return sorted(self.counts.read_text().split()) if self.counts.exists() else []
 
 
-def table_rows(markdown: str, budget: str) -> list[str]:
-    return [
-        line
-        for line in markdown.splitlines()
-        if line.startswith("|") and f"/ {budget} " in line
+# Where each part of the core's comment layout opens; each closes at its next `</details>`.
+SECTIONS = {
+    "attention": "<details open><summary><b>Needs attention",
+    "within": "<details><summary><b>Within budget",
+    "details": "<details><summary>Details</summary>",
+}
+NOT_MEASURED = "Not measured on this run"
+WHY_MISSING = "Why some figures are missing"
+
+
+def section(markdown: str, name: str) -> str:
+    """One collapsible part of a report, or "" when the report has none."""
+    start = markdown.find(SECTIONS[name])
+    return "" if start < 0 else markdown[start : markdown.index("</details>", start)]
+
+
+def listed(text: str, heading: str) -> dict[str, str]:
+    """The `- names: text` bullets under one bold heading of Details, by budget."""
+    if f"**{heading}" not in text:
+        return {}
+    block = text.split(f"**{heading}", 1)[1].split("\n\n", 2)[1]
+    items = {}
+    for line in block.splitlines():
+        names, said = line.removeprefix("- ").split(": ", 1)
+        items.update(dict.fromkeys(names.split(", "), said))
+    return items
+
+
+def placements(markdown: str, budget: str) -> list[tuple[str, str]]:
+    """Every place a report shows `budget`: a table row, or a not-measured bullet."""
+    found = [
+        (name, line)
+        for name in ("attention", "within")
+        for line in section(markdown, name).splitlines()
+        if line.startswith(f"| **{budget}** |")
     ]
+    unmeasured = listed(section(markdown, "details"), NOT_MEASURED)
+    if budget in unmeasured:
+        found.append(("not-measured", unmeasured[budget]))
+    return found
 
 
-def one_table_row(markdown: str, budget: str) -> str:
-    rows = table_rows(markdown, budget)
-    assert len(rows) == 1, (budget, rows)
-    return rows[0]
+def placement(markdown: str, budget: str) -> tuple[str, str]:
+    found = placements(markdown, budget)
+    assert len(found) == 1, (budget, found)
+    return found[0]
 
 
-def row_verdict(row: str) -> str:
-    """The cell after the budget's name, which holds its verdict or says it has none."""
-    return row.split("|")[2].strip()
+def why_missing(markdown: str) -> dict[str, str]:
+    return listed(section(markdown, "details"), WHY_MISSING)
+
+
+def assert_readable_layout(markdown: str, job) -> None:
+    """The summary line, then what needs attention open, the rest folded beneath."""
+    rows = job.rows()
+    unmeasured = {budget for budget, row in rows.items() if "verdict" not in row}
+    attention = {
+        budget
+        for budget, row in rows.items()
+        if row.get("verdict") == "over" or row.get("flag")
+    }
+    within = set(rows) - unmeasured - attention
+    assert attention == {REPORT_ONLY_OVER}, rows
+    summary = markdown.split("\n\n")[1]
+    assert summary.startswith(
+        f"**⚠️ {len(attention)} need attention** · {len(within)} within budget · "
+        f"{len(unmeasured)} not measured · head {job.sha[:7]} · [run {job.run_id}]("
+    ), summary
+    assert markdown.index(SECTIONS["attention"]) < markdown.index(SECTIONS["within"])
+    assert markdown.index(SECTIONS["within"]) < markdown.index(SECTIONS["details"])
+    assert section(markdown, "attention").startswith(
+        f"{SECTIONS['attention']} ({len(attention)})</b></summary>\n\n"
+        "| Budget | Now · vs base | Reason |\n"
+    )
+    assert section(markdown, "within").startswith(
+        f"{SECTIONS['within']} ({len(within)})</b></summary>\n\n"
+        "| Budget | Now · vs base |\n"
+    )
+    details = section(markdown, "details")
+    assert f"\n**{NOT_MEASURED} ({len(unmeasured)})**\n" in details
+    for budget in attention:
+        assert placement(markdown, budget)[0] == "attention", budget
+    for budget in within:
+        assert placement(markdown, budget)[0] == "within", budget
+    for budget in unmeasured:
+        assert placement(markdown, budget)[0] == "not-measured", budget
+    assert "Over limit (report-only)" in placement(markdown, REPORT_ONLY_OVER)[1]
+    assert markdown.count(OMITTED_LINE) == 1
+    assert f"\n- {OMITTED_LINE}\n" in details
 
 
 def assert_omitted_and_counted(job) -> None:
@@ -499,9 +571,10 @@ def assert_omitted_and_counted(job) -> None:
     measured = {r["id"] for r in job.saved("budget-run.json")["results"]["results"]}
     for budget in GENERATED_OMITTED:
         assert budget not in report and budget not in measured, budget
-        assert table_rows(markdown, budget) == [], budget
+        assert placements(markdown, budget) == [], budget
     [line] = [line for line in markdown.splitlines() if "left out" in line]
     assert OMITTED_LINE in line
+    assert f"\n- {OMITTED_LINE}\n" in section(markdown, "details")
 
 
 @pytest.fixture(params=sorted(COMPOSITIONS))
@@ -549,7 +622,7 @@ def test_the_generated_job_reports_every_budget_and_runs_each_command_once(
     report = job.saved("comparison-report.json")
     assert sorted(row["id"] for row in report["rows"]) == budgets
     for budget in budgets:
-        one_table_row(job.markdown(), budget)
+        placement(job.markdown(), budget)
 
     assert journey.executed() == sorted(RUNNABLE)
     budget_run = job.saved("budget-run.json")
@@ -630,9 +703,9 @@ def test_under_the_actions_token_a_pull_request_keeps_one_comment_and_main_its_h
     assert len(journey.host.comments) == 1
     # The comment is posted before the job's own budget has its verdict, so it is this
     # push's row, rather than the final report, that shows the comment moved.
-    row = one_table_row(journey.host.comments[0]["body"], "demo-bundle-bytes")
-    assert row == one_table_row(second.markdown(), "demo-bundle-bytes")
-    assert row != one_table_row(first.markdown(), "demo-bundle-bytes")
+    row = placement(journey.host.comments[0]["body"], "demo-bundle-bytes")
+    assert row == placement(second.markdown(), "demo-bundle-bytes")
+    assert row != placement(first.markdown(), "demo-bundle-bytes")
 
 
 def test_a_freshly_bootstrapped_repository_saves_history_from_its_own_budget(
@@ -653,36 +726,43 @@ def test_a_freshly_bootstrapped_repository_saves_history_from_its_own_budget(
         journey.close()
 
 
-def test_history_is_unavailable_below_five_saved_commits_then_provisional(journey):
+def test_history_is_unavailable_below_five_saved_commits_then_compared(journey):
     budget = "demo-bundle-bytes"
     for _ in range(4):
         assert journey.base_push().exit_code == 0
     few = journey.pull_request()
     assert few.rows()[budget]["baseline_n"] == 4
-    assert "minimum 5" in few.rows()[budget]["unavailable"]
+    assert few.rows()[budget]["flag"] is False
+    assert placement(few.markdown(), budget) == (
+        "within",
+        f"| **{budget}** | 500 bytes<br>baseline 4/5 |",
+    )
     assert few.exit_code == 0, few.stdout
 
     assert journey.base_push().exit_code == 0
     enough = journey.pull_request()
     assert enough.exit_code == 0, enough.stdout
     assert enough.rows()[budget]["baseline_n"] == 5
-    assert "provisional" in enough.markdown()
+    assert placement(enough.markdown(), budget) == (
+        "within",
+        f"| **{budget}** | 500 bytes<br>+0.0% (+0.0 SD) |",
+    )
 
 
 def test_an_enforced_budget_over_its_line_fails_and_a_report_only_one_does_not(journey):
     report_only = journey.pull_request()
     assert report_only.exit_code == 0, report_only.stdout
     assert report_only.rows()[REPORT_ONLY_OVER]["verdict"] == "over"
-    row = next(
-        line
-        for line in report_only.markdown().splitlines()
-        if f"/ {REPORT_ONLY_OVER} " in line
-    )
-    assert "report-only" in row
+    place, row = placement(report_only.markdown(), REPORT_ONLY_OVER)
+    assert place == "attention"
+    assert row.endswith("| Over limit (report-only) |"), row
 
     enforced = journey.pull_request(bundle_size=5000)
     assert enforced.exit_code == 1, enforced.stdout
     assert enforced.rows()["demo-bundle-bytes"]["verdict"] == "over"
+    place, row = placement(enforced.markdown(), "demo-bundle-bytes")
+    assert place == "attention"
+    assert row.endswith("| Over limit |"), row
     assert journey.executed() == sorted(RUNNABLE)
     assert len(journey.host.comments) == 1
 
@@ -721,28 +801,33 @@ def test_a_new_repositorys_first_report_starts_with_numbers(every_composition):
     rows = job.rows()
     assert rows[SAVED_BUDGET]["current"] == SAVED_FIGURE
     assert rows[SAVED_BUDGET]["verdict"] == "within"
-    assert f"| {SAVED_FIGURE}" in one_table_row(job.markdown(), SAVED_BUDGET)
+    assert placement(job.markdown(), SAVED_BUDGET) == (
+        "within",
+        f"| **{SAVED_BUDGET}** | {SAVED_FIGURE:.1f} requests<br>baseline 0/5 |",
+    )
     assert SAVED_BUDGET not in journey.executed()
 
     assert rows[CI_CHECK_TIME]["current"] == LONGEST_JOB_SECONDS
     assert rows[CI_JOB_COUNT]["current"] == len(journey.workflow["jobs"])
     for budget in GENERATED_MEASURED:
         assert rows[budget]["verdict"] == "within", rows[budget]
-        assert "report-only" in one_table_row(job.markdown(), budget)
+        assert placement(job.markdown(), budget)[0] == "within"
     read = f"/runs/{job.run_id}/jobs"
     assert journey.host.count(read) == journey.host.count(r"/runs/\d+/jobs") > 0
     assert journey.host.count("/releases/tags|/compare") == 0
 
     assert_omitted_and_counted(job)
     assert_omitted_and_counted_in_comment(journey)
+    [comment] = journey.host.comments
+    assert_readable_layout(comment["body"], job)
 
 
 def assert_omitted_and_counted_in_comment(journey) -> None:
     body = journey.host.comments[0]["body"]
     assert OMITTED_LINE in body
     for budget in GENERATED_OMITTED:
-        assert table_rows(body, budget) == [], budget
-    one_table_row(body, CI_CHECK_TIME)
+        assert placements(body, budget) == [], budget
+    placement(body, CI_CHECK_TIME)
 
 
 def test_a_missing_saved_results_artifact_leaves_its_budget_unavailable_and_fails_nothing(
@@ -754,7 +839,11 @@ def test_a_missing_saved_results_artifact_leaves_its_budget_unavailable_and_fail
     row = job.rows()[SAVED_BUDGET]
     assert "verdict" not in row, row
     assert row["unavailable"] == NO_SAVED_RESULT
-    assert row_verdict(one_table_row(job.markdown(), SAVED_BUDGET)) == "unavailable"
+    assert placement(job.markdown(), SAVED_BUDGET) == (
+        "not-measured",
+        "no result this run · baseline 0/5",
+    )
+    assert why_missing(job.markdown())[SAVED_BUDGET] == NO_SAVED_RESULT
 
 
 def test_a_base_push_takes_the_merged_pull_requests_figures(journey):
@@ -793,9 +882,9 @@ def test_a_base_push_with_no_pull_request_keeps_its_rows_unavailable_and_reads_n
     assert base.exit_code == 0, base.stdout
     assert journey.host.count(r"/runs/\d+/jobs|/releases/tags|/compare") == 0
     for budget in GENERATED_MEASURED:
-        row = one_table_row(base.markdown(), budget)
-        assert row_verdict(row) == "unavailable", row
-        assert FIGURES_NEED_ONEVCS in row, row
+        place, row = placement(base.markdown(), budget)
+        assert place == "not-measured", row
+        assert FIGURES_NEED_ONEVCS in why_missing(base.markdown())[budget]
     assert_omitted_and_counted(base)
 
 
@@ -808,7 +897,7 @@ def test_a_fork_gets_a_summary_and_artifact_without_a_comment_or_credential(jour
     assert journey.host.count("commits/main") == 0, "a budget command reached the host"
     assert journey.host.count(r"/runs/\d+/jobs") == 0, "the figures hold no credential"
     for budget in GENERATED_MEASURED:
-        assert row_verdict(one_table_row(job.markdown(), budget)) == "unavailable"
+        assert placement(job.markdown(), budget)[0] == "not-measured"
     assert "someone/fork" in job.summary
     assert journey.host.artifact_files(job.run_id) is not None
     assert base.exit_code == 0
