@@ -337,22 +337,27 @@ release's whole payload is usable.
 
 - **When it runs.** Every pull request, draft or not and whatever it touches, and every
   push to main, after the other jobs however they ended. It adds no build or test.
-- **What it checks.** Every budget without an omitted label gets one row. One with a result
-  `test-linux` saved shows that figure with its verdict, and its command does not run here.
-  Any other runs once through ordinary `onebudgetspec check --id`, with its original command,
-  labels and threshold, unless its own argv shows it cannot run: its program is missing, or a
-  relative path it names is absent. Then its row reads `no saved result was found on this
-  run`. A missing `ci-report` label is never a reason, and nothing is rerun to fill a row. So
-  name a budget's saved telemetry in its `command`: an absent file then reads as unavailable
-  rather than as a failed measurement.
+- **What it checks.** Every budget without an omitted label appears once in the report. One
+  with a result `test-linux` saved shows that figure with its verdict, and its command does
+  not run here. Any other runs once through ordinary `onebudgetspec check --id`, with its
+  original command, labels and threshold, unless its own argv shows it cannot run: its
+  program is missing, or a relative path it names is absent. Then it is listed as not
+  measured, with `no saved result was found on this run` as its reason. A missing
+  `ci-report` label is never a reason, and nothing is rerun to fill a figure. So name a
+  budget's saved telemetry in its `command`: an absent file then reads as unavailable rather
+  than as a failed measurement.
+- **How the comment reads.** The layout is the action's contract, and its README at the
+  pinned tag is its one source; this reference does not restate it.
+  `tests/external/test_budget_report_job_external.py` reads the comment the released action
+  posts for a composed repository, so a pin bump that moves the layout fails there.
 - **The saved-results flow.** Each `budgets` target passes `--save-results
   target/budget-results/<project>.json` and declares that file in its Nx `outputs`, so a
   cache hit restores it. `test-linux` uploads `target/budget-results/` as
   `budget-check-results-test-linux` under `if: always()`, and the job's
   `saved-results-artifacts: budget-check-results-*` reads every match of this run.
 - **What `not-measured-on-pr` means.** A pull request cannot measure this budget or move its
-  figure, so `omit-labels` leaves it out of the table and one line counts it. Its check
-  elsewhere is unchanged: the release tail and `just gate` still run it, under its other
+  figure, so `omit-labels` leaves it out of the report and one line in Details counts it.
+  Its check elsewhere is unchanged: the release tail and `just gate` still run it, under its other
   label. `<name>-ci-check-time` and `<name>-ci-job-count` do not carry it: on a pull request
   they read that run's own jobs. Neither does `<name>-cache-headroom`, which reads the
   repository's cache listing with the job's token on any event.
@@ -368,8 +373,8 @@ release's whole payload is usable.
 - **What is report-only.** `enforcement-exclude-labels` names `release-tail` and
   `host-variable`, whose commands need a release or a developer's machine. Those not omitted
   still run once and keep their verdict and flags; one whose command fails, as the CI-time
-  figures' do on a fork or a push, has no verdict and reads as unavailable, with the failure's
-  message as its reason.
+  figures' do on a fork or a push, has no verdict and is listed as not measured, with the
+  failure's message as its reason.
 - **Its own budget.** `.github/reporting/budgets.yaml` holds
   `<name>-budget-report-command-seconds`, read from the job's own telemetry by the released
   `onebudgetspec-github-action telemetry`. The interval runs from cold install through the

@@ -89,10 +89,12 @@ def test_the_job_pins_the_release_the_fixtures_hold(action_step):
     assert released()["name"]
 
 
-def test_the_composer_generates_the_release_that_reads_saved_results(repo):
-    """v0.2.0 is the first release taking `saved-results-artifacts` and `omit-labels`."""
+def test_the_composer_generates_the_release_that_posts_the_readable_comment(repo):
+    """v0.3.0 posts the comment with what needs attention first, and is the first release
+    that does; it takes the same inputs as v0.2.0, the first taking `saved-results-artifacts`
+    and `omit-labels`."""
     generated = (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert f"uses: {ACTION}@v0.2.0\n" in generated
+    assert f"uses: {ACTION}@v0.3.0\n" in generated
 
 
 def test_each_input_the_job_passes_is_one_the_action_declares(action_step):
