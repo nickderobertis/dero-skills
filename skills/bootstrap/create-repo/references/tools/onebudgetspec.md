@@ -346,13 +346,10 @@ release's whole payload is usable.
   `ci-report` label is never a reason, and nothing is rerun to fill a figure. So name a
   budget's saved telemetry in its `command`: an absent file then reads as unavailable rather
   than as a failed measurement.
-- **How the comment reads.** A summary line counts what needs attention, what is within
-  budget and what was not measured on this run. **Needs attention** follows open: every
-  enforced overrun or error, report-only overrun and flagged figure, each with its reason.
-  **Within budget** follows collapsed, then a collapsed **Details** holding the run,
-  `Not measured on this run` with each budget that has no figure, why each figure is
-  missing, and the diagnostics, the `not-measured-on-pr` line among them. The action's
-  README states the layout in full.
+- **How the comment reads.** The layout is the action's contract, and its README at the
+  pinned tag is its one source; this reference does not restate it.
+  `tests/external/test_budget_report_job_external.py` reads the comment the released action
+  posts for a composed repository, so a pin bump that moves the layout fails there.
 - **The saved-results flow.** Each `budgets` target passes `--save-results
   target/budget-results/<project>.json` and declares that file in its Nx `outputs`, so a
   cache hit restores it. `test-linux` uploads `target/budget-results/` as

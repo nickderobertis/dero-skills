@@ -24,6 +24,7 @@ import subprocess
 import tarfile
 from pathlib import Path
 from types import ModuleType
+from enum import StrEnum
 from typing import NamedTuple
 
 import pytest
@@ -473,19 +474,35 @@ class Journey:
         return sorted(self.counts.read_text().split()) if self.counts.exists() else []
 
 
-# Where each part of the core's comment layout opens; each closes at its next `</details>`.
-SECTIONS = {
-    "attention": "<details open><summary><b>Needs attention",
-    "within": "<details><summary><b>Within budget",
-    "details": "<details><summary>Details</summary>",
-}
+class Section(StrEnum):
+    """Where each part of the core's comment layout opens; each closes at its `</details>`."""
+
+    ATTENTION = "<details open><summary><b>Needs attention"
+    WITHIN = "<details><summary><b>Within budget"
+    DETAILS = "<details><summary>Details</summary>"
+
+
+class Place(StrEnum):
+    """Where a report shows a budget: one of its two tables, or Details' unmeasured list."""
+
+    ATTENTION = "attention"
+    WITHIN = "within"
+    NOT_MEASURED = "not-measured"
+
+
+class Placement(NamedTuple):
+    place: Place
+    text: str  # the budget's table row, or what its not-measured bullet says
+
+
+TABLES = {Place.ATTENTION: Section.ATTENTION, Place.WITHIN: Section.WITHIN}
 NOT_MEASURED = "Not measured on this run"
 WHY_MISSING = "Why some figures are missing"
 
 
-def section(markdown: str, name: str) -> str:
+def section(markdown: str, part: Section) -> str:
     """One collapsible part of a report, or "" when the report has none."""
-    start = markdown.find(SECTIONS[name])
+    start = markdown.find(part)
     return "" if start < 0 else markdown[start : markdown.index("</details>", start)]
 
 
@@ -501,28 +518,28 @@ def listed(text: str, heading: str) -> dict[str, str]:
     return items
 
 
-def placements(markdown: str, budget: str) -> list[tuple[str, str]]:
+def placements(markdown: str, budget: str) -> list[Placement]:
     """Every place a report shows `budget`: a table row, or a not-measured bullet."""
     found = [
-        (name, line)
-        for name in ("attention", "within")
-        for line in section(markdown, name).splitlines()
+        Placement(place, line)
+        for place, part in TABLES.items()
+        for line in section(markdown, part).splitlines()
         if line.startswith(f"| **{budget}** |")
     ]
-    unmeasured = listed(section(markdown, "details"), NOT_MEASURED)
+    unmeasured = listed(section(markdown, Section.DETAILS), NOT_MEASURED)
     if budget in unmeasured:
-        found.append(("not-measured", unmeasured[budget]))
+        found.append(Placement(Place.NOT_MEASURED, unmeasured[budget]))
     return found
 
 
-def placement(markdown: str, budget: str) -> tuple[str, str]:
+def placement(markdown: str, budget: str) -> Placement:
     found = placements(markdown, budget)
     assert len(found) == 1, (budget, found)
     return found[0]
 
 
 def why_missing(markdown: str) -> dict[str, str]:
-    return listed(section(markdown, "details"), WHY_MISSING)
+    return listed(section(markdown, Section.DETAILS), WHY_MISSING)
 
 
 def assert_readable_layout(markdown: str, job) -> None:
@@ -541,25 +558,25 @@ def assert_readable_layout(markdown: str, job) -> None:
         f"**⚠️ {len(attention)} need attention** · {len(within)} within budget · "
         f"{len(unmeasured)} not measured · head {job.sha[:7]} · [run {job.run_id}]("
     ), summary
-    assert markdown.index(SECTIONS["attention"]) < markdown.index(SECTIONS["within"])
-    assert markdown.index(SECTIONS["within"]) < markdown.index(SECTIONS["details"])
-    assert section(markdown, "attention").startswith(
-        f"{SECTIONS['attention']} ({len(attention)})</b></summary>\n\n"
+    assert markdown.index(Section.ATTENTION) < markdown.index(Section.WITHIN)
+    assert markdown.index(Section.WITHIN) < markdown.index(Section.DETAILS)
+    assert section(markdown, Section.ATTENTION).startswith(
+        f"{Section.ATTENTION} ({len(attention)})</b></summary>\n\n"
         "| Budget | Now · vs base | Reason |\n"
     )
-    assert section(markdown, "within").startswith(
-        f"{SECTIONS['within']} ({len(within)})</b></summary>\n\n"
+    assert section(markdown, Section.WITHIN).startswith(
+        f"{Section.WITHIN} ({len(within)})</b></summary>\n\n"
         "| Budget | Now · vs base |\n"
     )
-    details = section(markdown, "details")
+    details = section(markdown, Section.DETAILS)
     assert f"\n**{NOT_MEASURED} ({len(unmeasured)})**\n" in details
     for budget in attention:
-        assert placement(markdown, budget)[0] == "attention", budget
+        assert placement(markdown, budget).place is Place.ATTENTION, budget
     for budget in within:
-        assert placement(markdown, budget)[0] == "within", budget
+        assert placement(markdown, budget).place is Place.WITHIN, budget
     for budget in unmeasured:
-        assert placement(markdown, budget)[0] == "not-measured", budget
-    assert "Over limit (report-only)" in placement(markdown, REPORT_ONLY_OVER)[1]
+        assert placement(markdown, budget).place is Place.NOT_MEASURED, budget
+    assert "Over limit (report-only)" in placement(markdown, REPORT_ONLY_OVER).text
     assert markdown.count(OMITTED_LINE) == 1
     assert f"\n- {OMITTED_LINE}\n" in details
 
@@ -574,7 +591,7 @@ def assert_omitted_and_counted(job) -> None:
         assert placements(markdown, budget) == [], budget
     [line] = [line for line in markdown.splitlines() if "left out" in line]
     assert OMITTED_LINE in line
-    assert f"\n- {OMITTED_LINE}\n" in section(markdown, "details")
+    assert f"\n- {OMITTED_LINE}\n" in section(markdown, Section.DETAILS)
 
 
 @pytest.fixture(params=sorted(COMPOSITIONS))
@@ -733,9 +750,8 @@ def test_below_five_saved_commits_a_row_counts_its_baseline_then_compares(journe
     few = journey.pull_request()
     assert few.rows()[budget]["baseline_n"] == 4
     assert few.rows()[budget]["flag"] is False
-    assert placement(few.markdown(), budget) == (
-        "within",
-        f"| **{budget}** | 500 bytes<br>baseline 4/5 |",
+    assert placement(few.markdown(), budget) == Placement(
+        Place.WITHIN, f"| **{budget}** | 500 bytes<br>baseline 4/5 |"
     )
     assert few.exit_code == 0, few.stdout
 
@@ -743,9 +759,8 @@ def test_below_five_saved_commits_a_row_counts_its_baseline_then_compares(journe
     enough = journey.pull_request()
     assert enough.exit_code == 0, enough.stdout
     assert enough.rows()[budget]["baseline_n"] == 5
-    assert placement(enough.markdown(), budget) == (
-        "within",
-        f"| **{budget}** | 500 bytes<br>+0.0% (+0.0 SD) |",
+    assert placement(enough.markdown(), budget) == Placement(
+        Place.WITHIN, f"| **{budget}** | 500 bytes<br>+0.0% (+0.0 SD) |"
     )
 
 
@@ -754,14 +769,14 @@ def test_an_enforced_budget_over_its_line_fails_and_a_report_only_one_does_not(j
     assert report_only.exit_code == 0, report_only.stdout
     assert report_only.rows()[REPORT_ONLY_OVER]["verdict"] == "over"
     place, row = placement(report_only.markdown(), REPORT_ONLY_OVER)
-    assert place == "attention"
+    assert place is Place.ATTENTION
     assert row.endswith("| Over limit (report-only) |"), row
 
     enforced = journey.pull_request(bundle_size=5000)
     assert enforced.exit_code == 1, enforced.stdout
     assert enforced.rows()["demo-bundle-bytes"]["verdict"] == "over"
     place, row = placement(enforced.markdown(), "demo-bundle-bytes")
-    assert place == "attention"
+    assert place is Place.ATTENTION
     assert row.endswith("| Over limit |"), row
     assert journey.executed() == sorted(RUNNABLE)
     assert len(journey.host.comments) == 1
@@ -801,8 +816,8 @@ def test_a_new_repositorys_first_report_starts_with_numbers(every_composition):
     rows = job.rows()
     assert rows[SAVED_BUDGET]["current"] == SAVED_FIGURE
     assert rows[SAVED_BUDGET]["verdict"] == "within"
-    assert placement(job.markdown(), SAVED_BUDGET) == (
-        "within",
+    assert placement(job.markdown(), SAVED_BUDGET) == Placement(
+        Place.WITHIN,
         f"| **{SAVED_BUDGET}** | {SAVED_FIGURE:.1f} requests<br>baseline 0/5 |",
     )
     assert SAVED_BUDGET not in journey.executed()
@@ -811,7 +826,7 @@ def test_a_new_repositorys_first_report_starts_with_numbers(every_composition):
     assert rows[CI_JOB_COUNT]["current"] == len(journey.workflow["jobs"])
     for budget in GENERATED_MEASURED:
         assert rows[budget]["verdict"] == "within", rows[budget]
-        assert placement(job.markdown(), budget)[0] == "within"
+        assert placement(job.markdown(), budget).place is Place.WITHIN
     read = f"/runs/{job.run_id}/jobs"
     assert journey.host.count(read) == journey.host.count(r"/runs/\d+/jobs") > 0
     assert journey.host.count("/releases/tags|/compare") == 0
@@ -839,8 +854,8 @@ def test_a_missing_saved_results_artifact_leaves_its_budget_unavailable_and_fail
     row = job.rows()[SAVED_BUDGET]
     assert "verdict" not in row, row
     assert row["unavailable"] == NO_SAVED_RESULT
-    assert placement(job.markdown(), SAVED_BUDGET) == (
-        "not-measured",
+    assert placement(job.markdown(), SAVED_BUDGET) == Placement(
+        Place.NOT_MEASURED,
         "no result this run · baseline 0/5",
     )
     assert why_missing(job.markdown())[SAVED_BUDGET] == NO_SAVED_RESULT
@@ -883,7 +898,7 @@ def test_a_base_push_with_no_pull_request_keeps_its_rows_unavailable_and_reads_n
     assert journey.host.count(r"/runs/\d+/jobs|/releases/tags|/compare") == 0
     for budget in GENERATED_MEASURED:
         place, row = placement(base.markdown(), budget)
-        assert place == "not-measured", row
+        assert place is Place.NOT_MEASURED, row
         assert FIGURES_NEED_ONEVCS in why_missing(base.markdown())[budget]
     assert_omitted_and_counted(base)
 
@@ -897,7 +912,7 @@ def test_a_fork_gets_a_summary_and_artifact_without_a_comment_or_credential(jour
     assert journey.host.count("commits/main") == 0, "a budget command reached the host"
     assert journey.host.count(r"/runs/\d+/jobs") == 0, "the figures hold no credential"
     for budget in GENERATED_MEASURED:
-        assert placement(job.markdown(), budget)[0] == "not-measured"
+        assert placement(job.markdown(), budget).place is Place.NOT_MEASURED
     assert "someone/fork" in job.summary
     assert journey.host.artifact_files(job.run_id) is not None
     assert base.exit_code == 0
