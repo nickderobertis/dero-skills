@@ -726,7 +726,7 @@ def test_a_freshly_bootstrapped_repository_saves_history_from_its_own_budget(
         journey.close()
 
 
-def test_history_is_unavailable_below_five_saved_commits_then_compared(journey):
+def test_below_five_saved_commits_a_row_counts_its_baseline_then_compares(journey):
     budget = "demo-bundle-bytes"
     for _ in range(4):
         assert journey.base_push().exit_code == 0
