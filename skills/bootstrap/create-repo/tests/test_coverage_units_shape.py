@@ -394,3 +394,24 @@ def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
     repo = compose(tmp_path / "repo", "rust", "linux", files=files)
     project = json.loads((repo / "crates/lib/project.json").read_text())
     assert project["implicitDependencies"] == ["demo-dep"]
+
+
+@pytest.mark.parametrize(
+    ("relative", "text", "message"),
+    [
+        ("Cargo.toml", "not toml =\n", "not valid TOML"),
+        (
+            "crates/lib/project.json",
+            '{"root": "crates/lib", "targets": {}}',
+            "names no project",
+        ),
+        ("crates/lib/Cargo.toml", "[package]\n", "names no package"),
+    ],
+    ids=["root-toml", "nameless-project", "nameless-package"],
+)
+def test_the_composer_refuses_a_workspace_it_cannot_wire(
+    tmp_path, relative, text, message
+):
+    files = {**workspace_files(GOOD_COMPILE), relative: text}
+    with pytest.raises(AssertionError, match=message):
+        compose(tmp_path / "repo", "rust", "linux", files=files)

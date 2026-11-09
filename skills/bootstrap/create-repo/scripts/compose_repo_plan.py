@@ -1607,9 +1607,14 @@ def _path_dependencies(
             f"{root_toml} is not valid TOML: {error}\n"
             "      fix: repair the root Cargo manifest, then re-run --ci-cd."
         ) from error
-    shared = root.get("workspace", {}).get("dependencies", {})
+    workspace = root.get("workspace")
+    shared_table = (
+        workspace.get("dependencies") if isinstance(workspace, dict) else None
+    )
+    shared = shared_table if isinstance(shared_table, dict) else {}
+    declared = manifest.get(table)
     found: set[Path] = set()
-    for name, spec in manifest.get(table, {}).items():
+    for name, spec in (declared if isinstance(declared, dict) else {}).items():
         match spec:
             case {"workspace": True}:
                 inherited = shared.get(name, {})
@@ -1683,10 +1688,12 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
             if found in names
         }
         if depends:
+            existing = project.get("implicitDependencies")
+            current = existing if isinstance(existing, list) else []
             project["implicitDependencies"] = sorted(
-                {*project.get("implicitDependencies", []), *depends}
+                {*(item for item in current if isinstance(item, str)), *depends}
             )
-        test = targets.setdefault(COVERAGE_UNIT_TARGET, {})
+        test = _json_table(targets, COVERAGE_UNIT_TARGET, project_path)
         if "coverage-unit.sh" not in str(test.get("command", "")):
             test["command"] = (
                 f"bash scripts/coverage-unit.sh {unit} -- nextest --locked -p {crate}"
@@ -1716,7 +1723,10 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
             }
             _write_json(projects[found], spawn_project)
             edge = {"projects": [names[found]], "target": COVERAGE_BUILD_TARGET}
-            depends_on = test.setdefault("dependsOn", [])
+            depends_on = test.get("dependsOn")
+            if not isinstance(depends_on, list):
+                depends_on = []
+                test["dependsOn"] = depends_on
             if edge not in depends_on:
                 depends_on.append(edge)
         compile_target = targets.setdefault(WARM_COMPILE_TARGET, {})
@@ -1735,8 +1745,10 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
         if root_path.is_file()
         else {"name": f"{shape.name}-coverage", "root": "."}
     )
+    existing_root = root.get("implicitDependencies")
+    current_root = existing_root if isinstance(existing_root, list) else []
     root["implicitDependencies"] = sorted(
-        {*root.get("implicitDependencies", []), *units}
+        {*(item for item in current_root if isinstance(item, str)), *units}
     )
     _json_table(root, "targets", root_path)[COVERAGE_MERGE_TARGET] = {
         "command": (
