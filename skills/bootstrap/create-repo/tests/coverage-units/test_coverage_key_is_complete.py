@@ -22,6 +22,7 @@ TRACE_FILTER = re.compile(r"^(target|\.git|\.nx|node_modules)/")
 
 
 def task_hashes(workspace: Fixture) -> dict[str, dict[str, str]]:
+    workspace.forget_file_hashes()
     done = subprocess.run(
         ["node", str(HASHER), str(workspace.repo), *UNITS],
         env=workspace.env,
@@ -161,9 +162,8 @@ def test_a_unit_whose_inputs_omit_a_file_its_run_reads_is_reported(workspace, tm
     try:
         exclude_data(workspace)
         problems = uncovered_reads(workspace, tmp_path)
-        assert any(
-            "tool-e2e reads crates/tool-e2e/data/expected.txt" in p for p in problems
-        )
+        wanted = "tool-e2e reads crates/tool-e2e/data/expected.txt"
+        assert any(wanted in problem for problem in problems), problems
     finally:
         workspace.reset()
 

@@ -459,3 +459,10 @@ def test_every_doc_stating_the_rust_floor_names_the_composers_floor():
             or f"Rust's default is {floor}" in text
             or f"({floor} on" in text
         ), relative
+
+
+def test_a_failing_test_propagates_its_status_and_writes_no_report(unit_root, tmp_path):
+    env = _doubled_cargo(tmp_path, "exit 7")
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 7
+    assert not (unit_root / "target/coverage-units/demo.lcov").exists()

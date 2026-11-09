@@ -169,6 +169,10 @@ class Fixture:
         self.git("add", "-A")
         self.git("commit", "-qm", message)
 
+    def forget_file_hashes(self) -> None:
+        """Nx keys its file-hash cache on mtime and size; a test's quick edit-and-restore outruns it."""
+        shutil.rmtree(self.repo / ".nx/workspace-data", ignore_errors=True)
+
     def nx(self, *args: str, env: dict[str, str] | None = None, timeout: int = 900):
         return subprocess.run(
             ["node_modules/.bin/nx", *args],
@@ -206,6 +210,7 @@ class Fixture:
         """Back to the committed tree, every unit replaying."""
         self.git("checkout", ".")
         self.git("clean", "-fdq", "-e", "target", "-e", ".nx", "-e", "node_modules")
+        self.forget_file_hashes()
         again = self.coverage()
         assert all(self.summary(again.stdout).values()), again.stdout
 
