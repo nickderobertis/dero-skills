@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
-# version: 1
-# sha256: 47af0e488d5d7eb480ecefbca8900f7d29b2e72e8ec66ea0be7b87fdf971ce9a
+# version: 2
+# sha256: 2fe7a4a23c0f464f9deab888a17a45c163cef8dda82e2f17d5ac62ae2a8eaaf9
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -21,7 +21,7 @@
 # uninstrumented and write no report, as the test job there has always run them.
 #
 # <unit> is the Nx project name, or <project>-<tier> where a project owns several units:
-# letters, digits, `-` and `_`.
+# letters, digits, `-` and `_`, not starting with `-`.
 #
 # Reads: the instrumented binaries the run built under target/llvm-cov-target, and this
 #   unit's own raw profiles there, target/llvm-cov-target/<unit>.*.profraw.
@@ -33,8 +33,9 @@
 #   benches, build output, the Cargo registry and the toolchain). LLVM_PROFDATA and LLVM_COV
 #   name those tools; otherwise PATH, then the toolchain's llvm-tools component.
 # Exit: 0 when the report is written (or, off Linux, the tests passed); the cargo status when
-#   a test fails; 1 when no profile was written, every profile was unmergeable or no
-#   instrumented object was found; 2 for a usage error.
+#   a test fails; 1 when no profile was written, every profile was unmergeable, no
+#   instrumented object was found, or `cargo llvm-cov show-env` printed anything but shell
+#   assignments; 2 for a usage error.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -66,6 +67,23 @@ profdata_tool() { llvm_tool llvm-profdata "${LLVM_PROFDATA:-}"; }
 cov_tool() { llvm_tool llvm-cov "${LLVM_COV:-}"; }
 
 on_linux() { [ "$(uname -s)" = Linux ]; }
+
+# Applies `cargo llvm-cov show-env --sh`, refusing the whole of it unless every line is one
+# `export NAME=value` whose value is a bare word or single-quoted, so nothing evaluated here
+# can expand or run. The variables hold paths and flags, which that form always carries.
+apply_show_env() {
+  local exports line q="'"
+  local assignment="^export [A-Za-z_][A-Za-z0-9_]*=(${q}[^${q}]*${q}(\\\\${q}${q}[^${q}]*${q})*|[A-Za-z0-9_./:=,@%+-]*)\$"
+  exports="$(cargo llvm-cov show-env --sh)"
+  while IFS= read -r line; do
+    if ! [[ "$line" =~ $assignment ]]; then
+      echo "coverage-unit.sh: 'cargo llvm-cov show-env --sh' printed something other than an assignment: $line" >&2
+      echo "ACTION: check the cargo-llvm-cov on PATH against the pin in .github/ci-tool-versions" >&2
+      exit 1
+    fi
+  done <<<"$exports"
+  eval "$exports"
+}
 
 # `nextest ...` and `test ...` as an uninstrumented cargo command.
 run_uninstrumented() {
@@ -108,8 +126,7 @@ case "$1" in
   if ! on_linux; then
     exec cargo "$@"
   fi
-  exports="$(cargo llvm-cov show-env --sh)"
-  eval "$exports"
+  apply_show_env
   unset LLVM_PROFILE_FILE
   CARGO_TARGET_DIR="$coverage_target" exec cargo "$@"
   ;;

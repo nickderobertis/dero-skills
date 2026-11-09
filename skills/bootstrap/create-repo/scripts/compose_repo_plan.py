@@ -1002,7 +1002,8 @@ WARM_COMPILE_TARGET = "test-compile"
 # merges them. 96 is the LCOV restatement of the 95 default: see that reference.
 COVERAGE_UNIT_TARGET = "test"
 COVERAGE_MERGE_TARGET = "coverage"
-COVERAGE_NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
+# Not starting with `-`: coverage-unit.sh reads a leading hyphen as one of its own options.
+COVERAGE_NAME_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]*")
 COVERAGE_BUILD_TARGET = "coverage-build"
 COVERAGE_REPORT_DIR = "target/coverage-units"
 RUST_COVERAGE_FLOOR = "96"
@@ -1635,7 +1636,7 @@ def _command_name(name: str, source: Path, kind: str) -> str:
     if COVERAGE_NAME_RE.fullmatch(name) is None:
         raise WiringError(
             f"{source} names {kind} {name!r}, which a coverage unit's command cannot carry\n"
-            f"      fix: rename the {kind} to letters, digits, - and _, then re-run --ci-cd."
+            f"      fix: rename the {kind} to letters, digits, - and _, not starting with -, then re-run --ci-cd."
         )
     return name
 

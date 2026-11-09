@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 from ci_cd_shape import (
     CHECKER,
+    COMPOSER,
     GOOD_COMPILE,
     NAME,
     compose,
@@ -41,6 +42,36 @@ def test_each_script_header_matches_its_body_and_versions_file(script):
     assert (
         "--fail-under-lines" if script.endswith("mjs") else "<cargo llvm-cov arguments>"
     ) in text
+
+
+@pytest.mark.parametrize(
+    ("manifest", "before", "after", "kind"),
+    [
+        ("crates/lib/project.json", '"name": "demo-lib"', '"name": "-lib"', "project"),
+        ("crates/lib/Cargo.toml", 'name = "demo-lib"', 'name = "-lib"', "package"),
+        ("crates/lib/project.json", '"name": "demo-lib"', '"name": "a b"', "project"),
+    ],
+    ids=["leading-hyphen-project", "leading-hyphen-package", "space-in-project"],
+)
+def test_the_composer_refuses_a_name_a_unit_command_cannot_carry(
+    tmp_path, manifest, before, after, kind
+):
+    repo = compose(
+        tmp_path / "repo", "rust", "linux", files=workspace_files(GOOD_COMPILE)
+    )
+    path = repo / manifest
+    original = re.sub(r'"name":\s+"demo-lib"', '"name": "demo-lib"', path.read_text())
+    assert before in original
+    path.write_text(original.replace(before, after))
+    done = subprocess.run(
+        ["uv", "run", "--script", str(COMPOSER), "--ci-cd", str(repo)]
+        + ["--language", "rust", "--name", NAME, "--platforms", "linux"],
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 2, done.stderr
+    assert "a coverage unit's command cannot carry" in done.stderr
+    assert f"rename the {kind}" in done.stderr
 
 
 @pytest.mark.parametrize("script", ["coverage-unit.sh", "coverage-merge.mjs"])
@@ -226,6 +257,76 @@ def test_coverage_unit_refuses_a_bad_unit_name_and_usage(unit_root):
     assert named.returncode == 2 and "is not a unit name" in named.stderr
     assert _unit(unit_root, {}, "unit-only").returncode == 2
     assert _unit(unit_root, {}, "--tool-version", "gcc").returncode == 2
+
+
+def _show_env_double(tmp_path: Path, printed: str) -> tuple[dict[str, str], Path]:
+    """A cargo whose `llvm-cov show-env` prints ``printed`` and which logs any other call."""
+    (tmp_path / "printed").write_text(printed)
+    called = tmp_path / "called"
+    return (
+        _doubled_cargo(
+            tmp_path,
+            'if [ "$1 $2" = "llvm-cov show-env" ]; then\n'
+            f"  cat {tmp_path / 'printed'}\n"
+            "else\n"
+            f'  printf "%s|%s\\n" "$*" "$FROM_SHOW_ENV" >> {called}\n'
+            "fi",
+        ),
+        called,
+    )
+
+
+@pytest.mark.parametrize(
+    ("printed", "value"),
+    [
+        ("export FROM_SHOW_ENV=/a/b-c.d\n", "/a/b-c.d"),
+        (
+            "export FROM_SHOW_ENV='-C\x1finstrument coverage'\n",
+            "-C\x1finstrument coverage",
+        ),
+        ("export FROM_SHOW_ENV='it'\\''s'\n", "it's"),
+    ],
+    ids=["bare", "quoted", "escaped-quote"],
+)
+def test_coverage_cargo_applies_the_assignments_show_env_prints(
+    unit_root, tmp_path, printed, value
+):
+    env, called = _show_env_double(tmp_path, printed)
+    done = _unit(unit_root, env, "--cargo", "--", "build", "-p", "demo")
+    assert done.returncode == 0, done.stderr
+    assert called.read_text() == f"build -p demo|{value}\n"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "touch {marker}",
+        "export FROM_SHOW_ENV=$(touch {marker})",
+        "export FROM_SHOW_ENV=`touch {marker}`",
+        "export FROM_SHOW_ENV=a; touch {marker}",
+        "export FROM_SHOW_ENV='a'; touch {marker}",
+        "export FROM_SHOW_ENV='a' && touch {marker} && echo 'b'",
+    ],
+    ids=[
+        "command",
+        "substitution",
+        "backticks",
+        "bare-then",
+        "quoted-then",
+        "quote-chain",
+    ],
+)
+def test_coverage_cargo_runs_nothing_when_show_env_prints_more_than_assignments(
+    unit_root, tmp_path, line
+):
+    marker = tmp_path / "ran"
+    printed = f"export OK=1\n{line.format(marker=marker)}\n"
+    env, called = _show_env_double(tmp_path, printed)
+    done = _unit(unit_root, env, "--cargo", "--", "build")
+    assert done.returncode == 1
+    assert "other than an assignment" in done.stderr and "ACTION:" in done.stderr
+    assert not marker.exists(), "an unvalidated line of show-env was evaluated"
+    assert not called.exists(), "cargo ran after show-env was refused"
 
 
 def test_coverage_unit_refuses_a_run_that_writes_no_profile(unit_root, tmp_path):
