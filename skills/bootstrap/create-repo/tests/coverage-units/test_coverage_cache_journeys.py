@@ -357,6 +357,16 @@ def test_a_unit_never_counts_another_units_objects(workspace):
     assert not any(path.startswith("crates/tool") for path in base), sorted(base)
 
 
+def test_real_cargo_llvm_cov_reports_pass_the_record_validation(workspace):
+    kinds = {
+        line.split(":", 1)[0]
+        for path in report_paths(workspace)
+        for line in path.read_text().splitlines()
+    }
+    assert {"SF", "FN", "FNDA", "FNF", "FNH", "BRF", "BRH", "DA", "LF", "LH"} <= kinds
+    assert_merge_matches_own_sum(workspace)
+
+
 def test_the_ignore_regex_a_repository_adds_drops_those_files_from_the_unit(workspace):
     try:
         done = subprocess.run(

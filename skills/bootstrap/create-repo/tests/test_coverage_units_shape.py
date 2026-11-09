@@ -488,3 +488,50 @@ def test_a_failing_llvm_cov_export_is_reported(unit_root, tmp_path):
     Path(env["LLVM_COV"]).write_text("#!/usr/bin/env bash\nexit 4\n")
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 1 and "could not export" in done.stderr
+
+
+GOOD_RECORD = "SF:x.rs\n{}\nDA:1,1\nend_of_record\n"
+
+
+@pytest.mark.parametrize(
+    ("body", "record"),
+    [
+        (GOOD_RECORD.format("LF:garbage"), "LF:garbage"),
+        (GOOD_RECORD.format("LH:"), "LH:"),
+        (GOOD_RECORD.format("FNF:1x"), "FNF:1x"),
+        (GOOD_RECORD.format("FNH:-1"), "FNH:-1"),
+        (GOOD_RECORD.format("BRF:garbage"), "BRF:garbage"),
+        (GOOD_RECORD.format("BRH:garbage"), "BRH:garbage"),
+        (GOOD_RECORD.format("FN:garbage"), "FN:garbage"),
+        (GOOD_RECORD.format("FN:12,"), "FN:12,"),
+        (GOOD_RECORD.format("FNDA:garbage"), "FNDA:garbage"),
+        (GOOD_RECORD.format("FNDA:1,"), "FNDA:1,"),
+        (GOOD_RECORD.format("BRDA:garbage"), "BRDA:garbage"),
+        (GOOD_RECORD.format("BRDA:1,0,0,x"), "BRDA:1,0,0,x"),
+        (GOOD_RECORD.format("BRDA:1,0,0"), "BRDA:1,0,0"),
+        (GOOD_RECORD.format("TN:inside"), "TN:inside"),
+        ("SF:a.rs\nDA:1,1\nSF:b.rs\nDA:1,1\nend_of_record\n", "SF:b.rs"),
+        ("LF:1\nSF:x.rs\nDA:1,1\nend_of_record\n", "LF:1"),
+        ("SF:x.rs\nDA:1,1\nend_of_record\nFNDA:1,f\n", "FNDA:1,f"),
+    ],
+)
+def test_coverage_merge_names_the_unit_file_and_the_offending_record(
+    tmp_path, body, record
+):
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "a.lcov").write_text(body)
+    done = _merge(tmp_path, "--fail-under-lines", "0", "--dir", "d", "--unit", "a")
+    assert done.returncode == 2, done.stdout
+    assert "a.lcov:" in done.stderr and record in done.stderr
+
+
+def test_coverage_merge_accepts_every_supported_record_form(tmp_path):
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "a.lcov").write_text(
+        "TN:\nTN:a test\nSF:x.rs\nFN:3,_RNvCs_1f\nFN:3,9,other\nFNDA:0,_RNvCs_1f\nFNF:2\nFNH:1\n"
+        "BRDA:3,0,0,-\nBRDA:3,0,1,4\nBRF:2\nBRH:1\nDA:3,1\nDA:4,0,checksum\nLF:2\nLH:1\n"
+        "end_of_record\n"
+    )
+    done = _merge(tmp_path, "--fail-under-lines", "50", "--dir", "d", "--unit", "a")
+    assert done.returncode == 0, done.stderr
+    assert "lines covered: 1\nlines total: 2\n" in done.stdout

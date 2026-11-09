@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-merge.mjs
 // version: 1
-// sha256: 93fb9c990694cfebf8033cdd98432f7db91926182ea716e1d59289bcfd19cb63
+// sha256: 673185c4a59df7952e5fc2b56b2f2b5f2c86d6d65fe42df9fe6c70efffa2db9b
 //
 // The repository's combined coverage check over its coverage units' cached LCOV reports.
 //
@@ -74,7 +74,9 @@ if (missing.length) {
 
 // file -> line -> covered
 const files = new Map();
-const OTHER_RECORD = /^(TN|FN|FNDA|FNF|FNH|BRDA|BRF|BRH|LF|LH):/;
+// Every record a source file's block may hold besides DA:; TN: stands only between blocks.
+const BLOCK_RECORD =
+  /^(?:FN:\d+(?:,\d+)?,.+|FNDA:\d+,.+|(?:FNF|FNH|BRF|BRH|LF|LH):\d+|BRDA:\d+,\d+,\d+,(?:\d+|-))$/;
 for (const unit of units) {
   const name = `${unit}.lcov`;
   let lines = null;
@@ -83,6 +85,7 @@ for (const unit of units) {
     const where = `${name}:${index + 1}`;
     if (line === '') continue;
     if (line.startsWith('SF:')) {
+      if (lines !== null) refuse(`${where}: malformed record ${line}: the block before it has no end_of_record`);
       const path = line.slice(3);
       if (!path) refuse(`${where}: malformed record ${line}`);
       if (path.startsWith('/') || path.startsWith('\\') || /^[A-Za-z]:/.test(path)) {
@@ -98,7 +101,7 @@ for (const unit of units) {
     } else if (line === 'end_of_record') {
       if (lines === null) refuse(`${where}: end_of_record outside a record`);
       lines = null;
-    } else if (!OTHER_RECORD.test(line)) {
+    } else if (lines === null ? !line.startsWith('TN:') : !BLOCK_RECORD.test(line)) {
       refuse(`${where}: malformed record ${line}`);
     }
   }
