@@ -370,7 +370,8 @@ def warm_build_problems(journey: WarmJourney) -> list[str]:
     if tested.returncode != 0:
         return [f"ci-test failed: {tested.stdout}{tested.stderr}"]
     problems = []
-    if "test result: ok" not in tested.stdout + tested.stderr:
+    output = tested.stdout + tested.stderr
+    if "test result: ok" not in output and "passed" not in output:
         problems.append("ci-test ran no test")
     if names := compiled(tested):
         problems.append(f"ci-test compiled again after ci-warm: {names}")

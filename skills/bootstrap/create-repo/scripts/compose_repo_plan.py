@@ -1585,7 +1585,11 @@ def _cargo_crates(repo: Path) -> dict[Path, dict]:
             for part in manifest.relative_to(repo).parts
         ):
             continue
-        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        try:
+            data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError:
+            # Not a crate this repository builds; cargo reports it where it is one.
+            continue
         if "package" in data:
             crates[manifest.parent] = data
     return crates
