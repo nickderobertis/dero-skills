@@ -54,9 +54,10 @@ reference implementations of this intersection.
   explicit `licenses` allow-list, `bans`, `sources`) and run `cargo deny check`
   plus `cargo machete` (unused deps) as a separate Linux-only CI job — not spread
   across the OS matrix.
-- **Coverage:** `cargo llvm-cov` per project into the shared profile directory
-  with `cargo llvm-cov report --fail-under-lines 95` on the aggregate — the
-  binary crate's own number cannot see the lines its e2e crate covers.
+- **Coverage:** each crate's `test` is a cached coverage unit through
+  `scripts/coverage-unit.sh`, and `coverage-merge.mjs --fail-under-lines 96` holds
+  the floor over the merged LCOV — the binary crate's own number cannot see the
+  lines its e2e crate covers.
 
 ## Distribution
 

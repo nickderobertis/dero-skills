@@ -50,6 +50,49 @@ def run(args: list[str], cwd: Path | None = None, **kw) -> subprocess.CompletedP
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, **kw)
 
 
+def pinned_coverage_tools() -> dict[str, str]:
+    """Each coverage tool's composed pin, read from the template the composer renders."""
+    pins = {}
+    for line in (ASSETS / "ci-tool-versions.template").read_text().splitlines():
+        match = re.fullmatch(r"(cargo-llvm-cov|cargo-nextest)=(\S+)", line)
+        if match:
+            pins[match.group(1)] = match.group(2)
+    return pins
+
+
+def ensure_pinned_tools() -> list[str]:
+    """Bin directories holding each coverage tool at its pin, installing what is missing."""
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    bins = []
+    for tool, version in pinned_coverage_tools().items():
+        subcommand = tool.removeprefix("cargo-")
+        installed = shutil.which(tool)
+        if installed:
+            shown = run(["cargo", subcommand, "--version"])
+            if shown.returncode == 0 and version in shown.stdout.split():
+                bins.append(str(Path(installed).parent))
+                continue
+        root = cache / "dero-skills-coverage-tools" / f"{tool}-{version}"
+        binary = root / "bin" / tool
+        if not binary.is_file():
+            done = run(
+                [
+                    "cargo",
+                    "install",
+                    "--locked",
+                    "--version",
+                    version,
+                    "--root",
+                    str(root),
+                    tool,
+                ],
+                timeout=1800,
+            )
+            assert done.returncode == 0, done.stderr
+        bins.append(str(binary.parent))
+    return bins
+
+
 def compose(
     root: Path,
     language: str = "rust",
@@ -164,7 +207,10 @@ def workspace_files(
     }
 
 
-GOOD_COMPILE = "cargo test -p demo-lib --no-run"
+# What the composer writes for a crate's `test-compile`: the instrumented build its `test` runs.
+GOOD_COMPILE = (
+    "bash scripts/coverage-unit.sh --cargo -- nextest run --no-run --locked -p demo-lib"
+)
 
 
 class WarmJourney:
@@ -176,14 +222,15 @@ class WarmJourney:
         node_modules: Path | None = None,
         test_compile: str | None = GOOD_COMPILE,
         telemetry_plugin: bool = True,
-        test_command: str = "cargo test -p demo-lib",
+        test_command: str | None = None,
         host_env: Mapping[str, str] | None = None,
     ) -> None:
         for tool in ("cargo", "just", "bun"):
             assert shutil.which(tool), f"{tool} not on PATH: this runs the real build"
         self.repo = compose(
-            root, "rust", "linux", files=workspace_files(test_compile, test_command)
+            root, "rust", "linux", files=workspace_files(test_compile or GOOD_COMPILE)
         )
+        self._set_project_targets(test_compile, test_command)
         if node_modules is None:
             # The composed pins, as `just bootstrap` installs them, with a real bun.lock.
             manifest_path = self.repo / "package.json"
@@ -212,6 +259,9 @@ class WarmJourney:
         # temporary git history does not hold; `test_job` passes the base a pull request tests.
         self.env.pop("NX_BASE", None)
         self.env.pop("NX_HEAD", None)
+        self.env["PATH"] = os.pathsep.join([*ensure_pinned_tools(), self.env["PATH"]])
+        locked = run(["cargo", "generate-lockfile"], cwd=self.repo, env=self.env)
+        assert locked.returncode == 0, locked.stderr
         self._git("init", "-q")
         self.commit("chore: base")
         self.base = self._git("rev-parse", "HEAD")
@@ -220,6 +270,21 @@ class WarmJourney:
             "// the change this pull request makes\n" + source.read_text()
         )
         self.commit("fix: a change")
+
+    def _set_project_targets(
+        self, test_compile: str | None, test_command: str | None
+    ) -> None:
+        """What a journey varies, set over the composer's own targets."""
+        path = self.repo / "crates/lib/project.json"
+        project = json.loads(path.read_text(encoding="utf-8"))
+        targets = project["targets"]
+        if test_compile is None:
+            del targets["test-compile"]
+        else:
+            targets["test-compile"]["command"] = test_compile
+        if test_command is not None:
+            targets["test"]["command"] = test_command
+        path.write_text(json.dumps(project), encoding="utf-8")
 
     @staticmethod
     def _toolchain(root: Path) -> dict[str, str]:
@@ -267,7 +332,8 @@ class WarmJourney:
         deps = self.repo / "target"
         return {
             str(path.relative_to(deps)): path.stat().st_mtime_ns
-            for path in deps.glob("*/deps/*")
+            for pattern in ("*/deps/*", "llvm-cov-target/*/deps/*")
+            for path in deps.glob(pattern)
         }
 
 

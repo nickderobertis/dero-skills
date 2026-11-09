@@ -70,6 +70,17 @@
       "{workspaceRoot}/bun.lock",
       "{workspaceRoot}/.husky/**/*",
       "{workspaceRoot}/tools/setup-hooks.mjs"
+    ],
+    "coverageUnitsFixture": [
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/ci/coverage-merge.mjs",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/ci/nx-version-free-inputs.mjs",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/ci-tool-versions.template",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/rust-toolchain.toml.template",
+      "{workspaceRoot}/skills/bootstrap/create-repo/assets/justfile.template",
+      "{workspaceRoot}/skills/bootstrap/create-repo/scripts/compose_repo_plan.py",
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/ci_cd_shape.py",
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/test_check_repo_baseline.py"
     ]
   },
   "targetDefaults": {

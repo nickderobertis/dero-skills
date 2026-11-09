@@ -3,4 +3,4 @@
 # version is one every runner the CI/CD shape renders can install.
 [toolchain]
 channel = "1.99.1"
-components = ["clippy", "rustfmt"]
+components = ["clippy", "rustfmt", "llvm-tools"]

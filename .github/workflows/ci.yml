@@ -68,6 +68,14 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
+      - name: Provision the coverage-unit journeys' tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.150
+
+      - name: Install strace and the Rust llvm tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq strace && rustup component add llvm-tools
+
       - name: Bootstrap
         run: just bootstrap
 
@@ -101,6 +109,14 @@ jobs:
 
       - name: Install just
         uses: extractions/setup-just@v2
+
+      - name: Provision the coverage-unit journeys' tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.150
+
+      - name: Install strace and the Rust llvm tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq strace && rustup component add llvm-tools
 
       - name: Bootstrap
         run: just bootstrap

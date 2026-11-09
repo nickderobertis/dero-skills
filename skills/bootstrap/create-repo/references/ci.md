@@ -44,8 +44,13 @@ to re-run a developer's warm local environment.
   below the threshold; 95% line coverage is the default bar. Because CI runs the
   same `just check`, the threshold is proven on every PR, not tracked as a
   vanity badge. Measure it with the language's tool (`pytest --cov-fail-under`,
-  Vitest `coverage.thresholds`, `cargo llvm-cov --fail-under-lines`, ...). Lower
-  the bar — or drop it for a stack where coverage tooling genuinely doesn't fit
+  Vitest `coverage.thresholds`, `coverage-merge.mjs --fail-under-lines` over each
+  Rust crate's LCOV report, ...). 95 is the default for every language but Rust,
+  whose tools were measured: Rust's default is 96 on the LCOV basis, because LCOV
+  counts fewer lines than `cargo llvm-cov report` and reads higher on the same tests
+  (no gap exists for a new repository, so the default takes the largest measured
+  gap, 0.88 points, over 95, rounded up; [rust.md](languages/rust.md) has the reasoning).
+  Lower the bar — or drop it for a stack where coverage tooling genuinely doesn't fit
   — only with a documented reason in `AGENTS.md`, never by silently leaving
   coverage unmeasured.
 - **Least privilege and no script injection.** Give the workflow's `GITHUB_TOKEN`
@@ -144,8 +149,9 @@ request did not need is a slot another repository waited for.
   `release-plz` runs its toolchain with `cache: false`. It has one leg per platform the
   shape tests, `warm-<platform>`, which runs `just ci-warm` to compile what
   `test-<platform>` compiles and saves under the `cache-shared-key` that job restores. The
-  recipe runs the Nx targets `build` and `test-compile`, each Rust project declaring the
-  latter as its `test` command compiling without running
+  recipe runs the Nx targets `build`, `coverage-build` and `test-compile`, each Rust
+  project declaring the last as its `test` command compiling without running, instrumented
+  on Linux so the cache holds the build a coverage unit runs
   ([rust.md](languages/rust.md#target-names)). It never reads an Nx cache and refuses when no
   project declares the target. It
   adds no pull-request job and tests nothing. The CD figures leave it out by name.
@@ -171,6 +177,16 @@ request did not need is a slot another repository waited for.
   `target` after a restore that is not an exact key match, so the warm leg builds cold and
   saves no superseded units. The composed shape does not apply it, because a new
   repository's copies are small and the budget shows when it is needed.
+- **A Rust repository's coverage results are cached, on a key covering everything the run
+  reads.** Each crate's `test` is a coverage unit: a cached target whose only output is its
+  own LCOV report, on a key that covers its sources and tests, its dependencies' sources,
+  version-free manifests, `Cargo.lock`, the toolchain and the coverage tool pins, with the
+  package version only where the unit's result depends on it. A unit that spawns another
+  crate's binary reaches it through that crate's uncached `coverage-build`. The repository's
+  `coverage` target depends on every unit, merges their LCOV and enforces the floor, so a
+  pull request that touches one crate re-runs one unit and replays the rest
+  ([rust.md](languages/rust.md#splitting-the-suite)). The floor is computed by merging every
+  unit's cached LCOV.
 - **Tools are exact and among the cached inputs.** Every tool a generated workflow installs
   reads its version from `.github/ci-tool-versions`, each job's first step after the
   checkout loading the file into its step outputs, and a Rust composition's compiler from

@@ -14,6 +14,8 @@ onebudgetspec-cli=@@ONEBUDGETSPEC_VERSION@@
 #% if rust
 cargo-deny=0.20.2
 cargo-hack=0.6.46
+cargo-llvm-cov=0.9.1
+cargo-nextest=0.9.150
 release-plz=0.4.3
 #% endif
 #% if visual-docs

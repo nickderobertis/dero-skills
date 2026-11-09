@@ -69,19 +69,21 @@ supply-chain:
 
 # What each CI test job runs on its platform: the tests, builds, e2e journeys and
 # per-project budgets of the projects this change can reach. Formatting, linting and the
-# supply chain run once, in the `lint` job, not again per platform.
+# supply chain run once, in the `lint` job, not again per platform. On Linux a Rust
+# repository's `coverage` target merges each crate's cached LCOV report and enforces the floor
+# (96 on the LCOV basis, references/languages/rust.md); other platforms measure no coverage.
 ci-test:
-    bunx nx affected --base={{base}} -t test build e2e budgets budgets-host
+    bunx nx affected --base={{base}} -t test build e2e budgets budgets-host {{ if os() == "linux" { "coverage" } else { "" } }}
 
 # What each leg of a Rust repository's .github/workflows/rust-cache-warm.yml runs on a push to
 # main: compile everything `ci-test` compiles on that platform and run nothing, so a pull request
 # restores it. Each Rust project owns how, declaring `test-compile` as its `test` command compiling
-# without running (references/languages/rust.md). A replayed task compiles nothing, so this never
+# without running, under coverage instrumentation on Linux (references/languages/rust.md). A replayed task compiles nothing, so this never
 # reads an Nx cache, and with no project declaring the target it refuses rather than warm nothing.
 # Delete it in a repository with no Rust.
 ci-warm:
     @bunx nx show projects --with-target test-compile | grep -q . || { echo "ci-warm: no project declares a test-compile target; add one beside each Rust project's test target (references/languages/rust.md)" >&2; exit 1; }
-    bunx nx run-many --skip-nx-cache -t build test-compile
+    bunx nx run-many --skip-nx-cache -t build test-compile coverage-build
 
 # One phase of one release job (references/releasing.md): `just release <job> <phase>
 # --tag <tag>`, where <job> is a build job of .github/workflows/release.yml (build-linux,

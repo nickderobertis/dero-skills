@@ -53,7 +53,7 @@ so the baseline checker runs against this very section):
   `tools/onebudgetspec.md`. Nx is **mandatory**: the repo is a project graph,
   every root recipe delegates to it, so the gate needs bun/node as well as uv;
   consumers still never run Nx.
-- **Project graph:** eleven projects split by test tier and by cost (see "Project
+- **Project graph:** twelve projects split by test tier and by cost (see "Project
   graph" below). Fast tiers live with the code they cover; the three expensive
   ones — the judged llmlint tier, the `skilltest` eval and the `external`
   journeys — sit behind graph edges an unrelated change cannot reach.

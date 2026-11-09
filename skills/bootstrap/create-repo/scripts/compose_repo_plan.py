@@ -997,6 +997,14 @@ RUST_TOOLCHAIN_FILE = "rust-toolchain.toml"
 WARM_WORKFLOW_NAME = "rust cache warm"
 # Each Rust project's `test` command compiling without running, which `just ci-warm` runs.
 WARM_COMPILE_TARGET = "test-compile"
+# A Rust repository's coverage shape (references/languages/rust.md): each crate's `test` is a
+# cached coverage unit whose one output is its LCOV report, and the root `coverage` target
+# merges them. 96 is the LCOV restatement of the 95 default: see that reference.
+COVERAGE_UNIT_TARGET = "test"
+COVERAGE_MERGE_TARGET = "coverage"
+COVERAGE_BUILD_TARGET = "coverage-build"
+COVERAGE_REPORT_DIR = "target/coverage-units"
+RUST_COVERAGE_FLOOR = "96"
 CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(".github/workflows/ci.yml", "assets/ci.yml.template", True, False),
     CiCdFile(
@@ -1050,6 +1058,16 @@ CI_CD_FILES: tuple[CiCdFile, ...] = (
     CiCdFile(
         "scripts/actions-cache-prune.mjs",
         "assets/ci/actions-cache-prune.mjs",
+        False,
+        False,
+        "rust",
+    ),
+    CiCdFile(
+        "scripts/coverage-unit.sh", "assets/ci/coverage-unit.sh", False, True, "rust"
+    ),
+    CiCdFile(
+        "scripts/coverage-merge.mjs",
+        "assets/ci/coverage-merge.mjs",
         False,
         False,
         "rust",
@@ -1547,6 +1565,8 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
                 changed = True
         if changed:
             _write_json(project_path, project)
+    if shape.language == "rust":
+        wire_coverage_units(repo, shape, named)
     _write_json(path, nx)
     package_path = repo / "package.json"
     package = _read_json_object(package_path)
@@ -1554,6 +1574,155 @@ def wire_test_cache(repo: Path, shape: CiCdShape) -> list[str]:
     _json_table(package, "devDependencies", package_path).update(nx="23.1.3")
     _write_json(package_path, package)
     return ["wired shared Nx test cache and telemetry"]
+
+
+def _cargo_crates(repo: Path) -> dict[Path, dict]:
+    """Each directory holding a Cargo package manifest, to that manifest."""
+    crates: dict[Path, dict] = {}
+    for manifest in sorted(repo.rglob("Cargo.toml")):
+        if any(
+            part in {"node_modules", ".git", ".nx", "target"}
+            for part in manifest.relative_to(repo).parts
+        ):
+            continue
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        if "package" in data:
+            crates[manifest.parent] = data
+    return crates
+
+
+def _path_dependencies(
+    repo: Path, directory: Path, manifest: dict, table: str
+) -> set[Path]:
+    """The directories of ``table``'s path dependencies, workspace-inherited ones included."""
+    root_toml = repo / "Cargo.toml"
+    root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
+    shared = root.get("workspace", {}).get("dependencies", {})
+    found: set[Path] = set()
+    for name, spec in manifest.get(table, {}).items():
+        if isinstance(spec, dict) and spec.get("workspace") is True:
+            inherited = shared.get(name, {})
+            if isinstance(inherited, dict) and "path" in inherited:
+                found.add((repo / inherited["path"]).resolve())
+        elif isinstance(spec, dict) and "path" in spec:
+            found.add((directory / spec["path"]).resolve())
+    return found
+
+
+def _builds_binary(directory: Path, manifest: dict) -> bool:
+    return bool(manifest.get("bin")) or (directory / "src/main.rs").is_file()
+
+
+def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) -> None:
+    """Write each Rust crate's cached coverage unit and the root check that merges them."""
+    named["coverageTools"] = [
+        "{workspaceRoot}/scripts/coverage-unit.sh",
+        "{workspaceRoot}/scripts/coverage-merge.mjs",
+        "{workspaceRoot}/.cargo/config.toml",
+        "{workspaceRoot}/.config/nextest.toml",
+        {"runtime": "bash scripts/coverage-unit.sh --tool-version rustc"},
+        {"runtime": "bash scripts/coverage-unit.sh --tool-version cargo-llvm-cov"},
+        {"runtime": "bash scripts/coverage-unit.sh --tool-version cargo-nextest"},
+        {"runtime": "bash scripts/coverage-unit.sh --tool-version llvm-profdata"},
+        {"runtime": "bash scripts/coverage-unit.sh --tool-version llvm-cov"},
+        {"env": "COVERAGE_UNIT_IGNORE_REGEX"},
+    ]
+    # What a dependent unit's run reads of a crate it depends on: no run reads another
+    # crate's own tests, so editing them re-runs only that crate's unit.
+    named["coverageDependencyInputs"] = [
+        "{projectRoot}/**/*",
+        "!{projectRoot}/**/Cargo.toml",
+        "!{projectRoot}/**/CHANGELOG.md",
+        "!{projectRoot}/project.json",
+        "!{projectRoot}/tests/**",
+        "!{projectRoot}/benches/**",
+        "!{projectRoot}/examples/**",
+    ]
+    crates = _cargo_crates(repo)
+    projects: dict[Path, Path] = {}
+    names: dict[Path, str] = {}
+    for directory in crates:
+        project_path = directory / "project.json"
+        if project_path.is_file():
+            projects[directory] = project_path
+            names[directory] = _read_json_object(project_path)["name"]
+    for directory, project_path in projects.items():
+        manifest = crates[directory]
+        crate = manifest["package"]["name"]
+        unit = names[directory]
+        project = _read_json_object(project_path)
+        targets = _json_table(project, "targets", project_path)
+        depends = {
+            names[found]
+            for table in ("dependencies", "dev-dependencies", "build-dependencies")
+            for found in _path_dependencies(repo, directory, manifest, table)
+            if found in names
+        }
+        if depends:
+            project["implicitDependencies"] = sorted(
+                {*project.get("implicitDependencies", []), *depends}
+            )
+        test = targets.setdefault(COVERAGE_UNIT_TARGET, {})
+        if "coverage-unit.sh" not in str(test.get("command", "")):
+            test["command"] = (
+                f"bash scripts/coverage-unit.sh {unit} -- nextest --locked -p {crate}"
+            )
+        test["cache"] = True
+        test["inputs"] = ["testInputs", "^coverageDependencyInputs", "coverageTools"]
+        test["outputs"] = [f"{{workspaceRoot}}/{COVERAGE_REPORT_DIR}/{unit}.lcov"]
+        spawned = sorted(
+            found
+            for found in _path_dependencies(
+                repo, directory, manifest, "dev-dependencies"
+            )
+            if found in names
+            and _builds_binary(found, crates[found])
+            and manifest["package"].get("publish") is False
+        )
+        for found in spawned:
+            spawn_project = _read_json_object(projects[found])
+            _json_table(spawn_project, "targets", projects[found])[
+                COVERAGE_BUILD_TARGET
+            ] = {
+                "command": (
+                    "bash scripts/coverage-unit.sh --cargo -- build --locked "
+                    f"-p {crates[found]['package']['name']}"
+                ),
+                "cache": False,
+            }
+            _write_json(projects[found], spawn_project)
+            edge = {"projects": [names[found]], "target": COVERAGE_BUILD_TARGET}
+            depends_on = test.setdefault("dependsOn", [])
+            if edge not in depends_on:
+                depends_on.append(edge)
+        compile_target = targets.setdefault(WARM_COMPILE_TARGET, {})
+        compile_target["command"] = (
+            "bash scripts/coverage-unit.sh --cargo -- nextest run --no-run "
+            f"--locked -p {crate}"
+        )
+        compile_target["cache"] = False
+        _write_json(project_path, project)
+    if not names:
+        return
+    units = sorted(names.values())
+    root_path = repo / "project.json"
+    root = (
+        _read_json_object(root_path)
+        if root_path.is_file()
+        else {"name": f"{shape.name}-coverage", "root": "."}
+    )
+    root["implicitDependencies"] = sorted(
+        {*root.get("implicitDependencies", []), *units}
+    )
+    _json_table(root, "targets", root_path)[COVERAGE_MERGE_TARGET] = {
+        "command": (
+            f"node scripts/coverage-merge.mjs --fail-under-lines {RUST_COVERAGE_FLOOR} "
+            f"--dir {COVERAGE_REPORT_DIR} --unit {' '.join(units)}"
+        ),
+        "cache": False,
+        "dependsOn": [{"projects": units, "target": COVERAGE_UNIT_TARGET}],
+    }
+    _write_json(root_path, root)
 
 
 def plan_ci_cd_files(repo: Path, skill_dir: Path, shape: CiCdShape) -> dict[str, bytes]:

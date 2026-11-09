@@ -12,6 +12,7 @@ split is by **test tier** and by **cost**, per the create-repo skill's
 | `consumer-bootstrap` | `consumer-bootstrap/` | `lint` |
 | `bootstrap-create-repo` | `skills/bootstrap/create-repo/` | `format` `format-check` `lint` `validate` `smoke` `test` |
 | `bootstrap-create-repo-e2e` | `.../create-repo/tests/e2e/` | `format` `format-check` `lint` `test` |
+| `bootstrap-create-repo-coverage-units` | `.../create-repo/tests/coverage-units/` | `format` `format-check` `lint` `test` |
 | `bootstrap-create-repo-skilltest` | `.../create-repo/tests/skilltest/` | `format` `format-check` `lint` **`skilltest`** |
 | `bootstrap-create-repo-external` | `.../create-repo/tests/external/` | `format` `format-check` `lint` **`external`** |
 | `project-graph-e2e` | `tests/project-graph/` | `format` `format-check` `lint` `test` |
@@ -45,7 +46,7 @@ What is not obvious from the table:
   adding any of those names to `just check`.
 - **The nested projects under the skill are deliberate.** Nx assigns each file to
   the project with the longest matching root, so `tests/e2e/`,
-  `tests/skilltest/` and `tests/external/` own their files and the skill project
+  `tests/coverage-units/`, `tests/skilltest/` and `tests/external/` own their files and the skill project
   does not. That is why the skill's `ruff`/`pytest` commands carry
   `--exclude`/`--ignore` for those three directories: without them the parent would re-check files it does not own, and
   its cache key would not cover them.
