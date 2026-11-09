@@ -3637,6 +3637,8 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
             )
             continue
         name = project.get("name")
+        if not isinstance(name, str):
+            continue
         local_named = {**named, **_object_or_empty(project.get("namedInputs"))}
         for target_name, target in _object_or_empty(project.get("targets")).items():
             if not isinstance(target, dict):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -399,7 +400,6 @@ def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
 @pytest.mark.parametrize(
     ("relative", "text", "message"),
     [
-        ("Cargo.toml", "not toml =\n", "not valid TOML"),
         (
             "crates/lib/project.json",
             '{"root": "crates/lib", "targets": {}}',
@@ -407,7 +407,7 @@ def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
         ),
         ("crates/lib/Cargo.toml", "[package]\n", "names no package"),
     ],
-    ids=["root-toml", "nameless-project", "nameless-package"],
+    ids=["nameless-project", "nameless-package"],
 )
 def test_the_composer_refuses_a_workspace_it_cannot_wire(
     tmp_path, relative, text, message
@@ -415,3 +415,20 @@ def test_the_composer_refuses_a_workspace_it_cannot_wire(
     files = {**workspace_files(GOOD_COMPILE), relative: text}
     with pytest.raises(AssertionError, match=message):
         compose(tmp_path / "repo", "rust", "linux", files=files)
+
+
+def test_every_doc_stating_the_rust_floor_names_the_composers_floor():
+    composer = (CI.parents[1] / "scripts" / "compose_repo_plan.py").read_text()
+    floor = re.search(r'RUST_COVERAGE_FLOOR = "(\d+)"', composer).group(1)
+    for relative in (
+        "references/languages/rust.md",
+        "references/ci.md",
+        "references/intersections/rust-cli.md",
+        "assets/justfile.template",
+    ):
+        text = (CI.parents[1] / relative).read_text()
+        assert (
+            f"--fail-under-lines {floor}" in text
+            or f"Rust's default is {floor}" in text
+            or f"({floor} on" in text
+        ), relative

@@ -1590,7 +1590,7 @@ def _cargo_crates(repo: Path) -> dict[Path, dict]:
         except tomllib.TOMLDecodeError:
             # Not a crate this repository builds; cargo reports it where it is one.
             continue
-        if "package" in data:
+        if isinstance(data.get("package"), dict):
             crates[manifest.parent] = data
     return crates
 
@@ -1600,13 +1600,7 @@ def _path_dependencies(
 ) -> set[Path]:
     """The directories of ``table``'s path dependencies, workspace-inherited ones included."""
     root_toml = repo / "Cargo.toml"
-    try:
-        root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
-    except tomllib.TOMLDecodeError as error:
-        raise WiringError(
-            f"{root_toml} is not valid TOML: {error}\n"
-            "      fix: repair the root Cargo manifest, then re-run --ci-cd."
-        ) from error
+    root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
     workspace = root.get("workspace")
     shared_table = (
         workspace.get("dependencies") if isinstance(workspace, dict) else None

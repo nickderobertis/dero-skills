@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
 # version: 1
-# sha256: 198a07cc160bff3e635f4be9a34c3baa26ec51d3c49d0ece3919af8694c0b3de
+# sha256: 47af0e488d5d7eb480ecefbca8900f7d29b2e72e8ec66ea0be7b87fdf971ce9a
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -162,12 +162,24 @@ fi
 
 # The objects that wrote into this profile, by build id, so a binary another unit left in
 # the shared target directory never lends this report its lines.
-"$(profdata_tool)" show --binary-ids "$indexed" | sed -n '/^Binary IDs:/,$p' | sed 1d |
-  tr -d ' ' | tr '[:upper:]' '[:lower:]' | sort -u >"$work/ids"
+if ! "$(profdata_tool)" show --binary-ids "$indexed" >"$work/show" 2>"$work/show.err"; then
+  cat "$work/show.err" >&2
+  echo "coverage-unit.sh: llvm-profdata could not list the binaries of $unit. ACTION: check the profile at $indexed" >&2
+  exit 1
+fi
+sed -n '/^Binary IDs:/,$p' "$work/show" | sed 1d | tr -d ' ' | tr '[:upper:]' '[:lower:]' | sort -u >"$work/ids"
 readobj="$(llvm_tool llvm-readobj "")"
-find "$coverage_target" -type f -perm -u+x \
+# Other units compile into this directory at the same time, so a file vanishing mid-scan is
+# routine; any other find error loses objects silently and must stop the report.
+if ! find "$coverage_target" -type f -perm -u+x \
   -not -path '*/build/*' -not -path '*/incremental/*' -not -path '*/.fingerprint/*' -print0 \
-  >"$work/objects"
+  >"$work/objects" 2>"$work/find.err"; then
+  if grep -qvF 'No such file or directory' "$work/find.err"; then
+    cat "$work/find.err" >&2
+    echo "coverage-unit.sh: could not list $coverage_target for $unit. ACTION: check the target directory's permissions" >&2
+    exit 1
+  fi
+fi
 objects=()
 while IFS= read -r -d '' candidate; do
   [ "$(head -c4 "$candidate" | od -An -c | tr -d ' ')" = '177ELF' ] || continue
@@ -194,8 +206,12 @@ ignore+="|^$(escape "$cargo_home")/(registry|git)/"
 ignore+="|^$(escape "$rustup_home")/toolchains(\$|/)"
 [ -z "${COVERAGE_UNIT_IGNORE_REGEX:-}" ] || ignore+="|$COVERAGE_UNIT_IGNORE_REGEX"
 
-"$(cov_tool)" export -format=lcov -instr-profile="$indexed" "${objects[@]}" \
-  -ignore-filename-regex="$ignore" >"$work/report.lcov"
+if ! "$(cov_tool)" export -format=lcov -instr-profile="$indexed" "${objects[@]}" \
+  -ignore-filename-regex="$ignore" >"$work/report.lcov" 2>"$work/export.err"; then
+  cat "$work/export.err" >&2
+  echo "coverage-unit.sh: llvm-cov could not export $unit. ACTION: check that its objects match the profile" >&2
+  exit 1
+fi
 
 # Relative to the workspace root, so a report replayed on another checkout names the same file.
 awk -v prefix="SF:$root/" 'index($0, prefix) == 1 { print "SF:" substr($0, length(prefix) + 1); next } { print }' \
