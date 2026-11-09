@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
 # version: 3
-# sha256: 9ff66a838c8e5790aa0f436692824241e008ce1773e10776e4141fdf0289a724
+# sha256: 9512ddce254386450d066aa55ed30a4e1af187bef307fad11442ee816d959968
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -15,7 +15,8 @@
 #   coverage-unit.sh --tool-version <tool>                  the version a key hashes, of the
 #                                                           very tool the run uses: rustc,
 #                                                           cargo-llvm-cov, cargo-nextest,
-#                                                           llvm-profdata or llvm-cov
+#                                                           llvm-profdata, llvm-cov or
+#                                                           llvm-readobj
 #
 # Coverage is measured on Linux. On another platform the unit's cargo arguments run
 # uninstrumented and write no report, as the test job there has always run them.
@@ -42,10 +43,12 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$root"
 
+arguments="$*"
 usage() {
+  echo "coverage-unit.sh: cannot read the command line '$arguments'. ACTION: use one of these forms" >&2
   echo "usage: coverage-unit.sh <unit> -- <cargo llvm-cov arguments>" >&2
   echo "       coverage-unit.sh --cargo -- <cargo arguments>" >&2
-  echo "       coverage-unit.sh --tool-version rustc|cargo-llvm-cov|cargo-nextest|llvm-profdata|llvm-cov" >&2
+  echo "       coverage-unit.sh --tool-version rustc|cargo-llvm-cov|cargo-nextest|llvm-profdata|llvm-cov|llvm-readobj" >&2
   exit 2
 }
 
@@ -66,6 +69,7 @@ llvm_tool() {
 }
 profdata_tool() { llvm_tool llvm-profdata "${LLVM_PROFDATA:-}"; }
 cov_tool() { llvm_tool llvm-cov "${LLVM_COV:-}"; }
+readobj_tool() { llvm_tool llvm-readobj ""; }
 
 on_linux() { [ "$(uname -s)" = Linux ]; }
 
@@ -104,7 +108,7 @@ case "$1" in
   # Off Linux no coverage tool runs, and the platform is its own key input.
   if ! on_linux; then
     case "$2" in
-    rustc | cargo-llvm-cov | cargo-nextest | llvm-profdata | llvm-cov)
+    rustc | cargo-llvm-cov | cargo-nextest | llvm-profdata | llvm-cov | llvm-readobj)
       echo "$2: unused off Linux"
       exit 0
       ;;
@@ -117,6 +121,7 @@ case "$1" in
   cargo-nextest) cargo nextest --version ;;
   llvm-profdata) "$(profdata_tool)" --version ;;
   llvm-cov) "$(cov_tool)" --version ;;
+  llvm-readobj) "$(readobj_tool)" --version ;;
   *) usage ;;
   esac
   exit 0
@@ -139,7 +144,7 @@ unit="$1"
 shift 2
 case "$unit" in
 *[!A-Za-z0-9_-]* | "")
-  echo "coverage-unit.sh: '$unit' is not a unit name: use letters, digits, '-' and '_'" >&2
+  echo "coverage-unit.sh: '$unit' is not a unit name. ACTION: name it with letters, digits, '-' and '_'" >&2
   exit 2
   ;;
 esac
@@ -203,7 +208,7 @@ if ! "$(profdata_tool)" show --binary-ids "$indexed" >"$work/show" 2>"$work/show
   exit 1
 fi
 sed -n '/^Binary IDs:/,$p' "$work/show" | sed 1d | tr -d ' ' | tr '[:upper:]' '[:lower:]' | sort -u >"$work/ids"
-readobj="$(llvm_tool llvm-readobj "")"
+readobj="$(readobj_tool)"
 # Other units compile into this directory at the same time, so a file vanishing mid-scan is
 # routine; any other find error loses objects silently and must stop the report.
 if ! find "$coverage_target" -type f -perm -u+x \

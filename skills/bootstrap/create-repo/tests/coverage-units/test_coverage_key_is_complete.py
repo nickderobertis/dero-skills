@@ -211,6 +211,11 @@ def wrappers(workspace: Fixture, directory: Path) -> dict[str, str]:
             f"{llvm_dir}/llvm-cov",
             '[ "$*" = "--version" ] && { echo "llvm-cov wrapped"; exit; }',
         ),
+        "llvm-readobj": _script(
+            directory / "llvm-readobj",
+            f"{llvm_dir}/llvm-readobj",
+            '[ "$*" = "--version" ] && { echo "llvm-readobj wrapped"; exit; }',
+        ),
         "node": _script(
             directory / "node",
             resolve("node", workspace.env),
@@ -237,6 +242,7 @@ TOOL_INPUTS = [
     "cargo-nextest",
     "llvm-profdata",
     "llvm-cov",
+    "llvm-readobj",
     "node",
 ]
 

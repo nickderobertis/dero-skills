@@ -49,7 +49,7 @@ to re-run a developer's warm local environment.
   whose tools were measured: Rust's default is 96 on the LCOV basis, because LCOV
   counts fewer lines than `cargo llvm-cov report` and reads higher on the same tests
   (no gap exists for a new repository, so the default takes the largest measured
-  gap, 0.88 points, over 95, rounded up; [rust.md](languages/rust.md) has the reasoning).
+  gap, 0.88 points, over 95, rounded up).
   Lower the bar — or drop it for a stack where coverage tooling genuinely doesn't fit
   — only with a documented reason in `AGENTS.md`, never by silently leaving
   coverage unmeasured.
@@ -151,8 +151,7 @@ request did not need is a slot another repository waited for.
   `test-<platform>` compiles and saves under the `cache-shared-key` that job restores. The
   recipe runs the Nx targets `build`, `coverage-build` and `test-compile`, each Rust
   project declaring the last as its `test` command compiling without running, instrumented
-  on Linux so the cache holds the build a coverage unit runs
-  ([rust.md](languages/rust.md#target-names)). It never reads an Nx cache and refuses when no
+  on Linux so the cache holds the build a coverage unit runs. It never reads an Nx cache and refuses when no
   project declares the target. It
   adds no pull-request job and tests nothing. The CD figures leave it out by name.
 - **Each warm leg deletes its family's superseded copies.** Its last ordinary step is
@@ -184,8 +183,7 @@ request did not need is a slot another repository waited for.
   package version only where the unit's result depends on it. A unit that spawns another
   crate's binary reaches it through that crate's uncached `coverage-build`. The repository's
   `coverage` target depends on every unit, merges their LCOV and enforces the floor, so a
-  pull request that touches one crate re-runs one unit and replays the rest
-  ([rust.md](languages/rust.md#splitting-the-suite)). The floor is computed by merging every
+  pull request that touches one crate re-runs one unit and replays the rest. The floor is computed by merging every
   unit's cached LCOV.
 - **Tools are exact and among the cached inputs.** Every tool a generated workflow installs
   reads its version from `.github/ci-tool-versions`, each job's first step after the

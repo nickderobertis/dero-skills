@@ -255,8 +255,11 @@ def unit_root(tmp_path: Path) -> Path:
 def test_coverage_unit_refuses_a_bad_unit_name_and_usage(unit_root):
     named = _unit(unit_root, {}, "bad.name", "--", "nextest")
     assert named.returncode == 2 and "is not a unit name" in named.stderr
+    assert "bad.name" in named.stderr and "ACTION:" in named.stderr
     assert _unit(unit_root, {}, "unit-only").returncode == 2
-    assert _unit(unit_root, {}, "--tool-version", "gcc").returncode == 2
+    refused = _unit(unit_root, {}, "--tool-version", "gcc")
+    assert refused.returncode == 2 and "'--tool-version gcc'" in refused.stderr
+    assert "ACTION:" in refused.stderr
 
 
 def _show_env_double(tmp_path: Path, printed: str) -> tuple[dict[str, str], Path]:

@@ -167,7 +167,7 @@ the same projects and meet at the crate directory.
     so they stay out and a change to them re-runs only that crate's unit),
     version-free manifests, `Cargo.lock`, the toolchain (`rust-toolchain.toml` and
     runtime `rustc -vV`), the tool pins with each tool's reported version
-    (`cargo-llvm-cov`, nextest, `llvm-profdata`, `llvm-cov`), the two scripts and
+    (`cargo-llvm-cov`, nextest, `llvm-profdata`, `llvm-cov`, `llvm-readobj`), the two scripts and
     the unit's own recipe, every environment variable that selects what runs, and
     the platform. The package version stays out of the key, because LCOV identifies
     a line by file and line number and a report from an older version merges

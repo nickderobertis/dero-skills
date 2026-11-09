@@ -1653,6 +1653,7 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
         {"runtime": "bash scripts/coverage-unit.sh --tool-version cargo-nextest"},
         {"runtime": "bash scripts/coverage-unit.sh --tool-version llvm-profdata"},
         {"runtime": "bash scripts/coverage-unit.sh --tool-version llvm-cov"},
+        {"runtime": "bash scripts/coverage-unit.sh --tool-version llvm-readobj"},
         {"env": "COVERAGE_UNIT_IGNORE_REGEX"},
     ]
     # What a dependent unit's run reads of a crate it depends on: no run reads another
