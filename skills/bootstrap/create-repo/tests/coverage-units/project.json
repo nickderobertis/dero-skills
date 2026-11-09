@@ -3,7 +3,6 @@
   "root": "skills/bootstrap/create-repo/tests/coverage-units",
   "projectType": "library",
   "tags": ["type:e2e", "lang:python"],
-  "implicitDependencies": ["bootstrap-create-repo"],
   "targets": {
     "format": {
       "command": "uv run ruff format skills/bootstrap/create-repo/tests/coverage-units"

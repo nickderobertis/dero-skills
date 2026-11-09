@@ -1,14 +1,15 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-merge.mjs
 // version: 1
-// sha256: 673185c4a59df7952e5fc2b56b2f2b5f2c86d6d65fe42df9fe6c70efffa2db9b
+// sha256: 0d161096b02d7888a387d78fd04b4fe119d0e8de4138d03dcec7c424e88334c5
 //
 // The repository's combined coverage check over its coverage units' cached LCOV reports.
 //
+// llmlint: ignore[typescript_and_npm_launched_via_bun] The cross-repository contract fixes this portable Node CLI's command line; a consumer of the script need not install bun to run it.
 //   node coverage-merge.mjs --fail-under-lines <N> --dir <dir> --unit <unit>...
 //
 // <N> is a floor on the line percentage, a decimal of at most two places. `--unit` takes one
-// or more names and may repeat.
+// or more names, each of letters, digits, `-` and `_`, and may repeat.
 //
 // Reads exactly <dir>/<unit>.lcov for each named unit, and lists <dir> to refuse what no
 // named unit owns. Writes nothing. It runs no build and no llvm tool.
@@ -32,6 +33,7 @@ const refuse = (message) => {
   process.exit(2);
 };
 const usage = () =>
+  // llmlint: ignore[typescript_and_npm_launched_via_bun] The cross-repository contract fixes this portable Node CLI's command line; a consumer of the script need not install bun to run it.
   refuse('usage: node coverage-merge.mjs --fail-under-lines <N> --dir <dir> --unit <unit>...');
 
 let floorText;
@@ -59,6 +61,8 @@ if (!/^\d{1,3}(\.\d{1,2})?$/.test(floorText)) {
 const [whole, fraction = ''] = floorText.split('.');
 const floorHundredths = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
 if (floorHundredths > 10000n) refuse(`--fail-under-lines ${floorText}: above 100`);
+const badUnit = units.find((unit) => !/^[A-Za-z0-9_-]+$/.test(unit));
+if (badUnit !== undefined) refuse(`--unit ${badUnit}: a unit name is letters, digits, - and _`);
 if (new Set(units).size !== units.length) refuse('a unit is named twice');
 
 const owned = new Set(units.map((unit) => `${unit}.lcov`));

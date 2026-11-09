@@ -364,6 +364,16 @@ def test_coverage_merge_refuses_a_bad_command_line(tmp_path, args):
     assert _merge(tmp_path, *args).returncode == 2
 
 
+def test_coverage_merge_refuses_a_unit_name_that_leaves_its_directory(tmp_path):
+    (tmp_path / "d").mkdir()
+    (tmp_path / "outside.lcov").write_text("SF:x.rs\nDA:1,1\nend_of_record\n")
+    done = _merge(
+        tmp_path, "--fail-under-lines", "0", "--dir", "d", "--unit", "../outside"
+    )
+    assert done.returncode == 2 and "../outside" in done.stderr
+    assert "a unit name" in done.stderr
+
+
 @pytest.mark.parametrize(
     ("body", "complaint"),
     [
@@ -407,7 +417,10 @@ def test_a_non_json_config_is_a_finding_not_a_traceback(repo, name):
     assert "not a JSON object" in out and "Traceback" not in out
 
 
-def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
+@pytest.mark.parametrize(
+    "table", ["dependencies", "dev-dependencies", "build-dependencies"]
+)
+def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path, table):
     files = {
         **workspace_files(GOOD_COMPILE),
         "Cargo.toml": (
@@ -416,7 +429,7 @@ def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
         ),
         "crates/lib/Cargo.toml": (
             '[package]\nname = "demo-lib"\nversion = "0.1.0"\nedition = "2021"\n'
-            "[dependencies]\ndemo-dep = { workspace = true }\n"
+            f"[{table}]\ndemo-dep = {{ workspace = true }}\n"
         ),
         "crates/dep/project.json": json.dumps(
             {"name": "demo-dep", "root": "crates/dep"}
@@ -425,6 +438,32 @@ def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
     repo = compose(tmp_path / "repo", "rust", "linux", files=files)
     project = json.loads((repo / "crates/lib/project.json").read_text())
     assert project["implicitDependencies"] == ["demo-dep"]
+    assert "^coverageDependencyInputs" in project["targets"]["test"]["inputs"]
+
+
+def test_a_workspace_inherited_binary_is_reached_through_its_coverage_build(tmp_path):
+    files = {
+        **workspace_files(GOOD_COMPILE),
+        "Cargo.toml": (
+            '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n'
+            '[workspace.dependencies]\ndemo-dep = { path = "crates/dep" }\n'
+        ),
+        "crates/lib/Cargo.toml": (
+            '[package]\nname = "demo-lib"\nversion = "0.1.0"\nedition = "2021"\n'
+            "publish = false\n[dev-dependencies]\ndemo-dep = { workspace = true }\n"
+        ),
+        "crates/dep/src/main.rs": "fn main() {}\n",
+        "crates/dep/project.json": json.dumps(
+            {"name": "demo-dep", "root": "crates/dep"}
+        ),
+    }
+    repo = compose(tmp_path / "repo", "rust", "linux", files=files)
+    project = json.loads((repo / "crates/lib/project.json").read_text())
+    assert project["targets"]["test"]["dependsOn"] == [
+        {"projects": ["demo-dep"], "target": "coverage-build"}
+    ]
+    spawned = json.loads((repo / "crates/dep/project.json").read_text())
+    assert spawned["targets"]["coverage-build"]["cache"] is False
 
 
 @pytest.mark.parametrize(
@@ -436,8 +475,23 @@ def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
             "names no project",
         ),
         ("crates/lib/Cargo.toml", "[package]\n", "names no package"),
+        (
+            "crates/lib/project.json",
+            '{"name": "lib; touch pwned", "root": "crates/lib", "targets": {}}',
+            "rename the project",
+        ),
+        (
+            "crates/lib/Cargo.toml",
+            '[package]\nname = "lib$(touch pwned)"\n',
+            "rename the package",
+        ),
     ],
-    ids=["nameless-project", "nameless-package"],
+    ids=[
+        "nameless-project",
+        "nameless-package",
+        "unsafe-project-name",
+        "unsafe-package-name",
+    ],
 )
 def test_the_composer_refuses_a_workspace_it_cannot_wire(
     tmp_path, relative, text, message

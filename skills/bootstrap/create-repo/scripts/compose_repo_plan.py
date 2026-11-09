@@ -1002,6 +1002,7 @@ WARM_COMPILE_TARGET = "test-compile"
 # merges them. 96 is the LCOV restatement of the 95 default: see that reference.
 COVERAGE_UNIT_TARGET = "test"
 COVERAGE_MERGE_TARGET = "coverage"
+COVERAGE_NAME_RE = re.compile(r"[A-Za-z0-9_-]+")
 COVERAGE_BUILD_TARGET = "coverage-build"
 COVERAGE_REPORT_DIR = "target/coverage-units"
 RUST_COVERAGE_FLOOR = "96"
@@ -1629,6 +1630,16 @@ def _builds_binary(directory: Path, manifest: dict) -> bool:
     return bool(manifest.get("bin")) or (directory / "src/main.rs").is_file()
 
 
+def _command_name(name: str, source: Path, kind: str) -> str:
+    """``name``, refused unless a generated shell command can carry it unquoted."""
+    if COVERAGE_NAME_RE.fullmatch(name) is None:
+        raise WiringError(
+            f"{source} names {kind} {name!r}, which a coverage unit's command cannot carry\n"
+            f"      fix: rename the {kind} to letters, digits, - and _, then re-run --ci-cd."
+        )
+    return name
+
+
 def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) -> None:
     """Write each Rust crate's cached coverage unit and the root check that merges them."""
     named["coverageTools"] = [
@@ -1667,15 +1678,17 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
                     f"{project_path} names no project\n"
                     '      fix: set its "name", then re-run --ci-cd.'
                 )
-            names[directory] = name
+            names[directory] = _command_name(name, project_path, "project")
+            crate = crates[directory]["package"].get("name")
+            if not isinstance(crate, str):
+                raise WiringError(
+                    f"{directory / 'Cargo.toml'} names no package\n"
+                    "      fix: set [package] name, then re-run --ci-cd."
+                )
+            _command_name(crate, directory / "Cargo.toml", "package")
     for directory, project_path in projects.items():
         manifest = crates[directory]
-        crate = manifest["package"].get("name")
-        if not isinstance(crate, str):
-            raise WiringError(
-                f"{directory / 'Cargo.toml'} names no package\n"
-                "      fix: set [package] name, then re-run --ci-cd."
-            )
+        crate = manifest["package"]["name"]
         unit = names[directory]
         project = _read_json_object(project_path)
         targets = _json_table(project, "targets", project_path)
