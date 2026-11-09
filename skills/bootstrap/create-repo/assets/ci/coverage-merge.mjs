@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-merge.mjs
-// version: 1
-// sha256: 0d161096b02d7888a387d78fd04b4fe119d0e8de4138d03dcec7c424e88334c5
+// version: 2
+// sha256: f273ae7863d2caafb06d5f1d0ce55b4080ae2dda3a6d92ec72af2e539b081628
 //
 // The repository's combined coverage check over its coverage units' cached LCOV reports.
 //
@@ -19,13 +19,14 @@
 // percentage; below the floor, each file's uncovered lines too.
 //
 // Exit: 0 at or above the floor (compared as an exact ratio in integer arithmetic). 1 below
-// it. 2 for a usage error, a named unit whose report is missing, a file under <dir> no named
-// unit owns, a malformed record, an absolute SF: path, or reports holding no line at all.
+// it. 2 for a usage error, a <dir> that is not an existing directory, a named unit whose
+// report is missing, a file under <dir> no named unit owns, a malformed record, an absolute
+// SF: path, or reports holding no line at all.
 //
 // Every file read was restored under its unit's current key or written by its run in this
 // same Nx invocation, because the `coverage` target depends on every unit; a file that is
 // neither is what this refuses, so a leftover report cannot reach the total.
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const refuse = (message) => {
@@ -66,7 +67,16 @@ if (badUnit !== undefined) refuse(`--unit ${badUnit}: a unit name is letters, di
 if (new Set(units).size !== units.length) refuse('a unit is named twice');
 
 const owned = new Set(units.map((unit) => `${unit}.lcov`));
-const present = existsSync(dir) ? readdirSync(dir, { withFileTypes: true }) : [];
+let dirStat;
+try {
+  dirStat = statSync(dir, { throwIfNoEntry: false });
+} catch (error) {
+  refuse(`--dir ${dir}: cannot be read: ${error.message}`);
+}
+if (!dirStat?.isDirectory()) {
+  refuse(`--dir ${dir}: not an existing directory, so no report for unit(s) ${units.join(', ')}`);
+}
+const present = readdirSync(dir, { withFileTypes: true });
 const stray = present.filter((entry) => !(entry.isFile() && owned.has(entry.name)));
 if (stray.length) {
   refuse(`${dir} holds what no named unit owns: ${stray.map((e) => e.name).sort().join(', ')}`);

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
-# version: 2
-# sha256: 2fe7a4a23c0f464f9deab888a17a45c163cef8dda82e2f17d5ac62ae2a8eaaf9
+# version: 3
+# sha256: 9ff66a838c8e5790aa0f436692824241e008ce1773e10776e4141fdf0289a724
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -30,12 +30,13 @@
 #   that report and this unit's raw profiles. No other unit's output is read or deleted.
 # Environment: COVERAGE_UNIT_IGNORE_REGEX adds an alternative to the ignore rule, which is
 #   otherwise the one `cargo llvm-cov report` uses (standard library, tests, examples and
-#   benches, build output, the Cargo registry and the toolchain). LLVM_PROFDATA and LLVM_COV
+#   benches, build output, the Cargo registry and the toolchain). It must be a valid POSIX
+#   extended regular expression that cannot match every file. LLVM_PROFDATA and LLVM_COV
 #   name those tools; otherwise PATH, then the toolchain's llvm-tools component.
 # Exit: 0 when the report is written (or, off Linux, the tests passed); the cargo status when
 #   a test fails; 1 when no profile was written, every profile was unmergeable, no
 #   instrumented object was found, or `cargo llvm-cov show-env` printed anything but shell
-#   assignments; 2 for a usage error.
+#   assignments; 2 for a usage error or an unusable COVERAGE_UNIT_IGNORE_REGEX.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -148,6 +149,23 @@ if ! on_linux; then
   exit
 fi
 
+# Checked before anything is cleared: an unusable fragment must cost neither the run nor the
+# previous report, and one matching the empty string would ignore every file.
+ignore_fragment="${COVERAGE_UNIT_IGNORE_REGEX:-}"
+if [ -n "$ignore_fragment" ]; then
+  set +e
+  [[ "" =~ $ignore_fragment ]]
+  fragment_status=$?
+  set -e
+  if [ "$fragment_status" -eq 2 ]; then
+    echo "coverage-unit.sh: COVERAGE_UNIT_IGNORE_REGEX '$ignore_fragment' is not a valid regular expression. ACTION: correct it to a POSIX extended regular expression" >&2
+    exit 2
+  elif [ "$fragment_status" -eq 0 ]; then
+    echo "coverage-unit.sh: COVERAGE_UNIT_IGNORE_REGEX '$ignore_fragment' matches every file, so it would ignore the whole report. ACTION: narrow it to the paths to leave out" >&2
+    exit 2
+  fi
+fi
+
 report_dir="$root/target/coverage-units"
 report="$report_dir/$unit.lcov"
 indexed="$coverage_target/$unit.profdata"
@@ -221,7 +239,7 @@ ignore+="|^$root_re(/.*)?/(tests\.rs|[0-9a-zA-Z_-]+[_-]tests\.rs)\$"
 ignore+="|^$root_re/target/llvm-cov-target(\$|/)"
 ignore+="|^$(escape "$cargo_home")/(registry|git)/"
 ignore+="|^$(escape "$rustup_home")/toolchains(\$|/)"
-[ -z "${COVERAGE_UNIT_IGNORE_REGEX:-}" ] || ignore+="|$COVERAGE_UNIT_IGNORE_REGEX"
+[ -z "$ignore_fragment" ] || ignore+="|$ignore_fragment"
 
 if ! "$(cov_tool)" export -format=lcov -instr-profile="$indexed" "${objects[@]}" \
   -ignore-filename-regex="$ignore" >"$work/report.lcov" 2>"$work/export.err"; then

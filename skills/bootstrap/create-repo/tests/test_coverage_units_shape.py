@@ -329,6 +329,41 @@ def test_coverage_cargo_runs_nothing_when_show_env_prints_more_than_assignments(
     assert not called.exists(), "cargo ran after show-env was refused"
 
 
+@pytest.mark.parametrize(
+    ("fragment", "complaint"),
+    [
+        ("crates/(unclosed", "not a valid regular expression"),
+        ("[unterminated", "not a valid regular expression"),
+        ("generated/|", "matches every file"),
+        (".*", "matches every file"),
+    ],
+    ids=["open-group", "open-bracket", "empty-alternative", "match-all"],
+)
+def test_coverage_unit_refuses_a_bad_ignore_fragment_before_touching_anything(
+    unit_root, tmp_path, fragment, complaint
+):
+    report = unit_root / "target/coverage-units/unit.lcov"
+    report.parent.mkdir(parents=True)
+    report.write_text("the previous report\n")
+    ran = tmp_path / "cargo-ran"
+    env = _doubled_cargo(tmp_path, f'touch "{ran}"')
+    env["COVERAGE_UNIT_IGNORE_REGEX"] = fragment
+    done = _unit(unit_root, env, "unit", "--", "nextest")
+    assert done.returncode == 2, done.stderr
+    assert "COVERAGE_UNIT_IGNORE_REGEX" in done.stderr and complaint in done.stderr
+    assert fragment in done.stderr and "ACTION:" in done.stderr
+    assert not ran.exists() and report.read_text() == "the previous report\n"
+
+
+def test_coverage_unit_runs_with_a_valid_ignore_fragment(unit_root, tmp_path):
+    ran = tmp_path / "cargo-ran"
+    env = _doubled_cargo(tmp_path, f'touch "{ran}"')
+    env["COVERAGE_UNIT_IGNORE_REGEX"] = "crates/generated/.*[.]rs$"
+    done = _unit(unit_root, env, "unit", "--", "nextest")
+    assert ran.exists(), done.stderr
+    assert "COVERAGE_UNIT_IGNORE_REGEX" not in done.stderr
+
+
 def test_coverage_unit_refuses_a_run_that_writes_no_profile(unit_root, tmp_path):
     env = _doubled_cargo(tmp_path, "exit 0")
     done = _unit(unit_root, env, "demo", "--", "nextest")
@@ -463,6 +498,18 @@ def test_coverage_merge_refuses_a_bad_command_line(tmp_path, args):
     (tmp_path / "d").mkdir()
     (tmp_path / "d" / "a.lcov").write_text("SF:x.rs\nDA:1,1\nend_of_record\n")
     assert _merge(tmp_path, *args).returncode == 2
+
+
+@pytest.mark.parametrize("kind", ["absent", "a-file"])
+def test_coverage_merge_refuses_a_dir_that_is_not_a_directory(tmp_path, kind):
+    if kind == "a-file":
+        (tmp_path / "d").write_text("SF:x.rs\nDA:1,1\nend_of_record\n")
+    done = _merge(
+        tmp_path, "--fail-under-lines", "0", "--dir", "d", "--unit", "alpha", "beta"
+    )
+    assert done.returncode == 2, done.stderr
+    assert "--dir d: not an existing directory" in done.stderr
+    assert "alpha, beta" in done.stderr
 
 
 def test_coverage_merge_refuses_a_unit_name_that_leaves_its_directory(tmp_path):
