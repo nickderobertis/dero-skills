@@ -1610,12 +1610,13 @@ def _path_dependencies(
     shared = root.get("workspace", {}).get("dependencies", {})
     found: set[Path] = set()
     for name, spec in manifest.get(table, {}).items():
-        if isinstance(spec, dict) and spec.get("workspace") is True:
-            inherited = shared.get(name, {})
-            if isinstance(inherited, dict) and "path" in inherited:
-                found.add((repo / inherited["path"]).resolve())
-        elif isinstance(spec, dict) and "path" in spec:
-            found.add((directory / spec["path"]).resolve())
+        match spec:
+            case {"workspace": True}:
+                inherited = shared.get(name, {})
+                if isinstance(inherited, dict) and "path" in inherited:
+                    found.add((repo / inherited["path"]).resolve())
+            case {"path": path}:
+                found.add((directory / path).resolve())
     return found
 
 
@@ -1664,7 +1665,12 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
             names[directory] = name
     for directory, project_path in projects.items():
         manifest = crates[directory]
-        crate = manifest["package"]["name"]
+        crate = manifest["package"].get("name")
+        if not isinstance(crate, str):
+            raise WiringError(
+                f"{directory / 'Cargo.toml'} names no package\n"
+                "      fix: set [package] name, then re-run --ci-cd."
+            )
         unit = names[directory]
         project = _read_json_object(project_path)
         targets = _json_table(project, "targets", project_path)
@@ -1702,7 +1708,7 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
             ] = {
                 "command": (
                     "bash scripts/coverage-unit.sh --cargo -- build --locked "
-                    f"-p {crates[found]['package']['name']}"
+                    f"-p {crates[found]['package'].get('name')}"
                 ),
                 "cache": False,
             }

@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 from ci_cd_shape import NAME, compose, ensure_pinned_tools, run
 
@@ -245,7 +246,13 @@ def read_lcov(paths) -> dict[str, dict[int, bool]]:
     return lines
 
 
-def figures(lines: dict[str, dict[int, bool]]) -> tuple[int, int, dict[str, list[int]]]:
+class CoverageFigures(NamedTuple):
+    covered: int
+    total: int
+    uncovered: dict[str, list[int]]
+
+
+def figures(lines: dict[str, dict[int, bool]]) -> CoverageFigures:
     """Lines covered, lines total and uncovered lines per file."""
     total = covered = 0
     uncovered: dict[str, list[int]] = {}
@@ -255,10 +262,10 @@ def figures(lines: dict[str, dict[int, bool]]) -> tuple[int, int, dict[str, list
             covered += hit
             if not hit:
                 uncovered.setdefault(path, []).append(number)
-    return covered, total, uncovered
+    return CoverageFigures(covered, total, uncovered)
 
 
-def merge_figures(stdout: str) -> tuple[int, int, dict[str, list[int]]]:
+def merge_figures(stdout: str) -> CoverageFigures:
     """The figures `coverage-merge.mjs` printed."""
     covered = int(re.search(r"lines covered: (\d+)", stdout).group(1))
     total = int(re.search(r"lines total: (\d+)", stdout).group(1))
@@ -267,4 +274,4 @@ def merge_figures(stdout: str) -> tuple[int, int, dict[str, list[int]]]:
         for line in stdout.split("Uncovered lines:", 1)[1].strip().splitlines():
             path, _, numbers = line.rpartition(": ")
             uncovered[path] = [int(n) for n in numbers.split(",")]
-    return covered, total, uncovered
+    return CoverageFigures(covered, total, uncovered)

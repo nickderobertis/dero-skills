@@ -357,3 +357,20 @@ def test_coverage_merge_refuses_a_malformed_report(tmp_path, body, complaint):
     (tmp_path / "d" / "a.lcov").write_text(body)
     done = _merge(tmp_path, "--fail-under-lines", "0", "--dir", "d", "--unit", "a")
     assert done.returncode == 2 and complaint in done.stderr
+
+
+def test_an_edited_copy_of_either_script_is_an_error(repo):
+    for script in ("scripts/coverage-unit.sh", "scripts/coverage-merge.mjs"):
+        path = repo / script
+        original = path.read_bytes()
+        path.write_bytes(original + b"\n# edited in place\n")
+        out = findings(repo)
+        assert script in out and "ERROR" in out
+        path.write_bytes(original)
+
+
+@pytest.mark.parametrize("name", ["nx.json", "crates/lib/project.json"])
+def test_a_non_json_config_is_a_finding_not_a_traceback(repo, name):
+    (repo / name).write_text("not json")
+    out = findings(repo)
+    assert "not a JSON object" in out and "Traceback" not in out

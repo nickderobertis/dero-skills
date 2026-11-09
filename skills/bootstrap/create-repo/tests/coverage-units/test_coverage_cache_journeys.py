@@ -263,15 +263,22 @@ def test_a_stale_report_of_another_commit_never_reaches_the_merge(workspace):
 
 def _reports_trimmed_to(workspace: Fixture, target: Path, total: int) -> str:
     """The fixture's real reports, copied with their lines cut to ``total`` in file order."""
+    seen: set[tuple[str, str]] = set()
     remaining = total
     text = ""
     for path in report_paths(workspace):
         kept = []
+        current = ""
         for line in path.read_text().splitlines():
+            if line.startswith("SF:"):
+                current = line[3:]
             if line.startswith("DA:"):
-                if remaining == 0:
-                    continue
-                remaining -= 1
+                key = (current, line[3:].split(",")[0])
+                if key not in seen:
+                    if remaining == 0:
+                        continue
+                    remaining -= 1
+                    seen.add(key)
             kept.append(line)
         text = "\n".join(kept) + "\n"
         (target / path.name).write_text(text)
@@ -313,7 +320,11 @@ def test_merge_counts_a_line_covered_by_only_one_unit_once_as_covered(
     (tmp_path / "b.lcov").write_text(real)
     merged = workspace.merge("a", "b", directory=tmp_path)
     expected = read_lcov([workspace.reports / "base.lcov"])
-    assert merge_figures(merged.stdout)[:2] == figures(expected)[:2]
+    merged_figures = merge_figures(merged.stdout)
+    assert (merged_figures.covered, merged_figures.total) == (
+        figures(expected).covered,
+        figures(expected).total,
+    )
 
 
 def test_merge_refuses_an_absolute_path(workspace, tmp_path):
@@ -324,6 +335,33 @@ def test_merge_refuses_an_absolute_path(workspace, tmp_path):
     )
     done = workspace.merge("a", directory=tmp_path)
     assert done.returncode == 2 and "/root/elsewhere.rs" in done.stderr
+
+
+def test_the_ignore_regex_a_repository_adds_drops_those_files_from_the_unit(workspace):
+    try:
+        done = subprocess.run(
+            [
+                "bash",
+                "scripts/coverage-unit.sh",
+                "base",
+                "--",
+                "nextest",
+                "--locked",
+                "-p",
+                "base",
+            ],
+            cwd=workspace.repo,
+            env={**workspace.env, "COVERAGE_UNIT_IGNORE_REGEX": "crates/base/src/"},
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 0, done.stderr
+        assert not any(
+            "crates/base/src/" in path
+            for path in read_lcov([workspace.reports / "base.lcov"])
+        )
+    finally:
+        workspace.reset()
 
 
 def test_a_unit_whose_run_finds_no_instrumented_object_fails_naming_it(

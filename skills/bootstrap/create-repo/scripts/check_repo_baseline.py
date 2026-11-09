@@ -3558,6 +3558,10 @@ class CoverageUnit(NamedTuple):
     named: dict
 
 
+def _object_or_empty(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
 def _read_json_object(path: Path) -> dict | None:
     """``path``'s JSON object, or None when the file is not one."""
     try:
@@ -3593,26 +3597,27 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
     nx = _read_json_object(nx_path) if nx_path.is_file() else {}
     if nx is None:
         return [Finding("ERROR", "nx.json is not a JSON object", "fix the file's JSON")]
-    named = nx.get("namedInputs", {})
-    defaults = nx.get("targetDefaults", {})
+    named = _object_or_empty(nx.get("namedInputs"))
+    defaults = _object_or_empty(nx.get("targetDefaults"))
     units: dict[str, CoverageUnit] = {}
-    uncached: list[Finding] = []
+    scan_findings: list[Finding] = []
     merges: list[set[str]] = []
     for path in sorted(repo.rglob("project.json")):
         if COVERAGE_SKIP_DIRS & set(path.relative_to(repo).parts):
             continue
         project = _read_json_object(path)
         if project is None:
-            findings_error = Finding(
-                "ERROR",
-                f"{path.relative_to(repo)} is not a JSON object",
-                "fix the file's JSON so its coverage targets can be read",
+            scan_findings.append(
+                Finding(
+                    "ERROR",
+                    f"{path.relative_to(repo)} is not a JSON object",
+                    "fix the file's JSON so its coverage targets can be read",
+                )
             )
-            uncached.append(findings_error)
             continue
         name = project.get("name")
-        local_named = {**named, **project.get("namedInputs", {})}
-        for target_name, target in project.get("targets", {}).items():
+        local_named = {**named, **_object_or_empty(project.get("namedInputs"))}
+        for target_name, target in _object_or_empty(project.get("targets")).items():
             if not isinstance(target, dict):
                 continue
             command = str(target.get("command", ""))
@@ -3628,7 +3633,7 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
             elif re.search(r"\bllvm-cov\b(?!\s+(report|clean))", command) and (
                 target.get("cache", defaults.get(target_name, {}).get("cache")) is False
             ):
-                uncached.append(
+                scan_findings.append(
                     Finding(
                         "ERROR",
                         f"{name}:{target_name} runs instrumented tests with `cache: false`",
@@ -3638,8 +3643,8 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
                     )
                 )
     if not units:
-        return uncached
-    findings: list[Finding] = list(uncached)
+        return scan_findings
+    findings: list[Finding] = list(scan_findings)
     unit_targets = {(unit.project, unit.target_name) for unit in units.values()}
     for unit, (name, target_name, target, local_named) in units.items():
         where = f"coverage unit {unit} ({name}:{target_name})"
