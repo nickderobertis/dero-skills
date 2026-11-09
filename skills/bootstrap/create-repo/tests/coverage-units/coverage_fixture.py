@@ -171,7 +171,7 @@ class Fixture:
 
     def forget_file_hashes(self) -> None:
         """Nx keys its file-hash cache on mtime and size; a test's quick edit-and-restore outruns it."""
-        shutil.rmtree(self.repo / ".nx/workspace-data", ignore_errors=True)
+        (self.repo / ".nx/workspace-data/nx_files.nxt").unlink(missing_ok=True)
 
     def nx(self, *args: str, env: dict[str, str] | None = None, timeout: int = 900):
         return subprocess.run(

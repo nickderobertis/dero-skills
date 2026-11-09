@@ -466,3 +466,22 @@ def test_a_failing_test_propagates_its_status_and_writes_no_report(unit_root, tm
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 7
     assert not (unit_root / "target/coverage-units/demo.lcov").exists()
+
+
+def test_a_failing_llvm_profdata_show_is_reported(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    double = Path(env["LLVM_PROFDATA"])
+    double.write_text(
+        double.read_text().replace(
+            'show) printf "Binary IDs:\\nabc\\n";;', "show) exit 3;;"
+        )
+    )
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 1 and "could not list the binaries" in done.stderr
+
+
+def test_a_failing_llvm_cov_export_is_reported(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    Path(env["LLVM_COV"]).write_text("#!/usr/bin/env bash\nexit 4\n")
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 1 and "could not export" in done.stderr
