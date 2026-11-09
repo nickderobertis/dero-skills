@@ -351,6 +351,12 @@ def test_merge_refuses_an_absolute_path(workspace, tmp_path):
     assert done.returncode == 2 and "/root/elsewhere.rs" in done.stderr
 
 
+def test_a_unit_never_counts_another_units_objects(workspace):
+    # Every unit has built by now; `base`'s objects are the only ones its profile names.
+    base = read_lcov([workspace.reports / "base.lcov"])
+    assert not any(path.startswith("crates/tool") for path in base), sorted(base)
+
+
 def test_the_ignore_regex_a_repository_adds_drops_those_files_from_the_unit(workspace):
     try:
         done = subprocess.run(

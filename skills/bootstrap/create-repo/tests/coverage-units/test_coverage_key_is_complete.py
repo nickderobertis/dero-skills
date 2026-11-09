@@ -269,6 +269,11 @@ def test_changing_the_selecting_environment_variable_re_runs_every_unit(workspac
     assert changed_input_problems(workspace, env, set(UNITS), UNIT_ENV) == []
 
 
+def test_changing_the_ignore_regex_re_runs_every_unit(workspace):
+    env = {"COVERAGE_UNIT_IGNORE_REGEX": "never-matches"}
+    assert changed_input_problems(workspace, env, set(UNITS), "the ignore regex") == []
+
+
 def test_changing_the_package_version_re_runs_the_unit_that_keeps_it(workspace):
     try:
         (workspace.repo / "Cargo.toml").write_text(

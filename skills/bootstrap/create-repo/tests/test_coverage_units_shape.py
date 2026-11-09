@@ -176,7 +176,10 @@ CI_YML = Path(__file__).resolve().parents[4] / ".github" / "workflows" / "ci.yml
 def test_this_repositorys_ci_installs_the_composed_coverage_pins():
     text = CI_YML.read_text()
     for tool, version in pinned_coverage_tools().items():
-        assert f"{tool}@{version}" in text, f"{tool} drifted from the composed pin"
+        pins = re.findall(rf"{re.escape(tool)}@([\w.+-]+)", text)
+        assert pins == [version, version], (
+            f"{tool} drifted from the composed pin: {pins}"
+        )
 
 
 def test_a_target_running_instrumented_tests_with_cache_false_is_an_error(repo):
