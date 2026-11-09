@@ -232,7 +232,8 @@ a suggested fix.
    - Formatting, linting, type checking, and tests must be enforced and fail on
      issues.
    - Coverage is a default gate, not opt-in: measure it on the test run and fail
-     below the threshold (95% line coverage by default). Lower the bar only with
+     below the threshold (95% line coverage by default, 96 on the LCOV basis for
+     Rust). Lower the bar only with
      a documented reason in `AGENTS.md`.
    - Prefer deterministic, reproducible checks; avoid environment-dependent
      behavior.

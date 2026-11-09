@@ -234,6 +234,7 @@ def test_a_change_to_a_skill_selects_that_skill_and_the_tier_that_drives_it():
     assert affected_test_projects("skills/bootstrap/create-repo/SKILL.md") == {
         "bootstrap-create-repo",
         "bootstrap-create-repo-e2e",
+        "bootstrap-create-repo-coverage-units",
     }
 
 

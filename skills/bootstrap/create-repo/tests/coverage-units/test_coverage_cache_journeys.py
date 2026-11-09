@@ -40,6 +40,14 @@ def report_paths(workspace: Fixture) -> list[Path]:
     return [workspace.reports / f"{unit}.lcov" for unit in UNITS]
 
 
+def assert_merge_matches_own_sum(workspace: Fixture, floor: str = "100") -> None:
+    done = workspace.merge(floor=floor)
+    covered, total, uncovered = figures(read_lcov(report_paths(workspace)))
+    assert merge_figures(done.stdout) == (covered, total, uncovered)
+    below = covered * 10000 < int(floor) * 100 * total
+    assert done.returncode == (1 if below else 0)
+
+
 def test_a_second_run_replays_every_unit(workspace):
     assert workspace.replayed() == dict.fromkeys(UNITS, True)
 
@@ -163,9 +171,7 @@ def test_the_merge_equals_a_line_wise_sum_when_every_unit_but_one_replayed(works
             workspace, "crates/base/tests/base.rs", "#[test]", f"// {unique()}\n#[test]"
         )
         assert workspace.executed() == {"base"}
-        done = workspace.merge(floor="100")
-        assert done.returncode == 1
-        assert merge_figures(done.stdout) == figures(read_lcov(report_paths(workspace)))
+        assert_merge_matches_own_sum(workspace)
     finally:
         workspace.reset()
 
@@ -174,8 +180,7 @@ def test_the_merge_equals_a_line_wise_sum_across_a_version_only_bump(workspace):
     try:
         bump_version(workspace)
         assert workspace.executed() == {"release-check"}
-        done = workspace.merge(floor="100")
-        assert merge_figures(done.stdout) == figures(read_lcov(report_paths(workspace)))
+        assert_merge_matches_own_sum(workspace)
     finally:
         workspace.reset()
 
@@ -237,8 +242,7 @@ def test_a_stale_report_of_another_commit_never_reaches_the_merge(workspace):
             assert (workspace.reports / f"{unit}.lcov").read_bytes() == fresh[unit]
         e2e = (workspace.reports / "tool-e2e.lcov").read_text()
         assert "DA:90,0" not in e2e and "end_of_record" in e2e
-        done = workspace.merge(floor="100")
-        assert merge_figures(done.stdout) == figures(read_lcov(report_paths(workspace)))
+        assert_merge_matches_own_sum(workspace)
         stray = workspace.reports / "orphan.lcov"
         stray.write_text(planted)
         refused = workspace.merge()
