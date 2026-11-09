@@ -31,10 +31,10 @@ def task_hashes(workspace: Fixture) -> dict[str, dict[str, str]]:
     assert done.returncode == 0, done.stderr
     nodes = json.loads(done.stdout.strip().splitlines()[-1])
     return {
+        # A tool-version input's value is the tool's, not the file under test; the
+        # version-free manifest runtime stays, being how a Cargo.toml reaches the key.
         unit: {
-            key: value
-            for key, value in inputs.items()
-            if not key.startswith("runtime:")
+            key: value for key, value in inputs.items() if "--tool-version" not in key
         }
         for unit, inputs in nodes.items()
     }
@@ -111,7 +111,11 @@ def hash_mutation(path: Path, relative: str) -> None:
             table = "workspace" if relative == "Cargo.toml" else "package"
             path.write_text(text + f"\n[{table}.metadata.keyprobe]\nprobe = true\n")
         case "Cargo.lock":
-            path.write_text(text + '\n[[package]]\nname = "probe"\nversion = "9.9.9"\n')
+            path.write_text(
+                text.replace(
+                    'name = "base"\n', 'name = "base"\nchecksum = "probe"\n', 1
+                )
+            )
         case "project.json":
             path.write_text(json.dumps({**json.loads(text), "tags": ["probe"]}))
         case _:

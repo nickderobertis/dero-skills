@@ -288,7 +288,8 @@ def test_coverage_unit_refuses_a_file_outside_the_workspace(unit_root, tmp_path)
 def _find_failing_with(tmp_path: Path, message: str) -> None:
     double = tmp_path / "bin" / "find"
     double.write_text(
-        f"#!/usr/bin/env bash\nprintf '%s\\0' target/llvm-cov-target/debug/real\n"
+        '#!/usr/bin/env bash\ncase "$*" in *-perm*) ;; *) exec /usr/bin/find "$@";; esac\n'
+        "printf '%s\\0' target/llvm-cov-target/debug/real\n"
         f"echo 'find: x: {message}' >&2\nexit 1\n"
     )
     double.chmod(0o755)
