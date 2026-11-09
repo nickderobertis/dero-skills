@@ -175,7 +175,7 @@ class Fixture:
         self.git("commit", "-qm", message)
 
     def forget_file_hashes(self) -> None:
-        """Nx keys its file-hash cache on mtime and size; a test's quick edit-and-restore outruns it."""
+        """Nx keys its file-hash cache on mtime and size, so a quick same-size edit reads as unchanged."""
         (self.repo / ".nx/workspace-data/nx_files.nxt").unlink(missing_ok=True)
 
     def nx(self, *args: str, env: dict[str, str] | None = None, timeout: int = 900):
@@ -189,6 +189,7 @@ class Fixture:
         )
 
     def coverage(self, env: dict[str, str] | None = None, check: bool = True):
+        self.forget_file_hashes()
         done = self.nx(
             "run", f"{ROOT_PROJECT}:coverage", "--outputStyle=static", env=env
         )
@@ -215,7 +216,6 @@ class Fixture:
         """Back to the committed tree, every unit replaying."""
         self.git("checkout", ".")
         self.git("clean", "-fdq", "-e", "target", "-e", ".nx", "-e", "node_modules")
-        self.forget_file_hashes()
         again = self.coverage()
         assert all(self.summary(again.stdout).values()), again.stdout
 
