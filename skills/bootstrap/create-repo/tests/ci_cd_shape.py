@@ -2,7 +2,7 @@
 
 Shared by ``e2e/test_ci_cd_shape_e2e.py`` and
 ``external/test_ci_cd_shape_external.py``: an otherwise-conformant repository
-(``test_check_repo_baseline.make_repo``) whose justfile is the shipped template,
+(``baseline_repo.make_repo``) whose justfile is the shipped template,
 handed to the real composer, ``compose_repo_plan.py --ci-cd``, as a subprocess.
 """
 
@@ -16,7 +16,7 @@ import subprocess
 from collections.abc import Mapping
 from pathlib import Path
 
-from test_check_repo_baseline import make_repo
+from baseline_repo import make_repo
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 COMPOSER = SKILL_DIR / "scripts" / "compose_repo_plan.py"

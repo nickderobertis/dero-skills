@@ -7,7 +7,9 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from ci_cd_shape import (
@@ -154,21 +156,32 @@ def spawned_through_a_coverage_run(project) -> None:
     ]
 
 
-CASES = {
-    "uncached": ("crates/lib/project.json", uncached, "is not cached", "cache: true"),
-    "not only its LCOV": (
+class ShapeCase(NamedTuple):
+    """One break of a unit's shape, and what its one finding must say."""
+
+    relative: str
+    change: Callable[[dict], None]
+    message: str
+    remedy: str
+
+
+CASES: dict[str, ShapeCase] = {
+    "uncached": ShapeCase(
+        "crates/lib/project.json", uncached, "is not cached", "cache: true"
+    ),
+    "not only its LCOV": ShapeCase(
         "crates/lib/project.json",
         extra_output,
         "declares outputs",
         "one LCOV report",
     ),
-    "inputs miss the pins": (
+    "inputs miss the pins": ShapeCase(
         "crates/lib/project.json",
         misses_pins,
         "inputs miss",
         "tool pin",
     ),
-    "depends on a coverage run": (
+    "depends on a coverage run": ShapeCase(
         "crates/lib/project.json",
         spawned_through_a_coverage_run,
         "coverage run for a binary",
@@ -179,14 +192,14 @@ CASES = {
 
 @pytest.mark.parametrize("name", CASES, ids=list(CASES))
 def test_a_unit_that_breaks_the_shape_is_one_error_naming_the_remedy(repo, name):
-    relative, change, message, remedy = CASES[name]
-    _mutate(repo, relative, change)
+    case = CASES[name]
+    _mutate(repo, case.relative, case.change)
     out = findings(repo)
     errors = [line for line in out.splitlines() if line.startswith("ERROR")]
     relevant = [line for line in errors if "coverage" in line]
     assert len(relevant) == 1, errors
-    assert message in relevant[0]
-    assert remedy in out
+    assert case.message in relevant[0]
+    assert case.remedy in out
 
 
 def test_a_check_that_omits_a_unit_is_one_error_naming_the_remedy(repo):

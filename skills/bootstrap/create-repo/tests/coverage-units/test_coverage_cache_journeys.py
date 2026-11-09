@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from coverage_fixture import (
@@ -65,46 +66,57 @@ def test_editing_a_file_no_unit_reads_replays_every_unit(workspace):
 LIB = "crates/tool/src/lib.rs"
 BASE = "crates/base/src/lib.rs"
 EVERY = set(UNITS)
-EDITS = {
-    "a crate's source": (LIB, "+ 1\n", "+ 1 // edited\n", {"tool", "tool-e2e"}),
-    "a crate's test": (
+
+
+class EditCase(NamedTuple):
+    """One edit, and the units whose runs read the edited file."""
+
+    relative: str
+    old: str
+    new: str
+    executed: set[str]
+
+
+EDITS: dict[str, EditCase] = {
+    "a crate's source": EditCase(LIB, "+ 1\n", "+ 1 // edited\n", {"tool", "tool-e2e"}),
+    "a crate's test": EditCase(
         "crates/tool-e2e/tests/spawn.rs",
         "#[test]",
         "// edited\n#[test]",
         {"tool-e2e"},
     ),
-    "a test of a crate others depend on": (
+    "a test of a crate others depend on": EditCase(
         "crates/base/tests/base.rs",
         "#[test]",
         "// edited\n#[test]",
         {"base"},
     ),
-    "a source of the crate another depends on": (
+    "a source of the crate another depends on": EditCase(
         BASE,
         "pub fn uncovered",
         "// edited\npub fn uncovered",
         {"base", "tool", "tool-e2e"},
     ),
-    "Cargo.lock": ("Cargo.lock", "[[package]]", "# edited\n[[package]]", EVERY),
-    "rust-toolchain.toml": (
+    "Cargo.lock": EditCase("Cargo.lock", "[[package]]", "# edited\n[[package]]", EVERY),
+    "rust-toolchain.toml": EditCase(
         "rust-toolchain.toml",
         "[toolchain]",
         "# edited\n[toolchain]",
         EVERY,
     ),
-    "the cargo-llvm-cov pin": (
+    "the cargo-llvm-cov pin": EditCase(
         ".github/ci-tool-versions",
         "cargo-llvm-cov=0.9.1",
         "cargo-llvm-cov=0.9.2",
         EVERY,
     ),
-    "the nextest pin": (
+    "the nextest pin": EditCase(
         ".github/ci-tool-versions",
         "cargo-nextest=0.9.150",
         "cargo-nextest=0.9.151",
         EVERY,
     ),
-    "a data file only one unit's run reads": (
+    "a data file only one unit's run reads": EditCase(
         "crates/tool-e2e/data/expected.txt",
         "1782",
         "1782",
@@ -115,15 +127,20 @@ EDITS = {
 
 @pytest.mark.parametrize("name", EDITS, ids=list(EDITS))
 def test_an_edit_re_runs_exactly_the_units_that_read_it(workspace, name):
-    relative, old, new, expected = EDITS[name]
+    case = EDITS[name]
     try:
-        if old == new:
-            (workspace.repo / relative).write_text(
-                (workspace.repo / relative).read_text() + "\n"
+        if case.old == case.new:
+            (workspace.repo / case.relative).write_text(
+                (workspace.repo / case.relative).read_text() + "\n"
             )
         else:
-            edit(workspace, relative, old, new.replace("edited", unique()))
-        assert workspace.run_coverage_executed() == expected, name
+            edit(
+                workspace,
+                case.relative,
+                case.old,
+                case.new.replace("edited", unique()),
+            )
+        assert workspace.run_coverage_executed() == case.executed, name
     finally:
         workspace.reset()
 

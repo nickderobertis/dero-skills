@@ -243,12 +243,19 @@ def test_a_change_to_a_skill_selects_that_skill_and_the_tier_that_drives_it():
         "skills/bootstrap/create-repo/assets/ci/coverage-unit.sh",
         "skills/bootstrap/create-repo/assets/ci/coverage-merge.mjs",
         "skills/bootstrap/create-repo/scripts/compose_repo_plan.py",
+        "skills/bootstrap/create-repo/tests/baseline_repo.py",
     ],
 )
 def test_a_change_to_what_the_coverage_suite_exercises_selects_it(changed):
     # The suite compiles instrumented Rust, so its edge is `nx.json`'s
     # `coverageUnitsFixture` input alone, not a dependency on the whole skill.
     assert "bootstrap-create-repo-coverage-units" in affected_test_projects(changed)
+
+
+def test_a_change_to_the_baseline_checkers_tests_leaves_the_coverage_suite_out():
+    assert "bootstrap-create-repo-coverage-units" not in affected_test_projects(
+        "skills/bootstrap/create-repo/tests/test_check_repo_baseline.py"
+    )
 
 
 def test_a_change_to_the_baseline_checker_reruns_the_audit_of_this_repo():

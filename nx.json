@@ -80,7 +80,7 @@
       "{workspaceRoot}/skills/bootstrap/create-repo/assets/justfile.template",
       "{workspaceRoot}/skills/bootstrap/create-repo/scripts/compose_repo_plan.py",
       "{workspaceRoot}/skills/bootstrap/create-repo/tests/ci_cd_shape.py",
-      "{workspaceRoot}/skills/bootstrap/create-repo/tests/test_check_repo_baseline.py"
+      "{workspaceRoot}/skills/bootstrap/create-repo/tests/baseline_repo.py"
     ]
   },
   "targetDefaults": {
