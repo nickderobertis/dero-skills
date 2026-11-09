@@ -992,7 +992,7 @@ def check_coverage(repo: Path) -> list[Finding]:
             "ERROR",
             "no coverage signal (recipe/flag, config threshold, or AGENTS.md statement)",
             "enforce coverage in `just check` (e.g. pytest --cov-fail-under=95, "
-            "Vitest coverage.thresholds, the merge of Rust coverage units at --fail-under-lines 96), or "
+            "Vitest coverage.thresholds, the merge of Rust coverage units at its floor), or "
             "state in AGENTS.md the coverage bar or why it does not apply",
         )
     ]

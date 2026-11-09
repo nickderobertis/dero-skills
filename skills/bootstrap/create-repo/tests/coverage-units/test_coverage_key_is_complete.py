@@ -111,7 +111,7 @@ def hash_mutation(path: Path, relative: str) -> None:
             table = "workspace" if relative == "Cargo.toml" else "package"
             path.write_text(text + f"\n[{table}.metadata.keyprobe]\nprobe = true\n")
         case "Cargo.lock":
-            path.write_text(text.replace("[[package]]", "# probe\n[[package]]", 1))
+            path.write_text(text + '\n[[package]]\nname = "probe"\nversion = "9.9.9"\n')
         case "project.json":
             path.write_text(json.dumps({**json.loads(text), "tags": ["probe"]}))
         case _:

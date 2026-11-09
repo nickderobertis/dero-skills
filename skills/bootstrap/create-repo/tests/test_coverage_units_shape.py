@@ -248,40 +248,66 @@ def _profdata_rejecting_everything(tmp_path: Path) -> str:
     return str(double)
 
 
-def test_coverage_unit_refuses_a_file_outside_the_workspace(unit_root, tmp_path):
+def _doubled_report_tools(unit_root: Path, tmp_path: Path) -> dict[str, str]:
+    """Doubles past the point a real instrumented build can be spelled, so the report step runs."""
     env = _doubled_cargo(
         tmp_path,
-        'if [ "$1" = llvm-cov ]; then mkdir -p target/llvm-cov-target/debug\n'
-        "printf garbage > target/llvm-cov-target/demo.1-1.profraw\n"
-        "printf '#!/bin/true' > target/llvm-cov-target/debug/fake\n"
-        "chmod +x target/llvm-cov-target/debug/fake\nfi\nexit 0",
+        "mkdir -p target/llvm-cov-target/debug\n"
+        "printf garbage > target/llvm-cov-target/demo.1-1.profraw\nexit 0",
     )
     lcov = tmp_path / "bin" / "fake-cov"
     lcov.write_text(
         '#!/usr/bin/env bash\ncase "$1" in export) printf "SF:/elsewhere/x.rs\\nend_of_record\\n";;'
         " *) echo llvm 1;; esac\n"
     )
-    lcov.chmod(0o755)
-    # A real ELF build id is the one input a double cannot spell, so the unit's object is
-    # named through this readobj and the merge and export are doubled around it.
     readobj = tmp_path / "bin" / "llvm-readobj"
     readobj.write_text('#!/usr/bin/env bash\necho "Build ID: abc"\n')
-    readobj.chmod(0o755)
     profdata = tmp_path / "bin" / "fake-profdata"
     profdata.write_text(
         '#!/usr/bin/env bash\ncase "$1" in merge) shift; while [ $# -gt 0 ]; do if [ "$1" = -o ]; '
         'then : > "$2"; shift; fi; shift; done;; show) printf "Binary IDs:\\nabc\\n";; esac\n'
     )
-    profdata.chmod(0o755)
-    elf = unit_root / "target/llvm-cov-target/debug"
-    elf.mkdir(parents=True)
-    env["LLVM_COV"] = str(lcov)
-    env["LLVM_PROFDATA"] = str(profdata)
-    obj = elf / "real"
+    for tool in (lcov, readobj, profdata):
+        tool.chmod(0o755)
+    object_dir = unit_root / "target/llvm-cov-target/debug"
+    object_dir.mkdir(parents=True)
+    obj = object_dir / "real"
     obj.write_bytes(b"\x7fELF" + b"\0" * 12)
     obj.chmod(0o755)
+    env["LLVM_COV"] = str(lcov)
+    env["LLVM_PROFDATA"] = str(profdata)
+    return env
+
+
+def test_coverage_unit_refuses_a_file_outside_the_workspace(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 1 and "/elsewhere/x.rs" in done.stderr
+
+
+def _find_failing_with(tmp_path: Path, message: str) -> None:
+    double = tmp_path / "bin" / "find"
+    double.write_text(
+        f"#!/usr/bin/env bash\nprintf '%s\\0' target/llvm-cov-target/debug/real\n"
+        f"echo 'find: x: {message}' >&2\nexit 1\n"
+    )
+    double.chmod(0o755)
+
+
+def test_a_file_vanishing_during_the_object_scan_is_tolerated(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    _find_failing_with(tmp_path, "No such file or directory")
+    # Reaches the export step past the scan, which the outside-workspace refusal proves.
+    assert "/elsewhere/x.rs" in _unit(unit_root, env, "demo", "--", "nextest").stderr
+
+
+def test_another_find_error_during_the_object_scan_stops_the_report(
+    unit_root, tmp_path
+):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    _find_failing_with(tmp_path, "Permission denied")
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 1 and "could not list" in done.stderr
 
 
 def test_off_linux_the_unit_runs_uninstrumented_and_writes_no_report(

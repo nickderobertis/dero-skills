@@ -1600,7 +1600,11 @@ def _path_dependencies(
 ) -> set[Path]:
     """The directories of ``table``'s path dependencies, workspace-inherited ones included."""
     root_toml = repo / "Cargo.toml"
-    root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
+    try:
+        root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
+    except tomllib.TOMLDecodeError:
+        # A root manifest cargo cannot read fails the build where it is reported.
+        root = {}
     workspace = root.get("workspace")
     shared_table = (
         workspace.get("dependencies") if isinstance(workspace, dict) else None
