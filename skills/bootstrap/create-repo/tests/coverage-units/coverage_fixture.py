@@ -134,6 +134,9 @@ class Fixture:
             **toolchain,
             "PATH": os.pathsep.join([*ensure_pinned_tools(), os.environ["PATH"]]),
             "NX_DAEMON": "false",
+            # Under GitHub Actions Nx prefixes each `> nx run` line with `::group::` and an
+            # icon, which `summary` must not have to read past.
+            "NX_SKIP_LOG_GROUPING": "true",
             # sccache compiles in a daemon, outside the traced process and its fingerprints.
             "RUSTC_WRAPPER": "",
             "CARGO_BUILD_RUSTC_WRAPPER": "",
