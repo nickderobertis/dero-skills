@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
 # version: 1
-# sha256: 33679b3558200ffbeff3a0865166c7ec434ba88611db93b3c1bf58f043eaedd4
+# sha256: f18f2ef467ccccc87b97f9368c353e685a24516e8db6366e12579d3dbd9a1a54
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -108,7 +108,8 @@ case "$1" in
   if ! on_linux; then
     exec cargo "$@"
   fi
-  eval "$(cargo llvm-cov show-env --sh 2>/dev/null)"
+  exports="$(cargo llvm-cov show-env --sh)"
+  eval "$exports"
   unset LLVM_PROFILE_FILE
   CARGO_TARGET_DIR="$coverage_target" exec cargo "$@"
   ;;
@@ -167,7 +168,8 @@ readobj="$(llvm_tool llvm-readobj "")"
 objects=()
 while IFS= read -r -d '' candidate; do
   [ "$(head -c4 "$candidate" | od -An -c | tr -d ' ')" = '177ELF' ] || continue
-  id="$("$readobj" --notes "$candidate" 2>/dev/null | sed -n 's/.*Build ID: //p' | head -1 | tr '[:upper:]' '[:lower:]')"
+  notes="$("$readobj" --notes "$candidate")" || continue
+  id="$(printf '%s\n' "$notes" | sed -n 's/.*Build ID: //p' | head -1 | tr '[:upper:]' '[:lower:]')"
   [ -n "$id" ] && grep -qxF "$id" "$work/ids" && objects+=(-object "$candidate")
 done < <(find "$coverage_target" -type f -perm -u+x \
   -not -path '*/build/*' -not -path '*/incremental/*' -not -path '*/.fingerprint/*' -print0)

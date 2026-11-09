@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
-from ci_cd_shape import CHECKER, GOOD_COMPILE, NAME, compose, workspace_files
+from ci_cd_shape import (
+    CHECKER,
+    GOOD_COMPILE,
+    NAME,
+    compose,
+    pinned_coverage_tools,
+    workspace_files,
+)
 from test_check_repo_baseline import crb
 
 CI = Path(__file__).resolve().parents[1] / "assets" / "ci"
@@ -158,3 +167,193 @@ def test_a_check_that_omits_a_unit_is_one_error_naming_the_remedy(repo):
     _mutate(repo, "project.json", drop_unit)
     out = findings(repo)
     assert "no combined coverage check names every unit" in out and "--unit" in out
+
+
+CI_YML = Path(__file__).resolve().parents[4] / ".github" / "workflows" / "ci.yml"
+
+
+def test_this_repositorys_ci_installs_the_composed_coverage_pins():
+    text = CI_YML.read_text()
+    for tool, version in pinned_coverage_tools().items():
+        assert f"{tool}@{version}" in text, f"{tool} drifted from the composed pin"
+
+
+def test_a_target_running_instrumented_tests_with_cache_false_is_an_error(repo):
+    def plain_llvm_cov(project) -> None:
+        project["targets"]["test"]["command"] = (
+            "cargo llvm-cov --no-report nextest -p demo-lib"
+        )
+        project["targets"]["test"]["cache"] = False
+
+    _mutate(repo, "crates/lib/project.json", plain_llvm_cov)
+    out = findings(repo)
+    assert "runs instrumented tests with `cache: false`" in out
+    assert "coverage-unit.sh" in out
+
+
+def _doubled_cargo(tmp_path: Path, body: str) -> dict[str, str]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    cargo = bin_dir / "cargo"
+    cargo.write_text(f"#!/usr/bin/env bash\n{body}\n")
+    cargo.chmod(0o755)
+    return {"PATH": f"{bin_dir}:{os.environ['PATH']}"}
+
+
+def _unit(root: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["bash", "scripts/coverage-unit.sh", *args],
+        cwd=root,
+        env={**os.environ, **env},
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.fixture
+def unit_root(tmp_path: Path) -> Path:
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(CI / "coverage-unit.sh", tmp_path / "scripts/coverage-unit.sh")
+    return tmp_path
+
+
+def test_coverage_unit_refuses_a_bad_unit_name_and_usage(unit_root):
+    named = _unit(unit_root, {}, "bad.name", "--", "nextest")
+    assert named.returncode == 2 and "is not a unit name" in named.stderr
+    assert _unit(unit_root, {}, "unit-only").returncode == 2
+    assert _unit(unit_root, {}, "--tool-version", "gcc").returncode == 2
+
+
+def test_coverage_unit_refuses_a_run_that_writes_no_profile(unit_root, tmp_path):
+    env = _doubled_cargo(tmp_path, "exit 0")
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 1 and "wrote no profile" in done.stderr
+
+
+def test_coverage_unit_refuses_when_every_profile_is_unmergeable(unit_root, tmp_path):
+    env = _doubled_cargo(
+        tmp_path,
+        "mkdir -p target/llvm-cov-target && printf garbage > target/llvm-cov-target/demo.1-1.profraw",
+    )
+    env["LLVM_PROFDATA"] = _profdata_rejecting_everything(tmp_path)
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 1 and "unmergeable" in done.stderr
+
+
+def _profdata_rejecting_everything(tmp_path: Path) -> str:
+    double = tmp_path / "bin" / "fake-profdata"
+    double.write_text('#!/usr/bin/env bash\necho "invalid profile" >&2\nexit 1\n')
+    double.chmod(0o755)
+    return str(double)
+
+
+def test_coverage_unit_refuses_a_file_outside_the_workspace(unit_root, tmp_path):
+    env = _doubled_cargo(
+        tmp_path,
+        'if [ "$1" = llvm-cov ]; then mkdir -p target/llvm-cov-target/debug\n'
+        "printf garbage > target/llvm-cov-target/demo.1-1.profraw\n"
+        "printf '#!/bin/true' > target/llvm-cov-target/debug/fake\n"
+        "chmod +x target/llvm-cov-target/debug/fake\nfi\nexit 0",
+    )
+    lcov = tmp_path / "bin" / "fake-cov"
+    lcov.write_text(
+        '#!/usr/bin/env bash\ncase "$1" in export) printf "SF:/elsewhere/x.rs\\nend_of_record\\n";;'
+        " *) echo llvm 1;; esac\n"
+    )
+    lcov.chmod(0o755)
+    # A real ELF build id is the one input a double cannot spell, so the unit's object is
+    # named through this readobj and the merge and export are doubled around it.
+    readobj = tmp_path / "bin" / "llvm-readobj"
+    readobj.write_text('#!/usr/bin/env bash\necho "Build ID: abc"\n')
+    readobj.chmod(0o755)
+    profdata = tmp_path / "bin" / "fake-profdata"
+    profdata.write_text(
+        '#!/usr/bin/env bash\ncase "$1" in merge) shift; while [ $# -gt 0 ]; do if [ "$1" = -o ]; '
+        'then : > "$2"; shift; fi; shift; done;; show) printf "Binary IDs:\\nabc\\n";; esac\n'
+    )
+    profdata.chmod(0o755)
+    elf = unit_root / "target/llvm-cov-target/debug"
+    elf.mkdir(parents=True)
+    env["LLVM_COV"] = str(lcov)
+    env["LLVM_PROFDATA"] = str(profdata)
+    obj = elf / "real"
+    obj.write_bytes(b"\x7fELF" + b"\0" * 12)
+    obj.chmod(0o755)
+    done = _unit(unit_root, env, "demo", "--", "nextest")
+    assert done.returncode == 1 and "/elsewhere/x.rs" in done.stderr
+
+
+def test_off_linux_the_unit_runs_uninstrumented_and_writes_no_report(
+    unit_root, tmp_path
+):
+    log = tmp_path / "cargo.args"
+    env = _doubled_cargo(tmp_path, f'echo "$*" >> "{log}"')
+    uname = tmp_path / "bin" / "uname"
+    uname.write_text("#!/usr/bin/env bash\necho Darwin\n")
+    uname.chmod(0o755)
+    assert _unit(unit_root, env, "demo", "--", "nextest", "-p", "x").returncode == 0
+    assert _unit(unit_root, env, "--cargo", "--", "build", "-p", "x").returncode == 0
+    versions = _unit(unit_root, env, "--tool-version", "llvm-cov")
+    assert versions.returncode == 0 and "unused off Linux" in versions.stdout
+    assert log.read_text().splitlines() == ["nextest run -p x", "build -p x"]
+    assert not (unit_root / "target/coverage-units/demo.lcov").exists()
+
+
+def _merge(root: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["node", str(CI / "coverage-merge.mjs"), *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        (),
+        ("--fail-under-lines", "96"),
+        ("--fail-under-lines", "96.123", "--dir", "d", "--unit", "a"),
+        ("--fail-under-lines", "101", "--dir", "d", "--unit", "a"),
+        ("--fail-under-lines", "96", "--dir", "d", "--unit", "a", "--unit", "a"),
+        ("--fail-under-lines", "96", "--dir", "d", "--unit"),
+    ],
+    ids=[
+        "none",
+        "partial",
+        "too-precise",
+        "above-100",
+        "duplicate-unit",
+        "no-unit-values",
+    ],
+)
+def test_coverage_merge_refuses_a_bad_command_line(tmp_path, args):
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "a.lcov").write_text("SF:x.rs\nDA:1,1\nend_of_record\n")
+    assert _merge(tmp_path, *args).returncode == 2
+
+
+@pytest.mark.parametrize(
+    ("body", "complaint"),
+    [
+        ("SF:x.rs\nDA:0,1\nend_of_record\n", "malformed"),
+        ("DA:1,1\nend_of_record\n", "malformed"),
+        ("SF:x.rs\nNOPE:1\nend_of_record\n", "malformed"),
+        ("end_of_record\n", "outside a record"),
+        ("SF:x.rs\nDA:1,1\n", "truncated"),
+        ("TN:\n", "hold no line"),
+    ],
+    ids=[
+        "line-zero",
+        "da-outside-sf",
+        "unknown-record",
+        "stray-end",
+        "truncated",
+        "no-lines",
+    ],
+)
+def test_coverage_merge_refuses_a_malformed_report(tmp_path, body, complaint):
+    (tmp_path / "d").mkdir()
+    (tmp_path / "d" / "a.lcov").write_text(body)
+    done = _merge(tmp_path, "--fail-under-lines", "0", "--dir", "d", "--unit", "a")
+    assert done.returncode == 2 and complaint in done.stderr

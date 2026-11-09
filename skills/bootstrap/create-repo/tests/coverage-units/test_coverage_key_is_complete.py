@@ -97,17 +97,17 @@ def project_path(unit: str) -> str:
 
 def hash_mutation(path: Path, relative: str) -> None:
     """A change the key must see, even through the version-free manifest form."""
-    name = Path(relative).name
     text = path.read_text()
-    if name == "Cargo.toml":
-        table = "workspace" if relative == "Cargo.toml" else "package"
-        path.write_text(text + f"\n[{table}.metadata.keyprobe]\nprobe = true\n")
-    elif name == "Cargo.lock":
-        path.write_text(text.replace("[[package]]", "# probe\n[[package]]", 1))
-    elif name == "project.json":
-        path.write_text(json.dumps({**json.loads(text), "tags": ["probe"]}))
-    else:
-        path.write_text(text + "\n// key probe\n")
+    match Path(relative).name:
+        case "Cargo.toml":
+            table = "workspace" if relative == "Cargo.toml" else "package"
+            path.write_text(text + f"\n[{table}.metadata.keyprobe]\nprobe = true\n")
+        case "Cargo.lock":
+            path.write_text(text.replace("[[package]]", "# probe\n[[package]]", 1))
+        case "project.json":
+            path.write_text(json.dumps({**json.loads(text), "tags": ["probe"]}))
+        case _:
+            path.write_text(text + "\n// key probe\n")
 
 
 def uncovered_reads(workspace: Fixture, tmp_path: Path) -> list[str]:

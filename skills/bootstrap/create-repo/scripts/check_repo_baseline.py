@@ -3549,6 +3549,24 @@ COVERAGE_KEY_MUSTS = (".github/ci-tool-versions", "rust-toolchain.toml")
 COVERAGE_SKIP_DIRS = {"node_modules", ".git", ".nx", "target"}
 
 
+class CoverageUnit(NamedTuple):
+    """One coverage unit's target, and the named inputs its project resolves."""
+
+    project: str
+    target_name: str
+    target: dict
+    named: dict
+
+
+def _read_json_object(path: Path) -> dict | None:
+    """``path``'s JSON object, or None when the file is not one."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def _expanded_inputs(
     inputs: list[object], named: dict[str, object], seen: frozenset[str] = frozenset()
 ) -> list[object]:
@@ -3572,21 +3590,31 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
     if not (repo / "Cargo.toml").is_file():
         return []
     nx_path = repo / "nx.json"
-    nx = json.loads(nx_path.read_text(encoding="utf-8")) if nx_path.is_file() else {}
+    nx = _read_json_object(nx_path) if nx_path.is_file() else {}
+    if nx is None:
+        return [Finding("ERROR", "nx.json is not a JSON object", "fix the file's JSON")]
     named = nx.get("namedInputs", {})
     defaults = nx.get("targetDefaults", {})
-    units: dict[str, tuple[str, str, dict, dict]] = {}
+    units: dict[str, CoverageUnit] = {}
     uncached: list[Finding] = []
     merges: list[set[str]] = []
     for path in sorted(repo.rglob("project.json")):
         if COVERAGE_SKIP_DIRS & set(path.relative_to(repo).parts):
             continue
-        project = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(project, dict):
+        project = _read_json_object(path)
+        if project is None:
+            findings_error = Finding(
+                "ERROR",
+                f"{path.relative_to(repo)} is not a JSON object",
+                "fix the file's JSON so its coverage targets can be read",
+            )
+            uncached.append(findings_error)
             continue
         name = project.get("name")
         local_named = {**named, **project.get("namedInputs", {})}
         for target_name, target in project.get("targets", {}).items():
+            if not isinstance(target, dict):
+                continue
             command = str(target.get("command", ""))
             merge = COVERAGE_MERGE_RE.search(command)
             if merge:
@@ -3594,7 +3622,9 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
                 continue
             found = COVERAGE_UNIT_RE.search(command)
             if found:
-                units[found.group(1)] = (name, target_name, target, local_named)
+                units[found.group(1)] = CoverageUnit(
+                    name, target_name, target, local_named
+                )
             elif re.search(r"\bllvm-cov\b(?!\s+(report|clean))", command) and (
                 target.get("cache", defaults.get(target_name, {}).get("cache")) is False
             ):
@@ -3610,7 +3640,7 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
     if not units:
         return uncached
     findings: list[Finding] = list(uncached)
-    unit_targets = {(name, target) for name, target, _, _ in units.values()}
+    unit_targets = {(unit.project, unit.target_name) for unit in units.values()}
     for unit, (name, target_name, target, local_named) in units.items():
         where = f"coverage unit {unit} ({name}:{target_name})"
         if target.get("cache", defaults.get(target_name, {}).get("cache")) is not True:
@@ -3929,18 +3959,18 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
     findings += check_actions_budget_figures(repo)
-    for script in (
-        "nx-remote-cache",
-        "nx-version-free-inputs",
-        "actions-cache-prune",
-        "coverage-unit",
-        "coverage-merge",
+    for script, suffix in (
+        ("nx-remote-cache", "mjs"),
+        ("nx-version-free-inputs", "mjs"),
+        ("actions-cache-prune", "mjs"),
+        ("coverage-unit", "sh"),
+        ("coverage-merge", "mjs"),
     ):
         findings += check_actions_budget_figures(
             repo,
             FIGURES_VERSIONS.parent.parent / "ci" / f"{script}.versions",
-            f"scripts/{script}.mjs",
-            f"assets/ci/{script}.mjs",
+            f"scripts/{script}.{suffix}",
+            f"assets/ci/{script}.{suffix}",
         )
     findings += check_ci_cd_shape(repo)
     findings += check_rust_coverage_units(repo)

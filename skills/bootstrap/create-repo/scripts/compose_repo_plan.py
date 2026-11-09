@@ -1600,7 +1600,13 @@ def _path_dependencies(
 ) -> set[Path]:
     """The directories of ``table``'s path dependencies, workspace-inherited ones included."""
     root_toml = repo / "Cargo.toml"
-    root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
+    try:
+        root = tomllib.loads(root_toml.read_text()) if root_toml.is_file() else {}
+    except tomllib.TOMLDecodeError as error:
+        raise WiringError(
+            f"{root_toml} is not valid TOML: {error}\n"
+            "      fix: repair the root Cargo manifest, then re-run --ci-cd."
+        ) from error
     shared = root.get("workspace", {}).get("dependencies", {})
     found: set[Path] = set()
     for name, spec in manifest.get(table, {}).items():
@@ -1649,7 +1655,13 @@ def wire_coverage_units(repo: Path, shape: CiCdShape, named: dict[str, object]) 
         project_path = directory / "project.json"
         if project_path.is_file():
             projects[directory] = project_path
-            names[directory] = _read_json_object(project_path)["name"]
+            name = _read_json_object(project_path).get("name")
+            if not isinstance(name, str):
+                raise WiringError(
+                    f"{project_path} names no project\n"
+                    '      fix: set its "name", then re-run --ci-cd.'
+                )
+            names[directory] = name
     for directory, project_path in projects.items():
         manifest = crates[directory]
         crate = manifest["package"]["name"]

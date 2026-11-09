@@ -186,20 +186,20 @@ class Fixture:
             assert done.returncode == 0, done.stdout + done.stderr
         return done
 
-    def units(self) -> dict[str, str | None]:
-        """Each unit of the last run to whether Nx replayed it, from its run summary."""
-        return self.summary(self.last.stdout)
-
     @staticmethod
     def summary(stdout: str) -> dict[str, bool]:
         ran = re.findall(r"^> nx run (\S+):test(?:\s+\[([^\]]*)\])?", stdout, re.M)
         return {project: "cache" in status for project, status in ran}
 
-    def replayed(self, env: dict[str, str] | None = None) -> dict[str, bool]:
+    def run_coverage_summary(
+        self, env: dict[str, str] | None = None
+    ) -> dict[str, bool]:
         return self.summary(self.coverage(env=env).stdout)
 
-    def executed(self, env: dict[str, str] | None = None) -> set[str]:
-        return {unit for unit, hit in self.replayed(env=env).items() if not hit}
+    def run_coverage_executed(self, env: dict[str, str] | None = None) -> set[str]:
+        return {
+            unit for unit, hit in self.run_coverage_summary(env=env).items() if not hit
+        }
 
     def reset(self) -> None:
         """Back to the committed tree, every unit replaying."""

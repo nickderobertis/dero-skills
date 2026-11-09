@@ -6,8 +6,10 @@ figure can move between identical runs and a cached result freezes one such samp
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -49,13 +51,13 @@ def assert_merge_matches_own_sum(workspace: Fixture, floor: str = "100") -> None
 
 
 def test_a_second_run_replays_every_unit(workspace):
-    assert workspace.replayed() == dict.fromkeys(UNITS, True)
+    assert workspace.run_coverage_summary() == dict.fromkeys(UNITS, True)
 
 
 def test_editing_a_file_no_unit_reads_replays_every_unit(workspace):
     try:
         (workspace.repo / "README.md").write_text(f"# {unique()}\n")
-        assert workspace.replayed() == dict.fromkeys(UNITS, True)
+        assert workspace.run_coverage_summary() == dict.fromkeys(UNITS, True)
     finally:
         workspace.reset()
 
@@ -121,7 +123,7 @@ def test_an_edit_re_runs_exactly_the_units_that_read_it(workspace, name):
             )
         else:
             edit(workspace, relative, old, new.replace("edited", unique()))
-        assert workspace.executed() == expected, name
+        assert workspace.run_coverage_executed() == expected, name
     finally:
         workspace.reset()
 
@@ -138,7 +140,7 @@ def bump_version(workspace: Fixture) -> None:
 def test_a_version_only_bump_replays_all_but_the_unit_keeping_the_version(workspace):
     try:
         bump_version(workspace)
-        assert workspace.executed() == {"release-check"}
+        assert workspace.run_coverage_executed() == {"release-check"}
     finally:
         workspace.reset()
 
@@ -170,7 +172,7 @@ def test_the_merge_equals_a_line_wise_sum_when_every_unit_but_one_replayed(works
         edit(
             workspace, "crates/base/tests/base.rs", "#[test]", f"// {unique()}\n#[test]"
         )
-        assert workspace.executed() == {"base"}
+        assert workspace.run_coverage_executed() == {"base"}
         assert_merge_matches_own_sum(workspace)
     finally:
         workspace.reset()
@@ -179,7 +181,7 @@ def test_the_merge_equals_a_line_wise_sum_when_every_unit_but_one_replayed(works
 def test_the_merge_equals_a_line_wise_sum_across_a_version_only_bump(workspace):
     try:
         bump_version(workspace)
-        assert workspace.executed() == {"release-check"}
+        assert workspace.run_coverage_executed() == {"release-check"}
         assert_merge_matches_own_sum(workspace)
     finally:
         workspace.reset()
@@ -198,7 +200,7 @@ def test_every_unit_executed_equals_cargo_llvm_covs_own_report_and_needs_no_buil
         assert ran.returncode == 0, ran.stdout + ran.stderr
         assert not any(workspace.summary(ran.stdout).values())
         combined = workspace.repo / "target/combined.lcov"
-        own = __import__("subprocess").run(
+        own = subprocess.run(
             ["cargo", "llvm-cov", "report", "--lcov", "--output-path", str(combined)],
             cwd=workspace.repo,
             env=workspace.env,
@@ -236,7 +238,7 @@ def test_a_stale_report_of_another_commit_never_reaches_the_merge(workspace):
         )
         for unit in UNITS:
             (workspace.reports / f"{unit}.lcov").write_text(planted)
-        summary = workspace.replayed()
+        summary = workspace.run_coverage_summary()
         assert summary["tool-e2e"] is False and summary["base"] is True
         for unit in ("base", "tool", "release-check"):
             assert (workspace.reports / f"{unit}.lcov").read_bytes() == fresh[unit]
@@ -259,69 +261,110 @@ def test_a_stale_report_of_another_commit_never_reaches_the_merge(workspace):
         workspace.reset()
 
 
-# The merge over real reports from this fixture: exact floors and the lines that decide them.
-def lcov_of(workspace: Fixture, name: str, text: str) -> None:
-    (workspace.reports / f"{name}.lcov").write_text(text)
-
-
-@pytest.fixture
-def merge_dir(workspace, tmp_path) -> Path:
-    return tmp_path
-
-
-def exact_floor(covered: int, total: int) -> str:
-    whole = covered * 10000 // total
-    assert whole * total == covered * 10000, (
-        "pick figures with an exact two-decimal floor"
-    )
-    return f"{whole // 100}.{whole % 100:02d}"
+def _reports_trimmed_to(workspace: Fixture, target: Path, total: int) -> str:
+    """The fixture's real reports, copied with their lines cut to ``total`` in file order."""
+    remaining = total
+    text = ""
+    for path in report_paths(workspace):
+        kept = []
+        for line in path.read_text().splitlines():
+            if line.startswith("DA:"):
+                if remaining == 0:
+                    continue
+                remaining -= 1
+            kept.append(line)
+        text = "\n".join(kept) + "\n"
+        (target / path.name).write_text(text)
+    assert remaining == 0, "the fixture holds at least that many lines"
+    return text
 
 
 def test_merge_at_an_exact_floor_passes_and_one_line_under_fails_naming_it(
-    workspace, merge_dir
+    workspace, tmp_path
 ):
-    # Copied real reports, then one line uncovered so 96 out of 100 is exact.
-    source = read_lcov(report_paths(workspace))
-    records = []
-    numbers = iter(range(1, 10000))
-    for path, lines in source.items():
-        for number, hit in lines.items():
-            records.append((path, number, hit))
-    assert len(records) >= 10
-    picked = (records * (100 // len(records) + 1))[:100]
-    text = "".join(
-        f"SF:{path}.{index}\nDA:{number},{1 if index > 3 else 0}\nend_of_record\n"
-        for index, ((path, number, _), _) in enumerate(zip(picked, numbers))
+    _reports_trimmed_to(workspace, tmp_path, 80)
+    done = workspace.merge(directory=tmp_path, floor="0")
+    covered, total, uncovered = merge_figures(done.stdout)
+    assert total == 80
+    floor = f"{covered * 100 // total}.{covered * 10000 // total % 100:02d}"
+    assert workspace.merge(directory=tmp_path, floor=floor).returncode == 0
+    # One covered line turned uncovered, on a file this report really holds.
+    name = next(
+        p
+        for p in tmp_path.iterdir()
+        if p.suffix == ".lcov" and re.search(r"^DA:(\d+),[1-9]", p.read_text(), re.M)
     )
-    (merge_dir / "one.lcov").write_text(text)
-    assert workspace.merge("one", floor="96", directory=merge_dir).returncode == 0
-    (merge_dir / "one.lcov").write_text(
-        text.replace(f"DA:{picked[4][1]},1", f"DA:{picked[4][1]},0", 1)
-    )
-    below = workspace.merge("one", floor="96", directory=merge_dir)
+    source = name.read_text()
+    line, count = re.search(r"^DA:(\d+),([1-9]\d*)", source, re.M).groups()
+    name.write_text(source.replace(f"DA:{line},{count}", f"DA:{line},0", 1))
+    below = workspace.merge(directory=tmp_path, floor=floor)
     assert below.returncode == 1
-    assert picked[4][0] in below.stdout
+    assert re.search(rf": .*\b{line}\b", below.stdout)
 
 
 def test_merge_counts_a_line_covered_by_only_one_unit_once_as_covered(
-    workspace, merge_dir
+    workspace, tmp_path
 ):
-    (merge_dir / "a.lcov").write_text("SF:x.rs\nDA:1,0\nend_of_record\n")
-    (merge_dir / "b.lcov").write_text("SF:x.rs\nDA:1,4\nend_of_record\n")
-    done = workspace.merge("a", "b", directory=merge_dir)
-    assert merge_figures(done.stdout)[:2] == (1, 1)
+    real = (workspace.reports / "base.lcov").read_text()
+    number = re.search(r"^DA:(\d+),[1-9]", real, re.M).group(1)
+    (tmp_path / "a.lcov").write_text(
+        re.sub(rf"(?m)^DA:{number},\d+", f"DA:{number},0", real)
+    )
+    (tmp_path / "b.lcov").write_text(real)
+    merged = workspace.merge("a", "b", directory=tmp_path)
+    expected = read_lcov([workspace.reports / "base.lcov"])
+    assert merge_figures(merged.stdout)[:2] == figures(expected)[:2]
 
 
-def test_merge_refuses_an_absolute_path(workspace, merge_dir):
-    (merge_dir / "a.lcov").write_text("SF:/root/x.rs\nDA:1,1\nend_of_record\n")
-    done = workspace.merge("a", directory=merge_dir)
-    assert done.returncode == 2 and "/root/x.rs" in done.stderr
+def test_merge_refuses_an_absolute_path(workspace, tmp_path):
+    real = (workspace.reports / "base.lcov").read_text()
+    path = real.split("\n")[0][3:]
+    (tmp_path / "a.lcov").write_text(
+        real.replace(f"SF:{path}", "SF:/root/elsewhere.rs", 1)
+    )
+    done = workspace.merge("a", directory=tmp_path)
+    assert done.returncode == 2 and "/root/elsewhere.rs" in done.stderr
+
+
+def test_a_unit_whose_run_finds_no_instrumented_object_fails_naming_it(
+    workspace, tmp_path
+):
+    real_cargo = shutil.which("cargo", path=workspace.env["PATH"])
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    double = bin_dir / "cargo"
+    double.write_text(
+        f'#!/usr/bin/env bash\n"{real_cargo}" "$@"\nstatus=$?\n'
+        'rm -rf target/llvm-cov-target/debug\nexit "$status"\n'
+    )
+    double.chmod(0o755)
+    done = subprocess.run(
+        [
+            "bash",
+            "scripts/coverage-unit.sh",
+            "base",
+            "--",
+            "nextest",
+            "--locked",
+            "-p",
+            "base",
+        ],
+        cwd=workspace.repo,
+        env={**workspace.env, "PATH": f"{bin_dir}:{workspace.env['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    try:
+        assert done.returncode == 1
+        assert "no object" in done.stderr and "base" in done.stderr
+    finally:
+        workspace.reset()
 
 
 def test_the_composer_holds_the_generated_check_to_the_lcov_floor(workspace):
-    command = __import__("json").loads((workspace.repo / "project.json").read_text())[
-        "targets"
-    ]["coverage"]["command"]
+    command = json.loads((workspace.repo / "project.json").read_text())["targets"][
+        "coverage"
+    ]["command"]
     assert "--fail-under-lines 96 " in command
     for unit in UNITS:
         assert unit in command

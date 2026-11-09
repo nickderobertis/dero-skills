@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from coverage_fixture import Fixture  # noqa: E402
+from coverage_fixture import Fixture  # noqa: E402 -- imported after this directory joins the path
 
 
 @pytest.fixture(scope="module")
