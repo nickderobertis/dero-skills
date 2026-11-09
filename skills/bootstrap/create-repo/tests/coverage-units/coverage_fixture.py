@@ -127,7 +127,9 @@ class Fixture:
             **{
                 key: value
                 for key, value in os.environ.items()
-                if not key.startswith("NX_") and not key.startswith("CARGO_LLVM_COV")
+                # The outer Nx exports FORCE_COLOR to this suite, and colour would hide
+                # the `> nx run` lines `summary` reads.
+                if not key.startswith(("NX_", "CARGO_LLVM_COV", "FORCE_COLOR"))
             },
             **toolchain,
             "PATH": os.pathsep.join([*ensure_pinned_tools(), os.environ["PATH"]]),
