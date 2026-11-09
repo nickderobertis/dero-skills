@@ -28,7 +28,8 @@
         "default",
         "skillEval",
         "onebudgetspecRelease",
-        "nxRelease"
+        "nxRelease",
+        "toolchainPins"
       ]
     }
   }
