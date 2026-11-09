@@ -105,7 +105,8 @@ WORKSPACE = {
         "#[test]\nfn the_release_manifest_names_this_build() {\n"
         "    assert!(release_check::present());\n"
         '    let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../release/manifest.txt")).unwrap();\n'
-        '    assert!(manifest.contains("1."), "{manifest}");\n}\n'
+        '    let stated = manifest.trim().strip_prefix("version ").unwrap();\n'
+        '    assert_eq!(stated, env!("CARGO_PKG_VERSION"), "release/manifest.txt states another version");\n}\n'
     ),
     "release/manifest.txt": "version 1.0.0\n",
 }

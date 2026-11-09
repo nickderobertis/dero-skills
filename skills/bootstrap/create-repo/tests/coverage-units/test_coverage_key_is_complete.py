@@ -281,16 +281,20 @@ def test_changing_the_ignore_regex_re_runs_every_unit(workspace):
 
 
 def test_changing_the_package_version_re_runs_the_unit_that_keeps_it(workspace):
+    """The manifest stays put, so only the version can move the key and fail the comparison."""
     try:
         (workspace.repo / "Cargo.toml").write_text(
             (workspace.repo / "Cargo.toml").read_text().replace('"1.0.0"', '"1.0.9"')
         )
         lock = workspace.repo / "Cargo.lock"
         lock.write_text(lock.read_text().replace('"1.0.0"', '"1.0.9"'))
-        done = workspace.coverage()
-        summary = workspace.summary(done.stdout)
-        assert summary["release-check"] is False, "package version changed"
-        assert summary["base"] is True
+        done = workspace.coverage(check=False)
+        assert workspace.summary(done.stdout) == {
+            **dict.fromkeys(UNITS, True),
+            "release-check": False,
+        }, "package version changed"
+        assert done.returncode != 0, done.stdout
+        assert "release/manifest.txt states another version" in done.stdout
     finally:
         workspace.reset()
 

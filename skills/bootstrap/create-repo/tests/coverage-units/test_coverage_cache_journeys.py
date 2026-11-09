@@ -152,6 +152,8 @@ def bump_version(workspace: Fixture) -> None:
     lock.write_text(
         lock.read_text().replace('version = "1.0.0"', f'version = "{version}"')
     )
+    # The release as a whole moves the file `release-check` compares its version against.
+    edit(workspace, "release/manifest.txt", "1.0.0", version)
 
 
 def test_a_version_only_bump_replays_all_but_the_unit_keeping_the_version(workspace):
