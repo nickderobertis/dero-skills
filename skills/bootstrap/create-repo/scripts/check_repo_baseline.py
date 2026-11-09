@@ -992,7 +992,7 @@ def check_coverage(repo: Path) -> list[Finding]:
             "ERROR",
             "no coverage signal (recipe/flag, config threshold, or AGENTS.md statement)",
             "enforce coverage in `just check` (e.g. pytest --cov-fail-under=95, "
-            "Vitest coverage.thresholds, cargo llvm-cov --fail-under-lines 95), or "
+            "Vitest coverage.thresholds, the merge of Rust coverage units at its floor), or "
             "state in AGENTS.md the coverage bar or why it does not apply",
         )
     ]
@@ -3540,6 +3540,197 @@ def not_measured_label_problems(text: str) -> list[str]:
     return problems
 
 
+# A Rust repository's coverage shape (references/languages/rust.md): every coverage unit is a
+# cached target whose only output is its own LCOV report, and the combined check merges them.
+COVERAGE_UNIT_RE = re.compile(r"coverage-unit\.sh\s+([A-Za-z0-9_][A-Za-z0-9_-]*)\s+--")
+COVERAGE_MERGE_RE = re.compile(r"coverage-merge\.mjs\b.*?--unit\s+([^|&;]*)")
+COVERAGE_REPORT_DIR = "target/coverage-units"
+COVERAGE_KEY_MUSTS = (".github/ci-tool-versions", "rust-toolchain.toml")
+COVERAGE_SKIP_DIRS = {"node_modules", ".git", ".nx", "target"}
+
+
+class CoverageUnit(NamedTuple):
+    """One coverage unit's target, and the named inputs its project resolves."""
+
+    project: str
+    target_name: str
+    target: dict
+    named: dict
+
+
+def _target_cache(target: dict, defaults: dict, name: str) -> object:
+    """A target's own `cache`, else the one its nx.json default names."""
+    default = _object_or_empty(defaults.get(name))
+    return target.get("cache", default.get("cache"))
+
+
+def _dependency_edges(target: dict) -> list[dict]:
+    """The `dependsOn` edges that name projects, ignoring any malformed entry."""
+    declared = target.get("dependsOn")
+    edges = []
+    for edge in declared if isinstance(declared, list) else []:
+        if isinstance(edge, dict) and isinstance(edge.get("projects"), list):
+            edges.append(
+                {
+                    **edge,
+                    "projects": [p for p in edge["projects"] if isinstance(p, str)],
+                }
+            )
+    return edges
+
+
+def _object_or_empty(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _read_json_object(path: Path) -> dict | None:
+    """``path``'s JSON object, or None when the file is not one."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _expanded_inputs(
+    inputs: list[object], named: dict[str, object], seen: frozenset[str] = frozenset()
+) -> list[object]:
+    """The inputs with each named input replaced by what it holds."""
+    expanded: list[object] = []
+    for item in inputs:
+        name = item.lstrip("^") if isinstance(item, str) else None
+        if name in named and name not in seen and isinstance(named[name], list):
+            expanded += _expanded_inputs(named[name], named, seen | {name})
+        else:
+            expanded.append(item)
+    return expanded
+
+
+def check_rust_coverage_units(repo: Path) -> list[Finding]:
+    """Hold each Rust coverage unit to a cached LCOV output and the combined check to all units.
+
+    Silent unless the repository has a root Cargo manifest and a project running a coverage
+    target (`coverage-unit.sh`, or `cargo llvm-cov`).
+    """
+    if not (repo / "Cargo.toml").is_file():
+        return []
+    nx_path = repo / "nx.json"
+    nx = _read_json_object(nx_path) if nx_path.is_file() else {}
+    if nx is None:
+        return [Finding("ERROR", "nx.json is not a JSON object", "fix the file's JSON")]
+    named = _object_or_empty(nx.get("namedInputs"))
+    defaults = _object_or_empty(nx.get("targetDefaults"))
+    units: dict[str, CoverageUnit] = {}
+    scan_findings: list[Finding] = []
+    merges: list[set[str]] = []
+    for path in sorted(repo.rglob("project.json")):
+        if COVERAGE_SKIP_DIRS & set(path.relative_to(repo).parts):
+            continue
+        project = _read_json_object(path)
+        if project is None:
+            scan_findings.append(
+                Finding(
+                    "ERROR",
+                    f"{path.relative_to(repo)} is not a JSON object",
+                    "fix the file's JSON so its coverage targets can be read",
+                )
+            )
+            continue
+        name = project.get("name")
+        if not isinstance(name, str):
+            continue
+        local_named = {**named, **_object_or_empty(project.get("namedInputs"))}
+        for target_name, target in _object_or_empty(project.get("targets")).items():
+            if not isinstance(target, dict):
+                continue
+            command = str(target.get("command", ""))
+            merge = COVERAGE_MERGE_RE.search(command)
+            if merge:
+                merges.append(set(merge.group(1).split()))
+                continue
+            found = COVERAGE_UNIT_RE.search(command)
+            if found:
+                units[found.group(1)] = CoverageUnit(
+                    name, target_name, target, local_named
+                )
+            elif re.search(r"\bllvm-cov\b(?!\s+(report|clean))", command) and (
+                _target_cache(target, defaults, target_name) is False
+            ):
+                scan_findings.append(
+                    Finding(
+                        "ERROR",
+                        f"{name}:{target_name} runs instrumented tests with `cache: false`",
+                        "make it a coverage unit: run it through scripts/coverage-unit.sh with "
+                        f"`cache: true` and `outputs` of exactly {COVERAGE_REPORT_DIR}/<unit>.lcov "
+                        "(references/languages/rust.md)",
+                    )
+                )
+    if not units:
+        return scan_findings
+    findings: list[Finding] = list(scan_findings)
+    unit_targets = {(unit.project, unit.target_name) for unit in units.values()}
+    for unit, (name, target_name, target, local_named) in units.items():
+        where = f"coverage unit {unit} ({name}:{target_name})"
+        if _target_cache(target, defaults, target_name) is not True:
+            findings.append(
+                Finding(
+                    "ERROR",
+                    f"{where} is not cached",
+                    "set `cache: true` on it: a coverage unit is cached on a key covering "
+                    "everything its run reads (references/languages/rust.md)",
+                )
+            )
+        want = [f"{{workspaceRoot}}/{COVERAGE_REPORT_DIR}/{unit}.lcov"]
+        if target.get("outputs") != want:
+            findings.append(
+                Finding(
+                    "ERROR",
+                    f"{where} declares outputs {target.get('outputs')!r}",
+                    f"set `outputs` to exactly {want}: one LCOV report, no .profdata or object",
+                )
+            )
+        declared = target.get("inputs")
+        inputs = json.dumps(
+            _expanded_inputs(
+                declared if isinstance(declared, list) else [], local_named
+            ),
+            sort_keys=True,
+        )
+        missing = [must for must in COVERAGE_KEY_MUSTS if must not in inputs]
+        if missing:
+            findings.append(
+                Finding(
+                    "ERROR",
+                    f"{where}'s inputs miss {', '.join(missing)}",
+                    "add {workspaceRoot}/<file> for each (or a named input holding it): a key "
+                    "that misses a tool pin replays a stale coverage result",
+                )
+            )
+        for edge in _dependency_edges(target):
+            for dependency in edge["projects"]:
+                if (dependency, edge.get("target")) in unit_targets:
+                    findings.append(
+                        Finding(
+                            "ERROR",
+                            f"{where} depends on {dependency}'s coverage run for a binary",
+                            f"depend on {dependency}'s uncached `coverage-build` instead, so a "
+                            "cached run of it still leaves the binary built",
+                        )
+                    )
+    if not any(set(units) <= merge for merge in merges):
+        named_list = merges[0] if merges else set()
+        missing = sorted(set(units) - named_list)
+        findings.append(
+            Finding(
+                "ERROR",
+                f"no combined coverage check names every unit (missing: {', '.join(missing)})",
+                "add a root `coverage` target depending on every unit and running "
+                "scripts/coverage-merge.mjs with `--unit` naming them all",
+            )
+        )
+    return findings
+
+
 def check_ci_cd_shape(repo: Path) -> list[Finding]:
     """The CI/CD shape the composer writes: its jobs, timeouts, budgets and governance."""
     governance_path = repo / GOVERNANCE_RECORD
@@ -3798,14 +3989,21 @@ def audit(repo: Path) -> list[Finding]:
     findings += check_llmlint(repo)
     findings += check_onebudgetspec(repo)
     findings += check_actions_budget_figures(repo)
-    for script in ("nx-remote-cache", "nx-version-free-inputs", "actions-cache-prune"):
+    for script, suffix in (
+        ("nx-remote-cache", "mjs"),
+        ("nx-version-free-inputs", "mjs"),
+        ("actions-cache-prune", "mjs"),
+        ("coverage-unit", "sh"),
+        ("coverage-merge", "mjs"),
+    ):
         findings += check_actions_budget_figures(
             repo,
             FIGURES_VERSIONS.parent.parent / "ci" / f"{script}.versions",
-            f"scripts/{script}.mjs",
-            f"assets/ci/{script}.mjs",
+            f"scripts/{script}.{suffix}",
+            f"assets/ci/{script}.{suffix}",
         )
     findings += check_ci_cd_shape(repo)
+    findings += check_rust_coverage_units(repo)
     return findings
 
 

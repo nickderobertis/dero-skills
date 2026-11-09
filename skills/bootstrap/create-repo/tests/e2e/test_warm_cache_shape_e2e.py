@@ -822,7 +822,10 @@ def test_warm_journey_rejects_a_test_job_needing_dependencies_the_leg_did_not_bu
         tmp_path / "repo",
         REPO_ROOT / "node_modules",
         telemetry_plugin=False,
-        test_command="cargo test -p demo-lib --features extra",
+        test_command=(
+            "bash scripts/coverage-unit.sh demo-lib -- nextest --locked -p demo-lib "
+            "--features extra"
+        ),
     )
     problems = warm_build_problems(journey)
     assert any("compiled again" in p and "demo-dep" in p for p in problems), problems

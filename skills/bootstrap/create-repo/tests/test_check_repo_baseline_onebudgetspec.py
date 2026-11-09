@@ -19,8 +19,8 @@ import sys
 from pathlib import Path
 
 import pytest
+from baseline_repo import BUN_LOCK
 from test_check_repo_baseline import (
-    BUN_LOCK,
     FULL_JUSTFILE,
     SCRIPT,
     crb,

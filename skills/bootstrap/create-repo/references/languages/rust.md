@@ -71,10 +71,10 @@ the points below concrete.
   into their own project, which `just check` still runs — see "Splitting the
   suite" below — never out of the gate entirely.
 - **Coverage in the gate.** Measure coverage in the gate and fail below the
-  threshold — `cargo llvm-cov` (or `cargo tarpaulin`), with the enforcing
-  `--fail-under-lines 95` on the aggregate report once the suite spans projects,
-  per "Splitting the suite" below. 95% line coverage is the default bar; lower
-  it only with a
+  threshold: `cargo llvm-cov` per project, with the enforcing
+  `coverage-merge.mjs --fail-under-lines 96` on the merged LCOV once the suite
+  spans projects, per "Splitting the suite" below. The Rust default floor is 96 on
+  the LCOV basis (why: "Coverage survives the split" below); lower it only with a
   documented reason in `AGENTS.md`. Coverage is a default gate, not opt-in.
 - **Supply chain as a dedicated gate job.** Commit a `deny.toml` (advisories, an
   explicit `licenses` allow-list, `bans`, `sources`) and run `cargo deny check`
@@ -103,9 +103,9 @@ the points below concrete.
     (one resolve covering every crate)
   - `just check` -> `nx affected -t format lint test build` plus the repo-level
     `coverage` and supply-chain targets, with the per-project targets running
-    `cargo fmt --check`, `cargo clippy -- -D warnings`, and the tests, and
-    coverage enforced on the aggregate (`cargo llvm-cov report
-    --fail-under-lines 95`)
+    `cargo fmt --check`, `cargo clippy -- -D warnings`, and the tests under
+    coverage, and coverage enforced on the merged LCOV reports
+    (`coverage-merge.mjs --fail-under-lines 96`)
   - `just upgrade` -> `cargo update`, then re-run `just check`
 
 ## Projects, the Cargo workspace, and the graph
@@ -149,23 +149,52 @@ the same projects and meet at the crate directory.
   slow tier skippable; `#[ignore]` only makes it invisible. Keep `#[ignore]` for
   the live tier that genuinely needs real services or credentials — it stays
   compiled, and a dedicated workflow runs it.
-- **Coverage survives the split by combining, not by lowering.** A per-crate
-  `cargo llvm-cov --fail-under-lines 95` starts failing the moment the binary's
-  e2e tier moves into a sibling crate, because the binary crate's own run no
-  longer sees the lines that tier covers. Measure per project and enforce once
-  over the union:
-  - each `test` target runs `cargo llvm-cov --no-report nextest -p <crate>`,
-    which writes raw profile data into the shared `target/llvm-cov-target`
-    directory instead of reporting;
-  - a repo-level `coverage` target `dependsOn` every project's `test` and runs
-    `cargo llvm-cov report --fail-under-lines 95` over the accumulated profiles;
-  - `just check` runs it, and the profile directory is declared as those targets'
-    outputs so caching replays it rather than silently reporting on a partial set.
+- **Coverage survives the split by combining cached results, not by lowering.**
+  A per-crate floor starts failing the moment the binary's e2e tier moves into a
+  sibling crate, because the binary crate's own run no longer sees the lines that
+  tier covers, so measure per crate and enforce once over the union. A coverage
+  result is cached on a key that covers everything the run reads, and the floor
+  is computed by merging every unit's cached LCOV:
+  - **Each coverage unit is a cached target whose only output is its own LCOV
+    report.** A crate's `test` target runs
+    `scripts/coverage-unit.sh <unit> -- nextest --locked -p <crate>` on Linux; its
+    `outputs` are exactly `{workspaceRoot}/target/coverage-units/<unit>.lcov`, no
+    `.profdata` and no instrumented object. `<unit>` is the Nx project name, or
+    `<project>-<tier>` where one project owns several units. Other platforms run
+    the same tests uninstrumented and write no report.
+  - **The key covers everything the run reads:** its sources and tests, its
+    dependencies' sources (a dependency's own `tests/` reach no other crate's run,
+    so they stay out and a change to them re-runs only that crate's unit),
+    version-free manifests, `Cargo.lock`, the toolchain (`rust-toolchain.toml` and
+    runtime `rustc -vV`), the tool pins with each tool's reported version
+    (`cargo-llvm-cov`, nextest, `llvm-profdata`, `llvm-cov`, `llvm-readobj`), the two scripts and
+    the unit's own recipe, every environment variable that selects what runs, and
+    the platform. The package version stays out of the key, because LCOV identifies
+    a line by file and line number and a report from an older version merges
+    exactly with one from a newer; it stays in only where the unit's result depends
+    on its value, such as a test comparing it to a release manifest, by adding the
+    `--keep-version` runtime input.
+  - **A unit that spawns another crate's binary reaches it through that crate's
+    uncached `coverage-build` target**, a `dependsOn` from the unit, never through
+    the crate's coverage run; its key also covers every source the binary is built
+    from. So the journeys still find the binary, and still attribute its lines,
+    when the other crate's coverage is a cache hit.
+  - **The repository-level `coverage` target depends on every unit and merges their
+    LCOV** with `scripts/coverage-merge.mjs --fail-under-lines 96 --dir
+    target/coverage-units --unit <every unit>`. It reads only the files the units
+    just produced or restored, and refuses a missing report, a file no unit owns,
+    a malformed record or an absolute path, so a stale report cannot reach the
+    total. It builds nothing, so it needs no instrumented objects.
+  - **The default floor is 96 on the LCOV basis.** LCOV counts fewer lines than
+    `cargo llvm-cov report`, so it reads higher on the same tests. A new repository
+    has no measured gap, so the default takes the largest gap measured across the
+    existing repositories, 0.88 points, over the old 95 default (95.88) and rounds
+    up to a whole number. A repository with a measured gap may set today's floor
+    plus that gap, rounded up to two decimals. 95 stays the default bar for other
+    languages, whose coverage tools were not measured.
 
-  The 95% bar and its failure behaviour are unchanged; only where the number is
-  computed moved. Dropping the aggregate target, or lowering the bar because the
-  split made a crate's own number look bad, is losing the gate rather than
-  splitting it.
+  Dropping the aggregate target, or lowering the bar because the split made a
+  crate's own number look bad, is losing the gate rather than splitting it.
 
 ### Target names
 
@@ -176,14 +205,13 @@ project: `format` -> `cargo fmt -p <crate> --check`, `lint` ->
 above, and `build` -> `cargo build -p <crate>`. Rust has no separate `typecheck`
 target — `cargo clippy`/`build` type-check as they go, so declare no empty
 `typecheck` rather than a no-op one. `test-compile` is the `test` command compiling
-without running (`cargo nextest run -p <crate> --no-run`, or `cargo test -p <crate> --no-run`):
-`just ci-warm` runs it with `build` on a push to main, so the cache a pull request restores holds
-what its `test` target compiles. It has the same profile, features and flags as `test`, a
-difference being a dependency every pull request compiles again, and it is `cache: false`, which
-the composer enforces, because a replayed task compiles nothing. A tier run under coverage
-instrumentation stays outside the warm cache: its target is `cache: false` and declares no
-`test-compile`, because instrumented profiles do not survive a version bump. The repo-level `coverage` target is the one
-aggregate and carries the same name in every language; the supply-chain check
+without running, instrumented on Linux so the warm cache holds the build a coverage unit runs
+(`scripts/coverage-unit.sh --cargo -- nextest run --no-run --locked -p <crate>`):
+`just ci-warm` runs it with `build` and `coverage-build` on a push to main, so the cache a pull
+request restores holds what its `test` target compiles. It has the same profile, features and
+flags as `test`, a difference being a dependency every pull request compiles again, and it is
+`cache: false`, which the composer enforces, because a replayed task compiles nothing. The
+repo-level `coverage` target is the one aggregate and carries the same name in every language; the supply-chain check
 (`cargo deny` + `cargo machete`) is workspace-wide by nature and stays a
 repo-level target too.
 
@@ -205,9 +233,9 @@ repo-level target too.
 - [ ] **Tests incl. e2e in the gate.** `cargo test` / `cargo nextest run` and the
   `tests/` integration/e2e run in `just check` and CI — via their projects'
   `test` targets; e2e is not `#[ignore]`-d out of the default run.
-- [ ] **Coverage enforced.** `cargo llvm-cov` (or tarpaulin) runs in the gate and
-  `--fail-under-lines 95` fails it below the bar, on the aggregate report once
-  the suite spans projects.
+- [ ] **Coverage enforced.** Each crate's tests run under `cargo llvm-cov` in the
+  gate and `coverage-merge.mjs --fail-under-lines 96` fails it below the bar, on
+  the merged LCOV once the suite spans projects.
 - [ ] **Supply-chain gate.** A committed `deny.toml` plus `cargo deny check` and
   `cargo machete` run as their own Linux-only step/job.
 - [ ] **Release archives.** Per-platform archives are built in CI on native
@@ -222,10 +250,13 @@ repo-level target too.
   project (not one `--workspace` sweep); unit and `tests/` integration are the
   library crate's `test` target, and the compiled-binary suite is its own
   `<bin>-e2e` crate whose `test` `dependsOn` the binary crate's `build`.
-- [ ] **Coverage combined and still gating.** Per-project `test` targets run
-  `cargo llvm-cov --no-report` into the shared profile directory and a
-  repo-level `coverage` target depending on every `test` runs `cargo llvm-cov
-  report --fail-under-lines 95`, failing the build below the bar.
+- [ ] **Coverage combined from cached units and still gating.** Each crate's `test`
+  is a cached coverage unit whose only output is its own LCOV report, on a key
+  that covers its sources, tests, dependencies' sources, version-free manifests,
+  `Cargo.lock`, the toolchain and the coverage tool pins; a spawned binary comes
+  from the other crate's uncached `coverage-build`; and a repo-level `coverage`
+  target depending on every unit merges their LCOV at
+  `--fail-under-lines 96`, failing the build below the bar.
 - [ ] **Uniform target names.** Each Rust project declares `format` / `lint` /
   `test` / `build` calling cargo, so `nx affected` and `run-many` reach them by
   name in a polyglot repo.

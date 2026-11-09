@@ -1,6 +1,6 @@
 # create-repo tests
 
-Four tiers live here, and each is a project of its own so a change pays only
+Five tiers live here, and each is a project of its own so a change pays only
 for the tiers it can reach:
 
 - **The fast script tests** (`test_*.py` in this directory) — `bootstrap-create-repo`'s
@@ -19,6 +19,10 @@ for the tiers it can reach:
   `test_onebudgetspec_release.py` holds what the skill
   restates of onebudgetspec, Nx and `bun.lock` to the installed releases' own
   README, schema and lockfile, so that drift gate runs here too.
+- **The coverage-unit journeys** (`coverage-units/`) — the `bootstrap-create-repo-coverage-units`
+  project, whose real instrumented cargo-llvm-cov runs over a composed workspace need Rust,
+  `strace` and the pinned tools (`ci_cd_shape.ensure_pinned_tools` installs a missing pin).
+  Its inputs are the scripts, the composer and the fixture, so nothing else reaches it.
 - **The external journeys** (`external/`) — the `bootstrap-create-repo-external`
   project, for journeys that reach an external service.
   `external/test_onebudgetspec_wiring_e2e.py` installs the pinned onebudgetspec

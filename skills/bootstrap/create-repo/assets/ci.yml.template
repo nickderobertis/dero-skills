@@ -266,6 +266,9 @@ jobs:
         with:
           cache-shared-key: test-@@PLATFORM@@
           cache-save-if: false
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@${{ steps.pins.outputs.cargo-nextest }},cargo-llvm-cov@${{ steps.pins.outputs.cargo-llvm-cov }}
 #% endif
       - name: Decide cache trust and configure the sidecar
         id: nx-cache-trust

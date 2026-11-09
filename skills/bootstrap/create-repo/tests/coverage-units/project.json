@@ -1,0 +1,21 @@
+{
+  "name": "bootstrap-create-repo-coverage-units",
+  "root": "skills/bootstrap/create-repo/tests/coverage-units",
+  "projectType": "library",
+  "tags": ["type:e2e", "lang:python"],
+  "targets": {
+    "format": {
+      "command": "uv run ruff format skills/bootstrap/create-repo/tests/coverage-units"
+    },
+    "format-check": {
+      "command": "uv run ruff format --check skills/bootstrap/create-repo/tests/coverage-units"
+    },
+    "lint": {
+      "command": "uv run ruff check skills/bootstrap/create-repo/tests/coverage-units"
+    },
+    "test": {
+      "command": "uv run pytest skills/bootstrap/create-repo/tests/coverage-units",
+      "inputs": ["default", "coverageUnitsFixture"]
+    }
+  }
+}

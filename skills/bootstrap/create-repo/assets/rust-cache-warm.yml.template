@@ -52,6 +52,9 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-shared-key: test-@@PLATFORM@@
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@${{ steps.pins.outputs.cargo-nextest }},cargo-llvm-cov@${{ steps.pins.outputs.cargo-llvm-cov }}
       - name: Bootstrap
         run: just bootstrap
       - name: Build what test-@@PLATFORM@@ builds

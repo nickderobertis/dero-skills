@@ -1,7 +1,7 @@
 ---
 name: create-repo
 description: Use when creating a new repository or bootstrapping an existing project's tooling, tests, AGENTS.md, and CI so the setup fits the actual product and enforces strict, deterministic quality gates.
-compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo. The repo it stands up needs Node and bun for its mandatory project graph, whatever it is written in, and a repo that copies the GitHub Actions budget figures script needs bash, jq and the onevcs CLI where it measures.
+compatibility: Bundled scripts need uv and Python 3.12+ (the plan composer and the repo-baseline checker); the GitHub governance setup script also needs an authenticated `gh` CLI with admin rights on the target repo. The repo it stands up needs Node and bun for its mandatory project graph, whatever it is written in; a Rust repo also needs cargo-llvm-cov, cargo-nextest and the rustup `llvm-tools` component for its coverage units; and a repo that copies the GitHub Actions budget figures script needs bash, jq and the onevcs CLI where it measures.
 ---
 
 # Create repo
@@ -232,7 +232,8 @@ a suggested fix.
    - Formatting, linting, type checking, and tests must be enforced and fail on
      issues.
    - Coverage is a default gate, not opt-in: measure it on the test run and fail
-     below the threshold (95% line coverage by default). Lower the bar only with
+     below the threshold (95% line coverage by default, 96 on the LCOV basis for
+     Rust). Lower the bar only with
      a documented reason in `AGENTS.md`.
    - Prefer deterministic, reproducible checks; avoid environment-dependent
      behavior.
