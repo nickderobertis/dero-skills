@@ -1,4 +1,4 @@
-// Prints each coverage unit's real Nx task hash in the workspace named by argv[2], as JSON.
+// Prints each coverage unit's real Nx input hashes, per input, for the workspace in argv[2].
 const { createRequire } = require('node:module');
 const path = require('node:path');
 
@@ -17,7 +17,8 @@ const { createTaskHasher } = nxRoot('nx/src/hasher/create-task-hasher');
   const hasher = createTaskHasher(graph, nx);
   const hashes = {};
   for (const unit of units) {
-    hashes[unit] = (await hasher.hashTask(tasks.tasks[`${unit}:test`], tasks)).value;
+    // Each input's own hash, so a file's effect is read without the runtime inputs' noise.
+    hashes[unit] = (await hasher.hashTask(tasks.tasks[`${unit}:test`], tasks)).details.nodes;
   }
   console.log(JSON.stringify(hashes));
   process.exit(0);

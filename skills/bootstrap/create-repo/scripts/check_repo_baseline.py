@@ -3558,6 +3558,27 @@ class CoverageUnit(NamedTuple):
     named: dict
 
 
+def _target_cache(target: dict, defaults: dict, name: str) -> object:
+    """A target's own `cache`, else the one its nx.json default names."""
+    default = _object_or_empty(defaults.get(name))
+    return target.get("cache", default.get("cache"))
+
+
+def _dependency_edges(target: dict) -> list[dict]:
+    """The `dependsOn` edges that name projects, ignoring any malformed entry."""
+    declared = target.get("dependsOn")
+    edges = []
+    for edge in declared if isinstance(declared, list) else []:
+        if isinstance(edge, dict) and isinstance(edge.get("projects"), list):
+            edges.append(
+                {
+                    **edge,
+                    "projects": [p for p in edge["projects"] if isinstance(p, str)],
+                }
+            )
+    return edges
+
+
 def _object_or_empty(value: object) -> dict:
     return value if isinstance(value, dict) else {}
 
@@ -3631,7 +3652,7 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
                     name, target_name, target, local_named
                 )
             elif re.search(r"\bllvm-cov\b(?!\s+(report|clean))", command) and (
-                target.get("cache", defaults.get(target_name, {}).get("cache")) is False
+                _target_cache(target, defaults, target_name) is False
             ):
                 scan_findings.append(
                     Finding(
@@ -3648,7 +3669,7 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
     unit_targets = {(unit.project, unit.target_name) for unit in units.values()}
     for unit, (name, target_name, target, local_named) in units.items():
         where = f"coverage unit {unit} ({name}:{target_name})"
-        if target.get("cache", defaults.get(target_name, {}).get("cache")) is not True:
+        if _target_cache(target, defaults, target_name) is not True:
             findings.append(
                 Finding(
                     "ERROR",
@@ -3666,8 +3687,12 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
                     f"set `outputs` to exactly {want}: one LCOV report, no .profdata or object",
                 )
             )
+        declared = target.get("inputs")
         inputs = json.dumps(
-            _expanded_inputs(target.get("inputs", []), local_named), sort_keys=True
+            _expanded_inputs(
+                declared if isinstance(declared, list) else [], local_named
+            ),
+            sort_keys=True,
         )
         missing = [must for must in COVERAGE_KEY_MUSTS if must not in inputs]
         if missing:
@@ -3679,10 +3704,8 @@ def check_rust_coverage_units(repo: Path) -> list[Finding]:
                     "that misses a tool pin replays a stale coverage result",
                 )
             )
-        for edge in target.get("dependsOn", []):
-            if not isinstance(edge, dict):
-                continue
-            for dependency in edge.get("projects", []):
+        for edge in _dependency_edges(target):
+            for dependency in edge["projects"]:
                 if (dependency, edge.get("target")) in unit_targets:
                     findings.append(
                         Finding(

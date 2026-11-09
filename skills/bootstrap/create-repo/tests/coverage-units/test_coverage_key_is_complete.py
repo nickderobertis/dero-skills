@@ -21,7 +21,7 @@ ALWAYS = ("Cargo.lock", "rust-toolchain.toml", ".github/ci-tool-versions")
 TRACE_FILTER = re.compile(r"^(target|\.git|\.nx|node_modules)/")
 
 
-def task_hashes(workspace: Fixture) -> dict[str, str]:
+def task_hashes(workspace: Fixture) -> dict[str, dict[str, str]]:
     done = subprocess.run(
         ["node", str(HASHER), str(workspace.repo), *UNITS],
         env=workspace.env,
@@ -29,7 +29,15 @@ def task_hashes(workspace: Fixture) -> dict[str, str]:
         text=True,
     )
     assert done.returncode == 0, done.stderr
-    return json.loads(done.stdout.strip().splitlines()[-1])
+    nodes = json.loads(done.stdout.strip().splitlines()[-1])
+    return {
+        unit: {
+            key: value
+            for key, value in inputs.items()
+            if not key.startswith("runtime:")
+        }
+        for unit, inputs in nodes.items()
+    }
 
 
 def traced_reads(workspace: Fixture, unit: str, log: Path) -> set[str]:

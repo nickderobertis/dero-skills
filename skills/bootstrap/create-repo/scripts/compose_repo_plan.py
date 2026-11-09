@@ -1613,9 +1613,11 @@ def _path_dependencies(
         match spec:
             case {"workspace": True}:
                 inherited = shared.get(name, {})
-                if isinstance(inherited, dict) and "path" in inherited:
+                if isinstance(inherited, dict) and isinstance(
+                    inherited.get("path"), str
+                ):
                     found.add((repo / inherited["path"]).resolve())
-            case {"path": path}:
+            case {"path": str() as path}:
                 found.add((directory / path).resolve())
     return found
 

@@ -48,7 +48,7 @@ What is not obvious from the table:
   the project with the longest matching root, so `tests/e2e/`,
   `tests/coverage-units/`, `tests/skilltest/` and `tests/external/` own their files and the skill project
   does not. That is why the skill's `ruff`/`pytest` commands carry
-  `--exclude`/`--ignore` for those three directories: without them the parent would re-check files it does not own, and
+  `--exclude`/`--ignore` for those four directories: without them the parent would re-check files it does not own, and
   its cache key would not cover them.
 - **Cross-project edges that are not imports live in `nx.json`'s named inputs.**
   `tooling` attaches the shared validator to the skills it validates,

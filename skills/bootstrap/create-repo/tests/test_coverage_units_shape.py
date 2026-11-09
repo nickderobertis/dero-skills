@@ -374,3 +374,23 @@ def test_a_non_json_config_is_a_finding_not_a_traceback(repo, name):
     (repo / name).write_text("not json")
     out = findings(repo)
     assert "not a JSON object" in out and "Traceback" not in out
+
+
+def test_a_workspace_inherited_path_dependency_reaches_the_units_key(tmp_path):
+    files = {
+        **workspace_files(GOOD_COMPILE),
+        "Cargo.toml": (
+            '[workspace]\nmembers = ["crates/*"]\nresolver = "2"\n'
+            '[workspace.dependencies]\ndemo-dep = { path = "crates/dep" }\n'
+        ),
+        "crates/lib/Cargo.toml": (
+            '[package]\nname = "demo-lib"\nversion = "0.1.0"\nedition = "2021"\n'
+            "[dependencies]\ndemo-dep = { workspace = true }\n"
+        ),
+        "crates/dep/project.json": json.dumps(
+            {"name": "demo-dep", "root": "crates/dep"}
+        ),
+    }
+    repo = compose(tmp_path / "repo", "rust", "linux", files=files)
+    project = json.loads((repo / "crates/lib/project.json").read_text())
+    assert project["implicitDependencies"] == ["demo-dep"]

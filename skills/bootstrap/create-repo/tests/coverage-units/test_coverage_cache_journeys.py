@@ -286,6 +286,22 @@ def _reports_trimmed_to(workspace: Fixture, target: Path, total: int) -> str:
     return text
 
 
+def _line_covered_by_only_one_report(directory: Path) -> tuple[Path, str]:
+    reports = sorted(directory.glob("*.lcov"))
+    coverage = {path: read_lcov([path]) for path in reports}
+    for path, lines in coverage.items():
+        for file, by_line in lines.items():
+            for number, hit in by_line.items():
+                others = [
+                    other
+                    for other, entries in coverage.items()
+                    if other != path and entries.get(file, {}).get(number)
+                ]
+                if hit and not others:
+                    return path, str(number)
+    raise AssertionError("every covered line is shared")
+
+
 def test_merge_at_an_exact_floor_passes_and_one_line_under_fails_naming_it(
     workspace, tmp_path
 ):
@@ -295,15 +311,13 @@ def test_merge_at_an_exact_floor_passes_and_one_line_under_fails_naming_it(
     assert total == 80
     floor = f"{covered * 100 // total}.{covered * 10000 // total % 100:02d}"
     assert workspace.merge(directory=tmp_path, floor=floor).returncode == 0
-    # One covered line turned uncovered, on a file this report really holds.
-    name = next(
-        p
-        for p in tmp_path.iterdir()
-        if p.suffix == ".lcov" and re.search(r"^DA:(\d+),[1-9]", p.read_text(), re.M)
-    )
+    # A line only one report covers, turned uncovered there.
+    sole = _line_covered_by_only_one_report(tmp_path)
+    name, line = sole
     source = name.read_text()
-    line, count = re.search(r"^DA:(\d+),([1-9]\d*)", source, re.M).groups()
-    name.write_text(source.replace(f"DA:{line},{count}", f"DA:{line},0", 1))
+    name.write_text(
+        re.sub(rf"(?m)^DA:{line},[1-9]\d*", f"DA:{line},0", source, count=1)
+    )
     below = workspace.merge(directory=tmp_path, floor=floor)
     assert below.returncode == 1
     assert re.search(rf": .*\b{line}\b", below.stdout)

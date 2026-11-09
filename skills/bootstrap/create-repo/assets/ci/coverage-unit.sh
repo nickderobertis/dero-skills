@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
 # version: 1
-# sha256: f18f2ef467ccccc87b97f9368c353e685a24516e8db6366e12579d3dbd9a1a54
+# sha256: 198a07cc160bff3e635f4be9a34c3baa26ec51d3c49d0ece3919af8694c0b3de
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -165,14 +165,16 @@ fi
 "$(profdata_tool)" show --binary-ids "$indexed" | sed -n '/^Binary IDs:/,$p' | sed 1d |
   tr -d ' ' | tr '[:upper:]' '[:lower:]' | sort -u >"$work/ids"
 readobj="$(llvm_tool llvm-readobj "")"
+find "$coverage_target" -type f -perm -u+x \
+  -not -path '*/build/*' -not -path '*/incremental/*' -not -path '*/.fingerprint/*' -print0 \
+  >"$work/objects"
 objects=()
 while IFS= read -r -d '' candidate; do
   [ "$(head -c4 "$candidate" | od -An -c | tr -d ' ')" = '177ELF' ] || continue
   notes="$("$readobj" --notes "$candidate")" || continue
   id="$(printf '%s\n' "$notes" | sed -n 's/.*Build ID: //p' | head -1 | tr '[:upper:]' '[:lower:]')"
   [ -n "$id" ] && grep -qxF "$id" "$work/ids" && objects+=(-object "$candidate")
-done < <(find "$coverage_target" -type f -perm -u+x \
-  -not -path '*/build/*' -not -path '*/incremental/*' -not -path '*/.fingerprint/*' -print0)
+done <"$work/objects"
 if [ "${#objects[@]}" -eq 0 ]; then
   echo "coverage-unit.sh: no object under $coverage_target ran for $unit. ACTION: check that the linker writes a build id and the unit's binaries were built" >&2
   exit 1
