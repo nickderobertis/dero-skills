@@ -1,0 +1,12 @@
+# onevcs reads this from the publication checkout's base as this repository's default publication policy.
+schema_version = 2
+
+# llmlint: ignore-block[changed_behavior_has_e2e] onevcs reads and validates this declaration, not this repository's code, so there is no behavior here for a test of this repo to drive; the user ruled this change adds no tests.
+# llmlint: ignore-block[least_privilege_grants] this restates exactly the policy the host's rule already grants dero-skills (change-auto, no approvals), so it widens nothing; the required checks still gate every merge to main.
+# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] this file is the single source: once the host rules are retired onevcs reads the policy from here and nowhere else, and onevcs itself validates these keys, so there is no second copy in this repository to drift from or generate.
+[policy]
+publication = "change-auto"
+approvals = "none"
+# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
+# llmlint: ignore-end[least_privilege_grants]
+# llmlint: ignore-end[changed_behavior_has_e2e]
