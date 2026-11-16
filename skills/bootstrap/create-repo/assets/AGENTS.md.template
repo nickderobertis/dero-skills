@@ -135,7 +135,7 @@ so it is auditable and re-appliable.
 - **Tests are realistic, not mocked, and complete, not minimal.** E2E drives the
   real artifact across real boundaries. Proof is proportionate to the change per
   the [create-repo base rules](https://github.com/nickderobertis/dero-skills/blob/main/skills/bootstrap/create-repo/assets/llmlint/base.llmlint.yml),
-  the authoritative criterion including its justified structural-proof allowance
+  the authoritative criterion including its one-off and stated-cost exemptions
   (see "Tests are context engineering").
 - Validate all external / IO inputs at trust boundaries.
 - Keep the artifact portable across the supported platform matrix.

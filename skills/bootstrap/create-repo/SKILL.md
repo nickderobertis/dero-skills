@@ -67,7 +67,7 @@ clone, run one command, and trust.
    realistic un-mocked e2e proportionate to the change (per
    `changed_behavior_has_e2e` in [the base rules](./assets/llmlint/base.llmlint.yml)),
    and CI that proves the artifact. This rule is the authoritative criterion
-   throughout this skill, including its justified structural-proof allowance.
+   throughout this skill, including its one-off and stated-cost exemptions.
    Those are not optional and are not "excluded with a rationale."
 3. **Establish one command surface.** Add a `just` recipe set: `bootstrap`,
    `check`, `test`, `lint`, `format`, `upgrade`, from

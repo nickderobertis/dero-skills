@@ -33,8 +33,12 @@ composed plan carries before any shape/language/cross-cutting items are added.
   issues — no warnings-only mode — with coverage measured and enforced.
 - **Realistic e2e is an invariant, not a preference.** The suite is the only QA
   loop, so it drives the real artifact across real boundaries; mocking the layer
-  under test is a fail. Proof is proportionate to the change under
-  `changed_behavior_has_e2e`, the authoritative criterion.
+  under test is a fail. Durable behavior — it runs again, or something relies on
+  it after the change lands — gets a committed realistic test. One-off code that
+  says so at its site, and durable code whose site names why a test would cost
+  more than it protects and what proved it instead, owe none; a
+  behavior-preserving edit owes none. `changed_behavior_has_e2e` is the
+  authoritative criterion.
   Test as close as possible to what the user does — exercise the software through its real interface (the
   CLI as a command, an HTTP route as a request, the public API as a caller, the
   UI through user-facing actions), not through internal shortcuts a real user
@@ -97,8 +101,10 @@ composed plan carries before any shape/language/cross-cutting items are added.
 - [ ] **Coverage enforced.** Coverage is measured and the gate fails below the
   threshold (95% line coverage by default, or a documented lower bar in
   `AGENTS.md`).
-- [ ] **Proportional proof of changed journeys.** Under that criterion, verify the
-  required e2e or justified structural assertion. Required e2e drives the
+- [ ] **Proportional proof of changed journeys.** Under `changed_behavior_has_e2e`,
+  verify each durable changed behavior has its committed test or a site comment
+  naming the cost and the proof used instead; one-off code marked so at its site
+  owes none. Required e2e drives the
   real artifact across real boundaries — never mocking the layer under test —
   covering happy path **and** failure/recovery inside `just check` (an expensive
   test retained outside the default run is a documented exception CI still runs).
