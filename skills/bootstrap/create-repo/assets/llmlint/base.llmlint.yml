@@ -8,7 +8,7 @@
 # Version classification and consumer pinning: see references/llmlint.md
 # ("Fragment versioning").
 # llmlint: ignore-file[description_and_relevance_are_concise] the explicit inverse verdict is part of this rule's required compliance contract, not optional explanatory repetition.
-version: 1.14.0
+version: 1.15.0
 
 rules:
   - name: comments_earn_their_place
@@ -83,47 +83,50 @@ rules:
     relevance: the target files define an end-to-end or integration test
     require_line_attribution: true
 
-  # llmlint: ignore[names_match_behavior, name_describes_what_the_rule_checks] this published rule identifier must remain stable for consumer overrides and allowlisted ignores; renaming it for the structural-proof exception would break those consumers.
+  # llmlint: ignore[names_match_behavior, name_describes_what_the_rule_checks] this published rule identifier must remain stable for consumer overrides and allowlisted ignores; renaming it for the one-off and cost exceptions would break those consumers.
   - name: changed_behavior_has_e2e
     # llmlint: ignore[description_omits_already_excluded_situations] relevance controls admission; the description quantifies only admitted behavior, avoiding both a redundant relevance qualifier and a broader admission condition.
     description: |
-      true when EVERY distinct behavior these changes ADD or MODIFY is exercised
-      by a real end-to-end or integration test — each new or altered code path,
-      output, exit status, and failure/recovery path, not one happy-path test standing in for the whole change — and every
-      behavior they REMOVE has had its obsolete end-to-end test removed with it.
-      Where the cheapest honest end-to-end proof would cost more than the defect
-      it prevents, a deterministic structural assertion satisfies this rule,
-      provided that assertion states at its own site why the end-to-end proof was
-      declined.
-      Locate the tests for this entry point or module — read the repo's test tree
-      as needed — and confirm coverage by an existing or new test, or by the
-      justified structural assertion above. false when an assertion lacks that
-      reason, any added or modified behavior lacks proof, or a removed behavior
-      retains an obsolete test.
+      true when EVERY distinct behavior these changes ADD or MODIFY — each new or
+      altered code path, output, exit status, and failure/recovery path, not one
+      happy-path test for the whole change — is exercised by a committed, real
+      end-to-end or integration test, and every behavior they REMOVE has lost its
+      obsolete test. A behavior whose cheapest honest test would cost more than
+      the regression it prevents (in runtime, test code added, maintenance, or
+      flakiness) needs no test when a comment at its site names that cost and
+      what proved the behavior instead — a deterministic structural assertion
+      stating its own reason at its own site is one such proof; the costlier the
+      test, the more readily this holds. Read the repo's test tree as needed.
+      false when an added or modified behavior has neither a test nor that
+      comment, the comment omits the cost or the proof, or a removed behavior
+      keeps an obsolete test.
     relevance: |
-      the target files add, alter, or remove observable behavior and BOTH criteria
-      hold. Judge only those changed paths, not pre-existing, untouched behavior:
-      (1) The behavior is authored in this repository. A guarantee a third-party
-      tool makes in isolation belongs to that tool's maintainers: clippy failing
-      on its own finding, a formatter reformatting, or a package manager refusing
-      an unlocked dependency. What this repository composes out of tools into a
-      path of its own is authored here and tested by nobody else — which artifacts
-      get published and where, what an installer writes and starts, or what a
-      script does around the tool it calls. A structural claim is excluded even
-      when authored here: it is settled by reading a file rather than running
-      anything. Whether a gate recipe invokes every tier the policy declares is
-      proved by a deterministic check reading the recipe; running the gate proves
-      it more slowly and no better. Apply this criterion rather than matching a
-      list; the examples illustrate its reach, not its limits.
-      (2) The failure would otherwise be silent. Ask what happens if this behavior
-      breaks and nothing tests it. A release or publication path shipping a broken
-      artifact is discovered by whoever installs it; a deployment or provisioning
-      script, a scheduled job, and a developer tool that checks something are
-      discovered late or never. Those failures are silent and owe end-to-end proof.
-      A quality gate that stops refusing bad code is loud — the first red change
-      that merges says so — as is a build that stops building or an entry point
-      that stops running. Apply this criterion rather than matching a list; it
-      reaches equally a silent failure none of these examples names.
+      the target files add, alter, or remove observable behavior and ALL three
+      criteria hold; judge only those changed paths. Apply each criterion rather
+      than matching a list; its examples illustrate its reach, not its limits.
+      (1) The behavior is authored here. A guarantee a third-party tool makes in
+      isolation belongs to its maintainers: clippy failing on its own finding, a
+      formatter reformatting, a package manager refusing an unlocked dependency.
+      What this repository composes from tools into a path of its own — which
+      artifacts publish where, what an installer writes and starts, what a
+      script does around the tool it calls — is authored here. A structural
+      claim, settled by reading a file rather than running anything, is
+      excluded: whether a gate recipe invokes every declared tier is proved by a
+      check reading the recipe.
+      (2) Its failure would be silent. A broken release artifact is found by
+      whoever installs it; a broken deployment or provisioning script, scheduled
+      job, or checking developer tool is found late or never. A gate that stops
+      refusing bad code is loud — the first red change that merges says so — as
+      is a build that stops building or an entry point that stops running.
+      (3) It is durable: it runs again, or something relies on it after the
+      change lands, so a regression would harm the product owner — a
+      provisioning script run on every bootstrap, a scheduled job, a schema
+      migration replayed on every fresh database. Code that runs once or matters
+      at one point in time — a one-time backfill or data fix, a cutover's
+      configuration, a version pin no local code reads, a measurement script —
+      is one-off when its site says so (for example a header calling it a
+      one-time backfill not to be re-run), and how it was proved is not judged;
+      without that statement it is judged durable.
       A test is not itself the behavior under test, and a behavior-preserving edit
       (a refactor, formatting, a comment, docs, configuration, or a type-only
       change) that no user could observe does not meet the criterion.
