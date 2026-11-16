@@ -85,6 +85,11 @@ rules:
 
   # llmlint: ignore[names_match_behavior, name_describes_what_the_rule_checks] this published rule identifier must remain stable for consumer overrides and allowlisted ignores; renaming it for the one-off and cost exceptions would break those consumers.
   - name: changed_behavior_has_e2e
+    # No committed test of how a judge reads this wording: one would call a paid,
+    # nondeterministic model on every run, costing more than it protects. Proved
+    # once instead by judged runs quoted in the change request that added the
+    # one-off and cost cases: a one-off backfill not relevant, a per-bootstrap
+    # provisioning script with no test failing, a cost-reasoned cron job passing.
     # llmlint: ignore[description_omits_already_excluded_situations] relevance controls admission; the description quantifies only admitted behavior, avoiding both a redundant relevance qualifier and a broader admission condition.
     description: |
       true when EVERY distinct behavior these changes ADD or MODIFY — each new or
