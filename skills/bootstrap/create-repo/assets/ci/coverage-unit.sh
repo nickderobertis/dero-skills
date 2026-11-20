@@ -2,7 +2,7 @@
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
 # version: 4
-# sha256: 2b56f1361854e1aa9a18be53b7868d31d690d5b9e67c36813a4f3c18afaeebe0
+# sha256: a38c7ade5b1134a5c4deb5dbe356531152fd5755f235f2cf263454dd01543524
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -29,19 +29,20 @@
 # Writes: target/coverage-units/<unit>.lcov, one LCOV report whose every SF: path is
 #   relative to the workspace root, and target/llvm-cov-target/<unit>.profdata. Removes only
 #   that report and this unit's raw profiles: the previous run's before the tests, and, once
-#   `llvm-profdata merge` has written the indexed profile, exactly the raw profiles it merged.
-#   That bounds what a completed unit leaves behind, not the peak of a run still writing. A
-#   failing test or an unmergeable set of profiles keeps them for diagnosis. No other unit's
-#   output is read or deleted.
+#   `llvm-profdata merge` has written the indexed profile, every raw profile it merged. One it
+#   warned about is kept and named for diagnosis, as are all of them when a test fails or none
+#   merges. That bounds what a completed unit leaves behind, not the peak of a run still
+#   writing. No other unit's output is read or deleted.
 # Environment: COVERAGE_UNIT_IGNORE_REGEX adds an alternative to the ignore rule, which is
 #   otherwise the one `cargo llvm-cov report` uses (standard library, tests, examples and
 #   benches, build output, the Cargo registry and the toolchain). It must be a valid POSIX
 #   extended regular expression that cannot match every file. LLVM_PROFDATA and LLVM_COV
 #   name those tools; otherwise PATH, then the toolchain's llvm-tools component.
 # Exit: 0 when the report is written (or, off Linux, the tests passed); the cargo status when
-#   a test fails; 1 when no profile was written, every profile was unmergeable, no
-#   instrumented object was found, or `cargo llvm-cov show-env` printed anything but shell
-#   assignments; 2 for a usage error or an unusable COVERAGE_UNIT_IGNORE_REGEX.
+#   a test fails; 1 when no profile was written, every profile was unmergeable, a merged
+#   profile could not be removed, no instrumented object was found, or `cargo llvm-cov
+#   show-env` printed anything but shell assignments; 2 for a usage error or an unusable
+#   COVERAGE_UNIT_IGNORE_REGEX.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
@@ -203,9 +204,22 @@ if ! "$(profdata_tool)" merge -sparse -failure-mode=all -f "$work/profiles" -o "
   echo "coverage-unit.sh: every profile of $unit was unmergeable. ACTION: check for a run killed before it wrote one" >&2
   exit 1
 fi
-# The indexed profile now holds them, so the raw profiles merged are removed: exactly those,
-# never a file another unit is writing into the same directory.
-rm -f -- "${profiles[@]}"
+# -failure-mode=all merges past a profile it cannot read, naming it in a `warning: <path>: `
+# line, so only the profiles no warning names are in the indexed profile and removed. The list
+# is this unit's own glob, never a file another unit is writing into the same directory.
+awk -v kept="$work/kept" -v merged="$work/merged" 'NR == FNR { listed[$0] = 1; next }
+  /^warning: / { for (path in listed) if (index($0, "warning: " path ": ") == 1) warned[path] = 1 }
+  END { for (path in listed) print path >(path in warned ? kept : merged) }' \
+  "$work/profiles" "$work/merge.err"
+if [ -s "$work/kept" ]; then
+  cat "$work/merge.err" >&2
+  echo "coverage-unit.sh: $(wc -l <"$work/kept") profile(s) of $unit were unmergeable and are kept under $coverage_target. ACTION: check for a run killed before it wrote one" >&2
+fi
+if [ -s "$work/merged" ] && ! xargs -d '\n' rm -f -- <"$work/merged" 2>"$work/rm.err"; then
+  cat "$work/rm.err" >&2
+  echo "coverage-unit.sh: could not remove the merged raw profiles of $unit. ACTION: check the permissions of $coverage_target" >&2
+  exit 1
+fi
 
 # The objects that wrote into this profile, by build id, so a binary another unit left in
 # the shared target directory never lends this report its lines.

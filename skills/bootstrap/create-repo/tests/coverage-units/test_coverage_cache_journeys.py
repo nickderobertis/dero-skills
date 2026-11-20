@@ -502,9 +502,16 @@ def line_counts(report: Path) -> dict[str, dict[int, int]]:
     return counts
 
 
-def function_counts(workspace: Fixture, indexed: Path) -> list[tuple[str, int, str]]:
-    """Each function `llvm-profdata show` reads back from ``indexed``: its symbol with the
-    build-specific crate disambiguator dropped, its entry count and its block counts."""
+class FunctionCount(NamedTuple):
+    """One function record `llvm-profdata show` reads back from an indexed profile."""
+
+    symbol: str  # with the build-specific crate disambiguator dropped
+    entries: int
+    blocks: str  # the block counts, as `show` prints them
+
+
+def function_counts(workspace: Fixture, indexed: Path) -> list[FunctionCount]:
+    """Each function `llvm-profdata show` reads back from ``indexed``."""
     profdata = llvm_profdata(workspace)
     shown = subprocess.run(
         [profdata, "show", "--all-functions", "--counts", indexed],
@@ -518,7 +525,7 @@ def function_counts(workspace: Fixture, indexed: Path) -> list[tuple[str, int, s
         re.M,
     )
     return sorted(
-        (re.sub(r"Cs[0-9A-Za-z]+_", "", symbol), int(count), blocks)
+        FunctionCount(re.sub(r"Cs[0-9A-Za-z]+_", "", symbol), int(count), blocks)
         for symbol, count, blocks in found
     )
 
@@ -544,10 +551,10 @@ def llvm_profdata(workspace: Fixture) -> Path:
 # `base::value` too, so a merge that read `tool`'s profiles would raise these counts.
 BASE_LINES = {1: 2, 2: 2, 3: 1, 5: 1, 7: 2, 8: 0, 9: 0, 10: 0, 14: 1, 15: 1, 16: 1}
 BASE_FUNCTIONS = [
-    ("_RNvNt4base5testss_5value", 1, "[1]"),
-    ("_RNv4bases_8base_low", 1, "[0, 1]"),
-    ("_RNv4base5value", 1, "[0]"),
-    ("_RNv4base5value", 1, "[1]"),
+    FunctionCount("_RNvNt4base5testss_5value", entries=1, blocks="[1]"),
+    FunctionCount("_RNv4bases_8base_low", entries=1, blocks="[0, 1]"),
+    FunctionCount("_RNv4base5value", entries=1, blocks="[0]"),
+    FunctionCount("_RNv4base5value", entries=1, blocks="[1]"),
 ]
 
 
@@ -576,7 +583,8 @@ def test_a_passing_unit_removes_exactly_its_own_merged_raw_profiles(workspace):
         functions = function_counts(workspace, cov / "base.profdata")
         assert functions == sorted(BASE_FUNCTIONS)
         assert not any(
-            "tool" in symbol or "greet" in symbol for symbol, *_ in functions
+            "tool" in function.symbol or "greet" in function.symbol
+            for function in functions
         )
     finally:
         for name in raw_profiles(workspace, "tool"):
@@ -584,21 +592,27 @@ def test_a_passing_unit_removes_exactly_its_own_merged_raw_profiles(workspace):
         workspace.reset()
 
 
-def test_a_unit_whose_every_profile_is_unmergeable_keeps_them(workspace, tmp_path):
+def cutting_profiles_short(workspace: Fixture, tmp_path: Path, which: str) -> dict:
+    """The real cargo, then ``which`` of ``base``'s raw profiles (a shell glob over the
+    sorted list) cut short, as a process killed while writing leaves them."""
     real_cargo = shutil.which("cargo", path=workspace.env["PATH"])
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     double = bin_dir / "cargo"
-    # The real run, then its profiles cut short, as a process killed while writing leaves them.
     double.write_text(
         f'#!/usr/bin/env bash\n"{real_cargo}" "$@"\nstatus=$?\n'
-        'for p in target/llvm-cov-target/base.*.profraw; do printf garbage > "$p"; done\n'
+        "set -- target/llvm-cov-target/base.*.profraw\n"
+        f'for p in {which}; do printf garbage > "$p"; done\n'
         'exit "$status"\n'
     )
     double.chmod(0o755)
+    return {"PATH": f"{bin_dir}:{workspace.env['PATH']}"}
+
+
+def test_a_unit_whose_every_profile_is_unmergeable_keeps_them(workspace, tmp_path):
     try:
         done = run_unit(
-            workspace, "base", {"PATH": f"{bin_dir}:{workspace.env['PATH']}"}
+            workspace, "base", cutting_profiles_short(workspace, tmp_path, '"$@"')
         )
         assert done.returncode == 1, done.stderr
         assert "unmergeable" in done.stderr
@@ -622,4 +636,23 @@ def test_a_unit_whose_tests_fail_exits_with_their_status_and_keeps_its_profiles(
     finally:
         for name in raw_profiles(workspace, "base"):
             (workspace.repo / "target/llvm-cov-target" / name).unlink()
+        workspace.reset()
+
+
+def test_a_merge_past_an_unmergeable_profile_keeps_only_that_one(workspace, tmp_path):
+    cov = workspace.repo / "target/llvm-cov-target"
+    try:
+        # Only the first profile is cut short, so `-failure-mode=all` merges the rest.
+        done = run_unit(
+            workspace, "base", cutting_profiles_short(workspace, tmp_path, '"$1"')
+        )
+        assert done.returncode == 0, done.stderr
+        kept = raw_profiles(workspace, "base")
+        assert list(kept.values()) == [b"garbage"], "only the unmerged profile stays"
+        (name,) = kept
+        assert str(cov / name) in done.stderr and "ACTION:" in done.stderr
+        assert (workspace.reports / "base.lcov").exists()
+    finally:
+        for name in raw_profiles(workspace, "base"):
+            (cov / name).unlink()
         workspace.reset()

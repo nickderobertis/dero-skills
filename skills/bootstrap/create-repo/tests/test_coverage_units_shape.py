@@ -707,6 +707,24 @@ def test_a_merged_unit_removes_its_raw_profiles_and_no_other_units(unit_root, tm
     assert other.read_text() == "another unit's"
 
 
+def test_a_merged_profile_that_cannot_be_removed_stops_the_unit(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    cov = unit_root / "target/llvm-cov-target"
+    double = Path(env["LLVM_PROFDATA"])
+    # The merge writes its output, then the directory turns read-only, so `rm` is refused.
+    double.write_text(
+        double.read_text().replace(': > "$2";', f': > "$2"; chmod a-w {cov};')
+    )
+    try:
+        done = _unit(unit_root, env, "demo", "--", "nextest")
+    finally:
+        cov.chmod(0o755)
+    assert done.returncode == 1, done.stderr
+    assert "could not remove the merged raw profiles of demo" in done.stderr
+    assert "ACTION:" in done.stderr and "Permission denied" in done.stderr
+    assert not (unit_root / "target/coverage-units/demo.lcov").exists()
+
+
 def test_a_failing_llvm_profdata_show_is_reported(unit_root, tmp_path):
     env = _doubled_report_tools(unit_root, tmp_path)
     double = Path(env["LLVM_PROFDATA"])
