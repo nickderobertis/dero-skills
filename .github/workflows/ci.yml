@@ -73,8 +73,15 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.150
 
-      - name: Install strace and the Rust llvm tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq strace && rustup component add llvm-tools
+      # The journeys build with the runner's default toolchain, so it is set to the channel
+      # the skill's rust-toolchain.toml pins rather than whatever stable the image carries.
+      - name: Install strace and the pinned Rust toolchain with its llvm tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq strace
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' skills/bootstrap/create-repo/assets/rust-toolchain.toml.template)"
+          [ -n "$channel" ] || { echo "::error::no channel in the skill's rust-toolchain.toml.template; restore its channel line"; exit 1; }
+          rustup toolchain install "$channel" --profile minimal --component llvm-tools
+          rustup default "$channel"
 
       - name: Bootstrap
         run: just bootstrap
@@ -115,8 +122,15 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.9.1,cargo-nextest@0.9.150
 
-      - name: Install strace and the Rust llvm tools
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq strace && rustup component add llvm-tools
+      # The journeys build with the runner's default toolchain, so it is set to the channel
+      # the skill's rust-toolchain.toml pins rather than whatever stable the image carries.
+      - name: Install strace and the pinned Rust toolchain with its llvm tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq strace
+          channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' skills/bootstrap/create-repo/assets/rust-toolchain.toml.template)"
+          [ -n "$channel" ] || { echo "::error::no channel in the skill's rust-toolchain.toml.template; restore its channel line"; exit 1; }
+          rustup toolchain install "$channel" --profile minimal --component llvm-tools
+          rustup default "$channel"
 
       - name: Bootstrap
         run: just bootstrap
