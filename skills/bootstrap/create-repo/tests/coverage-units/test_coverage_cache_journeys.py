@@ -218,15 +218,23 @@ def test_every_unit_executed_equals_cargo_llvm_covs_own_report_and_needs_no_buil
         )
         assert ran.returncode == 0, ran.stdout + ran.stderr
         assert not any(workspace.summary(ran.stdout).values())
+        # Every unit removed the raw profiles it merged, so cargo-llvm-cov's own report reads
+        # only those of its own run of every test, and refuses if that run wrote none.
+        cov = workspace.repo / "target/llvm-cov-target"
+        assert not list(cov.glob("*.profraw"))
         combined = workspace.repo / "target/combined.lcov"
-        own = subprocess.run(
-            ["cargo", "llvm-cov", "report", "--lcov", "--output-path", str(combined)],
-            cwd=workspace.repo,
-            env=workspace.env,
-            capture_output=True,
-            text=True,
-        )
-        assert own.returncode == 0, own.stderr
+        for command in (
+            ["--no-report", "nextest", "--locked", "--workspace"],
+            ["report", "--lcov", "--output-path", str(combined)],
+        ):
+            own = subprocess.run(
+                ["cargo", "llvm-cov", *command],
+                cwd=workspace.repo,
+                env=workspace.env,
+                capture_output=True,
+                text=True,
+            )
+            assert own.returncode == 0, own.stderr
         merged = read_lcov(report_paths(workspace))
         report = {
             re.sub(rf"^{re.escape(str(workspace.repo.resolve()))}/", "", path): lines
@@ -234,7 +242,6 @@ def test_every_unit_executed_equals_cargo_llvm_covs_own_report_and_needs_no_buil
         }
         assert merged == report, "zero files may differ"
         before = workspace.merge(floor="100")
-        cov = workspace.repo / "target/llvm-cov-target"
         shutil.rmtree(cov)
         after = workspace.merge(floor="100")
         assert (after.returncode, after.stdout) == (before.returncode, before.stdout)
@@ -455,3 +462,164 @@ def test_the_composer_holds_the_generated_check_to_the_lcov_floor(workspace):
     assert "--fail-under-lines 96 " in command
     for unit in UNITS:
         assert unit in command
+
+
+def run_unit(workspace: Fixture, unit: str, env: dict[str, str] | None = None):
+    """``unit`` through the real script, as its project's `test` target runs it."""
+    return subprocess.run(
+        [
+            "bash",
+            "scripts/coverage-unit.sh",
+            unit,
+            "--",
+            "nextest",
+            "--locked",
+            "-p",
+            unit,
+        ],
+        cwd=workspace.repo,
+        env={**workspace.env, **(env or {})},
+        capture_output=True,
+        text=True,
+    )
+
+
+def raw_profiles(workspace: Fixture, unit: str) -> dict[str, bytes]:
+    cov = workspace.repo / "target/llvm-cov-target"
+    return {path.name: path.read_bytes() for path in cov.glob(f"{unit}.*.profraw")}
+
+
+def line_counts(report: Path) -> dict[str, dict[int, int]]:
+    """Every DA: count of ``report``, per file."""
+    counts: dict[str, dict[int, int]] = {}
+    current: dict[int, int] = {}
+    for line in report.read_text().splitlines():
+        if line.startswith("SF:"):
+            current = counts.setdefault(line[3:], {})
+        elif line.startswith("DA:"):
+            number, count = line[3:].split(",")[:2]
+            current[int(number)] = int(count)
+    return counts
+
+
+def function_counts(workspace: Fixture, indexed: Path) -> list[tuple[str, int, str]]:
+    """Each function `llvm-profdata show` reads back from ``indexed``: its symbol with the
+    build-specific crate disambiguator dropped, its entry count and its block counts."""
+    profdata = llvm_profdata(workspace)
+    shown = subprocess.run(
+        [profdata, "show", "--all-functions", "--counts", indexed],
+        capture_output=True,
+        text=True,
+    )
+    assert shown.returncode == 0, shown.stderr
+    found = re.findall(
+        r"^  (\S+):\n(?:    .*\n)*?    Function count: (\d+)\n    Block counts: (\[.*\])",
+        shown.stdout,
+        re.M,
+    )
+    return sorted(
+        (re.sub(r"Cs[0-9A-Za-z]+_", "", symbol), int(count), blocks)
+        for symbol, count, blocks in found
+    )
+
+
+def llvm_profdata(workspace: Fixture) -> Path:
+    """The llvm-profdata the script resolves: PATH's, else the toolchain's."""
+    if on_path := shutil.which("llvm-profdata", path=workspace.env["PATH"]):
+        return Path(on_path)
+    done = subprocess.run(
+        ["rustc", "--print", "sysroot"],
+        cwd=workspace.repo,
+        env=workspace.env,
+        capture_output=True,
+        text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    (profdata,) = Path(done.stdout.strip()).glob("lib/rustlib/*/bin/llvm-profdata")
+    return profdata
+
+
+# What `base`'s own two tests execute: `value(2)` from its unit test, `value(0)` from its
+# integration test, each in its own binary, and never `uncovered`. `tool`'s test calls
+# `base::value` too, so a merge that read `tool`'s profiles would raise these counts.
+BASE_LINES = {1: 2, 2: 2, 3: 1, 5: 1, 7: 2, 8: 0, 9: 0, 10: 0, 14: 1, 15: 1, 16: 1}
+BASE_FUNCTIONS = [
+    ("_RNvNt4base5testss_5value", 1, "[1]"),
+    ("_RNv4bases_8base_low", 1, "[0, 1]"),
+    ("_RNv4base5value", 1, "[0]"),
+    ("_RNv4base5value", 1, "[1]"),
+]
+
+
+def test_a_passing_unit_removes_exactly_its_own_merged_raw_profiles(workspace):
+    cov = workspace.repo / "target/llvm-cov-target"
+    try:
+        # `tool`'s raw profiles, written by real cargo-llvm-cov into the shared directory
+        # exactly as its own unit's run writes them, standing in for a unit mid-run.
+        written = subprocess.run(
+            ["cargo", "llvm-cov", "--no-report", "nextest", "--locked", "-p", "tool"],
+            cwd=workspace.repo,
+            env={**workspace.env, "LLVM_PROFILE_FILE_NAME": "tool.%p-%14m.profraw"},
+            capture_output=True,
+            text=True,
+        )
+        assert written.returncode == 0, written.stderr
+        other = raw_profiles(workspace, "tool")
+        assert other
+        done = run_unit(workspace, "base")
+        assert done.returncode == 0, done.stderr
+        assert raw_profiles(workspace, "base") == {}
+        assert raw_profiles(workspace, "tool") == other
+        assert line_counts(workspace.reports / "base.lcov") == {
+            "crates/base/src/lib.rs": BASE_LINES
+        }
+        functions = function_counts(workspace, cov / "base.profdata")
+        assert functions == sorted(BASE_FUNCTIONS)
+        assert not any(
+            "tool" in symbol or "greet" in symbol for symbol, *_ in functions
+        )
+    finally:
+        for name in raw_profiles(workspace, "tool"):
+            (cov / name).unlink()
+        workspace.reset()
+
+
+def test_a_unit_whose_every_profile_is_unmergeable_keeps_them(workspace, tmp_path):
+    real_cargo = shutil.which("cargo", path=workspace.env["PATH"])
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    double = bin_dir / "cargo"
+    # The real run, then its profiles cut short, as a process killed while writing leaves them.
+    double.write_text(
+        f'#!/usr/bin/env bash\n"{real_cargo}" "$@"\nstatus=$?\n'
+        'for p in target/llvm-cov-target/base.*.profraw; do printf garbage > "$p"; done\n'
+        'exit "$status"\n'
+    )
+    double.chmod(0o755)
+    try:
+        done = run_unit(
+            workspace, "base", {"PATH": f"{bin_dir}:{workspace.env['PATH']}"}
+        )
+        assert done.returncode == 1, done.stderr
+        assert "unmergeable" in done.stderr
+        kept = raw_profiles(workspace, "base")
+        assert kept and set(kept.values()) == {b"garbage"}
+    finally:
+        for name in raw_profiles(workspace, "base"):
+            (workspace.repo / "target/llvm-cov-target" / name).unlink()
+        workspace.reset()
+
+
+def test_a_unit_whose_tests_fail_exits_with_their_status_and_keeps_its_profiles(
+    workspace,
+):
+    try:
+        edit(workspace, "crates/base/tests/base.rs", "}), 0);", "}), 9);")
+        done = run_unit(workspace, "base")
+        assert done.returncode == 100, done.stderr
+        assert raw_profiles(workspace, "base")
+        assert not (workspace.reports / "base.lcov").exists()
+    finally:
+        for name in raw_profiles(workspace, "base"):
+            (workspace.repo / "target/llvm-cov-target" / name).unlink()
+        workspace.reset()

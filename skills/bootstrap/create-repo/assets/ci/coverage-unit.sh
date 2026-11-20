@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Copied from dero-skills' create-repo skill; edit only the source.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/coverage-unit.sh
-# version: 3
-# sha256: 9512ddce254386450d066aa55ed30a4e1af187bef307fad11442ee816d959968
+# version: 4
+# sha256: 2b56f1361854e1aa9a18be53b7868d31d690d5b9e67c36813a4f3c18afaeebe0
 #
 # One coverage unit: one crate's tests, or one test tier's, run under cargo-llvm-cov and
 # reduced to one LCOV report Nx can cache.
@@ -28,7 +28,11 @@
 #   unit's own raw profiles there, target/llvm-cov-target/<unit>.*.profraw.
 # Writes: target/coverage-units/<unit>.lcov, one LCOV report whose every SF: path is
 #   relative to the workspace root, and target/llvm-cov-target/<unit>.profdata. Removes only
-#   that report and this unit's raw profiles. No other unit's output is read or deleted.
+#   that report and this unit's raw profiles: the previous run's before the tests, and, once
+#   `llvm-profdata merge` has written the indexed profile, exactly the raw profiles it merged.
+#   That bounds what a completed unit leaves behind, not the peak of a run still writing. A
+#   failing test or an unmergeable set of profiles keeps them for diagnosis. No other unit's
+#   output is read or deleted.
 # Environment: COVERAGE_UNIT_IGNORE_REGEX adds an alternative to the ignore rule, which is
 #   otherwise the one `cargo llvm-cov report` uses (standard library, tests, examples and
 #   benches, build output, the Cargo registry and the toolchain). It must be a valid POSIX
@@ -199,6 +203,9 @@ if ! "$(profdata_tool)" merge -sparse -failure-mode=all -f "$work/profiles" -o "
   echo "coverage-unit.sh: every profile of $unit was unmergeable. ACTION: check for a run killed before it wrote one" >&2
   exit 1
 fi
+# The indexed profile now holds them, so the raw profiles merged are removed: exactly those,
+# never a file another unit is writing into the same directory.
+rm -f -- "${profiles[@]}"
 
 # The objects that wrote into this profile, by build id, so a binary another unit left in
 # the shared target directory never lends this report its lines.

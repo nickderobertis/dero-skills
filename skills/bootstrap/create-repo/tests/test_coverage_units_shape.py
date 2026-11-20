@@ -394,6 +394,8 @@ def test_coverage_unit_refuses_when_every_profile_is_unmergeable(unit_root, tmp_
     env["LLVM_PROFDATA"] = _profdata_rejecting_everything(tmp_path)
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 1 and "unmergeable" in done.stderr
+    kept = unit_root / "target/llvm-cov-target/demo.1-1.profraw"
+    assert kept.read_text() == "garbage", "an unmerged profile was removed"
 
 
 def _profdata_rejecting_everything(tmp_path: Path) -> str:
@@ -683,10 +685,26 @@ def test_every_doc_stating_the_rust_floor_names_the_composers_floor():
 
 
 def test_a_failing_test_propagates_its_status_and_writes_no_report(unit_root, tmp_path):
-    env = _doubled_cargo(tmp_path, "exit 7")
+    env = _doubled_cargo(
+        tmp_path,
+        "mkdir -p target/llvm-cov-target && printf partial > target/llvm-cov-target/demo.1-1.profraw\nexit 7",
+    )
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 7
     assert not (unit_root / "target/coverage-units/demo.lcov").exists()
+    kept = unit_root / "target/llvm-cov-target/demo.1-1.profraw"
+    assert kept.read_text() == "partial", "a failing run's profile was removed"
+
+
+def test_a_merged_unit_removes_its_raw_profiles_and_no_other_units(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    cov = unit_root / "target/llvm-cov-target"
+    other = cov / "demo-e2e.1-1.profraw"
+    other.write_text("another unit's")
+    # Past the merge, the report step refuses the doubled export's path.
+    assert "/elsewhere/x.rs" in _unit(unit_root, env, "demo", "--", "nextest").stderr
+    assert sorted(p.name for p in cov.glob("*.profraw")) == [other.name]
+    assert other.read_text() == "another unit's"
 
 
 def test_a_failing_llvm_profdata_show_is_reported(unit_root, tmp_path):
