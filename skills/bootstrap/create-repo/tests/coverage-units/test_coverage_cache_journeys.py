@@ -650,7 +650,8 @@ def test_a_merge_past_an_unmergeable_profile_keeps_only_that_one(workspace, tmp_
         kept = raw_profiles(workspace, "base")
         assert list(kept.values()) == [b"garbage"], "only the unmerged profile stays"
         (name,) = kept
-        assert str(cov / name) in done.stderr and "ACTION:" in done.stderr
+        # A written report is success, and success is quiet: the kept profile is the record.
+        assert str(cov / name) not in done.stderr and "coverage-unit.sh:" not in done.stderr
         assert (workspace.reports / "base.lcov").exists()
     finally:
         for name in raw_profiles(workspace, "base"):
