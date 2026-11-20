@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+import yaml
 from ci_cd_shape import (
     CHECKER,
     COMPOSER,
@@ -224,6 +225,72 @@ def test_this_repositorys_ci_installs_the_composed_coverage_pins():
         assert pins == [version, version], (
             f"{tool} drifted from the composed pin: {pins}"
         )
+
+
+TOOLCHAIN_STEP = "Install strace and the pinned Rust toolchain with its llvm tools"
+TOOLCHAIN_TEMPLATE = Path(
+    "skills/bootstrap/create-repo/assets/rust-toolchain.toml.template"
+)
+
+
+def _toolchain_step_scripts() -> list[str]:
+    jobs = yaml.safe_load(CI_YML.read_text())["jobs"]
+    return [
+        step["run"]
+        for job in jobs.values()
+        for step in job.get("steps", [])
+        if step.get("name") == TOOLCHAIN_STEP
+    ]
+
+
+def _run_toolchain_step(tmp_path: Path, script: str, template: str):
+    """Run the CI step's own shell, as the runner does, with sudo and rustup logging calls.
+
+    A real `rustup toolchain install` downloads a toolchain (minutes, network), so the two
+    commands that reach outside are doubled; the channel lookup and its guard run for real.
+    """
+    (tmp_path / TOOLCHAIN_TEMPLATE).parent.mkdir(parents=True)
+    (tmp_path / TOOLCHAIN_TEMPLATE).write_text(template)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "calls"
+    for tool in ("sudo", "rustup"):
+        (bin_dir / tool).write_text(f'#!/bin/sh\necho "{tool} $*" >> "{log}"\n')
+        (bin_dir / tool).chmod(0o755)
+    done = subprocess.run(
+        ["bash", "-e", "-c", script],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    calls = log.read_text().splitlines() if log.exists() else []
+    return done, [c for c in calls if c.startswith("rustup ")]
+
+
+def test_ci_installs_and_defaults_the_skills_pinned_rust_channel(tmp_path):
+    scripts = _toolchain_step_scripts()
+    assert len(scripts) == 2, "check and check-all each provision the pinned toolchain"
+    assert len(set(scripts)) == 1, "the two jobs' toolchain steps drifted apart"
+    template = (CI_YML.parents[2] / TOOLCHAIN_TEMPLATE).read_text()
+    channel = re.search(r'^channel = "(.+)"$', template, re.M).group(1)
+    done, rustup = _run_toolchain_step(tmp_path, scripts[0], template)
+    assert done.returncode == 0, done.stderr
+    assert rustup == [
+        f"rustup toolchain install {channel} --profile minimal --component llvm-tools",
+        f"rustup default {channel}",
+    ]
+
+
+def test_ci_refuses_a_template_without_a_channel_and_installs_nothing(tmp_path):
+    template = (CI_YML.parents[2] / TOOLCHAIN_TEMPLATE).read_text()
+    unpinned = re.sub(r"^channel = .*\n", "", template, flags=re.M)
+    done, rustup = _run_toolchain_step(tmp_path, _toolchain_step_scripts()[0], unpinned)
+    assert done.returncode == 1
+    assert (
+        "::error::no channel in the skill's rust-toolchain.toml.template" in done.stdout
+    )
+    assert rustup == []
 
 
 def test_a_target_running_instrumented_tests_with_cache_false_is_an_error(repo):

@@ -75,6 +75,9 @@ jobs:
 
       # The journeys build with the runner's default toolchain, so it is set to the channel
       # the skill's rust-toolchain.toml pins rather than whatever stable the image carries.
+      # test_coverage_units_shape.py runs this step's shell with sudo and rustup doubled (a
+      # real install downloads a toolchain), proving the lookup, the missing-channel refusal,
+      # and that both jobs' copies stay identical.
       - name: Install strace and the pinned Rust toolchain with its llvm tools
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq strace
@@ -124,6 +127,9 @@ jobs:
 
       # The journeys build with the runner's default toolchain, so it is set to the channel
       # the skill's rust-toolchain.toml pins rather than whatever stable the image carries.
+      # test_coverage_units_shape.py runs this step's shell with sudo and rustup doubled (a
+      # real install downloads a toolchain), proving the lookup, the missing-channel refusal,
+      # and that both jobs' copies stay identical.
       - name: Install strace and the pinned Rust toolchain with its llvm tools
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq strace
