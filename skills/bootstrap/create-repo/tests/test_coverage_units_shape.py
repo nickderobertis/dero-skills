@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+import yaml
 from ci_cd_shape import (
     CHECKER,
     COMPOSER,
@@ -226,6 +227,72 @@ def test_this_repositorys_ci_installs_the_composed_coverage_pins():
         )
 
 
+TOOLCHAIN_STEP = "Install strace and the pinned Rust toolchain with its llvm tools"
+TOOLCHAIN_TEMPLATE = Path(
+    "skills/bootstrap/create-repo/assets/rust-toolchain.toml.template"
+)
+
+
+def _toolchain_step_scripts() -> list[str]:
+    jobs = yaml.safe_load(CI_YML.read_text())["jobs"]
+    return [
+        step["run"]
+        for job in jobs.values()
+        for step in job.get("steps", [])
+        if step.get("name") == TOOLCHAIN_STEP
+    ]
+
+
+def _run_toolchain_step(tmp_path: Path, script: str, template: str):
+    """Run the CI step's own shell, as the runner does, with sudo and rustup logging calls.
+
+    A real `rustup toolchain install` downloads a toolchain (minutes, network), so the two
+    commands that reach outside are doubled; the channel lookup and its guard run for real.
+    """
+    (tmp_path / TOOLCHAIN_TEMPLATE).parent.mkdir(parents=True)
+    (tmp_path / TOOLCHAIN_TEMPLATE).write_text(template)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "calls"
+    for tool in ("sudo", "rustup"):
+        (bin_dir / tool).write_text(f'#!/bin/sh\necho "{tool} $*" >> "{log}"\n')
+        (bin_dir / tool).chmod(0o755)
+    done = subprocess.run(
+        ["bash", "-e", "-c", script],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    calls = log.read_text().splitlines() if log.exists() else []
+    return done, [c for c in calls if c.startswith("rustup ")]
+
+
+def test_ci_installs_and_defaults_the_skills_pinned_rust_channel(tmp_path):
+    scripts = _toolchain_step_scripts()
+    assert len(scripts) == 2, "check and check-all each provision the pinned toolchain"
+    assert len(set(scripts)) == 1, "the two jobs' toolchain steps drifted apart"
+    template = (CI_YML.parents[2] / TOOLCHAIN_TEMPLATE).read_text()
+    channel = re.search(r'^channel = "(.+)"$', template, re.M).group(1)
+    done, rustup = _run_toolchain_step(tmp_path, scripts[0], template)
+    assert done.returncode == 0, done.stderr
+    assert rustup == [
+        f"rustup toolchain install {channel} --profile minimal --component llvm-tools",
+        f"rustup default {channel}",
+    ]
+
+
+def test_ci_refuses_a_template_without_a_channel_and_installs_nothing(tmp_path):
+    template = (CI_YML.parents[2] / TOOLCHAIN_TEMPLATE).read_text()
+    unpinned = re.sub(r"^channel = .*\n", "", template, flags=re.M)
+    done, rustup = _run_toolchain_step(tmp_path, _toolchain_step_scripts()[0], unpinned)
+    assert done.returncode == 1
+    assert (
+        "::error::no channel in the skill's rust-toolchain.toml.template" in done.stdout
+    )
+    assert rustup == []
+
+
 def test_a_target_running_instrumented_tests_with_cache_false_is_an_error(repo):
     def plain_llvm_cov(project) -> None:
         project["targets"]["test"]["command"] = (
@@ -394,6 +461,8 @@ def test_coverage_unit_refuses_when_every_profile_is_unmergeable(unit_root, tmp_
     env["LLVM_PROFDATA"] = _profdata_rejecting_everything(tmp_path)
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 1 and "unmergeable" in done.stderr
+    kept = unit_root / "target/llvm-cov-target/demo.1-1.profraw"
+    assert kept.read_text() == "garbage", "an unmerged profile was removed"
 
 
 def _profdata_rejecting_everything(tmp_path: Path) -> str:
@@ -683,9 +752,43 @@ def test_every_doc_stating_the_rust_floor_names_the_composers_floor():
 
 
 def test_a_failing_test_propagates_its_status_and_writes_no_report(unit_root, tmp_path):
-    env = _doubled_cargo(tmp_path, "exit 7")
+    env = _doubled_cargo(
+        tmp_path,
+        "mkdir -p target/llvm-cov-target && printf partial > target/llvm-cov-target/demo.1-1.profraw\nexit 7",
+    )
     done = _unit(unit_root, env, "demo", "--", "nextest")
     assert done.returncode == 7
+    assert not (unit_root / "target/coverage-units/demo.lcov").exists()
+    kept = unit_root / "target/llvm-cov-target/demo.1-1.profraw"
+    assert kept.read_text() == "partial", "a failing run's profile was removed"
+
+
+def test_a_merged_unit_removes_its_raw_profiles_and_no_other_units(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    cov = unit_root / "target/llvm-cov-target"
+    other = cov / "demo-e2e.1-1.profraw"
+    other.write_text("another unit's")
+    # Past the merge, the report step refuses the doubled export's path.
+    assert "/elsewhere/x.rs" in _unit(unit_root, env, "demo", "--", "nextest").stderr
+    assert sorted(p.name for p in cov.glob("*.profraw")) == [other.name]
+    assert other.read_text() == "another unit's"
+
+
+def test_a_merged_profile_that_cannot_be_removed_stops_the_unit(unit_root, tmp_path):
+    env = _doubled_report_tools(unit_root, tmp_path)
+    cov = unit_root / "target/llvm-cov-target"
+    double = Path(env["LLVM_PROFDATA"])
+    # The merge writes its output, then the directory turns read-only, so `rm` is refused.
+    double.write_text(
+        double.read_text().replace(': > "$2";', f': > "$2"; chmod a-w {cov};')
+    )
+    try:
+        done = _unit(unit_root, env, "demo", "--", "nextest")
+    finally:
+        cov.chmod(0o755)
+    assert done.returncode == 1, done.stderr
+    assert "could not remove the merged raw profiles of demo" in done.stderr
+    assert "ACTION:" in done.stderr and "Permission denied" in done.stderr
     assert not (unit_root / "target/coverage-units/demo.lcov").exists()
 
 
