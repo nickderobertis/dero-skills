@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 11
-// sha256: 598172160cd9768318087b0a1aa0416b784c5f536794afaeeeea6001575641c0
+// sha256: 462c849527466a94c6a8c75c496191a5a10aa98a3549661cec5d8a8ef88377f1
 import {
   appendFileSync,
   readFileSync,
@@ -814,6 +814,7 @@ function artifactsFor(
   allowEmptyJobs = false,
   unavailable = { count: 0 },
   onlyJob = null,
+  allowSkippedJobs = false,
 ) {
   const all = gh.pages(
     `repos/${gh.repo}/actions/runs/${run.id}/artifacts`,
@@ -864,10 +865,22 @@ function artifactsFor(
       (run.conclusion === 'cancelled' &&
         job.conclusion !== 'failure' &&
         job.conclusion !== 'skipped');
-    check(job.conclusion !== 'skipped', `missing expected job ${job.name}`);
     const candidates = selected.filter(
       (a) => a.name === `nx-cache-entries-${job.name}`,
     );
+    // A skipped job ran nothing to measure; promotion, which must copy results, refuses it.
+    if (
+      allowSkippedJobs &&
+      job.conclusion === 'skipped' &&
+      candidates.length === 0
+    ) {
+      detail.push(
+        `skipped run ${run.id}/${run.run_attempt} job ${job.name}: the job was skipped, so it uploaded no artifact`,
+      );
+      (run.skipped_jobs ??= []).push(job.name);
+      continue;
+    }
+    check(job.conclusion !== 'skipped', `missing expected job ${job.name}`);
     // Re-running only some jobs lists the rest under the new attempt with their old
     // start, and their artifact is the earlier attempt's, which that attempt reads.
     if (
@@ -1397,7 +1410,7 @@ function receiptRecords(
   end,
   scope,
   predatesAdoption = false,
-  unfinishedDetail = null,
+  unpromotableDetail = null,
 ) {
   const pushes = gh.pages(
     `repos/${gh.repo}/actions/workflows/release-plz.yml/runs?head_sha=${pr.merge_commit_sha}`,
@@ -1416,10 +1429,10 @@ function receiptRecords(
       .pages(`repos/${gh.repo}/actions/runs/${run.id}/artifacts`, 'artifacts')
       .filter((a) => a.name === `nx-cache-promotion-${pr.merge_commit_sha}`);
     if (predatesAdoption && artifacts.length === 0) continue;
-    // Promotion reads only a successful run, which a run still going at the merge is not.
-    if (unfinishedDetail && artifacts.length === 0) {
-      unfinishedDetail.push(
-        `no promotion receipt for run ${run.id}: #${pr.number} had a CI attempt unfinished, so its merge had no successful run to promote`,
+    // Promotion reads only a successful run whose jobs all ran.
+    if (unpromotableDetail && artifacts.length === 0) {
+      unpromotableDetail.push(
+        `no promotion receipt for run ${run.id}: #${pr.number} had a CI attempt unfinished or with skipped jobs, so its merge had no run to promote`,
       );
       continue;
     }
@@ -1552,7 +1565,7 @@ async function cacheUse(opts) {
     carriedJobs = new Map(),
     latestRuns = new Map(),
     adoption = telemetryAdoption();
-  const unfinished = [];
+  const skippedRuns = [];
   // An attempt's evidence, with each job it carried read from the attempt that ran it.
   function attemptEvidence(pr, id, attempt) {
     const own = evidence.filter(
@@ -1578,7 +1591,7 @@ async function cacheUse(opts) {
   }
   for (const pr of prs.values()) {
     check(trusted(pr, gh.repo), `untrusted counted PR #${pr.number}`);
-    const unfinishedBefore = unfinished.length;
+    const skippedBefore = skippedRuns.length;
     const runs = gh
       .pages(
         `repos/${gh.repo}/actions/workflows/ci.yml/runs?event=pull_request&branch=${encodeURIComponent(pr.head.ref)}`,
@@ -1603,7 +1616,7 @@ async function cacheUse(opts) {
           detail.push(
             `skipped run ${r.id}/${attempt}: ${r.status}, not finished, so none of its artifacts is read`,
           );
-          unfinished.push(`${r.id}/${attempt} (${r.status})`);
+          skippedRuns.push(`${r.id}/${attempt} (${r.status})`);
           continue;
         }
         const completed = Date.parse(r.updated_at);
@@ -1652,8 +1665,7 @@ async function cacheUse(opts) {
           r.in_interval &&
           Date.parse(r.updated_at) >= Date.parse(anchor.updated_at);
     } else for (const r of attempts) r.observe = r.in_interval;
-    const pending = unfinished.length > unfinishedBefore;
-    if (attempts.length === 0 && pending) {
+    if (attempts.length === 0 && skippedRuns.length > skippedBefore) {
       detail.push(
         `skipped #${pr.number}: no CI attempt of it has finished; the figure comes from the other pull requests`,
       );
@@ -1661,7 +1673,22 @@ async function cacheUse(opts) {
     }
     check(attempts.length > 0, `missing CI attempts for #${pr.number}`);
     for (const run of attempts) {
-      const records = artifactsFor(gh, run, detail, true, unavailable);
+      const records = artifactsFor(
+        gh,
+        run,
+        detail,
+        true,
+        unavailable,
+        null,
+        true,
+      );
+      // An attempt whose every job was skipped measured nothing and stands for nothing.
+      if (run.skipped_jobs) {
+        skippedRuns.push(
+          `${run.id}/${run.run_attempt} (skipped jobs: ${run.skipped_jobs.join(', ')})`,
+        );
+        run.unmeasured = records.length === 0;
+      }
       if (run.superseded && records.length === 0)
         removedAttempts.add(`${run.id}/${run.run_attempt}`);
       if (run.carried)
@@ -1677,7 +1704,10 @@ async function cacheUse(opts) {
         });
       }
     }
-    const latest = attempts
+    // Runs with nothing to measure, unfinished or skipped, excuse a missing latest run.
+    const pending = skippedRuns.length > skippedBefore;
+    const measured = attempts.filter((r) => !r.unmeasured);
+    const latest = measured
       .filter(
         (r) =>
           r.head_sha === pr.head.sha &&
@@ -1733,7 +1763,7 @@ async function cacheUse(opts) {
       ...receiptRecords(
         gh,
         pr,
-        attempts,
+        measured,
         end,
         `refs/heads/${pr.base.ref}`,
         predatesAdoption,
@@ -1912,8 +1942,8 @@ async function cacheUse(opts) {
     }
   check(
     eligible > 0,
-    unfinished.length
-      ? `zero eligible executions; skipped unfinished runs: ${unfinished.join(', ')}`
+    skippedRuns.length
+      ? `zero eligible executions; skipped runs: ${skippedRuns.join(', ')}`
       : 'zero eligible executions',
   );
   const value = (100 * hits) / eligible;

@@ -705,11 +705,12 @@ artifacts a whole-workflow re-run removed, and a pull request whose CI predates 
 (its runs created before the commit adding `scripts/nx-remote-cache.mjs`, read from a full
 checkout), are counted as unavailable in the detail, and the figure is taken over what is
 measurable. Only finished attempts are read: one still queued or in progress is skipped by
-name, as is a pull request with no finished attempt, and so is a job a "re-run failed jobs"
-attempt carried, whose evidence is the attempt that ran it. An artifact that is present but
+name, as is a pull request with no finished attempt, a job skipped by its condition, and a
+job a "re-run failed jobs" attempt carried, whose evidence is the attempt that ran it.
+Promotion still refuses a run with a skipped expected job. An artifact that is present but
 invalid or fails to download still errors, one job's artifact missing beside another's
 present still errors, and no measurable execution at all still reports missing, naming the
-unfinished runs it skipped, never a pass.
+runs it skipped, never a pass.
 
 Version-free ecosystem inputs keep release version and changelog edits from
 invalidating proven tests while retaining dependency and source changes. Targets

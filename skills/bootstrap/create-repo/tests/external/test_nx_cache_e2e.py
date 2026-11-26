@@ -2124,6 +2124,14 @@ def test_cache_use_missing_artifact_requires_cancellation(
                 "no artifact" if artifact_kind == "missing" else "telemetry unavailable"
             )
             assert f"cancelled run 1/1 job lint: {reason}" in result["detail"]
+        elif conclusion == "skipped" and artifact_kind == "missing":
+            # A skipped job ran nothing: it is named, and the attempt's other job measured.
+            assert done.returncode == 0, (result, done.stderr)
+            assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+            assert (
+                "skipped run 1/1 job lint: the job was skipped, so it uploaded no artifact"
+                in result["detail"]
+            )
         else:
             assert done.returncode != 0
             assert result["actual"] is None
@@ -2998,6 +3006,90 @@ def test_a_partial_rerun_reads_its_rerun_job_here_and_its_carried_job_from_befor
         cache.metadata = original
 
 
+def recorded_skipped_job(history_attempt: RunAttempt) -> Job:
+    """GitHub's listing of a job its condition skipped: completed, no steps, no upload."""
+    jobs = json.loads((RECORDED / "run-45817426730-attempt-1-jobs.json").read_text())
+    run = json.loads((RECORDED / "run-45817426730-attempt-1.json").read_text())
+    artifacts = json.loads((RECORDED / "run-45817426730-artifacts.json").read_text())
+    raw = next(j for j in jobs["jobs"] if j["name"] == "test-linux")
+    # The recording's own shape: skipped at the run's start, in a run that succeeded.
+    assert (raw["status"], raw["conclusion"], raw["steps"]) == (
+        "completed",
+        "skipped",
+        [],
+    )
+    assert raw["started_at"] == run["run_started_at"] and run["conclusion"] == "success"
+    assert not any(
+        a["name"].startswith("nx-cache-entries-") for a in artifacts["artifacts"]
+    )
+    job: Job = copy.deepcopy(raw)
+    job.update(
+        started_at=history_attempt["run_started_at"],
+        completed_at=history_attempt["run_started_at"],
+    )
+    return job
+
+
+def skip_jobs(cache: GithubCache, attempts: tuple[int, ...]) -> None:
+    """Run 1's given attempts skip test-linux, so they upload nothing."""
+    for attempt in attempts:
+        run: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"]
+        cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"] = {
+            "jobs": [recorded_skipped_job(run)]
+        }
+        drop_artifact(cache, 1, 100 + attempt)
+
+
+def test_an_attempt_whose_jobs_were_skipped_is_named_and_the_rest_measured(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        skip_jobs(cache, (2,))
+        # Promotion still refuses a run whose expected job was skipped, so it wrote none.
+        promotion = promote_merge(workspace, cache, "promote-skipped")
+        assert promotion.archive is None
+        assert (
+            "Nx cache promotion skipped: missing expected job test-linux"
+            in promotion.done.stdout
+        )
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            "skipped run 1/2 job test-linux: the job was skipped, so it uploaded no artifact"
+            in result["detail"]
+        )
+        assert "no promotion receipt for run 100" in result["detail"]
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "release PR: 1/1" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_nothing_measurable_beside_skipped_jobs_errors_naming_each_run(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        skip_jobs(cache, (1, 2))
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "zero eligible executions; skipped runs: "
+            "1/1 (skipped jobs: test-linux), 1/2 (skipped jobs: test-linux)"
+            in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
 def test_a_carried_job_no_attempt_ran_leaves_no_promotion_receipt(
     telemetry_history, tmp_path
 ):
@@ -3151,7 +3243,7 @@ def test_nothing_measurable_beside_unfinished_runs_errors_naming_each(
         assert done.returncode != 0
         assert result["actual"] is None
         assert (
-            "zero eligible executions; skipped unfinished runs: 1/1 (in_progress), 1/2 (queued)"
+            "zero eligible executions; skipped runs: 1/1 (in_progress), 1/2 (queued)"
             in result["error"]
         )
     finally:
