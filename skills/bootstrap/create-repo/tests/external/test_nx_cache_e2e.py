@@ -1031,6 +1031,8 @@ def test_cache_use_joins_real_writer_records_and_excludes_local_hits(
     assert "release PR: 1/1" in result["detail"]
     assert "same-PR retry/push: 1/1" in result["detail"]
     assert "skipped local hits: 1" in result["detail"]
+    # Both attempts uploaded a readable artifact, and both contribute.
+    assert "skipped run" not in result["detail"]
 
 
 @pytest.mark.parametrize(
@@ -2723,7 +2725,7 @@ def test_a_run_after_adoption_with_no_artifact_still_errors(
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode != 0
         assert result["actual"] is None
-        assert "missing artifact" in result["error"]
+        assert "missing artifact for 3/1/test-linux" in result["error"]
     finally:
         cache.metadata = original
 
@@ -2761,6 +2763,177 @@ def test_nothing_measurable_still_reports_missing(telemetry_history, tmp_path):
         assert done.returncode != 0
         assert result["actual"] is None
         assert "zero eligible executions" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+RECORDED = SKILL / "tests/fixtures/nx-remote-cache"
+PREFIX = "/repos/example/project/actions"
+
+
+def recorded_carried_job(history_attempt):
+    """GitHub's listing of a job that "re-run failed jobs" carried into attempt 2."""
+    attempt = json.loads((RECORDED / "run-45640449664-attempt-2.json").read_text())
+    jobs = json.loads((RECORDED / "run-45640449664-attempt-2-jobs.json").read_text())
+    job = copy.deepcopy(next(j for j in jobs["jobs"] if j["name"] == "test-linux"))
+    # The recording's own shape: listed under attempt 2, started before attempt 2 did.
+    assert job["run_attempt"] == 2 and job["conclusion"] == "success"
+    assert job["started_at"] < attempt["run_started_at"]
+    artifacts = json.loads((RECORDED / "run-45640449664-artifacts.json").read_text())
+    assert [
+        a["created_at"] < attempt["run_started_at"]
+        for a in artifacts["artifacts"]
+        if a["name"] == "nx-cache-entries-test-linux"
+    ] == [True]
+    job.update(
+        started_at=history_attempt["run_started_at"],
+        completed_at=history_attempt["updated_at"],
+    )
+    return job
+
+
+def drop_artifact(cache, run_id, artifact_id):
+    listing = cache.metadata[f"{PREFIX}/runs/{run_id}/artifacts"]
+    listing["artifacts"] = [a for a in listing["artifacts"] if a["id"] != artifact_id]
+
+
+def unfinish(cache, run_id, attempt, status):
+    # An unfinished attempt as GitHub reports it: a status short of completed, no conclusion.
+    recorded = json.loads((RECORDED / "run-43793315868-attempt-1.json").read_text())
+    assert recorded["status"] == "completed"
+    run = cache.metadata[f"{PREFIX}/runs/{run_id}/attempts/{attempt}"]
+    run.update(status=status, conclusion=None)
+
+
+def test_a_job_a_partial_rerun_carried_is_skipped_and_its_first_attempt_measured(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        first = cache.metadata[f"{PREFIX}/runs/1/attempts/1"]
+        cache.metadata[f"{PREFIX}/runs/1/attempts/2/jobs"] = {
+            "jobs": [recorded_carried_job(first)]
+        }
+        drop_artifact(cache, 1, 102)
+        sha = cache.metadata["/repos/example/project/pulls/1"]["merge_commit_sha"]
+        # The merge's promotion reads the same attempt, and must still write a receipt.
+        with workspace.sidecar(
+            cache,
+            "promote-carried",
+            "refs/heads/main",
+            GITHUB_EVENT_NAME="push",
+            GITHUB_SHA=sha,
+        ) as (env, promoted):
+            done = workspace.cli(
+                "promote", "--sha", sha, "--workflow", "ci.yml", env=env
+            )
+            assert done.returncode == 0, done.stderr
+            assert "skipped" not in done.stdout, done.stdout
+            receipt = json.loads(
+                (promoted / "nx-cache-promotion/receipt.json").read_text()
+            )
+            assert (receipt["source_run_id"], receipt["source_attempt"]) == (1, 2)
+            assert receipt["entries"], receipt
+            cache.metadata[f"{PREFIX}/artifacts/10000/zip"] = archive_report(
+                promoted / "nx-cache-promotion"
+            )
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            "skipped run 1/2 job test-linux: not re-run in this attempt"
+            in result["detail"]
+        )
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "release PR: 1/1" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+@pytest.mark.parametrize("status", ["queued", "in_progress"])
+@pytest.mark.parametrize("uploaded", [False, True])
+def test_an_unfinished_attempt_is_skipped_and_the_finished_ones_measured(
+    telemetry_history, tmp_path, status, uploaded
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        unfinish(cache, 1, 2, status)
+        if not uploaded:
+            drop_artifact(cache, 1, 102)
+        # Promotion reads only a successful run, so this merge left no receipt.
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            f"skipped run 1/2: {status}, not finished, so none of its artifacts is read"
+            in result["detail"]
+        )
+        assert "no promotion receipt for run 100" in result["detail"]
+        # Attempt 2's replay, readable or not, is no part of the figure.
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_pull_request_with_no_finished_run_is_skipped_by_name(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        release_commit = command(
+            ["git", "log", "-1", "--format=%cI", "HEAD"], workspace.root
+        ).stdout.strip()
+        when = datetime.fromisoformat(release_commit).astimezone(timezone.utc)
+        carry_pull_request(workspace, cache, 3, when.isoformat().replace("+00:00", "Z"))
+        unfinish(cache, 3, 1, "in_progress")
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "skipped run 3/1: in_progress, not finished" in result["detail"]
+        assert "skipped #3: no CI attempt of it has finished" in result["detail"]
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_nothing_measurable_beside_unfinished_runs_errors_naming_each(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        unfinish(cache, 1, 1, "in_progress")
+        unfinish(cache, 1, 2, "queued")
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "zero eligible executions; skipped unfinished runs: 1/1 (in_progress), 1/2 (queued)"
+            in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
+def test_a_listed_artifact_whose_download_fails_is_an_error_naming_it(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        del cache.metadata[f"{PREFIX}/artifacts/101/zip"]
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "download failed for artifact nx-cache-entries-test-linux (id 101) of run 1/1"
+            in result["error"]
+        )
     finally:
         cache.metadata = original
 
