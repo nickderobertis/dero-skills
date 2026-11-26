@@ -2931,6 +2931,73 @@ def test_a_job_a_partial_rerun_carried_is_skipped_and_its_first_attempt_measured
         cache.metadata = original
 
 
+def as_job_report(archive: bytes, job: str) -> bytes:
+    """An uploaded report re-labelled as another job's, as that job would upload it."""
+    with zipfile.ZipFile(io.BytesIO(archive)) as packed:
+        files = {name: packed.read(name) for name in packed.namelist()}
+    for name in ("executions.json", "manifest.json"):
+        doc = json.loads(files[name])
+        doc["job"] = job
+        files[name] = json.dumps(doc).encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as packed:
+        for name, body in files.items():
+            packed.writestr(name, body)
+    return output.getvalue()
+
+
+def test_a_partial_rerun_reads_its_rerun_job_here_and_its_carried_job_from_before(
+    telemetry_history, tmp_path
+):
+    # Attempt 1's lint was cancelled; attempt 2 re-ran only lint and carried test-linux.
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        rerun = copy.deepcopy(
+            next(
+                a
+                for a in cache.metadata[f"{PREFIX}/runs/1/artifacts"]["artifacts"]
+                if a["id"] == 102
+            )
+        )
+        report = cache.metadata[f"{PREFIX}/artifacts/102/zip"]
+        carry_into_new_attempts(cache, 1)
+        second: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
+        cache.metadata[f"{PREFIX}/runs/1/attempts/1/jobs"]["jobs"].append(
+            {"name": "lint", "conclusion": "cancelled", "labels": ["ubuntu-latest"]}
+        )
+        cache.metadata[f"{PREFIX}/runs/1/attempts/2/jobs"]["jobs"].append(
+            {
+                "name": "lint",
+                "conclusion": "success",
+                "started_at": second["run_started_at"],
+                "labels": ["ubuntu-latest"],
+            }
+        )
+        rerun.update(id=150, name="nx-cache-entries-lint")
+        cache.metadata[f"{PREFIX}/runs/1/artifacts"]["artifacts"].append(rerun)
+        cache.metadata[f"{PREFIX}/artifacts/150/zip"] = as_job_report(report, "lint")
+        promotion = promote_merge(workspace, cache, "promote-mixed")
+        assert "skipped" not in promotion.done.stdout, promotion.done.stdout
+        receipt = json.loads((promotion.receipt / "receipt.json").read_text())
+        assert (receipt["source_run_id"], receipt["source_attempt"]) == (1, 2)
+        assert receipt["entries"], receipt
+        cache.metadata[f"{PREFIX}/artifacts/10000/zip"] = promotion.archive
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "cancelled run 1/1 job lint: no artifact" in result["detail"]
+        assert (
+            "skipped run 1/2 job test-linux: not re-run in this attempt"
+            in result["detail"]
+        )
+        assert "skipped run 1/2 job lint" not in result["detail"]
+        # Attempt 2's re-run lint replays attempt 1's store: both attempts contribute.
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+        assert "same-PR retry/push: 1/1" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
 def test_a_carried_job_no_attempt_ran_leaves_no_promotion_receipt(
     telemetry_history, tmp_path
 ):
