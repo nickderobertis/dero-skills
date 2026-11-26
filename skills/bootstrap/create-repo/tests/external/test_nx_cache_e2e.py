@@ -20,6 +20,7 @@ import subprocess
 import threading
 import time
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -2795,11 +2796,42 @@ RECORDED = SKILL / "tests/fixtures/nx-remote-cache"
 PREFIX = "/repos/example/project/actions"
 
 
-def recorded_carried_job(history_attempt):
+class RunAttempt(TypedDict, total=False):
+    """The fields of GitHub's workflow-run attempt that these journeys read or set."""
+
+    id: int
+    run_attempt: int
+    status: str
+    conclusion: str | None
+    run_started_at: str
+    updated_at: str
+
+
+class Job(TypedDict, total=False):
+    """The fields of GitHub's job listing entry that these journeys read or set."""
+
+    name: str
+    run_attempt: int
+    conclusion: str | None
+    started_at: str
+    completed_at: str
+    labels: list[str]
+
+
+@dataclass(frozen=True)
+class Promotion:
+    """A merge's real `promote` run: its output, and its receipt archive if it wrote one."""
+
+    done: subprocess.CompletedProcess[str]
+    archive: bytes | None
+    receipt: Path
+
+
+def recorded_carried_job(history_attempt: RunAttempt) -> Job:
     """GitHub's listing of a job that "re-run failed jobs" carried into attempt 2."""
     attempt = json.loads((RECORDED / "run-45640449664-attempt-2.json").read_text())
     jobs = json.loads((RECORDED / "run-45640449664-attempt-2-jobs.json").read_text())
-    job = copy.deepcopy(next(j for j in jobs["jobs"] if j["name"] == "test-linux"))
+    job: Job = copy.deepcopy(next(j for j in jobs["jobs"] if j["name"] == "test-linux"))
     # The recording's own shape: listed under attempt 2, started before attempt 2 did.
     assert job["run_attempt"] == 2 and job["conclusion"] == "success"
     assert job["started_at"] < attempt["run_started_at"]
@@ -2816,26 +2848,26 @@ def recorded_carried_job(history_attempt):
     return job
 
 
-def drop_artifact(cache, run_id, artifact_id):
+def drop_artifact(cache: GithubCache, run_id: int, artifact_id: int) -> None:
     listing = cache.metadata[f"{PREFIX}/runs/{run_id}/artifacts"]
     listing["artifacts"] = [a for a in listing["artifacts"] if a["id"] != artifact_id]
 
 
-def unfinish(cache, run_id, attempt, status):
+def unfinish(cache: GithubCache, run_id: int, attempt: int, status: str) -> None:
     # An unfinished attempt as GitHub reports it: a status short of completed, no conclusion.
     recorded = json.loads((RECORDED / "run-43793315868-attempt-1.json").read_text())
     assert recorded["status"] == "completed"
-    run = cache.metadata[f"{PREFIX}/runs/{run_id}/attempts/{attempt}"]
+    run: RunAttempt = cache.metadata[f"{PREFIX}/runs/{run_id}/attempts/{attempt}"]
     run.update(status=status, conclusion=None)
 
 
-def carry_into_new_attempts(cache, carriers):
+def carry_into_new_attempts(cache: GithubCache, carriers: int) -> None:
     """Run 1's later attempts each re-run nothing, listing test-linux as carried."""
-    first = cache.metadata[f"{PREFIX}/runs/1/attempts/1"]
-    second = cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
+    first: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/1"]
+    second: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
     for attempt in range(2, 2 + carriers):
         if attempt > 2:
-            later = copy.deepcopy(second)
+            later: RunAttempt = copy.deepcopy(second)
             # It begins as the attempt before it ends, so it too closes before the merge.
             later.update(run_attempt=attempt, run_started_at=second["updated_at"])
             cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"] = later
@@ -2849,7 +2881,7 @@ def carry_into_new_attempts(cache, carriers):
     drop_artifact(cache, 1, 102)
 
 
-def promote_merge(workspace, cache, name):
+def promote_merge(workspace: Workspace, cache: GithubCache, name: str) -> Promotion:
     sha = cache.metadata["/repos/example/project/pulls/1"]["merge_commit_sha"]
     with workspace.sidecar(
         cache,
@@ -2861,7 +2893,8 @@ def promote_merge(workspace, cache, name):
         done = workspace.cli("promote", "--sha", sha, "--workflow", "ci.yml", env=env)
         assert done.returncode == 0, done.stderr
         receipt = promoted / "nx-cache-promotion"
-        return done, (archive_report(receipt) if receipt.exists() else None), receipt
+        archive = archive_report(receipt) if receipt.exists() else None
+        return Promotion(done, archive, receipt)
 
 
 @pytest.mark.parametrize("carriers", [1, 2])
@@ -2874,15 +2907,15 @@ def test_a_job_a_partial_rerun_carried_is_skipped_and_its_first_attempt_measured
         carry_into_new_attempts(cache, carriers)
         # The merge's promotion reads the same attempt, and must still write a receipt,
         # walking back past every attempt that carried the job to the one that ran it.
-        done, archive, path = promote_merge(workspace, cache, f"promote-{carriers}")
-        assert "skipped" not in done.stdout, done.stdout
-        receipt = json.loads((path / "receipt.json").read_text())
+        promotion = promote_merge(workspace, cache, f"promote-{carriers}")
+        assert "skipped" not in promotion.done.stdout, promotion.done.stdout
+        receipt = json.loads((promotion.receipt / "receipt.json").read_text())
         assert (receipt["source_run_id"], receipt["source_attempt"]) == (
             1,
             1 + carriers,
         )
         assert receipt["entries"], receipt
-        cache.metadata[f"{PREFIX}/artifacts/10000/zip"] = archive
+        cache.metadata[f"{PREFIX}/artifacts/10000/zip"] = promotion.archive
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode == 0, (result, done.stderr)
         assert result["actual"] == 100
@@ -2907,13 +2940,13 @@ def test_a_carried_job_no_attempt_ran_leaves_no_promotion_receipt(
         carry_into_new_attempts(cache, 1)
         drop_artifact(cache, 1, 101)
         # Attempt 1 lists the job as begun before attempt 1 did: nothing ever ran it.
-        job = cache.metadata[f"{PREFIX}/runs/1/attempts/1/jobs"]["jobs"][0]
+        job: Job = cache.metadata[f"{PREFIX}/runs/1/attempts/1/jobs"]["jobs"][0]
         job["started_at"] = "2000-01-01T00:00:00Z"
-        done, archive, _ = promote_merge(workspace, cache, "promote-exhausted")
-        assert archive is None
+        promotion = promote_merge(workspace, cache, "promote-exhausted")
+        assert promotion.archive is None
         assert (
             "Nx cache promotion skipped: run 1/2 job test-linux has no attempt that ran it"
-            in done.stdout
+            in promotion.done.stdout
         )
     finally:
         cache.metadata = original
@@ -2966,7 +2999,9 @@ def test_an_unfinished_run_at_the_merged_head_leaves_the_earlier_heads_measured(
                     "number"
                 ) == 1:
                     pr["head"]["sha"] = latest_head
-        running = copy.deepcopy(cache.metadata[f"{PREFIX}/runs/1/attempts/2"])
+        running: RunAttempt = copy.deepcopy(
+            cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
+        )
         running.update(id=5, run_attempt=1, head_sha=latest_head)
         cache.metadata[f"{PREFIX}/runs/5/attempts/1"] = running
         cache.metadata[f"{PREFIX}/workflows/ci.yml/runs"]["workflow_runs"].append(
