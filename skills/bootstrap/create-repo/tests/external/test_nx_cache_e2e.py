@@ -410,6 +410,33 @@ class Workspace:
         )
 
 
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+
+def actions_cache_members(archive):
+    """The files in an Actions cache archive.
+
+    The pinned sidecar's cache client writes zstd when a `zstd` binary is on PATH, as
+    on GitHub's runners, and gzip otherwise, so the archive's own magic decides.
+    """
+    if archive.startswith(ZSTD_MAGIC):
+        unpacked = subprocess.run(
+            ["zstd", "--decompress", "--stdout"],
+            input=archive,
+            capture_output=True,
+            check=True,
+        )
+        packed = tarfile.open(fileobj=io.BytesIO(unpacked.stdout), mode="r:")
+    else:
+        packed = tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz")
+    with packed:
+        return [
+            packed.extractfile(member).read()
+            for member in packed.getmembers()
+            if member.isfile()
+        ]
+
+
 @pytest.mark.parametrize("isolate", ["false", "true"])
 def test_real_nx_stores_and_replays_with_exact_body_report(
     tmp_path, cache_tools, github_cache, isolate
@@ -427,14 +454,11 @@ def test_real_nx_stores_and_replays_with_exact_body_report(
     assert manifest["stored_bytes"] == entry["bytes"]
     # The sidecar wraps its Nx body in the Actions cache archive. Compare the
     # accepted member bytes with the body the recording proxy accepted.
-    accepted = []
-    for archive in github_cache.entries.values():
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as packed:
-            accepted.extend(
-                packed.extractfile(member).read()
-                for member in packed.getmembers()
-                if member.isfile()
-            )
+    accepted = [
+        body
+        for archive in github_cache.entries.values()
+        for body in actions_cache_members(archive)
+    ]
     assert (temp / "report" / f"{entry['hash']}.tar").read_bytes() in accepted
     executions = json.loads((temp / "report/executions.json").read_text())
     assert executions["tasks"][0]["result"] == "executed"
