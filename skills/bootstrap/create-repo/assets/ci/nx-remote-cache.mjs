@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 11
-// sha256: 81f623433f2bbc26172ea4d00283aeb6d1d8af841219f24c59e353fe69b2547c
+// sha256: 6115d84bb97dfc560be15c70ed49d3b0bce93947d0cd1c9117753ef9d86f5501
 import {
   appendFileSync,
   readFileSync,
@@ -872,6 +872,8 @@ function artifactsFor(
     // start, and their artifact is the earlier attempt's, which that attempt reads.
     if (
       candidates.length === 0 &&
+      utc(job.started_at) &&
+      utc(run.run_started_at) &&
       Date.parse(job.started_at) < Date.parse(run.run_started_at)
     ) {
       detail.push(
@@ -1486,6 +1488,15 @@ function telemetryAdoption() {
     return null;
   }
 }
+// GitHub's workflow-run statuses short of completed.
+const UNFINISHED_STATUSES = [
+  'queued',
+  'in_progress',
+  'requested',
+  'waiting',
+  'pending',
+  'action_required',
+];
 async function cacheUse(opts) {
   const gh = new Github(opts.repo || env.GITHUB_REPOSITORY);
   const releaseTag =
@@ -1566,7 +1577,11 @@ async function cacheUse(opts) {
             e.attempt < attempt,
         )
         .sort((a, b) => b.attempt - a.attempt)[0];
-      if (ran) own.push(ran);
+      check(
+        ran,
+        `run ${id}/${attempt} carried job ${job}, but no earlier attempt's evidence of it was read`,
+      );
+      own.push(ran);
     }
     return own;
   }
@@ -1587,6 +1602,10 @@ async function cacheUse(opts) {
     for (const run of runs)
       for (let attempt = 1; attempt <= run.run_attempt; attempt++) {
         const r = attemptRun(gh, run.id, attempt);
+        check(
+          r.status === 'completed' || UNFINISHED_STATUSES.includes(r.status),
+          `run ${r.id}/${attempt} has unknown status ${JSON.stringify(r.status)}`,
+        );
         // Whatever an unfinished attempt has uploaded so far is not its result.
         if (r.status !== 'completed') {
           detail.push(
