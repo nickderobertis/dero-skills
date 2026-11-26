@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 11
-// sha256: 6115d84bb97dfc560be15c70ed49d3b0bce93947d0cd1c9117753ef9d86f5501
+// sha256: 598172160cd9768318087b0a1aa0416b784c5f536794afaeeeea6001575641c0
 import {
   appendFileSync,
   readFileSync,
@@ -1488,15 +1488,6 @@ function telemetryAdoption() {
     return null;
   }
 }
-// GitHub's workflow-run statuses short of completed.
-const UNFINISHED_STATUSES = [
-  'queued',
-  'in_progress',
-  'requested',
-  'waiting',
-  'pending',
-  'action_required',
-];
 async function cacheUse(opts) {
   const gh = new Github(opts.repo || env.GITHUB_REPOSITORY);
   const releaseTag =
@@ -1602,9 +1593,10 @@ async function cacheUse(opts) {
     for (const run of runs)
       for (let attempt = 1; attempt <= run.run_attempt; attempt++) {
         const r = attemptRun(gh, run.id, attempt);
+        // GitHub types the status as an open string; only `completed` is finished.
         check(
-          r.status === 'completed' || UNFINISHED_STATUSES.includes(r.status),
-          `run ${r.id}/${attempt} has unknown status ${JSON.stringify(r.status)}`,
+          typeof r.status === 'string' && /^[a-z_]+$/.test(r.status),
+          `run ${r.id}/${attempt} has no valid status: ${JSON.stringify(r.status)}`,
         );
         // Whatever an unfinished attempt has uploaded so far is not its result.
         if (r.status !== 'completed') {

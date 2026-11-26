@@ -2853,7 +2853,7 @@ def drop_artifact(cache: GithubCache, run_id: int, artifact_id: int) -> None:
     listing["artifacts"] = [a for a in listing["artifacts"] if a["id"] != artifact_id]
 
 
-def unfinish(cache: GithubCache, run_id: int, attempt: int, status: str) -> None:
+def unfinish(cache: GithubCache, run_id: int, attempt: int, status: str | None) -> None:
     # An unfinished attempt as GitHub reports it: a status short of completed, no conclusion.
     recorded = json.loads((RECORDED / "run-43793315868-attempt-1.json").read_text())
     assert recorded["status"] == "completed"
@@ -3038,15 +3038,18 @@ def test_a_carried_job_whose_earlier_evidence_is_gone_is_an_error(
         cache.metadata = original
 
 
-def test_an_attempt_with_an_unknown_status_is_an_error(telemetry_history, tmp_path):
+@pytest.mark.parametrize("status", [None, "", "In Progress"])
+def test_an_attempt_with_a_malformed_status_is_an_error(
+    telemetry_history, tmp_path, status
+):
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        unfinish(cache, 1, 2, "paused")
+        unfinish(cache, 1, 2, status)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode != 0
         assert result["actual"] is None
-        assert 'run 1/2 has unknown status "paused"' in result["error"]
+        assert f"run 1/2 has no valid status: {json.dumps(status)}" in result["error"]
     finally:
         cache.metadata = original
 
@@ -3086,7 +3089,8 @@ def test_an_unfinished_run_at_the_merged_head_leaves_the_earlier_heads_measured(
         cache.metadata = original
 
 
-@pytest.mark.parametrize("status", ["queued", "in_progress"])
+# `waiting` is one GitHub documents beside them; any status short of completed is unfinished.
+@pytest.mark.parametrize("status", ["queued", "in_progress", "waiting"])
 @pytest.mark.parametrize("uploaded", [False, True])
 def test_an_unfinished_attempt_is_skipped_and_the_finished_ones_measured(
     telemetry_history, tmp_path, status, uploaded
