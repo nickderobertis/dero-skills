@@ -2115,10 +2115,12 @@ def test_cache_use_missing_artifact_requires_cancellation(
             cache.metadata["/repos/example/project/actions/artifacts/999/zip"] = (
                 output.getvalue()
             )
+        # llmlint: ignore-block[e2e_not_mocked] GitHub's HTTP answers are the doubled boundary, set to shapes recorded from real responses; the cache-use reader under test runs unmocked through actions-budget-figures.sh under onebudgetspec.
         if scope == "run":
             cache.metadata[prefix]["conclusion"] = conclusion
             if conclusion in ("cancelled", "timed_out"):
                 jobs[-1]["conclusion"] = None
+        # llmlint: ignore-end[e2e_not_mocked]
         done, result = measure_cache_use(telemetry_history, tmp_path)
         # A job past its timeout stopped as a cancelled one did, and is read alike.
         if conclusion in ("cancelled", "timed_out"):
@@ -2233,10 +2235,12 @@ def test_cache_use_partial_report_requires_github_cancellation(
             for name, body in files.items():
                 archive.writestr(name, body)
         cache.metadata[key] = output.getvalue()
+        # llmlint: ignore-block[e2e_not_mocked] GitHub's HTTP answers are the doubled boundary, set to shapes recorded from real responses; the cache-use reader under test runs unmocked through actions-budget-figures.sh under onebudgetspec.
         if stopped:
             cache.metadata["/repos/example/project/actions/runs/1/attempts/1"][
                 "conclusion"
             ] = stopped
+        # llmlint: ignore-end[e2e_not_mocked]
         done, result = measure_cache_use(telemetry_history, tmp_path)
         if stopped:
             assert done.returncode == 0, (result, done.stderr)
@@ -3273,6 +3277,7 @@ def test_a_listed_artifact_whose_download_fails_is_an_error_naming_it(
         cache.metadata = original
 
 
+# llmlint: ignore-block[contracts_have_one_source_or_a_drift_gate] These are partial, test-side views of only the fields the journeys read, not a second source of either contract: `conforms` holds each to the real response or artifact recorded from onetaskgraph, and the manifest and invocation documents built from them pass through the reader under test, whose validateManifest and validateExecutions own that contract and refuse a document that drifts from it. Reconciling GitHub's run and pull models with its REST description is what tests/github_rest_contract.py does for the job listing, and widening it to these is not this change's.
 class Account(TypedDict):
     login: str
 
@@ -3292,6 +3297,7 @@ class WorkflowRun(RunAttempt, total=False):
 
     head_sha: str
     head_branch: str
+    event: str
     head_repository: dict[str, object]
     actor: Account
     created_at: str
@@ -3307,6 +3313,9 @@ class ManifestEntry(TypedDict):
 class Invocation(TypedDict):
     id: str
     argv: list[str]
+
+
+# llmlint: ignore-end[contracts_have_one_source_or_a_drift_gate]
 
 
 @dataclass(frozen=True)
@@ -3331,7 +3340,7 @@ def conforms(model: type, doc: dict[str, object], exact: bool = False) -> None:
         assert fields == set(doc), (model.__name__, set(doc) - fields)
 
 
-# llmlint: ignore[e2e_not_mocked] GitHub's artifact download is the doubled boundary, answered with the report the real writer uploaded, edited into the recorded cancelled job's shape; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
+# llmlint: ignore-block[e2e_not_mocked] GitHub's artifact download is the doubled boundary, answered with the report the real writer uploaded, edited into the recorded cancelled job's shape; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
 def rewrite_report(
     cache: GithubCache, artifact_id: int, edit: Callable[[dict[str, bytes]], object]
 ) -> None:
@@ -3344,6 +3353,9 @@ def rewrite_report(
         for name, body in files.items():
             packed.writestr(name, body)
     cache.metadata[key] = output.getvalue()
+
+
+# llmlint: ignore-end[e2e_not_mocked]
 
 
 def recorded_interrupted_report() -> InterruptedReport:
@@ -3400,13 +3412,18 @@ def cut_short(files: dict[str, bytes]) -> None:
     unmatched_replay(files)
 
 
-# llmlint: ignore[e2e_not_mocked] GitHub's job listing is the doubled boundary, set to the conclusion the recorded cancelled job carries; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
-def stop_attempt(cache: GithubCache, attempt: int, conclusion: str) -> None:
-    """Run 1's attempt and its one job, stopped with the same conclusion."""
+# llmlint: ignore-block[e2e_not_mocked] GitHub's job listing is the doubled boundary, set to the conclusion the recorded cancelled job carries; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
+def stop_attempt(
+    cache: GithubCache, attempt: int, run_conclusion: str, job_conclusion: str | None
+) -> None:
+    """Run 1's attempt and its one job, as GitHub concludes them once stopped."""
     job: Job = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"]["jobs"][0]
-    job["conclusion"] = conclusion
+    job["conclusion"] = job_conclusion
     run: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"]
-    run["conclusion"] = conclusion
+    run["conclusion"] = run_conclusion
+
+
+# llmlint: ignore-end[e2e_not_mocked]
 
 
 def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
@@ -3415,7 +3432,7 @@ def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        stop_attempt(cache, 1, "cancelled")
+        stop_attempt(cache, 1, "cancelled", "cancelled")
         rewrite_report(cache, 101, cut_short)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode == 0, (result, done.stderr)
@@ -3438,10 +3455,11 @@ def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
 
 
 @pytest.mark.parametrize(
-    ("conclusion", "why", "cut", "reason"),
+    ("run_conclusion", "job_conclusion", "why", "cut", "reason"),
     [
         # The timeout struck mid-upload: the telemetry is there and the manifest is not.
         (
+            "timed_out",
             "timed_out",
             "timed out",
             lambda files: files.pop("manifest.json"),
@@ -3449,26 +3467,49 @@ def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
         ),
         (
             "cancelled",
+            "cancelled",
             "was cancelled",
             lambda files: files.pop("executions.json"),
             "artifact missing executions.json",
         ),
         (
             "timed_out",
+            "timed_out",
             "timed out",
             lambda files: files.update({"executions.json": b'{"schema": 3}'}),
             "invalid executions identity",
         ),
+        # The run was stopped before its job concluded: the run's conclusion is the job's.
+        (
+            "cancelled",
+            None,
+            "was cancelled",
+            cut_short,
+            "manifest has no matching task evidence",
+        ),
+        (
+            "timed_out",
+            None,
+            "timed out",
+            lambda files: files.pop("manifest.json"),
+            "artifact missing manifest.json",
+        ),
     ],
-    ids=["timed-out-no-manifest", "cancelled-no-telemetry", "timed-out-torn-telemetry"],
+    ids=[
+        "timed-out-no-manifest",
+        "cancelled-no-telemetry",
+        "timed-out-torn-telemetry",
+        "run-cancelled-unmatched-manifest",
+        "run-timed-out-no-manifest",
+    ],
 )
 def test_a_stopped_attempts_partial_upload_is_skipped_and_the_rest_measured(
-    telemetry_history, tmp_path, conclusion, why, cut, reason
+    telemetry_history, tmp_path, run_conclusion, job_conclusion, why, cut, reason
 ):
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        stop_attempt(cache, 1, conclusion)
+        stop_attempt(cache, 1, run_conclusion, job_conclusion)
         rewrite_report(cache, 101, cut)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode == 0, (result, done.stderr)
@@ -3487,23 +3528,27 @@ def test_a_stopped_attempts_partial_upload_is_skipped_and_the_rest_measured(
 
 
 @pytest.mark.parametrize(
-    ("cut", "reason"),
+    ("run_conclusion", "cut", "reason"),
     [
-        (unmatched_replay, "manifest has no matching task evidence"),
+        ("success", unmatched_replay, "manifest has no matching task evidence"),
         (
+            "success",
             lambda files: files.update({"executions.json": b'{"schema": 3}'}),
             "invalid executions identity",
         ),
+        # A job that succeeded inside a run stopped later finished its own report.
+        ("cancelled", unmatched_replay, "manifest has no matching task evidence"),
     ],
-    ids=["unmatched-manifest", "invalid-telemetry"],
+    ids=["unmatched-manifest", "invalid-telemetry", "finished-job-in-cancelled-run"],
 )
 def test_a_finished_attempts_faulty_report_is_an_error_naming_its_artifact(
-    telemetry_history, tmp_path, cut, reason
+    telemetry_history, tmp_path, run_conclusion, cut, reason
 ):
     # The cancelled job's report from a job that succeeded is a fault, not a cut-off.
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
+        stop_attempt(cache, 1, run_conclusion, "success")
         rewrite_report(cache, 101, cut)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode != 0
@@ -3544,7 +3589,7 @@ def recorded_superseded_run(pr: PullRequest) -> WorkflowRun:
     return superseded
 
 
-# llmlint: ignore[e2e_not_mocked] GitHub's pull request, commit-membership and branch-listing answers are the doubled boundary, set to the shape recorded from onetaskgraph's release PR 4098; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
+# llmlint: ignore-block[e2e_not_mocked] GitHub's pull request, commit-membership and branch-listing answers are the doubled boundary, set to the shape recorded from onetaskgraph's release PR 4098; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
 def add_superseded_run(
     cache: GithubCache, **changes: Unpack[WorkflowRun]
 ) -> PullRequest:
@@ -3569,6 +3614,9 @@ def add_superseded_run(
         "&per_page=100&page=1"
     ] = {"workflow_runs": [run, *listing]}
     return pr
+
+
+# llmlint: ignore-end[e2e_not_mocked]
 
 
 def test_a_run_on_a_head_the_pull_request_moved_past_is_skipped_by_name(
@@ -3617,9 +3665,22 @@ def test_nothing_measurable_beside_a_superseded_run_errors_naming_it(
     "changes",
     [
         {"created_at": "1999-12-31T23:59:59Z"},
+        {"created_at": "2999-01-01T00:00:00Z"},
+        {"created_at": "yesterday"},
         {"actor": {"login": "someone-else"}},
+        {"head_branch": "change-elsewhere"},
+        {"event": "push"},
+        {"head_sha": "D" * 40},
     ],
-    ids=["before-it-opened", "another-author"],
+    ids=[
+        "before-it-opened",
+        "after-it-merged",
+        "unreadable-creation",
+        "another-author",
+        "another-branch",
+        "not-a-pull-request-event",
+        "malformed-head",
+    ],
 )
 def test_a_run_tied_to_no_pull_request_is_still_an_error(
     telemetry_history, tmp_path, changes

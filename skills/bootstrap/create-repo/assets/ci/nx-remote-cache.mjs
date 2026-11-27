@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 12
-// sha256: e6fd58368c6f10e54d4f8274d96eef9ef198f8d471f109b509ca3228973a75cb
+// sha256: f28fbbbe9980cae5213dfd4166562dfc254c46d358e5cb27b4728049c44581c2
 import {
   appendFileSync,
   readFileSync,
@@ -1329,7 +1329,8 @@ async function promote(opts) {
 // that meets none of that still goes to associatedPrs, which refuses it.
 function supersededHead(gh, run, pr) {
   if (!Array.isArray(run.pull_requests) || run.pull_requests.length) return false;
-  if (run.head_sha === pr.head.sha) return false;
+  if (run.head_sha === pr.head.sha || !/^[a-f0-9]{40}$/.test(run.head_sha))
+    return false;
   if (gh.pages(`repos/${gh.repo}/commits/${run.head_sha}/pulls`).length)
     return false;
   const created = Date.parse(run.created_at);
