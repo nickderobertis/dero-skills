@@ -1,0 +1,411 @@
+{
+  "schema": 2,
+  "cancelled_invocations": [
+    {
+      "id": "3601574278210045438",
+      "argv": [
+        "/opt/homebrew/Cellar/node@24/24.22.3_1/bin/node",
+        "/Users/runner/work/onetaskgraph/onetaskgraph/node_modules/.bin/nx",
+        "affected",
+        "-t",
+        "test",
+        "budgets",
+        "--exclude=onetaskgraph-linear,onetaskgraph-linear-e2e,github-workflows,github-workflow-policy,github-cache-policy,github-nx-policy",
+        "--parallel=2",
+        "--outputStyle=stream"
+      ]
+    }
+  ],
+  "base_sha": "0d5ed2e8c85b85ad6bc7163a96baf55675968eca",
+  "repository": "nickderobertis/onetaskgraph",
+  "ref": "refs/pull/4091/merge",
+  "pr": 4091,
+  "head_sha": "3a03f66923a6cefa6d582508af858c2930dab797",
+  "run_id": 45627092822,
+  "attempt": 1,
+  "job": "test-macos",
+  "os": "darwin",
+  "tasks": [
+    {
+      "task": "github-workflows:bootstrap",
+      "hash": "1506483738791486713",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:33.696Z",
+      "finished_at": "2026-11-25T13:48:33.848Z"
+    },
+    {
+      "task": "onetaskgraph-github-live:bootstrap",
+      "hash": "6218934949830973468",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:33.850Z",
+      "finished_at": "2026-11-25T13:48:40.564Z"
+    },
+    {
+      "task": "onetaskgraph-plugin-api:bootstrap",
+      "hash": "8185496863867533426",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:33.696Z",
+      "finished_at": "2026-11-25T13:48:40.678Z"
+    },
+    {
+      "task": "onetaskgraph-live:bootstrap",
+      "hash": "6625587613023839113",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:33.696Z",
+      "finished_at": "2026-11-25T13:48:40.746Z"
+    },
+    {
+      "task": "onetaskgraph-github-projects:bootstrap",
+      "hash": "11453863818953915203",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:40.565Z",
+      "finished_at": "2026-11-25T13:48:41.056Z"
+    },
+    {
+      "task": "onetaskgraph-linear:bootstrap",
+      "hash": "9664553279268875202",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:40.679Z",
+      "finished_at": "2026-11-25T13:48:41.171Z"
+    },
+    {
+      "task": "onetaskgraph-status-options:bootstrap",
+      "hash": "3442148993392325790",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:40.746Z",
+      "finished_at": "2026-11-25T13:48:41.240Z"
+    },
+    {
+      "task": "onetaskgraph-in-memory:bootstrap",
+      "hash": "18390171708992646567",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.058Z",
+      "finished_at": "2026-11-25T13:48:41.427Z"
+    },
+    {
+      "task": "onetaskgraph-local-md:bootstrap",
+      "hash": "7731275938052113658",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.171Z",
+      "finished_at": "2026-11-25T13:48:41.529Z"
+    },
+    {
+      "task": "onetaskgraph-core:bootstrap",
+      "hash": "155010384647578628",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.241Z",
+      "finished_at": "2026-11-25T13:48:41.813Z"
+    },
+    {
+      "task": "onetaskgraph:bootstrap",
+      "hash": "11738592559573184215",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.428Z",
+      "finished_at": "2026-11-25T13:48:41.923Z"
+    },
+    {
+      "task": "onetaskgraph-e2e-support:bootstrap",
+      "hash": "16139472476913654204",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.530Z",
+      "finished_at": "2026-11-25T13:48:42.002Z"
+    },
+    {
+      "task": "onetaskgraph-github-projects-e2e:bootstrap",
+      "hash": "12750428479072838753",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.814Z",
+      "finished_at": "2026-11-25T13:48:42.151Z"
+    },
+    {
+      "task": "onetaskgraph-status-options-e2e:bootstrap",
+      "hash": "13691803202115881416",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:41.923Z",
+      "finished_at": "2026-11-25T13:48:42.206Z"
+    },
+    {
+      "task": "onetaskgraph-live-janitor:bootstrap",
+      "hash": "16095602823984038048",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.003Z",
+      "finished_at": "2026-11-25T13:48:42.325Z"
+    },
+    {
+      "task": "report-job:bootstrap",
+      "hash": "7682482846165224878",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.325Z",
+      "finished_at": "2026-11-25T13:48:42.326Z"
+    },
+    {
+      "task": "pool-maintenance:bootstrap",
+      "hash": "10511911583222211031",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.326Z",
+      "finished_at": "2026-11-25T13:48:42.326Z"
+    },
+    {
+      "task": "sdk-typescript:bootstrap",
+      "hash": "897419850271179399",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.326Z",
+      "finished_at": "2026-11-25T13:48:42.364Z"
+    },
+    {
+      "task": "screenshots:bootstrap",
+      "hash": "9631626840874102835",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.364Z",
+      "finished_at": "2026-11-25T13:48:42.364Z"
+    },
+    {
+      "task": "onetaskgraph-linear-e2e:bootstrap",
+      "hash": "10069880525165437421",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.151Z",
+      "finished_at": "2026-11-25T13:48:42.416Z"
+    },
+    {
+      "task": "scripts:bootstrap",
+      "hash": "1581978576642909574",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.416Z",
+      "finished_at": "2026-11-25T13:48:42.416Z"
+    },
+    {
+      "task": "github-cache-policy:bootstrap",
+      "hash": "14627464294202364509",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.416Z",
+      "finished_at": "2026-11-25T13:48:42.417Z"
+    },
+    {
+      "task": "github-nx-policy:bootstrap",
+      "hash": "14073362082394906561",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.417Z",
+      "finished_at": "2026-11-25T13:48:42.417Z"
+    },
+    {
+      "task": "onetaskgraph-e2e:bootstrap",
+      "hash": "18160339946147211568",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.206Z",
+      "finished_at": "2026-11-25T13:48:42.472Z"
+    },
+    {
+      "task": "linear-documents-policy:bootstrap",
+      "hash": "938192361221378172",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.472Z",
+      "finished_at": "2026-11-25T13:48:42.472Z"
+    },
+    {
+      "task": "github-workflow-policy:bootstrap",
+      "hash": "1797665367294927125",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.473Z",
+      "finished_at": "2026-11-25T13:48:42.473Z"
+    },
+    {
+      "task": "sdk-python:bootstrap",
+      "hash": "11281549223143883413",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.364Z",
+      "finished_at": "2026-11-25T13:48:43.884Z"
+    },
+    {
+      "task": "workspace:bootstrap",
+      "hash": "8564320932592328719",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:42.417Z",
+      "finished_at": "2026-11-25T13:48:43.969Z"
+    },
+    {
+      "task": "scripts:distribution-check",
+      "hash": "17924791888978735931",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:55.886Z",
+      "finished_at": "2026-11-25T13:56:56.621Z"
+    },
+    {
+      "task": "onetaskgraph-linear:test",
+      "hash": "10177456806192822737",
+      "cacheable": true,
+      "result": "executed",
+      "remote_status": 404,
+      "remote_read": "miss",
+      "started_at": "2026-11-25T13:48:58.760Z",
+      "finished_at": "2026-11-25T13:57:06.906Z"
+    },
+    {
+      "task": "onetaskgraph:build",
+      "hash": "10031864207426782213",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:57:08.752Z",
+      "finished_at": "2026-11-25T13:57:09.575Z"
+    },
+    {
+      "task": "onetaskgraph-linear-e2e:test",
+      "hash": "5269083783482373057",
+      "cacheable": true,
+      "result": "executed",
+      "remote_status": 404,
+      "remote_read": "miss",
+      "started_at": "2026-11-25T13:57:09.830Z",
+      "finished_at": "2026-11-25T14:00:53.546Z"
+    },
+    {
+      "task": "onetaskgraph-linear-e2e:budgets",
+      "hash": "14661086461786894250",
+      "cacheable": true,
+      "result": "executed",
+      "remote_status": 404,
+      "remote_read": "miss",
+      "started_at": "2026-11-25T14:00:56.084Z",
+      "finished_at": "2026-11-25T14:06:50.485Z"
+    },
+    {
+      "task": "onetaskgraph:build",
+      "hash": "10031864207426782213",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:48:55.251Z",
+      "finished_at": "2026-11-25T13:50:48.961Z"
+    },
+    {
+      "task": "scripts:distribution-test",
+      "hash": "15908842504037765782",
+      "cacheable": false,
+      "result": "executed",
+      "remote_status": null,
+      "remote_read": "not_attempted",
+      "started_at": "2026-11-25T13:50:48.969Z",
+      "finished_at": "2026-11-25T14:11:23.281Z"
+    }
+  ],
+  "store_attempts": [
+    {
+      "task": "onetaskgraph-linear:test",
+      "hash": "10177456806192822737",
+      "os": "darwin",
+      "attempted_at": "2026-11-25T13:57:07.633Z",
+      "status": "stored",
+      "http_status": 200
+    },
+    {
+      "task": "onetaskgraph-linear-e2e:test",
+      "hash": "5269083783482373057",
+      "os": "darwin",
+      "attempted_at": "2026-11-25T14:00:54.195Z",
+      "status": "stored",
+      "http_status": 200
+    },
+    {
+      "task": "onetaskgraph-linear-e2e:budgets",
+      "hash": "14661086461786894250",
+      "os": "darwin",
+      "attempted_at": "2026-11-25T14:06:50.507Z",
+      "status": "stored",
+      "http_status": 200
+    }
+  ],
+  "selection": {
+    "mode": "affected",
+    "base_sha": "bd25455f5d73898520eb073955a34a7174e9eef8",
+    "head_sha": "3a03f66923a6cefa6d582508af858c2930dab797"
+  }
+}

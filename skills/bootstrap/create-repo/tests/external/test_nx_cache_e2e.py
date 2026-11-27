@@ -3268,6 +3268,250 @@ def test_a_listed_artifact_whose_download_fails_is_an_error_naming_it(
         cache.metadata = original
 
 
+def recorded(name: str):
+    return json.loads((RECORDED / name).read_text())
+
+
+def rewrite_report(cache: GithubCache, artifact_id: int, edit) -> None:
+    """Replace an uploaded report's files with what `edit` makes of them."""
+    key = f"{PREFIX}/artifacts/{artifact_id}/zip"
+    with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as packed:
+        files = {name: packed.read(name) for name in packed.namelist()}
+    edit(files)
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as packed:
+        for name, body in files.items():
+            packed.writestr(name, body)
+    cache.metadata[key] = output.getvalue()
+
+
+def recorded_interrupted_report():
+    """The test-macos report a job timeout cut short, as run 45627092822/1 uploaded it."""
+    run = recorded("run-45627092822-attempt-1.json")
+    job = next(
+        j
+        for j in recorded("run-45627092822-attempt-1-jobs.json")["jobs"]
+        if j["name"] == "test-macos"
+    )
+    artifact = next(
+        a
+        for a in recorded("run-45627092822-artifacts.json")["artifacts"]
+        if a["name"] == "nx-cache-entries-test-macos"
+    )
+    execution = recorded("artifact-15032072669-executions.json")
+    manifest = recorded("artifact-15032072669-manifest.json")
+    # The recording's own shape: a cancelled job, uploading within its attempt a report
+    # whose telemetry names an unfinished invocation and whose manifest replays a hash
+    # no recorded task replayed.
+    assert (run["status"], job["conclusion"]) == ("completed", "cancelled")
+    assert run["run_started_at"] <= artifact["created_at"] <= run["updated_at"]
+    assert execution["schema"] == 2 and execution["cancelled_invocations"]
+    tasks = {t["hash"] for t in execution["tasks"]}
+    unmatched = [
+        e
+        for e in manifest["entries"]
+        if e["source"] == "replayed" and e["hash"] not in tasks
+    ]
+    assert unmatched
+    return execution, unmatched[0]
+
+
+def unmatched_replay(files: dict[str, bytes]) -> None:
+    """A replayed manifest entry, with its body, that no recorded task replayed."""
+    _, entry = recorded_interrupted_report()
+    manifest = json.loads(files["manifest.json"])
+    manifest["entries"].append(entry)
+    files["manifest.json"] = json.dumps(manifest).encode()
+    files[f"{entry['hash']}.tar"] = b"\0" * entry["bytes"]
+
+
+def cut_short(files: dict[str, bytes]) -> None:
+    """The report as the recorded cancelled job left it: telemetry naming its unfinished
+    invocation, and a replayed manifest entry Nx never finished recording a task for."""
+    execution, _ = recorded_interrupted_report()
+    doc = json.loads(files["executions.json"])
+    doc.update(schema=2, cancelled_invocations=execution["cancelled_invocations"])
+    files["executions.json"] = json.dumps(doc).encode()
+    unmatched_replay(files)
+
+
+def stop_job(cache: GithubCache, attempt: int, conclusion: str) -> None:
+    job: Job = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"]["jobs"][0]
+    job["conclusion"] = conclusion
+    run: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"]
+    run["conclusion"] = conclusion
+
+
+def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        stop_job(cache, 1, "cancelled")
+        rewrite_report(cache, 101, cut_short)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            "skipped run 1/1 job test-linux: the job was cancelled, so artifact "
+            "nx-cache-entries-test-linux (id 101) is partial evidence (manifest has no "
+            "matching task evidence); excluded from numerator and denominator"
+            in result["detail"]
+        )
+        # Attempt 1 adds nothing, not its unfinished invocation nor its store, so
+        # attempt 2's replay of that store has no source; the release PR measures.
+        assert "cancelled run 1/1 job test-linux invocation" not in result["detail"]
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "release PR: 1/1" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+        assert "stored bytes: 0;" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_timed_out_attempts_partial_upload_is_skipped_and_the_rest_measured(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        stop_job(cache, 1, "timed_out")
+        # The timeout struck mid-upload: the telemetry is there and the manifest is not.
+        rewrite_report(cache, 101, lambda files: files.pop("manifest.json"))
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            "skipped run 1/1 job test-linux: the job timed out, so artifact "
+            "nx-cache-entries-test-linux (id 101) is partial evidence (artifact missing "
+            "manifest.json); excluded from numerator and denominator"
+            in result["detail"]
+        )
+        # Attempt 1 adds nothing, so attempt 2 replays a store with no evidence.
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "release PR: 1/1" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_finished_attempts_unmatched_manifest_is_an_error_naming_its_artifact(
+    telemetry_history, tmp_path
+):
+    # The cancelled job's manifest from a job that succeeded is a fault, not a cut-off.
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        rewrite_report(cache, 101, unmatched_replay)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "manifest has no matching task evidence: artifact "
+            "nx-cache-entries-test-linux (id 101) of run 1/1" in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
+def recorded_superseded_run(pr: dict) -> dict:
+    """Release PR 4098's first CI run, on the head release-plz later replaced."""
+    run = recorded("run-45913208966-attempt-1.json")
+    merged_head = recorded("run-45931323488-attempt-1.json")
+    pull = recorded("pull-4098.json")
+    # The recording's own shape: the PR's branch, author and open window, a head the PR
+    # moved past, and GitHub tying that head to no pull request at all.
+    assert run["pull_requests"] == [] and recorded("commit-f97ded21-pulls.json") == []
+    assert run["head_branch"] == pull["head"]["ref"]
+    assert run["actor"]["login"] == pull["user"]["login"]
+    assert pull["created_at"] <= run["created_at"] <= pull["merged_at"]
+    assert run["head_sha"] != pull["head"]["sha"] == merged_head["head_sha"]
+    assert run["conclusion"] == "cancelled"
+    superseded = copy.deepcopy(run)
+    superseded.update(
+        id=7,
+        head_sha="d" * 40,
+        head_branch=pr["head"]["ref"],
+        head_repository=pr["head"]["repo"],
+        actor={"login": pr["user"]["login"]},
+        created_at=pr["created_at"],
+    )
+    return superseded
+
+
+def add_superseded_run(cache: GithubCache, **changes) -> dict:
+    """Add to PR #1's branch listing an earlier run on a head it moved past."""
+    opened = "2000-01-01T00:00:00Z"
+    for path, value in cache.metadata.items():
+        for pr in value if isinstance(value, list) else [value]:
+            if (path.endswith("/pulls") or path.endswith("/pulls/1")) and pr.get(
+                "number"
+            ) == 1:
+                pr["created_at"] = opened
+    pr = cache.metadata["/repos/example/project/pulls/1"]
+    run = recorded_superseded_run(pr)
+    run.update(changes)
+    cache.metadata[f"/repos/example/project/commits/{run['head_sha']}/pulls"] = (
+        recorded("commit-f97ded21-pulls.json")
+    )
+    # GitHub lists a run only under its own branch, so only PR #1's listing has it.
+    listing = cache.metadata[f"{PREFIX}/workflows/ci.yml/runs"]["workflow_runs"]
+    cache.metadata[
+        f"{PREFIX}/workflows/ci.yml/runs?event=pull_request&branch={pr['head']['ref']}"
+        "&per_page=100&page=1"
+    ] = {"workflow_runs": [run, *listing]}
+    return pr
+
+
+def test_a_run_on_a_head_the_pull_request_moved_past_is_skipped_by_name(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        pr = add_superseded_run(cache)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            f"skipped run 7: it ran on head {'d' * 40}, which #1 moved past to its "
+            f"merged head {pr['head']['sha']}, so none of its artifacts is read"
+            in result["detail"]
+        )
+        # The merged head's runs measure exactly as they do without it.
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+        assert "same-PR retry/push: 1/1" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"created_at": "1999-12-31T23:59:59Z"},
+        {"actor": {"login": "someone-else"}},
+    ],
+    ids=["before-it-opened", "another-author"],
+)
+def test_a_run_tied_to_no_pull_request_is_still_an_error(
+    telemetry_history, tmp_path, changes
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        add_superseded_run(cache, **changes)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "run 7/1 cannot be associated with a trusted merged pull request"
+            in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
 def test_the_warm_journey_holds_on_the_pinned_nx_with_the_composed_plugin(tmp_path):
     # The pinned Nx, a real bun.lock and the composed nx.json whole, which needs the registry.
     journey = WarmJourney(tmp_path / "pass")

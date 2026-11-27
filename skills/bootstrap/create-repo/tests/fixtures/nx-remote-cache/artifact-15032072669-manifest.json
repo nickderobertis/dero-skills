@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "job": "test-macos",
+  "entries": [
+    {
+      "hash": "1384190799408631061",
+      "bytes": 299,
+      "source": "replayed"
+    },
+    {
+      "hash": "9586743724955782991",
+      "bytes": 424,
+      "source": "replayed"
+    },
+    {
+      "hash": "433919086090665877",
+      "bytes": 308,
+      "source": "replayed"
+    },
+    {
+      "hash": "9719812096592225691",
+      "bytes": 236,
+      "source": "replayed"
+    },
+    {
+      "hash": "10177456806192822737",
+      "bytes": 822,
+      "source": "stored"
+    },
+    {
+      "hash": "187774943858756524",
+      "bytes": 554,
+      "source": "stored"
+    },
+    {
+      "hash": "5269083783482373057",
+      "bytes": 4980,
+      "source": "stored"
+    },
+    {
+      "hash": "4637925190206065384",
+      "bytes": 5995,
+      "source": "stored"
+    },
+    {
+      "hash": "14661086461786894250",
+      "bytes": 5445,
+      "source": "stored"
+    },
+    {
+      "hash": "9863878490105332605",
+      "bytes": 700,
+      "source": "stored"
+    },
+    {
+      "hash": "10928592450070843330",
+      "bytes": 386,
+      "source": "stored"
+    },
+    {
+      "hash": "15104847162938453382",
+      "bytes": 13695,
+      "source": "stored"
+    },
+    {
+      "hash": "208590881024370733",
+      "bytes": 594,
+      "source": "stored"
+    },
+    {
+      "hash": "9940673451425862496",
+      "bytes": 243,
+      "source": "stored"
+    },
+    {
+      "hash": "11923489103244795831",
+      "bytes": 276,
+      "source": "stored"
+    },
+    {
+      "hash": "11065966654548836291",
+      "bytes": 228,
+      "source": "stored"
+    },
+    {
+      "hash": "10232533943932387171",
+      "bytes": 214,
+      "source": "stored"
+    },
+    {
+      "hash": "14012659178229914509",
+      "bytes": 793,
+      "source": "stored"
+    },
+    {
+      "hash": "9704580485204449955",
+      "bytes": 772,
+      "source": "stored"
+    },
+    {
+      "hash": "11391163774405430635",
+      "bytes": 11645,
+      "source": "stored"
+    },
+    {
+      "hash": "7354700412571076095",
+      "bytes": 15573,
+      "source": "stored"
+    }
+  ],
+  "stored_bytes": 62915
+}
