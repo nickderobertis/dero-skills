@@ -644,7 +644,7 @@ warm workflow runs, [actions-cache-prune.mjs](../../assets/ci/actions-cache-prun
 The source owns the command interface, telemetry schemas, validation and readers;
 consult it for fields and statuses rather than maintaining a second contract here.
 The adjacent versions files and baseline checker detect edited or stale copies;
-`nx-remote-cache.mjs` is at version 11.
+`nx-remote-cache.mjs` is at version 12.
 The composer reads the sidecar pin and promotion branch pattern from its exports.
 
 Each existing CI job decides trust, starts the pinned sidecar at the workspace
@@ -707,8 +707,13 @@ checkout), are counted as unavailable in the detail, and the figure is taken ove
 measurable. Only finished attempts are read: one still queued or in progress is skipped by
 name, as is a pull request with no finished attempt, a job skipped by its condition, and a
 job a "re-run failed jobs" attempt carried, whose evidence is the attempt that ran it.
-Promotion still refuses a run with a skipped expected job. An artifact that is present but
-invalid or fails to download still errors, one job's artifact missing beside another's
+A job that was cancelled or timed out uploads what it had written: a report of it that is
+incomplete or inconsistent is skipped by name as partial evidence, while the same fault in
+a finished job's report errors naming the artifact. A run on a head its pull request later
+replaced, which GitHub ties to no pull request, is skipped by name when it ran on that pull
+request's branch, by its author, while it was open; a run tied to no pull request at all
+still errors. Promotion still refuses a run with a skipped expected job. An artifact that is
+present but invalid or fails to download still errors, one job's artifact missing beside another's
 present still errors, and no measurable execution at all still reports missing, naming the
 runs it skipped, never a pass.
 
