@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from collections.abc import Callable
-from typing import Any, TypedDict, Unpack
+from typing import Any, TypedDict, Unpack, get_type_hints
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -3322,6 +3322,15 @@ def recorded(name: str) -> Any:
     return json.loads((RECORDED / name).read_text())
 
 
+def conforms(model: type, doc: dict[str, object], exact: bool = False) -> None:
+    """Hold a model to the real document it stands for: the recordings are the drift
+    gate between these declarations and GitHub's or the writer's own output."""
+    fields = set(get_type_hints(model))
+    assert fields <= set(doc), (model.__name__, fields - set(doc))
+    if exact:
+        assert fields == set(doc), (model.__name__, set(doc) - fields)
+
+
 # llmlint: ignore[e2e_not_mocked] GitHub's artifact download is the doubled boundary, answered with the report the real writer uploaded, edited into the recorded cancelled job's shape; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
 def rewrite_report(
     cache: GithubCache, artifact_id: int, edit: Callable[[dict[str, bytes]], object]
@@ -3342,6 +3351,8 @@ def recorded_interrupted_report() -> InterruptedReport:
     run: RunAttempt = recorded("run-45627092822-attempt-1.json")
     jobs: list[Job] = recorded("run-45627092822-attempt-1-jobs.json")["jobs"]
     job = next(j for j in jobs if j["name"] == "test-macos")
+    conforms(RunAttempt, run)
+    conforms(Job, job)
     artifact = next(
         a
         for a in recorded("run-45627092822-artifacts.json")["artifacts"]
@@ -3362,6 +3373,9 @@ def recorded_interrupted_report() -> InterruptedReport:
         e for e in entries if e["source"] == "replayed" and e["hash"] not in tasks
     ]
     assert unmatched
+    conforms(ManifestEntry, unmatched[0], exact=True)
+    for invocation in execution["cancelled_invocations"]:
+        conforms(Invocation, invocation, exact=True)
     return InterruptedReport(execution["cancelled_invocations"], unmatched[0])
 
 
@@ -3387,7 +3401,8 @@ def cut_short(files: dict[str, bytes]) -> None:
 
 
 # llmlint: ignore[e2e_not_mocked] GitHub's job listing is the doubled boundary, set to the conclusion the recorded cancelled job carries; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
-def stop_job(cache: GithubCache, attempt: int, conclusion: str) -> None:
+def stop_attempt(cache: GithubCache, attempt: int, conclusion: str) -> None:
+    """Run 1's attempt and its one job, stopped with the same conclusion."""
     job: Job = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"]["jobs"][0]
     job["conclusion"] = conclusion
     run: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"]
@@ -3400,7 +3415,7 @@ def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        stop_job(cache, 1, "cancelled")
+        stop_attempt(cache, 1, "cancelled")
         rewrite_report(cache, 101, cut_short)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode == 0, (result, done.stderr)
@@ -3453,7 +3468,7 @@ def test_a_stopped_attempts_partial_upload_is_skipped_and_the_rest_measured(
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        stop_job(cache, 1, conclusion)
+        stop_attempt(cache, 1, conclusion)
         rewrite_report(cache, 101, cut)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode == 0, (result, done.stderr)
@@ -3506,6 +3521,9 @@ def recorded_superseded_run(pr: PullRequest) -> WorkflowRun:
     run: WorkflowRun = recorded("run-45913208966-attempt-1.json")
     merged_head: WorkflowRun = recorded("run-45931323488-attempt-1.json")
     pull: PullRequest = recorded("pull-4098.json")
+    conforms(WorkflowRun, run)
+    conforms(PullRequest, pull)
+    conforms(Account, pull["user"])
     # The recording's own shape: the PR's branch, author and open window, a head the PR
     # moved past, and GitHub tying that head to no pull request at all.
     assert run["pull_requests"] == [] and recorded("commit-f97ded21-pulls.json") == []
