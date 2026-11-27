@@ -683,7 +683,7 @@ def test_without_a_repository_it_ends_naming_repo(tmp_path):
 @pytest.mark.parametrize(
     ("name", "version"),
     [
-        ("nx-remote-cache", 10),
+        ("nx-remote-cache", 11),
         ("nx-version-free-inputs", 3),
         ("actions-cache-prune", 1),
     ],
@@ -724,8 +724,8 @@ def test_the_reference_names_the_remote_cache_scripts_current_version():
     assert f"`nx-remote-cache.mjs` is at version {header.version}." in section
 
 
-@pytest.mark.parametrize("version", [10, 11, 12])
-def test_an_earlier_released_copy_is_outdated_against_thirteen(tmp_path, version):
+@pytest.mark.parametrize("version", [10, 11, 12, 13])
+def test_an_earlier_released_copy_is_outdated_against_fourteen(tmp_path, version):
     old = (
         Path(__file__).parent / f"fixtures/actions-budget-figures/v{version}.sh"
     ).read_bytes()
@@ -734,7 +734,7 @@ def test_an_earlier_released_copy_is_outdated_against_thirteen(tmp_path, version
     done = checked(repo)
     assert done.returncode == 0, done.stdout + done.stderr
     assert (
-        f"outdated: it is at version {version}, the source at version 13" in done.stdout
+        f"outdated: it is at version {version}, the source at version 14" in done.stdout
     )
 
 
@@ -1123,7 +1123,7 @@ def test_cache_use_missing_node_reports_action_without_writing(tmp_path):
     assert not result.exists()
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7, 8])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5, 6, 7, 8, 10])
 def test_remote_cache_previous_copy_is_outdated(tmp_path, version):
     repo = baseline_repo(tmp_path)
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
@@ -1132,6 +1132,6 @@ def test_remote_cache_previous_copy_is_outdated(tmp_path, version):
     done = checked(repo)
     assert done.returncode == 0, done.stdout + done.stderr
     assert (
-        f"scripts/nx-remote-cache.mjs is outdated: it is at version {version}, the source at version 10"
+        f"scripts/nx-remote-cache.mjs is outdated: it is at version {version}, the source at version 11"
         in done.stdout
     )

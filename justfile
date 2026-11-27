@@ -144,7 +144,7 @@ setup-llmlint:
 # no gate tier fans out over — and that project depends on nothing, so no change
 # elsewhere in the graph can reach it. In a Claude Code session the SessionStart
 # hook installs the binaries and selects the claude-code harness; in a terminal
-# run `just setup-llmlint` once (uses the committed codex + gpt-5.5 default; auth
+# run `just setup-llmlint` once (uses the committed codex + gpt-6.1-sol default; auth
 # via your own harness). Pass paths to narrow, e.g.
 # `just lint-llm scripts/setup-llmlint.sh`.
 lint-llm *paths:
@@ -169,7 +169,7 @@ lint-llm-validate *args:
 # the changed files (skipping empty diffs) and the judge to the changed lines, so
 # a PR is judged on what it introduced. This is the blocking `llmlint` CI check;
 # run it locally before pushing. BASE defaults to origin/main (fetch it first if
-# your clone lacks it). Uses the committed codex + gpt-5.5 harness unless
+# your clone lacks it). Uses the committed codex + gpt-6.1-sol harness unless
 # ONEHARNESS_* env overrides are set (the Claude Code SessionStart hook sets them).
 # `base` is validated at the same boundary as NX_BASE above, and for the same
 # reason: it is interpolated into a shell command, so a value carrying a quote, a

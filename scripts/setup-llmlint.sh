@@ -20,7 +20,7 @@
 #      `--upgrade` bumps an older cached tool rather than leaving it.
 #   2. Inside a Claude Code session, persists PATH so the freshly installed binary
 #      resolves in later Bash calls — and nothing else. Harness selection comes from
-#      oneharness.toml's fallback mode (codex + gpt-5.5 primary, claude-code +
+#      oneharness.toml's fallback mode (codex + gpt-6.1-sol primary, claude-code +
 #      opus-4.8 secondary): codex is absent here, so the fallback selects claude-code
 #      on its own, and an `ONEHARNESS_HARNESSES`/`ONEHARNESS_MODEL` override would
 #      only clobber that list. `IS_SANDBOX` for the claude-code harness likewise

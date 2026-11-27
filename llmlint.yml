@@ -50,7 +50,7 @@ plugins:
   - "skills/bootstrap/create-repo/assets/llmlint/tools/onebudgetspec.llmlint.yml"
 
 # No `agents` block: all rules run on the default agent. Harness/model are left
-# unset so `oneharness.toml`'s fallback mode selects them — codex + gpt-5.5 primary,
+# unset so `oneharness.toml`'s fallback mode selects them — codex + gpt-6.1-sol primary,
 # claude-code + opus-4.8 secondary — and a Claude Code session (no codex) falls
 # through to claude-code without any ONEHARNESS_* env override.
 

@@ -349,7 +349,7 @@ def test_llmlint_config_emits_fallback_oneharness_alongside(tmp_path):
     toml = oh.read_text(encoding="utf-8")
     assert 'run_mode = "fallback"' in toml
     assert 'harnesses = ["codex", "claude-code"]' in toml
-    assert 'model = "gpt-5.5"' in toml
+    assert 'model = "gpt-6.1-sol"' in toml
     assert 'model = "claude-opus-4-8"' in toml
     assert 'IS_SANDBOX = "1"' in toml
     assert "oneharness fallback config" in result.stderr

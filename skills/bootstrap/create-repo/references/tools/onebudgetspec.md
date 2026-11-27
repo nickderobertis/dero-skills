@@ -644,7 +644,7 @@ warm workflow runs, [actions-cache-prune.mjs](../../assets/ci/actions-cache-prun
 The source owns the command interface, telemetry schemas, validation and readers;
 consult it for fields and statuses rather than maintaining a second contract here.
 The adjacent versions files and baseline checker detect edited or stale copies;
-`nx-remote-cache.mjs` is at version 10.
+`nx-remote-cache.mjs` is at version 11.
 The composer reads the sidecar pin and promotion branch pattern from its exports.
 
 Each existing CI job decides trust, starts the pinned sidecar at the workspace
@@ -704,9 +704,13 @@ Evidence that ordinary conditions removed is reported rather than refused. An at
 artifacts a whole-workflow re-run removed, and a pull request whose CI predates adoption
 (its runs created before the commit adding `scripts/nx-remote-cache.mjs`, read from a full
 checkout), are counted as unavailable in the detail, and the figure is taken over what is
-measurable. An artifact that is present but invalid still errors, one job's artifact missing
-beside another's present still errors, and no measurable execution at all still reports
-missing, never a pass.
+measurable. Only finished attempts are read: one still queued or in progress is skipped by
+name, as is a pull request with no finished attempt, a job skipped by its condition, and a
+job a "re-run failed jobs" attempt carried, whose evidence is the attempt that ran it.
+Promotion still refuses a run with a skipped expected job. An artifact that is present but
+invalid or fails to download still errors, one job's artifact missing beside another's
+present still errors, and no measurable execution at all still reports missing, naming the
+runs it skipped, never a pass.
 
 Version-free ecosystem inputs keep release version and changelog edits from
 invalidating proven tests while retaining dependency and source changes. Targets

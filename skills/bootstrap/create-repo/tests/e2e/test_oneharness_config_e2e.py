@@ -311,7 +311,7 @@ def test_a_key_the_release_rejects_fails_and_names_it(tmp_path):
 # checker reads, and a chain the release refuses must be one it reports.
 IDENTITIES = (
     'run_mode = "fallback"\n\n'
-    '[harness.codex]\nmodel = "gpt-5.5"\n\n'
+    '[harness.codex]\nmodel = "gpt-6.1-sol"\n\n'
     '[harness.claude-code.variant.primary]\nmodel = "claude-opus-4-8"\n\n'
     '[harness.claude-code.variant.alternate]\nmodel = "claude-opus-4-8"\n'
 )

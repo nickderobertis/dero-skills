@@ -47,6 +47,6 @@ def test_contract_is_fallback_codex_then_claude_code() -> None:
     template = _load(TEMPLATE)
     assert template["run_mode"] == "fallback"
     assert template["harnesses"] == ["codex", "claude-code"]
-    assert template["harness"]["codex"]["model"] == "gpt-5.5"
+    assert template["harness"]["codex"]["model"] == "gpt-6.1-sol"
     assert template["harness"]["claude-code"]["model"] == "claude-opus-4-8"
     assert template["harness"]["claude-code"]["env"]["IS_SANDBOX"] == "1"

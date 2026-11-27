@@ -20,6 +20,7 @@ import subprocess
 import threading
 import time
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -410,6 +411,33 @@ class Workspace:
         )
 
 
+ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
+
+
+def actions_cache_members(archive):
+    """The files in an Actions cache archive.
+
+    The pinned sidecar's cache client writes zstd when a `zstd` binary is on PATH, as
+    on GitHub's runners, and gzip otherwise, so the archive's own magic decides.
+    """
+    if archive.startswith(ZSTD_MAGIC):
+        unpacked = subprocess.run(
+            ["zstd", "--decompress", "--stdout"],
+            input=archive,
+            capture_output=True,
+            check=True,
+        )
+        packed = tarfile.open(fileobj=io.BytesIO(unpacked.stdout), mode="r:")
+    else:
+        packed = tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz")
+    with packed:
+        return [
+            packed.extractfile(member).read()
+            for member in packed.getmembers()
+            if member.isfile()
+        ]
+
+
 @pytest.mark.parametrize("isolate", ["false", "true"])
 def test_real_nx_stores_and_replays_with_exact_body_report(
     tmp_path, cache_tools, github_cache, isolate
@@ -427,14 +455,11 @@ def test_real_nx_stores_and_replays_with_exact_body_report(
     assert manifest["stored_bytes"] == entry["bytes"]
     # The sidecar wraps its Nx body in the Actions cache archive. Compare the
     # accepted member bytes with the body the recording proxy accepted.
-    accepted = []
-    for archive in github_cache.entries.values():
-        with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as packed:
-            accepted.extend(
-                packed.extractfile(member).read()
-                for member in packed.getmembers()
-                if member.isfile()
-            )
+    accepted = [
+        body
+        for archive in github_cache.entries.values()
+        for body in actions_cache_members(archive)
+    ]
     assert (temp / "report" / f"{entry['hash']}.tar").read_bytes() in accepted
     executions = json.loads((temp / "report/executions.json").read_text())
     assert executions["tasks"][0]["result"] == "executed"
@@ -1031,6 +1056,8 @@ def test_cache_use_joins_real_writer_records_and_excludes_local_hits(
     assert "release PR: 1/1" in result["detail"]
     assert "same-PR retry/push: 1/1" in result["detail"]
     assert "skipped local hits: 1" in result["detail"]
+    # Both attempts uploaded a readable artifact, and both contribute.
+    assert "skipped run" not in result["detail"]
 
 
 @pytest.mark.parametrize(
@@ -2097,6 +2124,14 @@ def test_cache_use_missing_artifact_requires_cancellation(
                 "no artifact" if artifact_kind == "missing" else "telemetry unavailable"
             )
             assert f"cancelled run 1/1 job lint: {reason}" in result["detail"]
+        elif conclusion == "skipped" and artifact_kind == "missing":
+            # A skipped job ran nothing: it is named, and the attempt's other job measured.
+            assert done.returncode == 0, (result, done.stderr)
+            assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+            assert (
+                "skipped run 1/1 job lint: the job was skipped, so it uploaded no artifact"
+                in result["detail"]
+            )
         else:
             assert done.returncode != 0
             assert result["actual"] is None
@@ -2723,7 +2758,7 @@ def test_a_run_after_adoption_with_no_artifact_still_errors(
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode != 0
         assert result["actual"] is None
-        assert "missing artifact" in result["error"]
+        assert "missing artifact for 3/1/test-linux" in result["error"]
     finally:
         cache.metadata = original
 
@@ -2761,6 +2796,474 @@ def test_nothing_measurable_still_reports_missing(telemetry_history, tmp_path):
         assert done.returncode != 0
         assert result["actual"] is None
         assert "zero eligible executions" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+RECORDED = SKILL / "tests/fixtures/nx-remote-cache"
+PREFIX = "/repos/example/project/actions"
+
+
+class RunAttempt(TypedDict, total=False):
+    """The fields of GitHub's workflow-run attempt that these journeys read or set."""
+
+    id: int
+    run_attempt: int
+    status: str
+    conclusion: str | None
+    run_started_at: str
+    updated_at: str
+
+
+class Job(TypedDict, total=False):
+    """The fields of GitHub's job listing entry that these journeys read or set."""
+
+    name: str
+    run_attempt: int
+    conclusion: str | None
+    started_at: str
+    completed_at: str
+    labels: list[str]
+
+
+@dataclass(frozen=True)
+class Promotion:
+    """A merge's real `promote` run: its output, and its receipt archive if it wrote one."""
+
+    done: subprocess.CompletedProcess[str]
+    archive: bytes | None
+    receipt: Path
+
+
+def recorded_carried_job(history_attempt: RunAttempt) -> Job:
+    """GitHub's listing of a job that "re-run failed jobs" carried into attempt 2."""
+    attempt = json.loads((RECORDED / "run-45640449664-attempt-2.json").read_text())
+    jobs = json.loads((RECORDED / "run-45640449664-attempt-2-jobs.json").read_text())
+    job: Job = copy.deepcopy(next(j for j in jobs["jobs"] if j["name"] == "test-linux"))
+    # The recording's own shape: listed under attempt 2, started before attempt 2 did.
+    assert job["run_attempt"] == 2 and job["conclusion"] == "success"
+    assert job["started_at"] < attempt["run_started_at"]
+    artifacts = json.loads((RECORDED / "run-45640449664-artifacts.json").read_text())
+    assert [
+        a["created_at"] < attempt["run_started_at"]
+        for a in artifacts["artifacts"]
+        if a["name"] == "nx-cache-entries-test-linux"
+    ] == [True]
+    job.update(
+        started_at=history_attempt["run_started_at"],
+        completed_at=history_attempt["updated_at"],
+    )
+    return job
+
+
+def drop_artifact(cache: GithubCache, run_id: int, artifact_id: int) -> None:
+    listing = cache.metadata[f"{PREFIX}/runs/{run_id}/artifacts"]
+    listing["artifacts"] = [a for a in listing["artifacts"] if a["id"] != artifact_id]
+
+
+def unfinish(cache: GithubCache, run_id: int, attempt: int, status: str | None) -> None:
+    # An unfinished attempt as GitHub reports it: a status short of completed, no conclusion.
+    recorded = json.loads((RECORDED / "run-43793315868-attempt-1.json").read_text())
+    assert recorded["status"] == "completed"
+    run: RunAttempt = cache.metadata[f"{PREFIX}/runs/{run_id}/attempts/{attempt}"]
+    run.update(status=status, conclusion=None)
+
+
+def carry_into_new_attempts(cache: GithubCache, carriers: int) -> None:
+    """Run 1's later attempts each re-run nothing, listing test-linux as carried."""
+    first: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/1"]
+    second: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
+    for attempt in range(2, 2 + carriers):
+        if attempt > 2:
+            later: RunAttempt = copy.deepcopy(second)
+            # It begins as the attempt before it ends, so it too closes before the merge.
+            later.update(run_attempt=attempt, run_started_at=second["updated_at"])
+            cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"] = later
+        cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"] = {
+            "jobs": [recorded_carried_job(first)]
+        }
+    listing = cache.metadata[f"{PREFIX}/workflows/ci.yml/runs"]["workflow_runs"]
+    # The listing names the run's last attempt; copied, since it shares attempt 2's document.
+    at = next(i for i, r in enumerate(listing) if r["id"] == 1)
+    listing[at] = {**listing[at], "run_attempt": 1 + carriers}
+    drop_artifact(cache, 1, 102)
+
+
+def promote_merge(workspace: Workspace, cache: GithubCache, name: str) -> Promotion:
+    sha = cache.metadata["/repos/example/project/pulls/1"]["merge_commit_sha"]
+    with workspace.sidecar(
+        cache,
+        name,
+        "refs/heads/main",
+        GITHUB_EVENT_NAME="push",
+        GITHUB_SHA=sha,
+    ) as (env, promoted):
+        done = workspace.cli("promote", "--sha", sha, "--workflow", "ci.yml", env=env)
+        assert done.returncode == 0, done.stderr
+        receipt = promoted / "nx-cache-promotion"
+        archive = archive_report(receipt) if receipt.exists() else None
+        return Promotion(done, archive, receipt)
+
+
+@pytest.mark.parametrize("carriers", [1, 2])
+def test_a_job_a_partial_rerun_carried_is_skipped_and_its_first_attempt_measured(
+    telemetry_history, tmp_path, carriers
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        carry_into_new_attempts(cache, carriers)
+        # The merge's promotion reads the same attempt, and must still write a receipt,
+        # walking back past every attempt that carried the job to the one that ran it.
+        promotion = promote_merge(workspace, cache, f"promote-{carriers}")
+        assert "skipped" not in promotion.done.stdout, promotion.done.stdout
+        receipt = json.loads((promotion.receipt / "receipt.json").read_text())
+        assert (receipt["source_run_id"], receipt["source_attempt"]) == (
+            1,
+            1 + carriers,
+        )
+        assert receipt["entries"], receipt
+        cache.metadata[f"{PREFIX}/artifacts/10000/zip"] = promotion.archive
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        for attempt in range(2, 2 + carriers):
+            assert (
+                f"skipped run 1/{attempt} job test-linux: not re-run in this attempt"
+                in result["detail"]
+            )
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "release PR: 1/1" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def as_job_report(archive: bytes, job: str) -> bytes:
+    """An uploaded report re-labelled as another job's, as that job would upload it."""
+    with zipfile.ZipFile(io.BytesIO(archive)) as packed:
+        files = {name: packed.read(name) for name in packed.namelist()}
+    for name in ("executions.json", "manifest.json"):
+        doc = json.loads(files[name])
+        doc["job"] = job
+        files[name] = json.dumps(doc).encode()
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as packed:
+        for name, body in files.items():
+            packed.writestr(name, body)
+    return output.getvalue()
+
+
+def test_a_partial_rerun_reads_its_rerun_job_here_and_its_carried_job_from_before(
+    telemetry_history, tmp_path
+):
+    # Attempt 1's lint was cancelled; attempt 2 re-ran only lint and carried test-linux.
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        rerun = copy.deepcopy(
+            next(
+                a
+                for a in cache.metadata[f"{PREFIX}/runs/1/artifacts"]["artifacts"]
+                if a["id"] == 102
+            )
+        )
+        report = cache.metadata[f"{PREFIX}/artifacts/102/zip"]
+        carry_into_new_attempts(cache, 1)
+        second: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
+        cache.metadata[f"{PREFIX}/runs/1/attempts/1/jobs"]["jobs"].append(
+            {"name": "lint", "conclusion": "cancelled", "labels": ["ubuntu-latest"]}
+        )
+        cache.metadata[f"{PREFIX}/runs/1/attempts/2/jobs"]["jobs"].append(
+            {
+                "name": "lint",
+                "conclusion": "success",
+                "started_at": second["run_started_at"],
+                "labels": ["ubuntu-latest"],
+            }
+        )
+        rerun.update(id=150, name="nx-cache-entries-lint")
+        cache.metadata[f"{PREFIX}/runs/1/artifacts"]["artifacts"].append(rerun)
+        cache.metadata[f"{PREFIX}/artifacts/150/zip"] = as_job_report(report, "lint")
+        promotion = promote_merge(workspace, cache, "promote-mixed")
+        assert "skipped" not in promotion.done.stdout, promotion.done.stdout
+        receipt = json.loads((promotion.receipt / "receipt.json").read_text())
+        assert (receipt["source_run_id"], receipt["source_attempt"]) == (1, 2)
+        assert receipt["entries"], receipt
+        cache.metadata[f"{PREFIX}/artifacts/10000/zip"] = promotion.archive
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "cancelled run 1/1 job lint: no artifact" in result["detail"]
+        assert (
+            "skipped run 1/2 job test-linux: not re-run in this attempt"
+            in result["detail"]
+        )
+        assert "skipped run 1/2 job lint" not in result["detail"]
+        # Attempt 2's re-run lint replays attempt 1's store: both attempts contribute.
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+        assert "same-PR retry/push: 1/1" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def recorded_skipped_job(history_attempt: RunAttempt) -> Job:
+    """GitHub's listing of a job its condition skipped: completed, no steps, no upload."""
+    jobs = json.loads((RECORDED / "run-45817426730-attempt-1-jobs.json").read_text())
+    run = json.loads((RECORDED / "run-45817426730-attempt-1.json").read_text())
+    artifacts = json.loads((RECORDED / "run-45817426730-artifacts.json").read_text())
+    raw = next(j for j in jobs["jobs"] if j["name"] == "test-linux")
+    # The recording's own shape: skipped at the run's start, in a run that succeeded.
+    assert (raw["status"], raw["conclusion"], raw["steps"]) == (
+        "completed",
+        "skipped",
+        [],
+    )
+    assert raw["started_at"] == run["run_started_at"] and run["conclusion"] == "success"
+    assert not any(
+        a["name"].startswith("nx-cache-entries-") for a in artifacts["artifacts"]
+    )
+    job: Job = copy.deepcopy(raw)
+    job.update(
+        started_at=history_attempt["run_started_at"],
+        completed_at=history_attempt["run_started_at"],
+    )
+    return job
+
+
+def skip_jobs(cache: GithubCache, attempts: tuple[int, ...]) -> None:
+    """Run 1's given attempts skip test-linux, so they upload nothing."""
+    for attempt in attempts:
+        run: RunAttempt = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}"]
+        cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"] = {
+            "jobs": [recorded_skipped_job(run)]
+        }
+        drop_artifact(cache, 1, 100 + attempt)
+
+
+def test_an_attempt_whose_jobs_were_skipped_is_named_and_the_rest_measured(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        skip_jobs(cache, (2,))
+        # Promotion still refuses a run whose expected job was skipped, so it wrote none.
+        promotion = promote_merge(workspace, cache, "promote-skipped")
+        assert promotion.archive is None
+        assert (
+            "Nx cache promotion skipped: missing expected job test-linux"
+            in promotion.done.stdout
+        )
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            "skipped run 1/2 job test-linux: the job was skipped, so it uploaded no artifact"
+            in result["detail"]
+        )
+        assert "no promotion receipt for run 100" in result["detail"]
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "release PR: 1/1" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_nothing_measurable_beside_skipped_jobs_errors_naming_each_run(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        skip_jobs(cache, (1, 2))
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "zero eligible executions; skipped runs: "
+            "1/1 (skipped jobs: test-linux), 1/2 (skipped jobs: test-linux)"
+            in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
+def test_a_carried_job_no_attempt_ran_leaves_no_promotion_receipt(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        carry_into_new_attempts(cache, 1)
+        drop_artifact(cache, 1, 101)
+        # Attempt 1 lists the job as begun before attempt 1 did: nothing ever ran it.
+        job: Job = cache.metadata[f"{PREFIX}/runs/1/attempts/1/jobs"]["jobs"][0]
+        job["started_at"] = "2000-01-01T00:00:00Z"
+        promotion = promote_merge(workspace, cache, "promote-exhausted")
+        assert promotion.archive is None
+        assert (
+            "Nx cache promotion skipped: run 1/2 job test-linux has no attempt that ran it"
+            in promotion.done.stdout
+        )
+    finally:
+        cache.metadata = original
+
+
+def test_a_carried_job_whose_earlier_evidence_is_gone_is_an_error(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        carry_into_new_attempts(cache, 1)
+        drop_artifact(cache, 1, 101)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "run 1/2 carried job test-linux, but no earlier attempt's evidence of it was read"
+            in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
+@pytest.mark.parametrize("status", [None, "", "In Progress"])
+def test_an_attempt_with_a_malformed_status_is_an_error(
+    telemetry_history, tmp_path, status
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        unfinish(cache, 1, 2, status)
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert f"run 1/2 has no valid status: {json.dumps(status)}" in result["error"]
+    finally:
+        cache.metadata = original
+
+
+def test_an_unfinished_run_at_the_merged_head_leaves_the_earlier_heads_measured(
+    telemetry_history, tmp_path
+):
+    # The pull request's last push was still running at the merge; its earlier head ran.
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        latest_head = "c" * 40
+        for path, value in cache.metadata.items():
+            prs = value if isinstance(value, list) else [value]
+            for pr in prs:
+                if (path.endswith("/pulls") or path.endswith("/pulls/1")) and pr.get(
+                    "number"
+                ) == 1:
+                    pr["head"]["sha"] = latest_head
+        running: RunAttempt = copy.deepcopy(
+            cache.metadata[f"{PREFIX}/runs/1/attempts/2"]
+        )
+        running.update(id=5, run_attempt=1, head_sha=latest_head)
+        cache.metadata[f"{PREFIX}/runs/5/attempts/1"] = running
+        cache.metadata[f"{PREFIX}/workflows/ci.yml/runs"]["workflow_runs"].append(
+            running
+        )
+        unfinish(cache, 5, 1, "in_progress")
+        # Promotion reads only a successful run at the merged head, so it wrote none.
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "skipped run 5/1: in_progress, not finished" in result["detail"]
+        assert "no promotion receipt for run 100" in result["detail"]
+        assert "same-PR retry/push: 1/1" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+# `waiting` is one GitHub documents beside them; any status short of completed is unfinished.
+@pytest.mark.parametrize("status", ["queued", "in_progress", "waiting"])
+@pytest.mark.parametrize("uploaded", [False, True])
+def test_an_unfinished_attempt_is_skipped_and_the_finished_ones_measured(
+    telemetry_history, tmp_path, status, uploaded
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        unfinish(cache, 1, 2, status)
+        if not uploaded:
+            drop_artifact(cache, 1, 102)
+        # Promotion reads only a successful run, so this merge left no receipt.
+        cache.metadata[f"{PREFIX}/runs/100/artifacts"] = {"artifacts": []}
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert result["actual"] == 100
+        assert (
+            f"skipped run 1/2: {status}, not finished, so none of its artifacts is read"
+            in result["detail"]
+        )
+        assert "no promotion receipt for run 100" in result["detail"]
+        # Attempt 2's replay, readable or not, is no part of the figure.
+        assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
+        assert "same-PR retry/push: 0/0" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_a_pull_request_with_no_finished_run_is_skipped_by_name(
+    telemetry_history, tmp_path
+):
+    workspace, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        release_commit = command(
+            ["git", "log", "-1", "--format=%cI", "HEAD"], workspace.root
+        ).stdout.strip()
+        when = datetime.fromisoformat(release_commit).astimezone(timezone.utc)
+        carry_pull_request(workspace, cache, 3, when.isoformat().replace("+00:00", "Z"))
+        unfinish(cache, 3, 1, "in_progress")
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode == 0, (result, done.stderr)
+        assert "skipped run 3/1: in_progress, not finished" in result["detail"]
+        assert "skipped #3: no CI attempt of it has finished" in result["detail"]
+        assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_nothing_measurable_beside_unfinished_runs_errors_naming_each(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        unfinish(cache, 1, 1, "in_progress")
+        unfinish(cache, 1, 2, "queued")
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "zero eligible executions; skipped runs: 1/1 (in_progress), 1/2 (queued)"
+            in result["error"]
+        )
+    finally:
+        cache.metadata = original
+
+
+def test_a_listed_artifact_whose_download_fails_is_an_error_naming_it(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        del cache.metadata[f"{PREFIX}/artifacts/101/zip"]
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "download failed for artifact nx-cache-entries-test-linux (id 101) of run 1/1"
+            in result["error"]
+        )
     finally:
         cache.metadata = original
 

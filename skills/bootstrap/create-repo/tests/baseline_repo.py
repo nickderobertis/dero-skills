@@ -120,7 +120,7 @@ BUN_LOCK = (
 ONEHARNESS_CONFIG = (
     'run_mode = "fallback"\n'
     'harnesses = ["codex", "claude-code"]\n'
-    '\n[harness.codex]\nmodel = "gpt-5.5"\n'
+    '\n[harness.codex]\nmodel = "gpt-6.1-sol"\n'
     '\n[harness.claude-code]\nmodel = "claude-opus-4-8"\n'
     'env = { IS_SANDBOX = "1" }\n'
 )

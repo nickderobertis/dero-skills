@@ -53,12 +53,12 @@ everything they already check, and reach for llmlint only for the judgment calls
   `--oneharness-config`), or copy `assets/oneharness.toml.template`. It runs
   oneharness in **fallback mode**: `run_mode = "fallback"` with
   `harnesses = ["codex", "claude-code"]` and a per-harness `[harness.<id>].model`
-  (`codex` → `gpt-5.5`, `claude-code` → `claude-opus-4-8`). oneharness tries the
+  (`codex` → `gpt-6.1-sol`, `claude-code` → `claude-opus-4-8`). oneharness tries the
   harnesses in priority order and stops at the first that can actually run, falling
   through only candidates that cannot run at all (not installed, unspawnable, or
   rejected before any work — auth / no-credit quota; a real task failure or timeout
   does *not* fall through). So the **one** committed file works everywhere with no
-  edit: a contributor with Codex authenticated runs the primary (codex + gpt-5.5),
+  edit: a contributor with Codex authenticated runs the primary (codex + gpt-6.1-sol),
   and a Claude Code session — where `oneharness detect` reports codex
   `available: false` — falls through to the secondary (claude-code + opus-4.8), the
   only harness authenticated there. This is why `setup-llmlint.sh` no longer exports

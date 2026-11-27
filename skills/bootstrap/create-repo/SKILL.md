@@ -451,7 +451,7 @@ composer's `--intersection` choices automatically.
   (the LLM-judge tier) by wiring the selected references' rule fragments in as
   `@version`-pinned plugins — see [`references/llmlint.md`](./references/llmlint.md).
   Because the composed `llmlint.yml` pins no harness, `--llmlint-config` also emits
-  a fallback-mode `oneharness.toml` beside it (codex + gpt-5.5 primary, claude-code
+  a fallback-mode `oneharness.toml` beside it (codex + gpt-6.1-sol primary, claude-code
   + opus-4.8 secondary; override the path with `--oneharness-config`).
   `--wiring <repo>`, alone or beside a composition, applies the budgets setup
   step to the repository (idempotent). `--ci-cd <repo>` (with `--language`
@@ -489,7 +489,7 @@ composer's `--intersection` choices automatically.
 - [`assets/oneharness.toml.template`](./assets/oneharness.toml.template) — drop at
   the repo root as `oneharness.toml` (the composer emits it automatically with
   `--llmlint-config`). Fallback-mode harness/model selection for llmlint: codex +
-  gpt-5.5 primary, claude-code + opus-4.8 secondary, so a Claude Code session falls
+  gpt-6.1-sol primary, claude-code + opus-4.8 secondary, so a Claude Code session falls
   through to claude-code with no env override. See
   [`references/llmlint.md`](./references/llmlint.md).
 - [`assets/setup-llmlint.sh.template`](./assets/setup-llmlint.sh.template) — drop

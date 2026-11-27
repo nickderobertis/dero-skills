@@ -50,7 +50,7 @@ Both wire the selected references' rule fragments in as ``@version``-pinned
 llmlint plugins; see ``references/llmlint.md``. The ongoing ``llmlint.yml`` pins
 no harness, so ``--llmlint-config`` also writes an ``oneharness.toml`` beside it
 (override the path with ``--oneharness-config``) — the fallback harness/model
-selection (codex + gpt-5.5 primary, claude-code + opus-4.8 secondary) llmlint
+selection (codex + gpt-6.1-sol primary, claude-code + opus-4.8 secondary) llmlint
 reads to pick a harness.
 
 ``--wiring REPO_DIR`` applies the baseline tools' setup step to the repository
@@ -554,7 +554,7 @@ def render_llmlint_config(plugin_urls: list[str], *, buildout: bool) -> str:
         '    - "**/.git/**"',
         "rationales: true",
         "# No `agents` block: the harness/model are NOT pinned here. `oneharness.toml`",
-        "# (composed alongside this file) selects them in fallback mode — codex + gpt-5.5",
+        "# (composed alongside this file) selects them in fallback mode — codex + gpt-6.1-sol",
         "# primary, claude-code + opus-4.8 secondary — so a Claude Code session falls",
         "# through to claude-code with no config edit. Leaving the harness unset is what",
         "# lets that fallback (or an ONEHARNESS_<FIELD> env override) decide.",
@@ -570,7 +570,7 @@ def render_oneharness_config(skill_dir: Path) -> str:
 
     Read verbatim from ``assets/oneharness.toml.template`` (the single source of
     truth this repo also dogfoods) so the composed config never drifts from the
-    template. It puts oneharness in **fallback** mode — codex + gpt-5.5 primary,
+    template. It puts oneharness in **fallback** mode — codex + gpt-6.1-sol primary,
     claude-code + opus-4.8 secondary — so the same committed file runs the primary
     for a contributor with Codex authenticated and falls through to claude-code in
     a Claude Code session where codex is absent, with no env override.
@@ -2163,7 +2163,7 @@ def main(argv: list[str]) -> int:
         )
         # The ongoing llmlint.yml pins no harness, so it needs oneharness.toml to
         # select one. Emit the two together (beside the config, or at --oneharness-
-        # config) so the pair can't drift: fallback mode, codex + gpt-5.5 primary /
+        # config) so the pair can't drift: fallback mode, codex + gpt-6.1-sol primary /
         # claude-code + opus-4.8 secondary.
         oneharness_path = (
             Path(args.oneharness_config)
@@ -2174,7 +2174,7 @@ def main(argv: list[str]) -> int:
             render_oneharness_config(skill_dir), encoding="utf-8"
         )
         print(
-            f"wrote {oneharness_path} (oneharness fallback config: codex + gpt-5.5 "
+            f"wrote {oneharness_path} (oneharness fallback config: codex + gpt-6.1-sol "
             "primary, claude-code + opus-4.8 secondary)",
             file=sys.stderr,
         )
