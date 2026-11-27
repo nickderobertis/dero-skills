@@ -1,7 +1,7 @@
 // Copied from dero-skills' create-repo skill; edit only the source.
 // source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/ci/nx-remote-cache.mjs
 // version: 12
-// sha256: 3688b3b5b26162d51fcf3296398fa36d7499632f23421ba394bde765fac67788
+// sha256: e6fd58368c6f10e54d4f8274d96eef9ef198f8d471f109b509ca3228973a75cb
 import {
   appendFileSync,
   readFileSync,
@@ -797,7 +797,6 @@ function artifactIdentity(artifact, run) {
     `artifact ${artifact.name} has wrong head repository`,
   );
 }
-// A job or run GitHub stopped before it finished: cancelled, or past its timeout.
 const stopped = (conclusion) =>
   conclusion === 'cancelled' || conclusion === 'timed_out';
 function attemptRun(gh, id, attempt) {

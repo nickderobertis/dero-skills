@@ -24,7 +24,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import TypedDict
+from collections.abc import Callable
+from typing import Any, TypedDict, Unpack
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -2084,7 +2085,9 @@ def test_recorded_run_counts_in_promote_and_cache_use(
 
 @pytest.mark.parametrize("artifact_kind", ["missing", "unavailable"])
 @pytest.mark.parametrize("scope", ["job", "run"])
-@pytest.mark.parametrize("conclusion", ["cancelled", "failure", "skipped", "success"])
+@pytest.mark.parametrize(
+    "conclusion", ["cancelled", "timed_out", "failure", "skipped", "success"]
+)
 def test_cache_use_missing_artifact_requires_cancellation(
     telemetry_history, tmp_path, scope, conclusion, artifact_kind
 ):
@@ -2114,10 +2117,11 @@ def test_cache_use_missing_artifact_requires_cancellation(
             )
         if scope == "run":
             cache.metadata[prefix]["conclusion"] = conclusion
-            if conclusion == "cancelled":
+            if conclusion in ("cancelled", "timed_out"):
                 jobs[-1]["conclusion"] = None
         done, result = measure_cache_use(telemetry_history, tmp_path)
-        if conclusion == "cancelled":
+        # A job past its timeout stopped as a cancelled one did, and is read alike.
+        if conclusion in ("cancelled", "timed_out"):
             assert done.returncode == 0, (result, done.stderr)
             assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
             reason = (
@@ -2205,9 +2209,10 @@ def test_cache_use_cancelled_job_without_any_artifact(
         cache.metadata = original
 
 
-@pytest.mark.parametrize("cancelled", [False, True])
+# The run GitHub stopped, whether cancelled or past its timeout, explains the report.
+@pytest.mark.parametrize("stopped", [None, "cancelled", "timed_out"])
 def test_cache_use_partial_report_requires_github_cancellation(
-    telemetry_history, tmp_path, cancelled
+    telemetry_history, tmp_path, stopped
 ):
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
@@ -2228,12 +2233,12 @@ def test_cache_use_partial_report_requires_github_cancellation(
             for name, body in files.items():
                 archive.writestr(name, body)
         cache.metadata[key] = output.getvalue()
-        if cancelled:
+        if stopped:
             cache.metadata["/repos/example/project/actions/runs/1/attempts/1"][
                 "conclusion"
-            ] = "cancelled"
+            ] = stopped
         done, result = measure_cache_use(telemetry_history, tmp_path)
-        if cancelled:
+        if stopped:
             assert done.returncode == 0, (result, done.stderr)
             assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
             assert 'argv ["node","nx","affected","-t","test"]' in result["detail"]
@@ -3268,12 +3273,59 @@ def test_a_listed_artifact_whose_download_fails_is_an_error_naming_it(
         cache.metadata = original
 
 
-def recorded(name: str):
+class Account(TypedDict):
+    login: str
+
+
+class PullRequest(TypedDict, total=False):
+    """The fields of GitHub's pull request that these journeys read or set."""
+
+    number: int
+    head: dict[str, object]
+    user: Account
+    created_at: str
+    merged_at: str
+
+
+class WorkflowRun(RunAttempt, total=False):
+    """A listed workflow run: an attempt, plus what ties it to a pull request."""
+
+    head_sha: str
+    head_branch: str
+    head_repository: dict[str, object]
+    actor: Account
+    created_at: str
+    pull_requests: list[PullRequest]
+
+
+class ManifestEntry(TypedDict):
+    hash: str
+    bytes: int
+    source: str
+
+
+class Invocation(TypedDict):
+    id: str
+    argv: list[str]
+
+
+@dataclass(frozen=True)
+class InterruptedReport:
+    """What the recorded cancelled job's report holds that a finished one cannot."""
+
+    cancelled_invocations: list[Invocation]
+    unmatched_entry: ManifestEntry
+
+
+def recorded(name: str) -> Any:
+    """A recorded GitHub response body; each caller names the model it reads it as."""
     return json.loads((RECORDED / name).read_text())
 
 
-def rewrite_report(cache: GithubCache, artifact_id: int, edit) -> None:
-    """Replace an uploaded report's files with what `edit` makes of them."""
+# llmlint: ignore[e2e_not_mocked] GitHub's artifact download is the doubled boundary, answered with the report the real writer uploaded, edited into the recorded cancelled job's shape; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
+def rewrite_report(
+    cache: GithubCache, artifact_id: int, edit: Callable[[dict[str, bytes]], object]
+) -> None:
     key = f"{PREFIX}/artifacts/{artifact_id}/zip"
     with zipfile.ZipFile(io.BytesIO(cache.metadata[key])) as packed:
         files = {name: packed.read(name) for name in packed.namelist()}
@@ -3285,21 +3337,20 @@ def rewrite_report(cache: GithubCache, artifact_id: int, edit) -> None:
     cache.metadata[key] = output.getvalue()
 
 
-def recorded_interrupted_report():
+def recorded_interrupted_report() -> InterruptedReport:
     """The test-macos report a job timeout cut short, as run 45627092822/1 uploaded it."""
-    run = recorded("run-45627092822-attempt-1.json")
-    job = next(
-        j
-        for j in recorded("run-45627092822-attempt-1-jobs.json")["jobs"]
-        if j["name"] == "test-macos"
-    )
+    run: RunAttempt = recorded("run-45627092822-attempt-1.json")
+    jobs: list[Job] = recorded("run-45627092822-attempt-1-jobs.json")["jobs"]
+    job = next(j for j in jobs if j["name"] == "test-macos")
     artifact = next(
         a
         for a in recorded("run-45627092822-artifacts.json")["artifacts"]
         if a["name"] == "nx-cache-entries-test-macos"
     )
     execution = recorded("artifact-15032072669-executions.json")
-    manifest = recorded("artifact-15032072669-manifest.json")
+    entries: list[ManifestEntry] = recorded("artifact-15032072669-manifest.json")[
+        "entries"
+    ]
     # The recording's own shape: a cancelled job, uploading within its attempt a report
     # whose telemetry names an unfinished invocation and whose manifest replays a hash
     # no recorded task replayed.
@@ -3308,17 +3359,15 @@ def recorded_interrupted_report():
     assert execution["schema"] == 2 and execution["cancelled_invocations"]
     tasks = {t["hash"] for t in execution["tasks"]}
     unmatched = [
-        e
-        for e in manifest["entries"]
-        if e["source"] == "replayed" and e["hash"] not in tasks
+        e for e in entries if e["source"] == "replayed" and e["hash"] not in tasks
     ]
     assert unmatched
-    return execution, unmatched[0]
+    return InterruptedReport(execution["cancelled_invocations"], unmatched[0])
 
 
 def unmatched_replay(files: dict[str, bytes]) -> None:
     """A replayed manifest entry, with its body, that no recorded task replayed."""
-    _, entry = recorded_interrupted_report()
+    entry = recorded_interrupted_report().unmatched_entry
     manifest = json.loads(files["manifest.json"])
     manifest["entries"].append(entry)
     files["manifest.json"] = json.dumps(manifest).encode()
@@ -3328,13 +3377,16 @@ def unmatched_replay(files: dict[str, bytes]) -> None:
 def cut_short(files: dict[str, bytes]) -> None:
     """The report as the recorded cancelled job left it: telemetry naming its unfinished
     invocation, and a replayed manifest entry Nx never finished recording a task for."""
-    execution, _ = recorded_interrupted_report()
     doc = json.loads(files["executions.json"])
-    doc.update(schema=2, cancelled_invocations=execution["cancelled_invocations"])
+    doc.update(
+        schema=2,
+        cancelled_invocations=recorded_interrupted_report().cancelled_invocations,
+    )
     files["executions.json"] = json.dumps(doc).encode()
     unmatched_replay(files)
 
 
+# llmlint: ignore[e2e_not_mocked] GitHub's job listing is the doubled boundary, set to the conclusion the recorded cancelled job carries; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
 def stop_job(cache: GithubCache, attempt: int, conclusion: str) -> None:
     job: Job = cache.metadata[f"{PREFIX}/runs/1/attempts/{attempt}/jobs"]["jobs"][0]
     job["conclusion"] = conclusion
@@ -3370,23 +3422,46 @@ def test_a_cancelled_attempts_partial_report_is_skipped_and_the_rest_measured(
         cache.metadata = original
 
 
-def test_a_timed_out_attempts_partial_upload_is_skipped_and_the_rest_measured(
-    telemetry_history, tmp_path
+@pytest.mark.parametrize(
+    ("conclusion", "why", "cut", "reason"),
+    [
+        # The timeout struck mid-upload: the telemetry is there and the manifest is not.
+        (
+            "timed_out",
+            "timed out",
+            lambda files: files.pop("manifest.json"),
+            "artifact missing manifest.json",
+        ),
+        (
+            "cancelled",
+            "was cancelled",
+            lambda files: files.pop("executions.json"),
+            "artifact missing executions.json",
+        ),
+        (
+            "timed_out",
+            "timed out",
+            lambda files: files.update({"executions.json": b'{"schema": 3}'}),
+            "invalid executions identity",
+        ),
+    ],
+    ids=["timed-out-no-manifest", "cancelled-no-telemetry", "timed-out-torn-telemetry"],
+)
+def test_a_stopped_attempts_partial_upload_is_skipped_and_the_rest_measured(
+    telemetry_history, tmp_path, conclusion, why, cut, reason
 ):
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        stop_job(cache, 1, "timed_out")
-        # The timeout struck mid-upload: the telemetry is there and the manifest is not.
-        rewrite_report(cache, 101, lambda files: files.pop("manifest.json"))
+        stop_job(cache, 1, conclusion)
+        rewrite_report(cache, 101, cut)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode == 0, (result, done.stderr)
         assert result["actual"] == 100
         assert (
-            "skipped run 1/1 job test-linux: the job timed out, so artifact "
-            "nx-cache-entries-test-linux (id 101) is partial evidence (artifact missing "
-            "manifest.json); excluded from numerator and denominator"
-            in result["detail"]
+            f"skipped run 1/1 job test-linux: the job {why}, so artifact "
+            f"nx-cache-entries-test-linux (id 101) is partial evidence ({reason}); "
+            "excluded from numerator and denominator" in result["detail"]
         )
         # Attempt 1 adds nothing, so attempt 2 replays a store with no evidence.
         assert "aggregate: 1/1 remote hits (100%)" in result["detail"]
@@ -3396,30 +3471,41 @@ def test_a_timed_out_attempts_partial_upload_is_skipped_and_the_rest_measured(
         cache.metadata = original
 
 
-def test_a_finished_attempts_unmatched_manifest_is_an_error_naming_its_artifact(
-    telemetry_history, tmp_path
+@pytest.mark.parametrize(
+    ("cut", "reason"),
+    [
+        (unmatched_replay, "manifest has no matching task evidence"),
+        (
+            lambda files: files.update({"executions.json": b'{"schema": 3}'}),
+            "invalid executions identity",
+        ),
+    ],
+    ids=["unmatched-manifest", "invalid-telemetry"],
+)
+def test_a_finished_attempts_faulty_report_is_an_error_naming_its_artifact(
+    telemetry_history, tmp_path, cut, reason
 ):
-    # The cancelled job's manifest from a job that succeeded is a fault, not a cut-off.
+    # The cancelled job's report from a job that succeeded is a fault, not a cut-off.
     _, cache, _, _ = telemetry_history
     original = copy.deepcopy(cache.metadata)
     try:
-        rewrite_report(cache, 101, unmatched_replay)
+        rewrite_report(cache, 101, cut)
         done, result = measure_cache_use(telemetry_history, tmp_path)
         assert done.returncode != 0
         assert result["actual"] is None
         assert (
-            "manifest has no matching task evidence: artifact "
-            "nx-cache-entries-test-linux (id 101) of run 1/1" in result["error"]
+            f"{reason}: artifact nx-cache-entries-test-linux (id 101) of run 1/1"
+            in result["error"]
         )
     finally:
         cache.metadata = original
 
 
-def recorded_superseded_run(pr: dict) -> dict:
+def recorded_superseded_run(pr: PullRequest) -> WorkflowRun:
     """Release PR 4098's first CI run, on the head release-plz later replaced."""
-    run = recorded("run-45913208966-attempt-1.json")
-    merged_head = recorded("run-45931323488-attempt-1.json")
-    pull = recorded("pull-4098.json")
+    run: WorkflowRun = recorded("run-45913208966-attempt-1.json")
+    merged_head: WorkflowRun = recorded("run-45931323488-attempt-1.json")
+    pull: PullRequest = recorded("pull-4098.json")
     # The recording's own shape: the PR's branch, author and open window, a head the PR
     # moved past, and GitHub tying that head to no pull request at all.
     assert run["pull_requests"] == [] and recorded("commit-f97ded21-pulls.json") == []
@@ -3428,11 +3514,11 @@ def recorded_superseded_run(pr: dict) -> dict:
     assert pull["created_at"] <= run["created_at"] <= pull["merged_at"]
     assert run["head_sha"] != pull["head"]["sha"] == merged_head["head_sha"]
     assert run["conclusion"] == "cancelled"
-    superseded = copy.deepcopy(run)
+    superseded: WorkflowRun = copy.deepcopy(run)
     superseded.update(
         id=7,
         head_sha="d" * 40,
-        head_branch=pr["head"]["ref"],
+        head_branch=str(pr["head"]["ref"]),
         head_repository=pr["head"]["repo"],
         actor={"login": pr["user"]["login"]},
         created_at=pr["created_at"],
@@ -3440,7 +3526,10 @@ def recorded_superseded_run(pr: dict) -> dict:
     return superseded
 
 
-def add_superseded_run(cache: GithubCache, **changes) -> dict:
+# llmlint: ignore[e2e_not_mocked] GitHub's pull request, commit-membership and branch-listing answers are the doubled boundary, set to the shape recorded from onetaskgraph's release PR 4098; the cache-use reader under test runs unmocked through actions-budget-figures.sh.
+def add_superseded_run(
+    cache: GithubCache, **changes: Unpack[WorkflowRun]
+) -> PullRequest:
     """Add to PR #1's branch listing an earlier run on a head it moved past."""
     opened = "2000-01-01T00:00:00Z"
     for path, value in cache.metadata.items():
@@ -3449,7 +3538,7 @@ def add_superseded_run(cache: GithubCache, **changes) -> dict:
                 "number"
             ) == 1:
                 pr["created_at"] = opened
-    pr = cache.metadata["/repos/example/project/pulls/1"]
+    pr: PullRequest = cache.metadata["/repos/example/project/pulls/1"]
     run = recorded_superseded_run(pr)
     run.update(changes)
     cache.metadata[f"/repos/example/project/commits/{run['head_sha']}/pulls"] = (
@@ -3482,6 +3571,26 @@ def test_a_run_on_a_head_the_pull_request_moved_past_is_skipped_by_name(
         # The merged head's runs measure exactly as they do without it.
         assert "aggregate: 2/2 remote hits (100%)" in result["detail"]
         assert "same-PR retry/push: 1/1" in result["detail"]
+    finally:
+        cache.metadata = original
+
+
+def test_nothing_measurable_beside_a_superseded_run_errors_naming_it(
+    telemetry_history, tmp_path
+):
+    _, cache, _, _ = telemetry_history
+    original = copy.deepcopy(cache.metadata)
+    try:
+        add_superseded_run(cache)
+        unfinish(cache, 1, 1, "in_progress")
+        unfinish(cache, 1, 2, "queued")
+        done, result = measure_cache_use(telemetry_history, tmp_path)
+        assert done.returncode != 0
+        assert result["actual"] is None
+        assert (
+            "zero eligible executions; skipped runs: 1/1 (in_progress), 1/2 (queued), "
+            f"7 (superseded head {'d' * 40})" in result["error"]
+        )
     finally:
         cache.metadata = original
 

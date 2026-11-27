@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# llmlint: ignore-file[robust_shell] Recorded bytes of released version 14, which test_an_earlier_released_copy_is_outdated_against_fifteen hands the baseline checker as a repository's copy: its body cannot change, or it would stop being that version, and its digest would no longer match the versions file.
+# llmlint: ignore-file[tool_output_is_signal] Recorded bytes of released version 14, which test_an_earlier_released_copy_is_outdated_against_fifteen hands the baseline checker as a repository's copy: its body cannot change, or it would stop being that version, and its digest would no longer match the versions file.
 # Copied from dero-skills' create-repo skill and edited only there, never in a copy.
 # source: github.com/nickderobertis/dero-skills/skills/bootstrap/create-repo/assets/budgets/actions-budget-figures.sh
 # version: 14
